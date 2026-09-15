@@ -59,7 +59,11 @@ abstract class RouteCommand extends GatewayCommand
 
         $this->info($message);
         $this->line('Scope: '.($route->clusterId === null ? "node {$route->nodeId}" : "cluster {$route->clusterId}"));
-        $this->line('Target: '.($route->target->appInstanceId ?? '—'));
+        $targetIds = array_map(
+            static fn ($target): int => $target->appInstanceId,
+            $route->targets !== [] ? $route->targets : array_filter([$route->target]),
+        );
+        $this->line('Target: '.($targetIds === [] ? '—' : implode(', ', $targetIds)));
         $this->line("Status: {$route->status}");
         $this->line("Public publication: {$route->publicPublication}");
         $this->line("Request ID: {$route->requestId}");

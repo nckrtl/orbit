@@ -23,7 +23,7 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Public publication | `inactive` until a public Route has a verified Ingress edge, then `active`. A public Route can keep intent while public publication stays inactive. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
-| Configured target | The API, PHP SDK, and CLI accept zero or one App instance target. Generated and development Routes permit at most one target. |
+| Configured target | The API, PHP SDK, and CLI accept a single App instance target or an ordered production target set. Generated and development Routes permit at most one target. |
 
 Creating the same explicit Route again with identical App, domain, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route.
 
@@ -58,9 +58,9 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 | --- | --- |
 | Create | Store an explicit Route with its App, domain, publication intent, optional single target, and either the target-derived scope or one supplied scope when no target is present. |
 | List | Return the Routes visible to the caller in stable order. |
-| Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, and target. |
+| Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, target, and ordered target set. |
 | Update | Reserve a replacement Route for an explicit domain change, or change publication intent on the same Route ID. |
-| Target set | Add or replace the one App instance target when the change does not detach an active App instance from its sole Route. |
+| Target set | Add or replace one App instance target, or replace the complete ordered production target set with explicit dispositions for every detached active App instance. |
 | Target unset | Remove the target only when that does not leave an active App instance without a Route, unless the same operation removes that App instance. |
 | Destroy | The Gateway deletes an eligible Route after untargeted private projection cleanup. It refuses a targeted Route before cleanup. |
 
@@ -84,6 +84,47 @@ The Gateway validates the complete proposed Route before it commits a target cha
 
 A permitted generated target replacement releases the old generation basis only after the replacement commits. Clearing a target from a non-active App instance does not release that basis.
 
+## Change a production target set
+
+An operator sends the complete ordered App instance ID set for one explicit Cluster-scoped production Route. The Gateway accepts that set when every target is an active production App instance of the Route App on a distinct active app-prod Node in the same Cluster. A Cluster TLD is not required. The request may transfer an App instance that already belongs to another Route in that Cluster.
+
+The Gateway refuses a generated Route, an app-dev target, a duplicate target, two targets on one Node, a foreign App or Cluster, an inactive Node or App instance, and a competing in-progress target-set change. Those refusals leave the stored set unchanged.
+
+A change that detaches an active App instance must name that instance in `dispositions` and either reassign it to a compatible explicit Route or authorize App instance removal. A missing disposition, an invalid destination, or a request that both reassigns and removes the same App instance is refused before mutation. No target-set request deletes an App instance unless `remove` is true for that instance.
+
+Transport accepts App instance and Route identities plus explicit removal authorization. The Gateway rejects caller-supplied backend URLs, Node addresses, Caddy directives, and balancing policy fields. Route responses expose target IDs and positions and do not expose infrastructure addresses.
+
+The Gateway prepares each added target's runtime, workload projection, certificate, and required URL configuration before it publishes that target in the Router pool. It then commits the complete association set, synchronizes Laravel URL configuration for every retained and reassigned App instance from `{{app_instance.domain}}`, publishes the destination Router pool, republishes each vacated Route, and only then runs authorized App instance removals. Success returns the complete requested set. An identical completed request changes no records, runtime artifacts, URL configuration, or removal state.
+
+A failure before the association commit restores the original associations and rolls back the prepared projections. A failure after that commit keeps the recorded intent, `target_set_step`, and `failed_step` so the same request resumes. A different request returns `route.target_set_conflict` and does not replace that intent. After authorized removal begins, retry completes the recorded removal and does not recreate a removed App instance.
+
+| Error code | Meaning |
+| --- | --- |
+| `route.pool_unsupported` | The Route or target cannot own or join a production pool. |
+| `route.target_conflict` | The set contains a duplicate App instance or two targets on one Node. |
+| `route.target_app_conflict` | A target or reassignment destination belongs to another App. |
+| `route.target_scope_conflict` | A target or destination is outside the Route Cluster or is not an active app-prod Node. |
+| `route.target_inactive` | A target App instance is missing or not active. |
+| `route.target_disposition_required` | A detached active App instance has no reassignment or authorized removal. |
+| `route.target_disposition_invalid` | A disposition names an invalid destination or combines reassignment with removal. |
+| `route.target_set_conflict` | Another target-set change is already recorded on the Route. |
+
+### Serve a production pool
+
+Router Caddy publishes one site for the Route domain and distributes requests with round-robin. It does not replay a failed request to another target. A connection or TLS failure excludes that target for 10 seconds and then admits it again without an operator update or an active probe. A later request can reach another eligible target. A failed LAN connection does not select WireGuard for that target.
+
+Targets with a configured `lan_ip` use that address. Targets without one use `wireguard_ip`. Remote hops validate Orbit certificate-authority TLS for the Route domain. An invalid certificate never enables an insecure fallback. An application HTTP 500 does not remove the target from the pool or change App instance state.
+
+When one target shares the Router Node and another is remote, one Caddy service serves both. The local workload uses an internal Unix listener. The composed site does not proxy to its own HTTPS listener.
+
+An empty pool or a pool whose every target is excluded returns HTTP 503 with `Orbit Route unavailable` and exposes no backend address. Restoring an eligible target resumes traffic on the same Route domain and certificate. A vacated Route keeps its domain and serves that unavailable response until it receives a new eligible target. When authorized App instance removal removes the final target, the Gateway deletes the Route and releases its domain before source finalization, as [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) requires.
+
+Once the replacement pool is published, new requests are not assigned to removed targets. An in-flight request does not delay target or App instance removal. Explicit App instance removal keeps the established cascade, retains production application content, and leaves unrelated App instances and Node-owned schedules unchanged.
+
+Orbit does not change session, cookie, or encryption environment keys while it creates or replaces a pool. Shared sessions across targets require the application to already use one shared session store and compatible cookie settings. Round-robin is not backend affinity and does not pin a client to one target.
+
+[ADR 0039](/decisions/0039-use-round-robin-for-production-route-pools) owns the balancing decision.
+
 ## Set up private traffic
 
 The Gateway prepares the initial private Route before it marks the Route and App instance active. It does not require the application to return a successful response.
@@ -104,9 +145,9 @@ The Gateway identifies the requester from the registered WireGuard source that d
 
 [Private DNS](/reference/private-dns#cluster-router-addresses) owns how an operator inspects that selection, removes incorrect LAN intent, and recognizes an unreachable configured LAN path.
 
-Router Caddy preserves the domain as the HTTP `Host` value and Transport Layer Security (TLS) server name when it forwards Orbit-CA HTTPS to the workload Node. Orbit issues separate private keys to the Router and workload Node. When both roles share one Node, the composed Caddy service sends the request to the local runtime without proxying to its own HTTPS listener.
+Router Caddy preserves the domain as the HTTP `Host` value and Transport Layer Security (TLS) server name when it forwards Orbit-CA HTTPS to the workload Node. Orbit issues separate private keys to the Router and workload Node. When both roles share one Node, the composed Caddy service sends the request to the local runtime without proxying to its own HTTPS listener. A pool that mixes a Router-local workload with a remote workload uses that same composed service plus an internal Unix listener for the local target.
 
-The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard.
+The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard. A production pool applies the same address rule per target and does not fail over from LAN to WireGuard after a connection failure.
 
 ### Development-server endpoint
 
@@ -164,7 +205,7 @@ When the Gateway converges the app-prod role, it retires the Orbit-owned public 
 
 ### Inspect private projections with Doctor
 
-Doctor instance checks compare each active private Route and its target with the expected routing scope, Router and workload Caddy, Route-scoped certificate, private DNS, role-owned firewall, and detected Laravel URL. They stay in the existing `instance` family, remain verify-only, and change no Route, Node, service, certificate, DNS, firewall, Laravel file, lifecycle state, or lock.
+Doctor instance checks compare each active private Route and its target with the expected routing scope, Router and workload Caddy, Route-scoped certificate, private DNS, role-owned firewall, detected Laravel URL, target set, and Route association. They stay in the existing `instance` family, remain verify-only, and change no Route, Node, service, certificate, DNS, firewall, Laravel file, lifecycle state, or lock.
 
 Missing, stale, malformed, and unreachable observations become bounded drift or unverifiable findings. Reports, Activity, errors, and diagnostics expose no command, path, configuration contents, address, credential, or exception text.
 
@@ -181,6 +222,8 @@ Related-node checks use only caller-authorized selected nodes. An unavailable Ro
 | `instance.private_dns_mismatch` | Private DNS does not answer the Route domain with the expected address. |
 | `instance.private_firewall_mismatch` | Role-owned firewall policy differs from the Route's expected rules. |
 | `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain. |
+| `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered production target set. |
+| `instance.route_association_mismatch` | An App instance is missing its sole Route association or has more than one. |
 | `instance.related_node_unverifiable` | A required related Node is outside the selected inspection set. |
 | `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
 
@@ -316,7 +359,7 @@ A failure before cutover leaves the old Route authoritative. Successful cleanup 
 
 A failure after cutover keeps the replacement authoritative. Retry continues forward until the replacement is `active`, every old projection is removed, the retiring Route is deleted, and its domain becomes available.
 
-The reconciliation guard still returns `route.reconciliation_required` for operator-requested generated Route domain changes and for active Route target changes. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard or LAN changes when an active Route depends on the change. The same rule covers Router clearing.
+The reconciliation guard still returns `route.reconciliation_required` for operator-requested generated Route domain changes and for single-target replacement of an active Route. An explicit production target-set change is a separate operation and does not use that refusal. A publication-only change on an active Route publishes or withdraws the public Ingress edge on that Route ID. The guard also refuses Node WireGuard or LAN changes when an active Route depends on the change. The same rule covers Router clearing.
 
 A Node or Cluster TLD set, change, or clear, a Cluster activation or deactivation, and fully reconciled Node attach and detach are not this refusal; they reconcile the private Routes that depend on that Node or Cluster. Router replacement is not this refusal; it moves private Router sites and exact DNS to the new Router.
 
@@ -367,6 +410,6 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change App instance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes an active explicit development or production Route domain by reserving a replacement Route. It reconciles generated private Routes when a Node TLD changes, and it reconciles private Route scope and generated domains when a Cluster activates or deactivates. It also removes an already untargeted private Route with its Route-owned projections, moves private Router sites and exact DNS when a Cluster Router is replaced, and coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal.
+This contract projects private Routes and publishes public Routes through Cluster Ingress. It changes an active explicit development or production Route domain by reserving a replacement Route. It replaces an explicit Cluster-scoped production Route target set with recorded retry. It reconciles generated private Routes when a Node TLD changes, and it reconciles private Route scope and generated domains when a Cluster activates or deactivates. It also removes an already untargeted private Route with its Route-owned projections, moves private Router sites and exact DNS when a Cluster Router is replaced, and coordinates target clearing during development checkout, worktree, fixed-set cascade, and production App instance removal.
 
-It does not implement Cluster TLD or membership reconciliation, Router replacement, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.
+It does not implement Cluster TLD or membership reconciliation, Router replacement, public DNS providers, automatic placement, application setup, or application health tracking. [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement), [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing), [ADR 0024](/decisions/0024-follow-generated-route-targets), [ADR 0029](/decisions/0029-manage-laravel-application-urls-through-orbit), [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates), [ADR 0033](/decisions/0033-trust-wireguard-members-for-private-node-traffic), and [ADR 0041](/decisions/0041-delete-an-empty-route-during-appinstance-removal) define the remaining boundaries.

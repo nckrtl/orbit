@@ -30,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $replaces_route_id
  * @property int|null $replaced_by_route_id
  * @property RouteReplacementStep|null $replacement_step
+ * @property array<string, mixed>|null $target_set_intent
+ * @property string|null $target_set_step
  * @property-read App $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
@@ -64,6 +66,8 @@ final class Route extends Model
         'replaces_route_id',
         'replaced_by_route_id',
         'replacement_step',
+        'target_set_intent',
+        'target_set_step',
     ];
 
     public function isAuthoritative(): bool
@@ -122,6 +126,7 @@ final class Route extends Model
             'public_publication' => RoutePublicPublication::class,
             'status' => RouteStatus::class,
             'replacement_step' => RouteReplacementStep::class,
+            'target_set_intent' => 'array',
         ];
     }
 }

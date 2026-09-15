@@ -251,6 +251,8 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 'dnsMatches' => InstanceDoctorIssueCode::PrivateDnsMismatch,
                 'firewallMatches' => InstanceDoctorIssueCode::PrivateFirewallMismatch,
                 'laravelUrlMatches' => InstanceDoctorIssueCode::LaravelUrlMismatch,
+                'targetSetMatches' => InstanceDoctorIssueCode::TargetSetMismatch,
+                'associationMatches' => InstanceDoctorIssueCode::RouteAssociationMismatch,
             ];
 
             $inspectionFailed = false;

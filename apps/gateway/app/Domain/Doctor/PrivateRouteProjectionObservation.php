@@ -14,5 +14,7 @@ final readonly class PrivateRouteProjectionObservation
         public ?bool $dnsMatches,
         public ?bool $firewallMatches,
         public ?bool $laravelUrlMatches,
+        public ?bool $targetSetMatches = true,
+        public ?bool $associationMatches = true,
     ) {}
 }

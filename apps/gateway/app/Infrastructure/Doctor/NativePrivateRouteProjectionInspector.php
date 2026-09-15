@@ -70,7 +70,51 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 ? $this->combine($workloadValues['firewall'] ?? true, $routerValues['firewall'] ?? true)
                 : true,
             laravelUrlMatches: $workloadValues['laravel'] ?? null,
+            targetSetMatches: $router instanceof Node
+                ? ($routerValues['pool'] ?? $this->targetSetMatches($route, $routerSite))
+                : true,
+            associationMatches: $this->associationMatches($instance, $route),
         );
+    }
+
+    private function targetSetMatches(Route $route, ?AppDevSite $routerSite): bool
+    {
+        if (! $routerSite instanceof AppDevSite) {
+            return $route->targets->count() <= 1;
+        }
+
+        $router = $route->cluster?->routerAssignment?->node;
+        $expected = $route->targets
+            ->map(static function ($row) use ($router): ?string {
+                $node = $row->appInstance?->node;
+
+                if ($node === null || ($router instanceof Node && $router->is($node))) {
+                    return null;
+                }
+
+                return is_string($node->lan_ip) && $node->lan_ip !== ''
+                    ? $node->lan_ip
+                    : $node->wireguard_ip;
+            })
+            ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
+            ->values()
+            ->all();
+        $observed = array_values(array_filter(
+            $routerSite->proxyAddresses(),
+            static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
+        ));
+
+        sort($expected);
+        sort($observed);
+
+        return $expected === $observed;
+    }
+
+    private function associationMatches(AppInstance $instance, Route $route): bool
+    {
+        $count = $instance->routeTargets()->count();
+
+        return $count === 1 && $instance->routeTargets()->where('route_id', $route->id)->exists();
     }
 
     private function routingScopeMatches(AppInstance $instance, Route $route): bool
@@ -240,7 +284,10 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
     private function routerCommand(Route $route, AppDevSite $site): RemoteCommand
     {
-        $upstream = $site->proxyAddresses()[0] ?? '';
+        $upstreams = implode("\n", array_values(array_filter(
+            $site->proxyAddresses(),
+            static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
+        )));
 
         return new RemoteCommand(
             arguments: [
@@ -248,20 +295,33 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 '-seu',
                 '--',
                 $route->domain,
-                $upstream,
+                $upstreams,
                 $site->certificateDirectory(),
             ],
             input: <<<'BASH'
                 domain=$1
-                upstream=$2
+                upstreams=$2
                 certificates=$3
                 live=$(readlink -f /etc/caddy/Caddyfile)
                 fragment_dir=$(dirname "$live")/fragments
-                if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null \
-                    && { [ "$upstream" = '' ] || grep -Rqs -- "$upstream" "$fragment_dir" 2>/dev/null; }; then
+                pool=1
+                if [ "$upstreams" != '' ]; then
+                    while IFS= read -r upstream; do
+                        [ "$upstream" = '' ] && continue
+                        if ! grep -Rqs -- "$upstream" "$fragment_dir" 2>/dev/null; then
+                            pool=0
+                            break
+                        fi
+                    done <<EOF
+                $upstreams
+                EOF
+                fi
+                if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null && [ "$pool" = 1 ]; then
                     printf 'caddy=1\n'
+                    printf 'pool=1\n'
                 else
                     printf 'caddy=0\n'
+                    printf 'pool=0\n'
                 fi
                 if sudo test -f "$certificates/cert.pem" && sudo test -f "$certificates/key.pem"; then
                     printf 'tls=1\n'

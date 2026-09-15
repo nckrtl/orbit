@@ -181,6 +181,66 @@ it('does not attach the development-server handle to production, proxy, or unava
         ->not->toContain('reverse_proxy');
 });
 
+it('publishes a production pool with round-robin, no replay, a 10s cooldown, and 503 on connection failure', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 9,
+            nodeAddress: '10.44.0.7',
+            scope: 'route-4-router',
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: 'pool.example.test',
+            upstreamAddresses: ['10.10.0.61', '10.10.0.62'],
+        ),
+    ]));
+
+    expect($configuration)
+        ->toContain('reverse_proxy https://10.10.0.61 https://10.10.0.62')
+        ->toContain('lb_policy round_robin')
+        ->toContain('lb_retries 0')
+        ->toContain('fail_duration 10s')
+        ->toContain('tls_server_name pool.example.test')
+        ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->toContain('@orbit_unavailable `{err.status_code} == 502`')
+        ->toContain('respond "Orbit Route unavailable\n" 503')
+        ->not->toContain('https://pool.example.test {')
+        ->not->toContain('least_conn')
+        ->not->toContain('{err.status_code} == 500');
+});
+
+it('composes a Router-local unix upstream with a remote HTTPS target without a self-proxy loop', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 9,
+            nodeAddress: '10.44.0.7',
+            scope: 'route-4-router',
+            checkoutPath: '/var/www/acme/current',
+            documentRoot: 'public',
+            phpVersion: '8.5',
+            domain: 'pool.example.test',
+            upstreamAddresses: ['10.10.0.62'],
+            environment: 'production',
+            productionUser: 'orbit-acme',
+            productionHome: '/var/www/acme',
+            appSlug: 'acme',
+            productionPhpSocket: '/run/php/orbit-acme.sock',
+            localUnixUpstream: 'unix//run/orbit/route-4-local.sock',
+        ),
+    ]));
+
+    expect($configuration)
+        ->toContain('http://unix//run/orbit/route-4-local.sock {')
+        ->toContain('bind unix//run/orbit/route-4-local.sock')
+        ->toContain('reverse_proxy unix//run/orbit/route-4-local.sock https://10.10.0.62')
+        ->toContain('lb_policy round_robin')
+        ->toContain('lb_retries 0')
+        ->toContain('fail_duration 10s')
+        ->not->toContain('https://unix/')
+        ->not->toContain('reverse_proxy https://127.0.0.1')
+        ->not->toContain('https://10.44.0.7');
+});
+
 it('exposes one origin URL and loopback upstream for frontend configuration', function (): void {
     expect(DevelopmentServerEndpoint::origin('tasks.commander.test'))
         ->toBe('https://tasks.commander.test/__orbit/vite')

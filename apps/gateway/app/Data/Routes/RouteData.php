@@ -29,7 +29,10 @@ final class RouteData extends Data
         public ?int $replacesRouteId,
         public ?int $replacedByRouteId,
         public ?string $replacementStep,
+        public ?string $targetSetStep,
         public ?RouteTargetData $target,
+        /** @var list<RouteTargetData> */
+        public array $targets,
     ) {}
 
     public static function fromModel(Route $route): self
@@ -53,7 +56,12 @@ final class RouteData extends Data
             replacesRouteId: $route->replaces_route_id,
             replacedByRouteId: $route->replaced_by_route_id,
             replacementStep: $route->replacement_step?->value,
+            targetSetStep: $route->target_set_step,
             target: $target instanceof RouteTarget ? RouteTargetData::fromModel($target) : null,
+            targets: $route->targets
+                ->map(static fn (RouteTarget $row): RouteTargetData => RouteTargetData::fromModel($row))
+                ->values()
+                ->all(),
         );
     }
 }

@@ -2,13 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Clusters\UpdateClusterAction;
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\ConvergeRouteTargetSetAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\RemoveRouteAction;
 use App\Data\Clusters\UpdateClusterData;
 use App\Data\Routes\CreateRouteData;
+use App\Data\Routes\RouteTargetDispositionData;
+use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
@@ -33,6 +37,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -1141,6 +1146,141 @@ it('refuses a conflicting publication request without changing recorded intent',
     expect($replacement->fresh()->getAttributes())->toBe($before);
 });
 
+it('prepares workloads before publishing a production target set and does not report a partial set', function (): void {
+    [$route, $first, $second] = route_target_set_expandable_pool();
+
+    $updated = app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id, $second->id], []),
+    );
+
+    expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id])
+        ->and($updated->target_set_intent)
+        ->toBeNull()
+        ->and($this->events->values)
+        ->toContain('workload-certificate')
+        ->toContain('workload-caddy')
+        ->toContain('workload-verify')
+        ->toContain('environment:authoritative')
+        ->toContain('router-caddy');
+    expect(array_search('workload-verify', $this->events->values, true))
+        ->toBeLessThan(array_search('router-caddy', $this->events->values, true));
+});
+
+it('restores preparations when a target-set change fails before database commit', function (): void {
+    [$route, $first, $second] = route_target_set_expandable_pool();
+    $this->projector->failures['workload-verify'] = 1;
+    $before = $route->targets()->orderBy('position')->pluck('app_instance_id')->all();
+
+    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id, $second->id], []),
+    ))->toThrow(ResourceOperationException::class, 'Injected workload-verify failure.');
+
+    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe($before)
+        ->and($route->failed_step)
+        ->toBe('workload-prepared')
+        ->and($this->events->values)
+        ->toContain('rollback-caddy')
+        ->toContain('rollback-certificates');
+});
+
+it('retains committed target-set progress and resumes the recorded intent', function (): void {
+    [$route, $first, $second] = route_target_set_expandable_pool();
+    $this->projector->failures['router-caddy'] = 1;
+
+    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id, $second->id], []),
+    ))->toThrow(ResourceOperationException::class, 'Injected router-caddy failure.');
+
+    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id])
+        ->and($route->failed_step)
+        ->toBe('router-published')
+        ->and($route->target_set_intent['targets'] ?? null)
+        ->toBe([$first->id, $second->id]);
+
+    $this->projector->failures = [];
+    $this->events->values = [];
+    $updated = app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id, $second->id], []),
+    );
+
+    expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id])
+        ->and($updated->target_set_intent)
+        ->toBeNull()
+        ->and($updated->failed_step)
+        ->toBeNull()
+        ->and($this->events->values)
+        ->toContain('router-caddy')
+        ->not->toContain('rollback-caddy')
+        ->not->toContain('workload-certificate');
+});
+
+it('refuses a competing target-set intent and treats an identical completed change as a no-op', function (): void {
+    [$route, $first, $second] = route_target_set_expandable_pool();
+    app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id, $second->id], []),
+    );
+    $this->events->values = [];
+
+    $again = app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id, $second->id], []),
+    );
+
+    expect($again->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id])
+        ->and($this->events->values)
+        ->toBe(['owner']);
+
+    $route->update([
+        'target_set_intent' => ['targets' => [$second->id], 'dispositions' => []],
+        'target_set_step' => 'reserved',
+    ]);
+    $before = $route->fresh()->targets()->orderBy('position')->pluck('app_instance_id')->all();
+
+    expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$first->id], [
+            new RouteTargetDispositionData($second->id, remove: true),
+        ]),
+    ))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('route.target_set_conflict');
+    });
+
+    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe($before);
+});
+
+it('invokes authorized App instance removal after the replacement pool is recorded', function (): void {
+    [$route, $first, $second] = route_target_set_expandable_pool();
+    $removed = Mockery::mock(RemoveAppInstanceAction::class);
+    $removed->shouldReceive('execute')
+        ->once()
+        ->withArgs(static fn (AppInstance $instance, bool $force): bool => $instance->id === $first->id && $force)
+        ->andReturn(Mockery::mock(AppInstanceRemoval::class));
+    app()->instance(RemoveAppInstanceAction::class, $removed);
+
+    $updated = app(ConvergeRouteTargetSetAction::class)->execute(
+        $route,
+        new SetRouteTargetsData([$second->id], [
+            new RouteTargetDispositionData($first->id, remove: true),
+        ]),
+    );
+
+    expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toContain($second->id)
+        ->and($this->events->values)
+        ->toContain('router-caddy');
+});
+
 /** @return array{Cluster, Route, Node} */
 function bind_cluster_router_replacement_projection(): FakeClusterRouterReplacementProjector
 {
@@ -1286,6 +1426,17 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
     $route->update(['status' => 'active']);
 
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']);
+}
+
+/** @return array{Route, AppInstance, AppInstance} */
+function route_target_set_expandable_pool(): array
+{
+    $route = route_domain_change_shared_production_route();
+    $first = $route->targets[0]->appInstance;
+    $second = $route->targets[1]->appInstance;
+    $route->targets()->where('app_instance_id', $second->id)->delete();
+
+    return [$route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']), $first, $second];
 }
 
 function route_domain_change_shared_production_route(): Route

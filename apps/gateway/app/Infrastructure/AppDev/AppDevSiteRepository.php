@@ -162,12 +162,21 @@ final readonly class AppDevSiteRepository
             $hasPublicIngress = $this->publishesIngress($route)
                 && $ingress instanceof Node;
             $ingressSharesRouter = $hasPublicIngress && $router instanceof Node && $ingress->is($router);
+            $localTargets = $router instanceof Node
+                ? $targets->filter(static fn (AppInstance $target): bool => $router->is($target->node))
+                : collect();
+            $remoteTargets = $router instanceof Node
+                ? $targets->filter(static fn (AppInstance $target): bool => ! $router->is($target->node))
+                : $targets;
+            $hasComposedPool = $router instanceof Node
+                && is_string($router->wireguard_ip)
+                && $localTargets->isNotEmpty()
+                && $remoteTargets->isNotEmpty()
+                && ! $ingressSharesRouter;
             $hasRouterSite = $router instanceof Node
             && is_string($router->wireguard_ip)
-            && $targets->isNotEmpty()
-            && ! $targets->contains(
-                static fn (AppInstance $target): bool => $router->is($target->node),
-            )
+            && $remoteTargets->isNotEmpty()
+            && $localTargets->isEmpty()
             && ! $ingressSharesRouter;
 
             foreach ($targets as $target) {
@@ -177,11 +186,32 @@ final readonly class AppDevSiteRepository
                     continue;
                 }
 
+                if ($hasComposedPool && $router->is($target->node)) {
+                    continue;
+                }
+
                 $sites->push($this->appInstanceSite($target, $route));
             }
 
+            if ($hasComposedPool) {
+                $sites->push($this->composedPoolSite(
+                    array_values($localTargets->all()),
+                    array_values($remoteTargets->all()),
+                    $route,
+                    $router,
+                ));
+            }
+
             if ($hasRouterSite) {
-                $sites->push($this->routerSite(array_values($targets->all()), $route, $router));
+                $sites->push($this->routerSite(array_values($remoteTargets->all()), $route, $router));
+            }
+
+            if (
+                $targets->isEmpty()
+                && $router instanceof Node
+                && in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
+            ) {
+                $sites->push($this->unavailableRouteSite($route, $router));
             }
 
             if ($hasPublicIngress && ! $ingressSharesRouter) {
@@ -327,6 +357,55 @@ final readonly class AppDevSiteRepository
             domain: $route->domain,
             upstreamAddresses: $addresses,
             certificateScope: $domainChange ? "route-{$route->id}-router-hostname-change" : null,
+        );
+    }
+
+    /** @param list<AppInstance> $local @param list<AppInstance> $remote */
+    private function composedPoolSite(array $local, array $remote, Route $route, Node $router): AppDevSite
+    {
+        $addresses = collect($remote)
+            ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
+                && $instance->node->lan_ip !== ''
+                    ? $instance->node->lan_ip
+                    : $instance->node->wireguard_ip)
+            ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
+            ->values()
+            ->all();
+        $localInstance = $local[0];
+
+        /** @var list<string> $addresses */
+
+        return new AppDevSite(
+            nodeId: $router->id,
+            nodeAddress: $router->wireguard_ip ?? '',
+            scope: "route-{$route->id}-router",
+            checkoutPath: $localInstance->usesProductionReleaseLayout()
+                ? "{$localInstance->production_home}/current"
+                : ($localInstance->checkout_path ?? ''),
+            documentRoot: $localInstance->root ?? $localInstance->app->root ?? '',
+            phpVersion: $localInstance->selected_php_version,
+            domain: $route->domain,
+            upstreamAddresses: $addresses,
+            environment: $localInstance->environment,
+            productionUser: $localInstance->production_user,
+            productionHome: $localInstance->production_home,
+            appSlug: $localInstance->app->slug,
+            productionPhpSocket: $localInstance->production_php_socket,
+            localUnixUpstream: 'unix//run/orbit/route-'.$route->id.'-local.sock',
+        );
+    }
+
+    private function unavailableRouteSite(Route $route, Node $router): AppDevSite
+    {
+        return new AppDevSite(
+            nodeId: $router->id,
+            nodeAddress: $router->wireguard_ip ?? '',
+            scope: "route-{$route->id}-router",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: $route->domain,
+            unavailable: true,
         );
     }
 
