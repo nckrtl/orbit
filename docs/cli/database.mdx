@@ -3,7 +3,7 @@ title: "database"
 description: "Register, inspect, update, and destroy the mysql, pgsql, and sqlite connections that App instances can attach."
 ---
 
-A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry. It does not start, stop, or query a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it.
+A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry and inspects a registered connection. It does not start or stop a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it.
 
 The [Database connections reference](/reference/database-connections) owns the driver fields, the API, and the keys that an attachment writes. Attach a registered connection to an App instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
 
@@ -16,6 +16,10 @@ The [Database connections reference](/reference/database-connections) owns the d
 | [`database:show`](#orbit-databaseshow) | Show one connection. |
 | [`database:update`](#orbit-databaseupdate) | Replace the supplied fields on one connection. |
 | [`database:destroy`](#orbit-databasedestroy) | Destroy one connection record. |
+| [`database:query`](#orbit-databasequery) | Run one SQL statement against a registered connection. |
+| [`database:tables`](#orbit-databasetables) | List tables on a registered connection. |
+| [`database:schema`](#orbit-databaseschema) | Show columns for every table on a registered connection. |
+| [`database:describe`](#orbit-databasedescribe) | Show columns for one table on a registered connection. |
 
 Every command accepts `--json`. No response ever includes the password; `has_password` reports whether one is stored.
 
@@ -129,6 +133,79 @@ orbit database:destroy app --force
 <Warning>
 The Gateway answers `database.connection_attached` while any App instance still attaches the connection. Remove those attachments with `instance:database:remove` first.
 </Warning>
+
+## orbit database:query
+
+Run one SQL statement against a registered connection. The command is read-only unless `--write` is set. The Gateway refuses SQL that is not sent against a stored slug.
+
+```bash
+orbit database:query <slug> <sql> [--write] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+| `sql` | yes | One SQL statement of at most 16384 characters. |
+
+| Option | Meaning |
+| --- | --- |
+| `--write` | Allow a write statement. Omission returns `database.write_required` for write SQL. |
+
+The Gateway answers `database.sql_multiple_statements` when the statement is stacked. SQLite query runs on the associated Node and answers `database.sqlite_node_required` when that Node is missing. Query returns at most 500 rows.
+
+```bash
+orbit database:query app "SELECT id, email FROM users"
+orbit database:query app "DELETE FROM users WHERE id = 1" --write
+```
+
+## orbit database:tables
+
+List tables on a registered connection.
+
+```bash
+orbit database:tables <slug> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+
+```bash
+orbit database:tables app
+```
+
+## orbit database:schema
+
+Show columns for every table on a registered connection.
+
+```bash
+orbit database:schema <slug> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+
+```bash
+orbit database:schema app
+```
+
+## orbit database:describe
+
+Show columns for one table on a registered connection. An unknown table returns `database.table_missing`.
+
+```bash
+orbit database:describe <slug> <table> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+| `table` | yes | Table name of letters, digits, and underscores, at most 64 characters. |
+
+```bash
+orbit database:describe app users
+```
 
 ## Related
 

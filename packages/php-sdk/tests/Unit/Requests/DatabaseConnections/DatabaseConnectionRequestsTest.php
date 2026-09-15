@@ -6,14 +6,22 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionsResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\DatabaseDescribeResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\DatabaseQueryResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\DatabaseSchemaResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\DatabaseTablesResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -50,6 +58,10 @@ describe('database connection requests', function (): void {
         'destroy' => [new DestroyDatabaseConnectionRequest('app'), Method::DELETE, '/api/v1/database-connections/app'],
         'add' => [new AddInstanceDatabaseRequest(12, 'app'), Method::PUT, '/api/v1/instances/12/database-connections/app'],
         'remove' => [new RemoveInstanceDatabaseRequest('app.test', 'app'), Method::DELETE, '/api/v1/instances/app.test/database-connections/app'],
+        'query' => [new QueryDatabaseConnectionRequest('app', 'SELECT 1'), Method::POST, '/api/v1/database-connections/app/query'],
+        'tables' => [new ListDatabaseTablesRequest('app'), Method::GET, '/api/v1/database-connections/app/tables'],
+        'schema' => [new ShowDatabaseSchemaRequest('app'), Method::GET, '/api/v1/database-connections/app/schema'],
+        'describe' => [new DescribeDatabaseTableRequest('app', 'users'), Method::GET, '/api/v1/database-connections/app/describe/users'],
     ]);
 
     it('encodes slugs in item paths', function (): void {
@@ -138,13 +150,89 @@ describe('database connection requests', function (): void {
             ->not->toContain('password');
     });
 
-    it('keeps list show and destroy requests bodyless', function (GatewayRequest $request): void {
+    it('keeps list show destroy and inspection reads bodyless', function (GatewayRequest $request): void {
         expect($request)->not->toBeInstanceOf(HasBody::class);
     })->with([
         'list' => [new ListDatabaseConnectionsRequest],
         'show' => [new ShowDatabaseConnectionRequest('app')],
         'destroy' => [new DestroyDatabaseConnectionRequest('app')],
+        'tables' => [new ListDatabaseTablesRequest('app')],
+        'schema' => [new ShowDatabaseSchemaRequest('app')],
+        'describe' => [new DescribeDatabaseTableRequest('app', 'users')],
     ]);
+
+    it('sends query SQL and the write flag', function (): void {
+        expect(new QueryDatabaseConnectionRequest('app', 'SELECT 1')->body()->all())
+            ->toBe(['sql' => 'SELECT 1', 'write' => false])
+            ->and(new QueryDatabaseConnectionRequest('app', 'DELETE FROM users', true)->body()->all())
+            ->toBe(['sql' => 'DELETE FROM users', 'write' => true]);
+    });
+
+    it('maps inspection envelopes and redacts credential-shaped cells', function (): void {
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $mockClient = new MockClient([
+            QueryDatabaseConnectionRequest::class => MockResponse::make([
+                'data' => [
+                    'slug' => 'app',
+                    'driver' => 'mysql',
+                    'write' => false,
+                    'columns' => ['email'],
+                    'rows' => [['email' => 'password='.DATABASE_CONNECTION_SDK_SECRET]],
+                    'row_count' => 1,
+                    'truncated' => false,
+                ],
+                'meta' => ['request_id' => $requestId],
+            ]),
+            ListDatabaseTablesRequest::class => MockResponse::make([
+                'data' => ['slug' => 'app', 'driver' => 'mysql', 'tables' => ['users']],
+                'meta' => ['request_id' => $requestId],
+            ]),
+            ShowDatabaseSchemaRequest::class => MockResponse::make([
+                'data' => [
+                    'slug' => 'app',
+                    'driver' => 'mysql',
+                    'tables' => [[
+                        'name' => 'users',
+                        'columns' => [
+                            ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
+                        ],
+                    ]],
+                ],
+                'meta' => ['request_id' => $requestId],
+            ]),
+            DescribeDatabaseTableRequest::class => MockResponse::make([
+                'data' => [
+                    'slug' => 'app',
+                    'driver' => 'mysql',
+                    'table' => 'users',
+                    'columns' => [
+                        ['name' => 'id', 'type' => 'int', 'nullable' => false, 'default' => null, 'primary' => true],
+                    ],
+                ],
+                'meta' => ['request_id' => $requestId],
+            ]),
+        ]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+
+        $query = $connector->send(new QueryDatabaseConnectionRequest('app', 'SELECT 1'))->dto();
+        $tables = $connector->send(new ListDatabaseTablesRequest('app'))->dto();
+        $schema = $connector->send(new ShowDatabaseSchemaRequest('app'))->dto();
+        $describe = $connector->send(new DescribeDatabaseTableRequest('app', 'users'))->dto();
+
+        expect($query)
+            ->toBeInstanceOf(DatabaseQueryResponse::class)
+            ->and($query->rows[0]['email'] ?? null)
+            ->not->toContain(DATABASE_CONNECTION_SDK_SECRET)
+            ->and($tables)
+            ->toBeInstanceOf(DatabaseTablesResponse::class)
+            ->and($schema)
+            ->toBeInstanceOf(DatabaseSchemaResponse::class)
+            ->and($describe)
+            ->toBeInstanceOf(DatabaseDescribeResponse::class)
+            ->and($describe->table)
+            ->toBe('users');
+    });
 
     it('maps item and collection envelopes without exposing a password', function (): void {
         $requestId = '11111111-1111-4111-8111-111111111111';

@@ -77,9 +77,13 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'cluster:show',
         'cluster:update',
         'database:create',
+        'database:describe',
         'database:destroy',
         'database:list',
+        'database:query',
+        'database:schema',
         'database:show',
+        'database:tables',
         'database:update',
         'dns:resolve',
         'doctor',
@@ -260,7 +264,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(108);
+    expect($orbitCommands)->toHaveCount(112);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -488,9 +492,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'database:describe' => [['slug', 'table'], ['json' => false]],
         'database:destroy' => [['slug'], ['force' => false, 'json' => false]],
         'database:list' => [[], ['json' => false]],
+        'database:query' => [['slug', 'sql'], ['write' => false, 'json' => false]],
+        'database:schema' => [['slug'], ['json' => false]],
         'database:show' => [['slug'], ['json' => false]],
+        'database:tables' => [['slug'], ['json' => false]],
         'database:update' => [
             ['slug'],
             [
@@ -883,9 +891,13 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--username' => 'app',
             '--password' => 'secret',
         ], ...$profileMissing],
+        'database:describe' => [['slug' => 'app', 'table' => 'users'], ...$profileMissing],
         'database:destroy' => [['slug' => 'app', '--force' => true], ...$profileMissing],
         'database:list' => [[], ...$profileMissing],
+        'database:query' => [['slug' => 'app', 'sql' => 'SELECT 1'], ...$profileMissing],
+        'database:schema' => [['slug' => 'app'], ...$profileMissing],
         'database:show' => [['slug' => 'app'], ...$profileMissing],
+        'database:tables' => [['slug' => 'app'], ...$profileMissing],
         'database:update' => [['slug' => 'app', '--host' => 'db.example.test'], ...$profileMissing],
         'dns:resolve' => [
             ['tld' => '.validation-secret', 'target' => '127.0.0.1'],
