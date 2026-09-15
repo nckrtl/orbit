@@ -233,6 +233,135 @@ it('records Router replacement failure, restores the old Router, and retries the
     'dns-publication',
 ]);
 
+it('records Router replacement database failure after publication and retries forward', function (): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $routeBefore = $route->fresh(['targets'])->toArray();
+    $failCutover = true;
+    NodeRole::updating(function (NodeRole $role) use (&$failCutover): void {
+        if (
+            ! $failCutover
+            || $role->role !== RoleName::Router
+            || ! $role->isDirty('status')
+            || $role->status !== LifecycleStatus::Active
+        ) {
+            return;
+        }
+
+        $original = $role->getOriginal('status');
+
+        if ($original !== LifecycleStatus::Provisioning && $original !== LifecycleStatus::Provisioning->value) {
+            return;
+        }
+
+        $failCutover = false;
+
+        throw new RuntimeException('Injected database failure.');
+    });
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeException::class, 'Injected database failure.');
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($current->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe('database')
+        ->and($projector->events)
+        ->not->toContain('restore')
+        ->and($route->fresh(['targets'])->toArray())
+        ->toBe($routeBefore);
+
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($route->refresh()->id)
+        ->toBe($routeBefore['id']);
+});
+
+it('keeps the replacement Router authoritative when cleanup fails and retries cleanup', function (): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = ['cleanup' => 1];
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, 'Injected cleanup failure.');
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($candidate->failed_step)
+        ->toBe('cleanup')
+        ->and($candidate->error_code)
+        ->toBe('route.test_cleanup')
+        ->and($projector->events)
+        ->not->toContain('restore');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $current))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+
+    $projector->failures = [];
+    $projector->events = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id)
+        ->and($candidate->refresh()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => LifecycleStatus::Active,
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->and($projector->events)
+        ->toBe(['cleanup'])
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Active);
+});
+
+it('records Router replacement rollback failure on the same candidate', function (): void {
+    [$cluster, $route, $member, $current, $replacement] = cluster_router_replacement_route();
+    $projector = bind_cluster_router_replacement_projection();
+    $projector->failures = ['dns-publication' => 1, 'restore' => 1];
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(RuntimeConvergenceException::class, 'Injected restore failure.');
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $replacement->id)
+        ->sole();
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($current->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($candidate->failed_step)
+        ->toBe('rollback:dns-publication')
+        ->and($route->refresh()->id)
+        ->toBe($route->id);
+
+    $projector->failures = [];
+    app(SetClusterRouterAction::class)->execute($cluster, $replacement);
+
+    expect($cluster->routerAssignment()->sole()->node_id)
+        ->toBe($replacement->id);
+});
+
 it('records generated Route failure, restores the old URL, and refuses a conflicting mutation', function (): void {
     $route = route_domain_change_route(laravel: true, generated: true);
     $this->projector->failures = [

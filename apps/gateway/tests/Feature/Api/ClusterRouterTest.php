@@ -826,6 +826,33 @@ it('restores the old Router when replacement publication fails and retries the s
         ]);
 });
 
+it('keeps the replacement assignment when cleanup fails and refuses a conflicting transition', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    cluster_router_owned_route($this->cluster, $this->first);
+    $this->replacements->failures = ['cleanup' => 1];
+
+    $this
+        ->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->second->id}")
+        ->assertServerError();
+
+    $candidate = NodeRole::query()
+        ->where('role', RoleName::Router)
+        ->where('node_id', $this->second->id)
+        ->sole();
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->second->id)
+        ->and($candidate->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($candidate->failed_step)
+        ->toBe('cleanup');
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('cluster.router_transition_conflict');
+        });
+});
+
 it('replaces a Router when the application returns HTTP 500 and leaves Route lifecycle unchanged', function (): void {
     $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
     [$route, $target] = cluster_router_owned_route($this->cluster, $this->first);

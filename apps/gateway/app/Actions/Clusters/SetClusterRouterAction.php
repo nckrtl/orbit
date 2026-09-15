@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Clusters;
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -254,7 +255,12 @@ final readonly class SetClusterRouterAction
             return;
         }
 
-        $operation();
+        try {
+            $operation();
+        } catch (Throwable $exception) {
+            throw $this->boundToStep($exception, $step);
+        }
+
         $this->checkpoint($candidate, $step);
     }
 
@@ -267,10 +273,29 @@ final readonly class SetClusterRouterAction
         }
 
         if ($candidate->error_code !== null) {
-            return $step->rank() >= $current->rank();
+            if ($current->rank() > ClusterRouterReplacementStep::DnsPublished->rank()) {
+                return $step->rank() >= $current->rank();
+            }
+
+            return true;
         }
 
         return $step->rank() > $current->rank();
+    }
+
+    private function boundToStep(Throwable $exception, ClusterRouterReplacementStep $step): Throwable
+    {
+        if (! $exception instanceof RuntimeConvergenceException) {
+            return $exception;
+        }
+
+        return new RuntimeConvergenceException(
+            step: $step->value,
+            errorCode: $exception->errorCode,
+            message: $exception->getMessage(),
+            previous: $exception,
+            result: $exception->result,
+        );
     }
 
     private function checkpoint(NodeRole $candidate, ClusterRouterReplacementStep $step): void
@@ -298,6 +323,11 @@ final readonly class SetClusterRouterAction
                     ->orWhere(function ($query): void {
                         $query
                             ->where('status', LifecycleStatus::Failed)
+                            ->whereNotNull('failed_step');
+                    })
+                    ->orWhere(function ($query): void {
+                        $query
+                            ->where('status', LifecycleStatus::Active)
                             ->whereNotNull('failed_step');
                     });
             })
@@ -384,7 +414,9 @@ final readonly class SetClusterRouterAction
         }
 
         $assignment->update([
-            'status' => LifecycleStatus::Failed,
+            'status' => $assignment->status === LifecycleStatus::Active
+                ? LifecycleStatus::Active
+                : LifecycleStatus::Failed,
             'failed_step' => $step,
             'error_code' => $errorCode,
         ]);
