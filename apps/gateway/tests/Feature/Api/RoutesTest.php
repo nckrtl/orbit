@@ -17,6 +17,7 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -33,6 +34,7 @@ use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\Support\FakePublicRouteEdgeProjector;
+use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
     $this->gateway = Node::query()->create([
@@ -52,6 +54,8 @@ beforeEach(function (): void {
     ]);
     $this->node = route_node('dev-one', '10.44.0.2', 'one.test');
     $this->target = route_instance($this->orbitApp, $this->node, 'main');
+    $this->removal = new FakeRouteRemovalProjector;
+    app()->instance(RouteRemovalProjector::class, $this->removal);
 });
 
 it('creates, retries, lists, shows, updates, clears, and removes an explicit Route', function (): void {
@@ -184,7 +188,67 @@ it('returns 409 before replacing or clearing an active target or removing its Ro
         ->and(route_api_target_rows())
         ->toBe($targetRowsBefore)
         ->and($this->target->fresh())
+        ->not->toBeNull()
+        ->and($this->removal->events)
+        ->toBe([]);
+});
+
+it('removes Route-owned projections for an untargeted Route and preserves unrelated Routes and workloads', function (): void {
+    $route = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'keep.example.test',
+        'publication' => 'private',
+        'app_instance_id' => $this->target->id,
+    ])->assertCreated();
+    $routeModel = Route::query()->findOrFail($route->json('data.id'));
+    $routeModel->update(['status' => RouteStatus::Active]);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $routeModel->targets()->delete();
+
+    $unrelated = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'other.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated();
+    $workload = route_instance($this->orbitApp, $this->node, 'sibling');
+
+    $this->deleteJson("/api/v1/routes/{$routeModel->id}")->assertOk();
+
+    expect(Route::query()->whereKey($routeModel->id)->exists())
+        ->toBeFalse()
+        ->and($this->removal->events)
+        ->toBe(['dns', 'certificates', 'caddy', 'firewall'])
+        ->and($this->removal->routeIds)
+        ->toBe([$routeModel->id, $routeModel->id, $routeModel->id, $routeModel->id])
+        ->and(Route::query()->whereKey($unrelated->json('data.id'))->exists())
+        ->toBeTrue()
+        ->and($workload->fresh())
+        ->not->toBeNull()
+        ->and($this->target->fresh())
+        ->not->toBeNull()
+        ->and($this->node->fresh())
         ->not->toBeNull();
+});
+
+it('releases the hostname after untargeted removal and leaves the Route absent on identical retry', function (): void {
+    $created = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'released.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated();
+    $routeId = $created->json('data.id');
+
+    $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
+    $this->deleteJson("/api/v1/routes/{$routeId}")->assertNotFound();
+
+    $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'released.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated()->assertJsonPath('data.domain', 'released.example.test');
 });
 
 it('returns 409 with both Routes when the requested target belongs to another Route', function (): void {
