@@ -6,6 +6,7 @@ namespace App\Commands\Gateway;
 
 use App\Commands\GatewayCommand;
 use App\Data\GatewayProfile;
+use App\Exceptions\GatewayCertificateRemovalException;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleInterrupted;
@@ -79,6 +80,8 @@ final class GatewayRemoveCommand extends GatewayCommand
 
         try {
             $progress->during('remove', fn () => $repository->remove($name, $this->option('force') === true));
+        } catch (GatewayCertificateRemovalException $exception) {
+            return $this->renderGatewayFailure('gateway.config_invalid', $exception->getMessage());
         } catch (GatewayConfigException $exception) {
             return $this->renderRemoveFailure($exception);
         }

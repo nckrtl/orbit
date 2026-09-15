@@ -132,6 +132,8 @@ Supply the profile name explicitly. The CLI checks that the profile exists and t
 
 A valid noninteractive or JSON call without `--yes` exits 1 with `input.confirmation_required`. Declining, pressing Ctrl-C, or reaching end of input at the prompt exits 1 with `input.cancelled`. These refusals leave configuration and certificates unchanged. After consent, human output shows the removal operation and its result. JSON returns `profile` with the removed name.
 
+If the profile is removed but its pinned certificate cannot be deleted, the command exits 1 with `gateway.config_invalid`. Its error message states that the profile was removed and certificate cleanup failed. The command does not claim that removal was rolled back.
+
 ```bash
 orbit gateway:remove staging
 orbit gateway:remove default --force --yes

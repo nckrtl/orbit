@@ -21,6 +21,45 @@ afterEach(function (): void {
 });
 
 describe('local profile and extension output channels', function (): void {
+    it('reports a removed profile and failed certificate cleanup without a stack trace', function (bool $json): void {
+        $directory = $this->orbitHome.'/certificate';
+        mkdir($directory, 0700);
+        $certificate = $directory.'/pin.pem';
+        file_put_contents($certificate, "disposable certificate\n");
+        app(GatewayConfigRepository::class)->add(new GatewayProfile('secondary', 'https://127.0.0.1:2', $certificate));
+        chmod($directory, 0500);
+
+        try {
+            $arguments = [PHP_BINARY, base_path('orbit'), 'gateway:remove', 'secondary', '--yes'];
+
+            if ($json) {
+                $arguments[] = '--json';
+            }
+
+            $process = new Process($arguments, base_path(), ['ORBIT_HOME' => $this->orbitHome]);
+            expect($process->run())->toBe(1)
+                ->and($process->getErrorOutput())->toBe('');
+            $output = $process->getOutput();
+            expect($output)->toContain('Gateway profile was removed, but its pinned certificate could not be deleted.')
+                ->not->toContain($certificate, 'ErrorException', 'Stack trace', 'Gateway [secondary] removed.');
+
+            if ($json) {
+                expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'error' => [
+                        'code' => 'gateway.config_invalid',
+                        'message' => 'Gateway profile was removed, but its pinned certificate could not be deleted.',
+                        'request_id' => null,
+                    ],
+                ]);
+            }
+
+            expect(app(GatewayConfigRepository::class)->find('secondary'))->toBeNull()
+                ->and(file_get_contents($certificate))->toBe("disposable certificate\n");
+        } finally {
+            chmod($directory, 0700);
+        }
+    })->with([false, true])->skip(fn (): bool => posix_geteuid() === 0, 'Requires unprivileged filesystem permission checks.');
+
     it('keeps JSON on stdout without terminal output even with forced decoration', function (array $arguments, array $expected, int $exit): void {
         $process = new Process([PHP_BINARY, base_path('orbit'), ...$arguments, '--json', '--ansi'], base_path(), [
             'ORBIT_HOME' => $this->orbitHome,

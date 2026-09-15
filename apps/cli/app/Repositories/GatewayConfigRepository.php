@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Data\GatewayProfile;
+use App\Exceptions\GatewayCertificateRemovalException;
 use App\Exceptions\GatewayConfigException;
 use JsonException;
 
@@ -284,8 +285,8 @@ final readonly class GatewayConfigRepository
             return;
         }
 
-        if (! unlink($caPath)) {
-            throw new GatewayConfigException('Could not update Orbit gateway configuration.');
+        if (! @unlink($caPath)) {
+            throw new GatewayCertificateRemovalException;
         }
     }
 
