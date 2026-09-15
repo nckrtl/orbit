@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
@@ -28,6 +29,9 @@ use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Routes\RouteMutationReconciler;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -38,6 +42,7 @@ use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -58,6 +63,7 @@ final readonly class ProvisionNodeAction
         private ManagedUserAccountResolver $accounts,
         private ActiveTldScopeGuard $tldScope,
         private ?RouteMutationReconciler $routes = null,
+        private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
     ) {}
@@ -91,14 +97,6 @@ final readonly class ProvisionNodeAction
         }
 
         $node = Node::query()->firstOrNew(['name' => $data->name]);
-
-        if ($node->exists && $node->appInstances()->exists()) {
-            throw new ResourceOperationException(
-                errorCode: 'node.has_app_instances',
-                message: "Node [{$node->name}] cannot be reprovisioned while it owns AppInstances.",
-                status: 409,
-            );
-        }
 
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
         $lanIp = $data->lanIpProvided
@@ -187,6 +185,22 @@ final readonly class ProvisionNodeAction
         $previousClusterId = $node->exists ? $node->cluster_id : null;
         $tld = $this->tld($node, $data, $clusterId);
         $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
+
+        if ($node->exists && $node->appInstances()->exists()) {
+            if ($this->isTldOnlyChange($node, $data, $tld, $clusterId) && $this->hasActiveAppDevRole($node)) {
+                return $this->changeNodeTld($node, $tld, $previousTld, $clusterId, $previousClusterId);
+            }
+
+            throw new ResourceOperationException(
+                errorCode: 'node.has_app_instances',
+                message: "Node [{$node->name}] cannot be reprovisioned while it owns AppInstances.",
+                status: 409,
+            );
+        }
+
+        if ($node->exists) {
+            $this->convergeGeneratedPrivateDomains($node, $tld, $clusterId, $previousTld, $previousClusterId);
+        }
 
         if (
             $platform === 'linux'
@@ -522,9 +536,130 @@ final readonly class ProvisionNodeAction
             : null;
     }
 
+    private function changeNodeTld(
+        Node $node,
+        ?string $tld,
+        ?string $previousTld,
+        ?int $clusterId,
+        ?int $previousClusterId,
+    ): Node {
+        $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
+        $this->convergeGeneratedPrivateDomains($node, $tld, $clusterId, $previousTld, $previousClusterId);
+
+        DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId): void {
+            $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
+            $this->routeReconciler()->reconcile(
+                nodeOverrides: [$node->id => ['tld' => $tld, 'cluster_id' => $clusterId]],
+                baselineNodeOverrides: [
+                    $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
+                ],
+            );
+            $node->update(['tld' => $tld]);
+        });
+
+        if ($previousTld !== $tld && $this->hasActiveAppDevRole($node)) {
+            $this->convergeChangedAppDevTld($node->refresh(), $previousTld);
+        }
+
+        return $node->refresh()->load('roles');
+    }
+
+    private function convergeGeneratedPrivateDomains(
+        Node $node,
+        ?string $tld,
+        ?int $clusterId,
+        ?string $previousTld,
+        ?int $previousClusterId,
+    ): void {
+        foreach ($this->routeReconciler()->generatedPrivateDomainChanges(
+            nodeOverrides: [$node->id => ['tld' => $tld, 'cluster_id' => $clusterId]],
+            baselineNodeOverrides: [
+                $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
+            ],
+        ) as $change) {
+            $this->convergeRoute()->execute($change['route'], $change['domain'], allowGenerated: true);
+        }
+    }
+
+    private function isTldOnlyChange(Node $node, ProvisionNodeData $data, ?string $tld, ?int $clusterId): bool
+    {
+        if ($tld === $node->tld) {
+            return false;
+        }
+
+        if ($clusterId !== $node->cluster_id) {
+            return false;
+        }
+
+        if ($data->roles !== []) {
+            return false;
+        }
+
+        if ($data->user !== null && $data->user !== $node->user) {
+            return false;
+        }
+
+        if ($data->orbitUser !== null && $data->orbitUser !== $node->user) {
+            return false;
+        }
+
+        if ($data->publicSshHost !== '' && $data->publicSshHost !== $node->public_ssh_host) {
+            return false;
+        }
+
+        if ($data->wireguardIp !== null && $data->wireguardIp !== $node->wireguard_ip) {
+            return false;
+        }
+
+        if ($data->lanIpProvided && $data->lanIp !== $node->getAttribute('lan_ip')) {
+            return false;
+        }
+
+        if ($data->settingsProvided || $data->clusterProvided) {
+            return false;
+        }
+
+        if ($data->wireguardEndpointOverride !== null || $data->dnsServerOverride !== null) {
+            return false;
+        }
+
+        return $data->architecture === null || $data->architecture === $node->architecture;
+    }
+
+    private function generatedDomainsMovedForward(Node $node, ?string $previousTld): bool
+    {
+        $routes = Route::query()
+            ->where('provenance', RouteProvenance::Generated)
+            ->where('publication', RoutePublication::Private)
+            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->where(function ($query) use ($node): void {
+                $query
+                    ->where('generation_basis_node_id', $node->id)
+                    ->orWhere('node_id', $node->id)
+                    ->orWhereHas(
+                        'targets.appInstance',
+                        static fn ($target) => $target->where('node_id', $node->id),
+                    );
+            })
+            ->get();
+
+        foreach ($routes as $route) {
+            if ($previousTld === null || ! str_ends_with($route->domain, ".{$previousTld}")) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function routeReconciler(): RouteMutationReconciler
     {
         return $this->routes ?? app(RouteMutationReconciler::class);
+    }
+
+    private function convergeRoute(): ConvergeRouteAction
+    {
+        return $this->convergeRoute ?? app(ConvergeRouteAction::class);
     }
 
     private function lanIngress(): RouterLanIngressReconciler
@@ -706,6 +841,10 @@ final readonly class ProvisionNodeAction
         try {
             $this->appDevTldConverger->converge($node);
         } catch (Throwable $exception) {
+            if ($this->generatedDomainsMovedForward($node, $previousTld)) {
+                throw $exception;
+            }
+
             $currentTld = is_string($node->tld) ? $node->tld : null;
             DB::transaction(function () use ($node, $previousTld, $currentTld): void {
                 $this->routeReconciler()->reconcile(
@@ -814,6 +953,7 @@ final readonly class ProvisionNodeAction
         $previousClusterId = is_int($priorActiveState['cluster_id'] ?? null)
             ? $priorActiveState['cluster_id']
             : null;
+        $keepTld = $this->generatedDomainsMovedForward($node, $previousTld);
 
         DB::transaction(function () use (
             $node,
@@ -822,16 +962,26 @@ final readonly class ProvisionNodeAction
             $currentClusterId,
             $previousTld,
             $previousClusterId,
+            $keepTld,
         ): void {
-            $this->routeReconciler()->reconcile(
-                nodeOverrides: [
-                    $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
-                ],
-                baselineNodeOverrides: [
-                    $node->id => ['tld' => $currentTld, 'cluster_id' => $currentClusterId],
-                ],
-            );
-            $node->update($priorActiveState);
+            if (! $keepTld) {
+                $this->routeReconciler()->reconcile(
+                    nodeOverrides: [
+                        $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
+                    ],
+                    baselineNodeOverrides: [
+                        $node->id => ['tld' => $currentTld, 'cluster_id' => $currentClusterId],
+                    ],
+                );
+            }
+
+            $state = $priorActiveState;
+
+            if ($keepTld) {
+                $state['tld'] = $currentTld;
+            }
+
+            $node->update($state);
         });
     }
 }
