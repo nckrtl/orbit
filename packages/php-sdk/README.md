@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 119 public Gateway operations. It preserves typed
+The SDK exposes exactly 121 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -83,3 +83,9 @@ composer test       # Pest suite with TIA (parallel)
 composer format     # Laravel Pint formatter
 composer check      # guidance, Rector, and Pint and PHPStan checks
 ```
+
+Dependency inventory reads and scans use `ShowInstanceDependenciesRequest` and
+`ScanInstanceDependenciesRequest` with numeric instance IDs. Both return the typed
+`InstanceDependencyInventoryResponse`; inspect its nullable `succeeded` and each
+ecosystem outcome even after HTTP 200. See the [dependency contract](../../docs/reference/instance-dependency-contracts.md)
+for graph fields, freshness states, and SDK response limits.

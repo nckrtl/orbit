@@ -174,3 +174,11 @@ Each ecosystem contains `ecosystem`, `state`, nullable `succeeded`, `attempted_a
 Snapshots contain `observed_at`, source provenance, and nullable graph. Source contains `project_root`, `reference`, `file_hashes`, and nullable `format`. Graphs contain `resolutions` and `requirements`. Resolutions expose graph-local `id`, package `ecosystem` and `name`, opaque `version`, independent `regular` and `development` flags, `source_reference`, and `integrity`. Requirements expose nullable `from` and `to`, declared `name`, `constraint`, `kind`, `scope`, and `optional`. Root and unresolved endpoints remain null. Timestamps use UTC RFC 3339.
 
 Only one instance's latest observations and attempts are returned, with no attempt history or installed-file audit. Input collection retains its documented byte and time bounds. Raw source contents, configuration values, download URLs, credentials, and process output are excluded. API access does not update packages, select another instance, or deploy source.
+
+## PHP SDK transport
+
+`ShowInstanceDependenciesRequest` reads stored inventory by numeric instance ID. `ScanInstanceDependenciesRequest` sends an empty JSON object to scan that instance. Both return `InstanceDependencyInventoryResponse`, with typed ecosystem, snapshot, source, resolution, and requirement values. The SDK preserves null attempts, verified absence, empty graphs, partial results, and stale observations. Callers must inspect `succeeded`, including HTTP 200 responses.
+
+The SDK rejects an entire invalid response instead of dropping graph records or supplying success defaults. It checks envelope shape, request correlation, instance identity, field types, state consistency, unique resolution IDs, and graph endpoints. It accepts at most 32 MiB of response JSON, 50,000 resolutions and 200,000 requirements per ecosystem, 64 source hashes, and 16 KiB per text field. Oversized or malformed results raise a safe `GatewayApiException`; valid error-envelope codes, redacted details, and request IDs use the shared transport boundary.
+
+These are transport limits, not package-selection policy. The SDK does not parse lockfiles, resolve domains, run packages, render CLI output, or retry scans. Focused Saloon fixtures verify this contract; CLI and integrated discovery checks exercise real transport.
