@@ -42,6 +42,8 @@ The Gateway and PHP SDK use the same public JSON shape.
 
 Node responses return the raw apps override through the same shape. They return `settings: null` when no apps override exists and never replace a null with an effective default. `orbit node:show <id> --json` exposes that raw member.
 
+The CLI requires an explicit Node ID or registered name and at least one setting in every input mode. Human output shows waiting feedback while resolving a name and updating the settings, then the Node result and request ID. `node:show` displays the configured apps path in its detail tree, using an em dash when it is unset. JSON preserves the raw nullable settings shape and emits no prompts or progress.
+
 ## Derive the effective root
 
 When a checkout is created, the Gateway resolves the effective apps root as `settings.apps.path`, or `<managed-user-home>/apps` when that override is absent.

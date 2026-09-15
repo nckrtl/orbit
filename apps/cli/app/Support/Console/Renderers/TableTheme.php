@@ -6,6 +6,7 @@ namespace App\Support\Console\Renderers;
 
 use App\Support\Console\ConsoleMode;
 use Closure;
+use Laravel\Prompts\ConfirmPrompt;
 use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Table;
@@ -42,7 +43,7 @@ final class TableTheme
     /** @return array<class-string<Prompt>, class-string> */
     public static function renderers(): array
     {
-        return [Table::class => TableRenderer::class, DataTablePrompt::class => DataTableRenderer::class];
+        return [Table::class => TableRenderer::class, DataTablePrompt::class => DataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class];
     }
 
     public static function mode(): ConsoleMode

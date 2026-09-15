@@ -7,6 +7,10 @@ description: "Which Linux user the Gateway connects as when node:add bootstraps 
 
 Use `orbit node:add <name> [host]` to set up a Node or change its top-level domain (TLD), roles, or settings. The Gateway sets up SSH access and records the machine architecture. Use `orbit node:remove <node>` to remove the Node from Orbit and restore public SSH access.
 
+Human CLI output shows one indeterminate progress operation during each Gateway request, including provisioning and removal. Its indicator continues while the request blocks; the CLI does not receive or infer completion of the internal steps below. The result and request ID follow the settled progress display. JSON remains a single response without progress frames.
+
+Removal first resolves the explicit Node ID and asks a default-No confirmation naming the Node. `--force` supplies consent for automation and JSON. Decline, cancellation, and end of input exit 1 before removal; `--offline` remains a separate reachability override.
+
 ## Bootstrap identity
 
 The Gateway connects over SSH as the bootstrap user to install base packages and create the managed user if needed. It adds its SSH key and grants passwordless sudo. After verifying access as the managed user, the Gateway uses that account for all later commands.

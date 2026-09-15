@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
-final class ListNodesCommand extends GatewayCommand
+final class ListNodesCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:list
@@ -29,7 +29,7 @@ final class ListNodesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListNodesRequest, NodesResponse::class);
+        $response = $this->sendWithProgress($connector, new ListNodesRequest, NodesResponse::class, ['List Nodes', 'Loading Nodes', 'Loaded Nodes']);
 
         if (! $response instanceof NodesResponse) {
             return self::FAILURE;
@@ -48,24 +48,24 @@ final class ListNodesCommand extends GatewayCommand
                 $node->id,
                 $node->name,
                 $node->status,
-                $node->roles === [] ? '-' : implode(', ', $node->roles),
-                $node->platform ?? '-',
-                $node->tld ?? '-',
+                $node->roles === [] ? null : implode(', ', $node->roles),
+                $node->platform ?? null,
+                NodeOutput::tld($node->tld),
                 $node->user,
-                $node->clusterId ?? '-',
-                $node->wireguardIp ?? '-',
-                $node->lanIp ?? '-',
+                $node->clusterId ?? null,
+                $node->wireguardIp ?? null,
+                $node->lanIp ?? null,
             ];
         }
 
         if ($rows === []) {
-            $this->line('No nodes.');
-            $this->line("Request ID: {$response->requestId}");
+            $this->writeHumanMessage('No nodes.');
+            $this->writeHumanMessage("Request ID: {$response->requestId}");
 
             return self::SUCCESS;
         }
 
-        $this->table([
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table([
             'ID',
             'Name',
             'Status',
@@ -76,9 +76,9 @@ final class ListNodesCommand extends GatewayCommand
             'Cluster',
             'WireGuard',
             'LAN',
-        ], $rows);
+        ], $rows));
 
-        $this->line("Request ID: {$response->requestId}");
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

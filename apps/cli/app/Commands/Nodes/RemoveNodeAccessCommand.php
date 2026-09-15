@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\TerminalText;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeAccessRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 
-final class RemoveNodeAccessCommand extends GatewayCommand
+final class RemoveNodeAccessCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:access:remove
@@ -59,10 +60,11 @@ final class RemoveNodeAccessCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $access = $this->send(
+        $access = $this->sendWithProgress(
             $connector,
             new RemoveNodeAccessRequest($consumerId, $servingId),
             RemovedNodeAccessResponse::class,
+            ['Remove Node access', 'Removing Node access', 'Removed Node access'],
         );
 
         if (! $access instanceof RemovedNodeAccessResponse) {
@@ -79,42 +81,32 @@ final class RemoveNodeAccessCommand extends GatewayCommand
             ? "Access from [{$access->consumerNode->name}] (#{$access->consumerNode->id}) to [{$access->servingNode->name}] (#{$access->servingNode->id}) was already absent."
             : "Access from [{$access->consumerNode->name}] (#{$access->consumerNode->id}) to [{$access->servingNode->name}] (#{$access->servingNode->id}) removed.";
 
-        $this->info($message);
+        $this->writeHumanMessage($message);
 
         if ($access->selfLockout) {
-            $this->warn('Warning: This node no longer has Gateway access.');
+            ConsoleWriter::write($this->output, TerminalText::style(implode("\n", TerminalText::wrap('Warning: This node no longer has Gateway access.', $this->consoleMode()->columns)), 'orange', $this->consoleMode()->decorated).\PHP_EOL);
         }
 
-        $this->line("Request ID: {$access->requestId}");
+        $this->writeHumanMessage("Request ID: {$access->requestId}");
 
         return self::SUCCESS;
     }
 
     private function existingNode(GatewayConnector $connector, int $nodeId): ?NodeResponse
     {
-        $node = $this->send($connector, new ShowNodeRequest($nodeId), NodeResponse::class);
+        $node = $this->sendWithProgress($connector, new ShowNodeRequest($nodeId), NodeResponse::class, ['Resolve Node', 'Loading Node', 'Loaded Node']);
 
         return $node instanceof NodeResponse ? $node : null;
     }
 
     private function confirmed(int $consumerId, int $servingId): bool
     {
-        if ($this->option('force') === true) {
-            return true;
-        }
-
-        if ($this->option('json') === true || ! $this->input->isInteractive()) {
-            $this->renderGatewayFailure(
-                'node_access.confirmation_required',
-                'Use --force to confirm node access removal.',
-            );
-
-            return false;
-        }
-
-        return $this->confirm(
+        return $this->confirmAction(
             "Remove access from node #{$consumerId} to node #{$servingId}?",
-            false,
+            'Node access removal cancelled.',
+            option: 'force',
+            requiredCode: 'node_access.confirmation_required',
+            requiredMessage: 'Use --force to confirm node access removal.',
         );
     }
 }

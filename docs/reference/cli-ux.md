@@ -52,7 +52,7 @@ Search callbacks are read-only. A noninteractive caller supplies the same value 
 
 ## Consent
 
-Resolve the subject before asking for destructive consent. State the target and the effect in the prompt. Destructive confirmations and source-ownership transfers default to No. Declining or cancelling begins no mutation.
+Resolve the subject before asking for destructive consent. State the target and the effect in the prompt. Wrap the full question at narrow widths; never truncate the target or effect to fit a confirmation label. Destructive confirmations and source-ownership transfers default to No. Declining or cancelling begins no mutation.
 
 Keep an existing option that already supplies explicit consent. When a destructive command has no independent consent option, use `--yes` for automated consent and a default-No prompt for interactive consent. Noninteractive and machine modes require that explicit consent option; they never imply consent.
 
@@ -130,7 +130,7 @@ Partial work reports the verified outcome and remaining failure. A request that 
 
 ## Terminal behavior
 
-Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
+Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Handle interruption while an HTTP response is pending, without waiting for the remote operation to finish. A client interruption does not establish that the server stopped or rolled back. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
 
 When stdin is a pipe, measure the selected output's terminal. Plain output may write one complete waiting line before admitted slow work, followed by its settled outcome. A forced color option cannot turn a pipe into a terminal.
 

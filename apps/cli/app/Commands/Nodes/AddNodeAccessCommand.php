@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\AddNodeAccessRequest;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 
-final class AddNodeAccessCommand extends GatewayCommand
+final class AddNodeAccessCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:access:add
@@ -43,10 +42,11 @@ final class AddNodeAccessCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $access = $this->send(
+        $access = $this->sendWithProgress(
             $connector,
             new AddNodeAccessRequest($consumerId, $servingId),
             AddedNodeAccessResponse::class,
+            ['Add Node access', 'Adding Node access', 'Added Node access'],
         );
 
         if (! $access instanceof AddedNodeAccessResponse) {
@@ -63,8 +63,8 @@ final class AddNodeAccessCommand extends GatewayCommand
             ? "Access from [{$access->consumerNode->name}] (#{$access->consumerNode->id}) to [{$access->servingNode->name}] (#{$access->servingNode->id}) already exists."
             : "Access from [{$access->consumerNode->name}] (#{$access->consumerNode->id}) to [{$access->servingNode->name}] (#{$access->servingNode->id}) added.";
 
-        $this->info($message);
-        $this->line("Request ID: {$access->requestId}");
+        $this->writeHumanMessage($message);
+        $this->writeHumanMessage("Request ID: {$access->requestId}");
 
         return self::SUCCESS;
     }

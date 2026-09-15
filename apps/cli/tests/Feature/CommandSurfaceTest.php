@@ -542,7 +542,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
         ],
         'firewall:list' => [[], ['node' => null, 'json' => false]],
-        'firewall:remove' => [['name'], ['node' => null, 'json' => false]],
+        'firewall:remove' => [['name'], ['node' => null, 'yes' => false, 'json' => false]],
         'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'use' => false, 'json' => false]],
         'gateway:remove' => [['name'], ['force' => false, 'yes' => false, 'json' => false]],
         'gateway:status' => [[], ['json' => false]],

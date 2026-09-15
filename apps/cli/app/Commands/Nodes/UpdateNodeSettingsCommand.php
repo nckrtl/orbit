@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeSettingsRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-final class UpdateNodeSettingsCommand extends GatewayCommand
+final class UpdateNodeSettingsCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:settings
@@ -51,7 +50,7 @@ final class UpdateNodeSettingsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $node = $this->send(
+        $node = $this->sendWithProgress(
             $connector,
             new UpdateNodeSettingsRequest(
                 nodeId: $nodeId,
@@ -59,6 +58,7 @@ final class UpdateNodeSettingsCommand extends GatewayCommand
                 apps: NodeSettingOptions::apps($settings['body']['apps'] ?? null),
             ),
             NodeResponse::class,
+            ['Update Node settings', 'Updating Node settings', 'Updated Node settings'],
         );
 
         if (! $node instanceof NodeResponse) {
@@ -71,8 +71,8 @@ final class UpdateNodeSettingsCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("Node [{$node->name}] settings updated.");
-        $this->line("Request ID: {$node->requestId}");
+        $this->writeHumanMessage("Node [{$node->name}] settings updated.");
+        $this->writeHumanMessage("Request ID: {$node->requestId}");
 
         return self::SUCCESS;
     }

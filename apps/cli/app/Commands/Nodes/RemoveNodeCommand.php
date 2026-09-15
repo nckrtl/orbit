@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 
-final class RemoveNodeCommand extends GatewayCommand
+final class RemoveNodeCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:remove
@@ -40,22 +41,24 @@ final class RemoveNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $existing = $this->send($connector, new ShowNodeRequest($nodeId), NodeResponse::class);
+        $existing = $this->sendWithProgress($connector, new ShowNodeRequest($nodeId), NodeResponse::class, ['Resolve Node', 'Loading Node', 'Loaded Node']);
 
         if (! $existing instanceof NodeResponse) {
             return self::FAILURE;
         }
 
-        if (! $this->confirmed()) {
+        if (! $this->confirmed($existing)) {
             return self::FAILURE;
         }
 
-        $node = $this->send(
+        $node = $this->sendWithProgress(
             $connector,
             // confirmed() only returns true after --force or an interactive "yes",
             // either of which is the consent the Gateway requires, so force is always true here.
             new RemoveNodeRequest($nodeId, force: true, offline: $this->option('offline') === true),
             RemovedNodeResponse::class,
+            ['Remove Node', 'Removing Node', 'Removed Node'],
+            static fn (object $response): ProgressState => NodeOutput::mutationState($response, removing: true),
         );
 
         if (! $node instanceof RemovedNodeResponse) {
@@ -68,44 +71,29 @@ final class RemoveNodeCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("Node [{$node->name}] removed.");
-        NodeOutput::degradationAdvisory(
-            $this,
+        $this->writeHumanMessage("Node [{$node->name}] removed.");
+        ConsoleWriter::write($this->output, NodeOutput::degradationAdvisory(
+            $this->humanRenderer(),
+            $this->consoleMode(),
             $node->name,
             $node->degradation,
             $node->rolesShed,
             $node->retainedOnNode,
             $node->followUp,
-        );
-        $this->line("Request ID: {$node->requestId}");
+        ));
+        $this->writeHumanMessage("Request ID: {$node->requestId}");
 
         return self::SUCCESS;
     }
 
-    private function confirmed(): bool
+    private function confirmed(NodeResponse $node): bool
     {
-        if ($this->option('force') === true) {
-            return true;
-        }
-
-        if ($this->option('json') === true) {
-            $this->renderGatewayFailure(
-                'node.confirmation_required',
-                'Use --force to confirm node removal.',
-            );
-
-            return false;
-        }
-
-        if ($this->input->isInteractive()) {
-            return $this->confirm('Remove this node from the gateway?', false);
-        }
-
-        $this->renderGatewayFailure(
-            'node.confirmation_required',
-            'Use --force to confirm node removal.',
+        return $this->confirmAction(
+            "Remove Node [{$node->name}] (#{$node->id}) from the Gateway?",
+            'Node removal cancelled.',
+            option: 'force',
+            requiredCode: 'node.confirmation_required',
+            requiredMessage: 'Use --force to confirm node removal.',
         );
-
-        return false;
     }
 }

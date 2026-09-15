@@ -18,6 +18,8 @@ The Gateway applies each rule over SSH, verifies it in the UFW status output, an
 
 Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The Gateway tags each UFW rule with the comment `orbit:node:<node-id>:firewall:<name>` and uses that comment for every later change.
 
+All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests show an indeterminate progress tree while the Gateway works, then the verified result and request ID. Piped output has no animation or escape codes. JSON contains only the existing response or error.
+
 ## orbit firewall:allow
 
 Allow traffic to one destination port or port range, optionally from one source.
@@ -72,14 +74,16 @@ orbit firewall:list --node=ID
 | --- | --- |
 | `--node=ID` | Numeric target Node ID. |
 
+Human output uses a read-only table with NAME, ACTION, SOURCE, PORT, PROTOCOL, and STATUS columns. Values wrap inside their cells; below the minimum width, labeled records retain every field. An empty result says `No firewall rules.`.
+
 A rule's `status` is `provisioning`, `active`, `failed`, or `removing`. A failed rule keeps `failed_step` and `error_code` so the same command can be repeated after the cause is fixed. Orbit-owned `orbit:` rules are not part of this list.
 
 ## orbit firewall:remove
 
-Remove one named rule from UFW and delete its record.
+Remove one named rule from UFW and delete its record. Before prompting, the CLI resolves the rule with a read-only lookup, then asks `Remove firewall rule [name] from Node #ID?` with No selected. Supply `--yes` for automation, including JSON; JSON never implies consent.
 
 ```bash
-orbit firewall:remove <name> --node=ID
+orbit firewall:remove <name> --node=ID [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -89,12 +93,16 @@ orbit firewall:remove <name> --node=ID
 | Option | Meaning |
 | --- | --- |
 | `--node=ID` | Numeric target Node ID. |
+| `--yes` | Confirm rule removal without prompting. |
 
 ```bash
 orbit firewall:remove office-postgres --node=7
+orbit firewall:remove office-postgres --node=7 --yes --json
 ```
 
 The Gateway marks the rule `removing`, deletes every UFW rule that carries its comment, verifies that none remains, and then deletes the record. A failure leaves the rule `failed` with the step that stopped; repeat the command to retry.
+
+Declining, Ctrl-C, or end of input before removal exits 1 with `input.cancelled`. Noninteractive removal without `--yes` exits 1 with `input.confirmation_required` and an instruction to supply `--yes`. Refused confirmations send no removal request. Existing lookup, authorization, and safety errors retain their codes.
 
 ## Error codes
 

@@ -20,6 +20,7 @@ use App\Support\Console\PromptContext;
 use App\Support\Console\SpinnerDisplay;
 use App\Support\Console\TerminalText;
 use App\Support\GatewayFailureRenderer;
+use Closure;
 use InvalidArgumentException;
 use JsonException;
 use Laravel\Prompts\ConfirmPrompt;
@@ -242,19 +243,27 @@ abstract class GatewayCommand extends Command
         }
     }
 
-    /** @param array{string, string, string} $labels Waiting, running and completed labels. */
+    /**
+     * @param  array{string, string, string}  $labels  Waiting, running and completed labels.
+     * @param  null|Closure(object): ProgressState  $resultState  Validate the product result before settling progress.
+     */
     protected function sendWithProgress(
         GatewayConnector $connector,
         GatewayRequest $request,
         string $responseClass,
         array $labels,
+        ?Closure $resultState = null,
     ): ?object {
         [$waiting, $running, $completed] = $labels;
         $progress = $this->progressDisplay($waiting);
         $progress->admit('request', $waiting, $running, $completed);
 
         try {
-            $response = $progress->during('request', fn (): object => $this->sendOrThrow($connector, $request, $responseClass));
+            [$response, $state] = $progress->during('request', function () use ($connector, $request, $responseClass, $resultState): array {
+                $response = $this->sendOrThrow($connector, $request, $responseClass);
+
+                return [$response, $resultState !== null ? $resultState($response) : ProgressState::Success];
+            });
         } catch (GatewayApiException $exception) {
             $code = $exception->errorCode() ?? 'gateway.request_failed';
             $this->renderGatewayFailure(
@@ -267,7 +276,7 @@ abstract class GatewayCommand extends Command
             return null;
         }
 
-        $progress->complete('request', ProgressState::Success);
+        $progress->complete('request', $state);
         $progress->finish($completed.'.');
 
         return $response;

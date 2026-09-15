@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\ListNodeRolesRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
@@ -15,6 +16,8 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-node-role-query-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -27,6 +30,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -57,10 +61,9 @@ it('lists node roles from the active gateway as JSON', function (): void {
         'request_id' => node_role_command_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-    $this
-        ->artisan('node:role:list', ['node' => '7', '--json' => true])
-        ->expectsOutput($expected)
-        ->assertExitCode(0);
+    expect(Artisan::call('node:role:list', ['node' => '7', '--json' => true]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain($expected);
 
     $request = $mockClient->getLastRequest();
 
@@ -83,17 +86,17 @@ it('shows a concise node role table with lifecycle and failure columns', functio
         ]),
     ]);
 
-    $this
-        ->artisan('node:role:list', ['node' => '7'])
-        ->expectsTable(
-            ['ID', 'Role', 'Status', 'Failed step', 'Error code'],
-            [
-                [34, 'app-dev',  'active', '-',                 '-'],
-                [35, 'app-prod', 'failed', 'converge:packages', 'packages.failed'],
-            ],
-        )
-        ->expectsOutput('Request ID: '.node_role_command_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('node:role:list', ['node' => '7']))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('ID');
+    expect($output)->toContain('ROLE');
+    expect($output)->toContain('STATUS');
+    expect($output)->toContain('FAILED STEP');
+    expect($output)->toContain('ERROR CODE');
+    expect(preg_replace('/[ \t]+/', ' ', $output))
+        ->toContain('│ 34 │ app-dev │ active │ — │ — │')
+        ->toContain('│ 35 │ app-prod │ failed │ converge:packages │ packages.failed │');
+    expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 
 it('lists Ingress lifecycle identity in JSON and human modes without extra settings', function (): void {
@@ -118,14 +121,16 @@ it('lists Ingress lifecycle identity in JSON and human modes without extra setti
             'request_id' => node_role_command_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(0);
-    $this
-        ->artisan('node:role:list', ['node' => '17'])
-        ->expectsTable(
-            ['ID', 'Role', 'Status', 'Failed step', 'Error code'],
-            [[41, 'ingress', 'active', '-', '-']],
-        )
-        ->expectsOutput('Request ID: '.node_role_command_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('node:role:list', ['node' => '17']))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('ID');
+    expect($output)->toContain('ROLE');
+    expect($output)->toContain('STATUS');
+    expect($output)->toContain('FAILED STEP');
+    expect($output)->toContain('ERROR CODE');
+    expect(preg_replace('/[ \t]+/', ' ', $output))
+        ->toContain('│ 41 │ ingress │ active │ — │ — │');
+    expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 
 it('shows an empty node role result clearly', function (): void {
@@ -136,11 +141,10 @@ it('shows an empty node role result clearly', function (): void {
         ]),
     ]);
 
-    $this
-        ->artisan('node:role:list', ['node' => '7'])
-        ->expectsOutput('No roles.')
-        ->expectsOutput('Request ID: '.node_role_command_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('node:role:list', ['node' => '7']))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('No roles.');
+    expect($output)->toContain('Request ID: '.node_role_command_request_id());
 });
 
 it('rejects an invalid node role list node id before connector io', function (string $nodeId): void {

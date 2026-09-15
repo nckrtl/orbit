@@ -9,6 +9,9 @@ use App\Support\Console\ConsoleMode;
 use App\Support\Console\InputTerminal;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
+use App\Support\Console\Renderers\ConfirmRenderer;
+use App\Support\Console\TerminalText;
+use Laravel\Prompts\ConfirmPrompt;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\PasswordPrompt;
 use Laravel\Prompts\Prompt;
@@ -32,6 +35,57 @@ function withNativePromptFixture(Closure $operation): mixed
         return $operation();
     });
 }
+
+it('shows the complete destructive question before narrow-terminal consent', function (array $keys, bool $expected, bool $decorated): void {
+    withNativePromptFixture(function () use ($keys, $expected, $decorated): void {
+        $question = 'Remove Node [app-prod-2] (#8) from this Gateway?';
+        $output = new BufferedOutput;
+        $terminal = new PromptKeysFixtureTerminal($keys, columns: 24);
+        $frames = [];
+        $terminal->beforeRead = function () use ($output, &$frames): void {
+            $frames[] = $output->fetch();
+        };
+        $prompts = new CommandPrompts(promptFixtureMode(decorated: $decorated, columns: 24), $output, $terminal);
+        $result = $prompts->run(fn (): ConfirmPrompt => new ConfirmPrompt($question, default: false));
+        $frames[] = $output->fetch();
+
+        expect($result)->toBe($expected)->and($terminal->raw)->toBeFalse();
+
+        foreach ([$frames[0], $frames[array_key_last($frames)]] as $frame) {
+            $text = preg_replace('/\\x1b\\[[0-9;?]*[A-Za-z]/', '', $frame);
+            $compact = preg_replace('/[\\s│]/u', '', $text);
+            expect($compact)->toContain(str_replace(' ', '', $question))->not->toContain('…');
+
+            foreach (explode("\n", $text) as $line) {
+                expect(TerminalText::width($line))->toBeLessThanOrEqual(24);
+            }
+        }
+    });
+})->with([
+    'default No' => [[Key::ENTER], false],
+    'explicit Yes' => [['y', Key::ENTER], true],
+])->with([true, false]);
+
+it('wraps confirmation feedback without losing its explanation', function (string $state, string $label): void {
+    withNativePromptFixture(function () use ($state, $label): void {
+        $message = 'This operation requires consent before removing the selected Node.';
+        PromptContext::run(promptFixtureMode(columns: 24), new BufferedOutput, function () use ($state, $message, $label): void {
+            $prompt = new ConfirmPrompt($label, default: false, hint: $message);
+            $prompt->state = $state;
+            $prompt->error = $message;
+            $prompt->cancelMessage = $message;
+            $rendered = (new ConfirmRenderer($prompt))($prompt);
+            $text = TerminalText::plain($rendered);
+            $compact = preg_replace('/[\\s│⚠]/u', '', $text);
+
+            expect($compact)->toContain(str_replace(' ', '', $message))->not->toContain('…');
+
+            foreach (explode("\n", $text) as $line) {
+                expect(TerminalText::width($line))->toBeLessThanOrEqual(24);
+            }
+        }, new PromptKeysFixtureTerminal([], columns: 24));
+    });
+})->with(['active', 'error', 'cancel'])->with(['Proceed?', 'Remove Node [app-prod-2] (#8) from this Gateway?']);
 
 it('requires affirmative consent and stops before mutation on decline or aborted input', function (
     array $keys,
@@ -554,7 +608,7 @@ final class PromptKeysFixtureTerminal extends Terminal
     public array $modes = [];
 
     /** @param list<string> $keys */
-    public function __construct(private array $keys)
+    public function __construct(private array $keys, private readonly int $columns = 80)
     {
         parent::__construct();
     }
@@ -585,7 +639,7 @@ final class PromptKeysFixtureTerminal extends Terminal
 
     public function cols(): int
     {
-        return 80;
+        return $this->columns;
     }
 
     public function lines(): int

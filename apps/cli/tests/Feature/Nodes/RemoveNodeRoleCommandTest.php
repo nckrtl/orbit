@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
@@ -292,147 +293,6 @@ it('requires the preview failure in non-interactive mode and sends no forced ret
     expect($mockClient->getRecordedResponses())->toHaveCount(1);
 });
 
-it('shows dependents then sends one forced retry after confirmation', function (): void {
-    $calls = 0;
-    $mockClient = MockClient::global([
-        RemoveNodeRoleRequest::class => static function () use (&$calls): MockResponse {
-            $calls++;
-
-            if ($calls === 1) {
-                return MockResponse::make(
-                    [
-                        'error' => [
-                            'code' => 'validation.failed',
-                            'message' => 'Use --force to remove this node role.',
-                            'details' => [
-                                'field' => 'force',
-                                'reason' => 'destructive_consent_required',
-                                'role' => 'app-dev',
-                                'dependents' => [
-                                    '1 development instance record',
-                                    '1 workspace record',
-                                ],
-                            ],
-                        ],
-                    ],
-                    422,
-                    ['X-Orbit-Request-Id' => node_role_remove_request_id()],
-                );
-            }
-
-            return MockResponse::make([
-                'data' => removed_node_role_payload(),
-                'meta' => ['request_id' => node_role_remove_request_id()],
-            ]);
-        },
-    ]);
-
-    $this
-        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev'])
-        ->expectsOutput('Dependent resources:')
-        ->expectsOutput('  - 1 development instance record')
-        ->expectsOutput('  - 1 workspace record')
-        ->expectsConfirmation("Remove role 'app-dev' from node #7?", 'yes')
-        ->assertExitCode(0);
-
-    $mockClient->assertSentCount(2, RemoveNodeRoleRequest::class);
-    $mockClient->assertSentInOrder([
-        static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
-            'force' => false,
-            'purge_data' => false,
-            'offline' => false,
-        ],
-        static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
-            'force' => true,
-            'purge_data' => false,
-            'offline' => false,
-        ],
-    ]);
-});
-
-it('does not force removal after a declined confirmation', function (): void {
-    $mockClient = MockClient::global([
-        RemoveNodeRoleRequest::class => MockResponse::make(
-            [
-                'error' => [
-                    'code' => 'validation.failed',
-                    'message' => 'Use --force to remove this node role.',
-                    'details' => [
-                        'field' => 'force',
-                        'reason' => 'destructive_consent_required',
-                        'role' => 'app-dev',
-                        'dependents' => [],
-                    ],
-                ],
-            ],
-            422,
-            ['X-Orbit-Request-Id' => node_role_remove_request_id()],
-        ),
-    ]);
-
-    $this
-        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev'])
-        ->expectsConfirmation("Remove role 'app-dev' from node #7?", 'no')
-        ->doesntExpectOutput('Dependent resources:')
-        ->assertExitCode(1);
-
-    expect($mockClient->getRecordedResponses())->toHaveCount(1);
-});
-
-it('forwards purge data only on the forced retry and keeps empty dependents hidden', function (): void {
-    $calls = 0;
-    $mockClient = MockClient::global([
-        RemoveNodeRoleRequest::class => static function () use (&$calls): MockResponse {
-            $calls++;
-
-            if ($calls === 1) {
-                return MockResponse::make(
-                    [
-                        'error' => [
-                            'code' => 'validation.failed',
-                            'message' => 'Use --force to remove this node role.',
-                            'details' => [
-                                'field' => 'force',
-                                'reason' => 'destructive_consent_required',
-                                'role' => 'app-dev',
-                                'dependents' => [],
-                            ],
-                        ],
-                    ],
-                    422,
-                    ['X-Orbit-Request-Id' => node_role_remove_request_id()],
-                );
-            }
-
-            return MockResponse::make([
-                'data' => removed_node_role_payload(),
-                'meta' => ['request_id' => node_role_remove_request_id()],
-            ]);
-        },
-    ]);
-
-    $this
-        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--purge-data' => true])
-        ->expectsConfirmation("Remove role 'app-dev' from node #7?", 'yes')
-        ->doesntExpectOutput('Dependent resources:')
-        ->doesntExpectOutputToContain('  - ')
-        ->assertExitCode(0);
-
-    $mockClient->assertSentCount(2, RemoveNodeRoleRequest::class);
-    $mockClient->assertSentInOrder([
-        static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
-            'force' => false,
-            'purge_data' => false,
-            'offline' => false,
-        ],
-        static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
-            'force' => true,
-            'purge_data' => true,
-            'offline' => false,
-        ],
-    ]);
-});
-
 it('fails closed when the preview unexpectedly succeeds', function (): void {
     $expected = json_encode([
         'error' => [
@@ -496,15 +356,14 @@ it('shows the degradation advisory for an offline node role removal', function (
         ]),
     ]);
 
-    $this
-        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--force' => true, '--offline' => true])
-        ->expectsOutput('Role [app-dev] removed from node [app-1] (#7).')
-        ->expectsOutput('Warning: Node [app-1] was unreachable. Orbit removed only the state it owns.')
-        ->expectsOutput('Left on the node:')
-        ->expectsOutput('  - Caddy site configuration and certificates for the app-dev role')
-        ->expectsOutput('Run the node-local Metrics cleanup on the node once it boots, or discard the node.')
-        ->expectsOutput('Request ID: '.node_role_remove_request_id())
-        ->assertExitCode(0);
+    expect(Artisan::call('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--force' => true, '--offline' => true]))->toBe(0);
+    $output = preg_replace('/\s+/', '', Artisan::output());
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Role [app-dev] removed from node [app-1] (#7).'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Warning: Node [app-1] was unreachable. Orbit removed only the state it owns.'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Left on the node:'));
+    expect($output)->toContain(preg_replace('/\s+/', '', '  Caddy site configuration and certificates for the app-dev role'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.'));
+    expect($output)->toContain(preg_replace('/\s+/', '', 'Request ID: '.node_role_remove_request_id()));
 
     expect($mockClient->getLastPendingRequest()?->body()->all())
         ->toBe([

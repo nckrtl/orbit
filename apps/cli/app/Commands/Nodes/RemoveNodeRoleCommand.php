@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
-use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
 use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 
-final class RemoveNodeRoleCommand extends GatewayCommand
+final class RemoveNodeRoleCommand extends NodeCommand
 {
     #[\Override]
     protected $signature = 'node:role:remove
@@ -57,7 +58,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
             }
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new RemoveNodeRoleRequest(
                 nodeId: $nodeId,
@@ -67,6 +68,8 @@ final class RemoveNodeRoleCommand extends GatewayCommand
                 offline: $this->option('offline') === true,
             ),
             NodeRoleMutationResponse::class,
+            ['Remove Node role', 'Removing Node role', 'Removed Node role'],
+            static fn (object $response): ProgressState => NodeOutput::mutationState($response, removing: true),
         );
 
         if (! $response instanceof NodeRoleMutationResponse) {
@@ -79,16 +82,17 @@ final class RemoveNodeRoleCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("Role [{$response->role}] removed from node [{$response->nodeName}] (#{$response->nodeId}).");
-        NodeOutput::degradationAdvisory(
-            $this,
+        $this->writeHumanMessage("Role [{$response->role}] removed from node [{$response->nodeName}] (#{$response->nodeId}).");
+        ConsoleWriter::write($this->output, NodeOutput::degradationAdvisory(
+            $this->humanRenderer(),
+            $this->consoleMode(),
             $response->nodeName,
             $response->degradation,
             [],
             $response->retainedOnNode,
             $response->followUp,
-        );
-        $this->line("Request ID: {$response->requestId}");
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }
@@ -98,49 +102,54 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         int $nodeId,
         string $role,
     ): ?int {
+        $progress = $this->progressDisplay('Review Node role removal');
+        $progress->admit('preview', 'Review removal', 'Reviewing removal', 'Reviewed removal');
+
         try {
-            $this->sendOrThrow(
-                $connector,
-                new RemoveNodeRoleRequest(
-                    nodeId: $nodeId,
-                    role: $role,
-                    force: false,
-                    purgeData: false,
-                    offline: false,
-                ),
-                NodeRoleMutationResponse::class,
-            );
+            $exception = $progress->during('preview', function () use ($connector, $nodeId, $role): GatewayApiException {
+                try {
+                    $this->sendOrThrow($connector, new RemoveNodeRoleRequest(
+                        nodeId: $nodeId, role: $role, force: false, purgeData: false, offline: false,
+                    ), NodeRoleMutationResponse::class);
+                } catch (GatewayApiException $exception) {
+                    if ($this->isConsentPreview($exception)) {
+                        return $exception;
+                    }
 
-            return $this->renderGatewayFailure(
-                'gateway.invalid_response',
-                'Gateway response is invalid.',
-            );
-        } catch (GatewayApiException $exception) {
-            if (! $this->isConsentPreview($exception)) {
-                return $this->renderPreviewFailure($exception);
-            }
-
-            if ($this->option('json') === true || ! $this->input->isInteractive()) {
-                return $this->renderGatewayFailure(
-                    $exception->errorCode() ?? 'gateway.request_failed',
-                    $exception->getMessage(),
-                    $exception->requestId(),
-                );
-            }
-
-            $dependents = $this->dependents($exception);
-
-            if ($dependents !== []) {
-                $this->line('Dependent resources:');
-
-                foreach ($dependents as $dependent) {
-                    $this->line("  - {$dependent}");
+                    throw $exception;
                 }
-            }
 
-            if (! $this->confirm("Remove role '{$role}' from node #{$nodeId}?", false)) {
-                return self::FAILURE;
-            }
+                throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response');
+            });
+        } catch (GatewayApiException $exception) {
+            return $this->renderPreviewFailure($exception);
+        }
+
+        $progress->complete('preview', ProgressState::Success);
+        $progress->finish('Removal requires consent.');
+
+        if (! $this->consoleMode()->mayPrompt) {
+            return $this->renderGatewayFailure(
+                $exception->errorCode() ?? 'gateway.request_failed',
+                $exception->getMessage(),
+                $exception->requestId(),
+            );
+        }
+
+        $dependents = $this->dependents($exception);
+
+        if ($dependents !== []) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->properties([
+                ['title' => 'Dependent resources:', 'items' => array_map(
+                    static fn (string $dependent): array => ['label' => $dependent, 'fields' => []], $dependents)],
+            ]));
+        }
+
+        $effect = $this->option('purge-data') === true ? ' and purge supported role-owned data' : '';
+
+        if (! $this->confirmAction("Remove role '{$role}' from node #{$nodeId}{$effect}?",
+            'Node role removal cancelled.', option: 'force')) {
+            return self::FAILURE;
         }
 
         return null;
