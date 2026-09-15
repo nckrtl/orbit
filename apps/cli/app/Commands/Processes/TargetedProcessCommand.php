@@ -46,7 +46,7 @@ abstract class TargetedProcessCommand extends ProcessCommand
         };
     }
 
-    protected function processTarget(GatewayConnector $connector): AppInstanceProcessTarget|NodeProcessTarget|null
+    protected function processTarget(GatewayConnector $connector, bool $allowDomain = false): AppInstanceProcessTarget|NodeProcessTarget|null
     {
         $target = $this->exclusiveProcessTarget();
 
@@ -56,6 +56,11 @@ abstract class TargetedProcessCommand extends ProcessCommand
 
         if ($target === 'instance') {
             $id = filter_var($this->option('instance'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+            $selector = $this->option('instance');
+            if ($allowDomain && ! is_int($id) && is_string($selector) && preg_match('/\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z0-9-]+\z/D', $selector) === 1) {
+                return new AppInstanceProcessTarget($selector);
+            }
 
             if (! is_int($id)) {
                 $this->renderGatewayFailure(

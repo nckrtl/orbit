@@ -85,6 +85,7 @@
               "reference/app-processes-and-schedules",
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
+              "reference/assigned-vite-ports",
               "reference/php-runtime",
               "reference/appinstance-cloning",
               "reference/deployments",
@@ -491,7 +492,8 @@
               "decisions/0073-store-deploy-steps-as-named-appinstance-records",
               "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
               "decisions/0075-prune-idle-app-dev-checkout-dependencies",
-              "decisions/0076-deliver-features-through-complete-pull-requests"
+              "decisions/0076-deliver-features-through-complete-pull-requests",
+              "decisions/0078-assign-vite-ports-to-development-appinstances"
             ]
           }
         ]

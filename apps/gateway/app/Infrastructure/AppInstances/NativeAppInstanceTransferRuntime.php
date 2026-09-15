@@ -65,6 +65,7 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         foreach ($instance->processes as $process) {
             $process->update([
                 'working_directory' => $this->relocatedPath($process->working_directory, $sourcePath, $workingDirectory),
+                ...($process->isVpDev() ? ['runtime_config' => [...$process->runtime_config, 'environment_file' => $workingDirectory.'/.env']] : []),
             ]);
         }
 
@@ -99,7 +100,8 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         $instance->loadMissing(['processes', 'schedules']);
 
         foreach ($instance->processes as $process) {
-            if ($this->pathOnSource($process->working_directory, $sourcePath)) {
+            // Runtime operations resolve the current owner Node. pause() already removed source units.
+            if ($instance->node_id === $sourceNode->id && $this->pathOnSource($process->working_directory, $sourcePath)) {
                 $this->processes->remove($process);
             }
         }

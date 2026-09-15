@@ -693,6 +693,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name'],
             [
                 'instance' => null,
+                'preset' => null,
                 'node' => null,
                 'app' => null,
                 'for' => null,

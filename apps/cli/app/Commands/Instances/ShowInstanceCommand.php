@@ -55,6 +55,7 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line("Environment: {$instance->environment}");
         $this->line("Source layout: {$instance->sourceLayout}");
         $this->line("Checkout: {$instance->checkoutPath}");
+        $this->line('Vite port: '.($instance->vitePort ?? '-'));
         $this->line('Root override: '.($instance->root ?? '-'));
         $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
         $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));

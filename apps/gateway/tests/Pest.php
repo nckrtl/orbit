@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Domain\AppInstances\Deployment\DeploymentPhase;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
@@ -21,12 +22,14 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouterLanIngressReconciler;
+use Tests\Support\FakeVitePortRuntime;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
+        app()->instance(VitePortRuntime::class, new FakeVitePortRuntime);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
     })

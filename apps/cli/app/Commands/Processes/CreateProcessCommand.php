@@ -20,7 +20,8 @@ final class CreateProcessCommand extends TargetedProcessCommand
     #[\Override]
     protected $signature = 'process:create
         {name : Process name}
-        {--instance= : Positive AppInstance ID}
+        {--instance= : Positive AppInstance ID or exact development Route domain}
+        {--preset= : Process preset: vp-dev}
         {--node= : Node ID or registered name}
         {--app= : Numeric App ID}
         {--for= : Comma-separated definition environments}
@@ -59,6 +60,17 @@ final class CreateProcessCommand extends TargetedProcessCommand
             );
         }
 
+        $preset = $this->stringOption('preset');
+        if ($preset !== null) {
+            if ($preset !== 'vp-dev') {
+                return $this->renderGatewayFailure('process.preset_invalid', 'The supported Process preset is vp-dev.');
+            }
+            foreach (['app', 'node', 'runtime', 'command', 'image', 'working-directory', 'environment', 'port', 'volume'] as $option) {
+                if ($this->input->hasParameterOption('--'.$option)) {
+                    return $this->renderGatewayFailure('process.preset_option_invalid', 'The vp-dev preset requires --instance and owns runtime, command, working directory, and environment configuration.');
+                }
+            }
+        }
         $runtime = $this->stringOption('runtime');
 
         if ($runtime === null || ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
@@ -179,7 +191,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $target = $this->processTarget($connector);
+        $target = $this->processTarget($connector, allowDomain: true);
 
         if ($target === null) {
             return self::FAILURE;
@@ -190,16 +202,17 @@ final class CreateProcessCommand extends TargetedProcessCommand
             new CreateProcessRequest(
                 target: $target,
                 name: $name,
-                runtime: $runtime,
-                command: $command,
+                runtime: $preset === null ? $runtime : null,
+                command: $preset === null ? $command : null,
                 image: $image,
                 workingDirectory: $workingDirectory,
                 environment: $environmentWasProvided ? $environment : null,
                 ports: $portsWereProvided ? $ports : null,
                 volumes: $volumesWereProvided ? $volumes : null,
-                restartPolicy: $restartPolicy,
+                restartPolicy: $preset === null || $this->input->hasParameterOption('--restart') ? $restartPolicy : null,
                 start: $this->option('start') === true,
                 keepAlive: $this->option('keep-alive') === true,
+                preset: $preset,
             ),
             ProcessResponse::class,
         );

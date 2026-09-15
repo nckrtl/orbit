@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Hibernation;
 
 use App\Domain\AppDev\DevelopmentServerEndpoint;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -40,7 +41,19 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
         $node = $instance->node;
 
         foreach ($processes as $process) {
-            if ($this->needsDevelopmentServer($process)) {
+            if ($process->isVpDev()) {
+                $instance->refresh()->load('node');
+                $runtime = app(VitePortRuntime::class);
+                while (! $runtime->ready($process, $instance, $instance->vite_port ?? 0)) {
+                    if (time() >= $deadline) {
+                        throw new HibernationException('hibernation.development_server_not_ready', 'The owned Vite endpoint did not become ready before the wake timeout.');
+                    }
+                    usleep(250_000);
+                }
+
+                continue;
+            }
+            if ($instance->vite_port === null && $this->needsDevelopmentServer($process)) {
                 $this->waitUntilDevelopmentServerListens($node, $deadline);
 
                 return;

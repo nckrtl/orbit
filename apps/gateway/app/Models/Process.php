@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -52,6 +53,11 @@ final class Process extends Model
     protected $hidden = [
         'runtime_config',
     ];
+
+    public function isVpDev(): bool
+    {
+        return ($this->runtime_config['preset'] ?? null) === VpDevPreset::NAME;
+    }
 
     /** @return array<array-key, mixed> */
     public function __debugInfo(): array

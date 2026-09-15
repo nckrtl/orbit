@@ -13,6 +13,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -68,6 +69,15 @@ final readonly class AddProcessAction
                         ->findOrFail($data->targetId),
                 ),
             };
+            if ($data->preset !== null) {
+                if ($data->preset !== VpDevPreset::NAME || $target->appInstance?->environment !== 'development') {
+                    throw new ResourceOperationException('process.preset_target_invalid', 'The vp-dev preset requires a development AppInstance.', 422);
+                }
+                $other = Process::query()->where('owner_type', AppInstance::class)->where('owner_id', $data->targetId)->where('name', '!=', $data->name)->get()->contains(fn (Process $process): bool => $process->isVpDev());
+                if ($other) {
+                    throw new ResourceOperationException('process.preset_exists', 'This AppInstance already has a vp-dev Process.', 409);
+                }
+            }
             $attributes = $this->specifications->attributes($data, $target);
             $process = Process::query()->firstOrNew([
                 'owner_type' => $data->targetType->modelClass(),

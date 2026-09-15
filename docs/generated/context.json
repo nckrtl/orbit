@@ -2016,6 +2016,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0078-assign-vite-ports-to-development-appinstances.md",
+            "title": "ADR 0078: Assign Vite ports to development App instances",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0066",
+                "0067",
+                "0074",
+                "0078"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2119,7 +2146,8 @@
                 "0072",
                 "0073",
                 "0074",
-                "0076"
+                "0076",
+                "0078"
             ]
         },
         {
@@ -2366,6 +2394,24 @@
                 "0016",
                 "0025",
                 "0026"
+            ]
+        },
+        {
+            "path": "docs/reference/assigned-vite-ports.md",
+            "title": "Assigned Vite ports",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0078"
             ]
         },
         {
