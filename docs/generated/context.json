@@ -1818,6 +1818,7 @@
                 "Doctor",
                 "Gateway",
                 "Repository identity",
+                "Route",
                 "Web root"
             ],
             "governing_adrs": [

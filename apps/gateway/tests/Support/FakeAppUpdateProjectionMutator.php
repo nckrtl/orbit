@@ -111,6 +111,8 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
                 'replacement_step' => RouteReplacementStep::Reserved,
             ]);
 
+            $current->update(['replaced_by_route_id' => $replacement->id]);
+
             foreach ($current->targets as $target) {
                 $replacement->targets()->create([
                     'app_instance_id' => $target->app_instance_id,
@@ -139,16 +141,28 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
             $replacement = Route::query()->find((int) $row['replacement_id']);
             $current = Route::query()->find((int) $row['route_id']);
 
+            if ($current instanceof Route) {
+                $current->update(['status' => RouteStatus::Retiring]);
+            }
+
             if ($replacement instanceof Route) {
                 $replacement->update([
-                    'status' => $current?->status ?? RouteStatus::Active,
-                    'replacement_step' => null,
+                    'status' => RouteStatus::Activating,
+                    'replacement_step' => RouteReplacementStep::DatabaseCutover,
                 ]);
             }
 
             if ($current instanceof Route) {
                 $current->targets()->delete();
                 $current->delete();
+            }
+
+            if ($replacement instanceof Route) {
+                $replacement->update([
+                    'status' => RouteStatus::Active,
+                    'replaces_route_id' => null,
+                    'replacement_step' => null,
+                ]);
             }
 
             $instanceId = (int) ($row['instance_id'] ?? 0);
@@ -177,6 +191,11 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
             }
 
             $replacement = Route::query()->find((int) ($row['replacement_id'] ?? 0));
+            $current = Route::query()->find((int) ($row['route_id'] ?? 0));
+
+            if ($current instanceof Route) {
+                $current->update(['replaced_by_route_id' => null]);
+            }
 
             if ($replacement instanceof Route) {
                 $replacement->targets()->delete();

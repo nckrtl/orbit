@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\Apps\UpdateAppCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
@@ -456,7 +457,7 @@ describe('app:update', function (): void {
     });
 
     it('does not expose a main-branch option', function (): void {
-        $definition = $this->app->make(\App\Commands\Apps\UpdateAppCommand::class)->getDefinition();
+        $definition = $this->app->make(UpdateAppCommand::class)->getDefinition();
 
         expect($definition->hasOption('default-branch'))
             ->toBeTrue()

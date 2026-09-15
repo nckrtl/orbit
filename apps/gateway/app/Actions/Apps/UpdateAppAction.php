@@ -300,7 +300,7 @@ final readonly class UpdateAppAction
 
             $existing = $byId[$instance->id] ?? null;
 
-            if (is_array($existing) && ($existing['switched'] ?? false)) {
+            if (is_array($existing) && $existing['switched']) {
                 continue;
             }
 

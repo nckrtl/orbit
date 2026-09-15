@@ -12,6 +12,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -33,9 +34,20 @@ final class Orb101AppUpdateFixture
     {
         $sources = new FakeAppUpdateSourceMutator;
         $projections = new FakeAppUpdateProjectionMutator;
-        $test->app->instance(AppUpdateSourceMutator::class, $sources);
-        $test->app->instance(AppUpdateProjectionMutator::class, $projections);
-        $test->fakeRepositoryBranches('main');
+        app()->instance(AppUpdateSourceMutator::class, $sources);
+        app()->instance(AppUpdateProjectionMutator::class, $projections);
+        app()->instance(
+            RepositoryDefaultBranchResolver::class,
+            new class implements RepositoryDefaultBranchResolver
+            {
+                public function resolve(string $repository): string
+                {
+                    return 'main';
+                }
+
+                public function verify(string $repository, string $branch): void {}
+            },
+        );
 
         $node = Node::query()->create([
             'name' => 'app-dev',
@@ -69,9 +81,9 @@ final class Orb101AppUpdateFixture
             'domain' => 'acme.test',
             'provenance' => RouteProvenance::Generated,
             'publication' => RoutePublication::Private,
-            'status' => RouteStatus::Active,
         ]);
         $route->targets()->create(['app_instance_id' => $default->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
 
         return new self($app, $node, $default, $route, $sources, $projections);
     }

@@ -5,17 +5,19 @@ declare(strict_types=1);
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Str;
 use Tests\Support\Orb101AppUpdateFixture;
 
 beforeEach(function (): void {
-    $this->operator = $this->markAsGateway(\App\Models\Node::query()->create([
+    $this->operator = $this->markAsGateway(Node::query()->create([
         'name' => 'operator',
-        'status' => \App\Domain\Shared\LifecycleStatus::Active,
+        'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
         'wireguard_ip' => '10.44.0.2',
     ]));
@@ -155,7 +157,7 @@ describe('app updates', function (): void {
                 'main_branch' => 'stable',
             ])
             ->assertUnprocessable()
-            ->assertJsonPath('error.message', 'The request body contains unsupported top-level keys.');
+            ->assertJsonPath('error.details.body.0', 'The request body contains unsupported top-level keys.');
 
         expect($this->fixture->app->refresh()->default_branch)->toBe('main');
     });

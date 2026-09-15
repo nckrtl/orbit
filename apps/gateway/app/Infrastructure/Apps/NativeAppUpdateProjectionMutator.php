@@ -91,6 +91,8 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
                 'replacement_step' => RouteReplacementStep::Reserved,
             ]);
 
+            $current->update(['replaced_by_route_id' => $replacement->id]);
+
             foreach ($current->targets as $target) {
                 $replacement->targets()->create([
                     'app_instance_id' => $target->app_instance_id,
@@ -118,16 +120,28 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
             $replacement = Route::query()->with('targets.appInstance')->find((int) $row['replacement_id']);
             $current = Route::query()->find((int) $row['route_id']);
 
+            if ($current instanceof Route) {
+                $current->update(['status' => RouteStatus::Retiring]);
+            }
+
             if ($replacement instanceof Route) {
                 $replacement->update([
-                    'status' => $current?->status ?? RouteStatus::Active,
-                    'replacement_step' => null,
+                    'status' => RouteStatus::Activating,
+                    'replacement_step' => RouteReplacementStep::DatabaseCutover,
                 ]);
             }
 
             if ($current instanceof Route) {
                 $current->targets()->delete();
                 $current->delete();
+            }
+
+            if ($replacement instanceof Route) {
+                $replacement->update([
+                    'status' => RouteStatus::Active,
+                    'replaces_route_id' => null,
+                    'replacement_step' => null,
+                ]);
             }
 
             $instance = AppInstance::query()->find((int) ($row['instance_id'] ?? 0));
@@ -154,6 +168,11 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
             }
 
             $replacement = Route::query()->find((int) ($row['replacement_id'] ?? 0));
+            $current = Route::query()->find((int) ($row['route_id'] ?? 0));
+
+            if ($current instanceof Route) {
+                $current->update(['replaced_by_route_id' => null]);
+            }
 
             if ($replacement instanceof Route) {
                 $replacement->targets()->delete();
@@ -221,10 +240,12 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
 
     private function proposedDomain(OrbitApp $app, Route $route, ?AppInstance $instance, string $newSlug): string
     {
-        $node = $instance?->node ?? $route->generationBasisNode;
+        $node = $instance instanceof AppInstance ? $instance->node : $route->generationBasisNode;
 
         if ($node !== null && is_string($node->tld) && $node->tld !== '') {
-            return $this->domains->generatedDomain($newSlug, $instance?->name ?? 'default', $node->tld);
+            $name = $instance instanceof AppInstance ? $instance->name : 'default';
+
+            return $this->domains->generatedDomain($newSlug, $name, $node->tld);
         }
 
         if ($instance?->name === 'default' && str_starts_with($route->domain, $app->slug.'.')) {
@@ -282,7 +303,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
     private function effectiveRoot(AppInstance $instance, ?string $appRoot): ?string
     {
         $previous = $instance->root;
-        $instance->root = $instance->root ?? $appRoot;
+        $instance->root ??= $appRoot;
         $effective = $instance->effectiveRoot();
         $instance->root = $previous;
 

@@ -151,17 +151,19 @@ Retrying creation for an active App instance with a recorded profile returns it 
 
 `app:update` keeps one App identity while it reconciles source defaults that App instances already inherit. Creation stays a separate idempotent operation. [Apps](/reference/apps#update-an-app) owns the command fields, failure codes, and retry contract.
 
-A `default_branch` change switches the development `default` checkout or worktree that inherits the App default. The instance name, managed path, and Route stay the same. An instance with `branch_override` keeps that branch even when the override equals the old default. [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) owns that inheritance boundary.
+### Inherited source and Route effects
 
-A repository access-URL change applies to Orbit-owned development checkouts. A checkout owns its `.git` directory. A worktree owns its working directory and uses the checkout's common repository. The Gateway changes `origin` on the checkout once and leaves the worktree's common repository untouched. It refuses the update when a worktree points at a common repository no Orbit-owned checkout owns.
+When `default_branch` changes, Orbit switches the development `default` checkout or worktree that inherits the App default. The instance name, managed path, and Route stay the same. An instance with `branch_override` keeps that branch even when the override equals the old default. [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) owns that inheritance boundary.
 
-A slug change replaces each generated development Route domain. The replacement keeps the App, Cluster, target, and publication intent. Explicit domains, including production domains, do not change. Checkout paths, production users, and homes stay as recorded. [Routes](/reference/routes#generated-domains-after-an-app-slug-update) owns the replacement contract.
+When the repository access URL changes, Orbit updates Orbit-owned development checkouts. A checkout owns its `.git` directory. A worktree owns its working directory and uses the checkout's common repository. The Gateway changes `origin` on the checkout once and leaves the worktree's common repository untouched. It refuses the update when a worktree points at a common repository no Orbit-owned checkout owns.
+
+When the slug changes, Orbit replaces each generated development Route domain. The replacement keeps the App, Cluster, target, and publication intent. Explicit domains, including production domains, do not change. Checkout paths, production users, and homes stay as recorded. [Routes](/reference/routes#generated-domains-after-an-app-slug-update) owns the replacement contract.
 
 Orbit owns the Laravel canonical application URL on development and production App instances. The URL comes from the App instance's authoritative Route domain as `https://<domain>`. During a slug update the Gateway updates stored environment configuration and the workload `.env` projection for that URL, then updates cached `app.url` when a Laravel config cache exists. Environment synchronization does not run Artisan, refresh an application cache, or restart a process. [Environment variables](/reference/environment-variables#app-update-boundary) owns that split.
 
-A web-root change applies to every App instance whose own root override is null. Production serves the new root inside the active release through `current`. The update does not fetch a branch, run deploy steps, or replace a release. [Production release layout](/reference/deployments#app-updates) owns that production boundary.
+When the web root changes, Orbit applies it to every App instance whose own root override is null. Production serves the new root inside the active release through `current`. The update does not fetch a branch, run deploy steps, or replace a release. [Production release layout](/reference/deployments#app-updates) owns that production boundary.
 
-Production PHP FastCGI Process Manager (PHP-FPM) reprojection during a slug or web-root update keeps operator `local.conf` tuning, validates the effective runtime configuration before an Orbit activation or reload, and leaves other production users' services and caches unchanged. [PHP runtimes](/reference/php-runtime#app-updates) owns that runtime boundary.
+When a slug or web root change reprojects production PHP FastCGI Process Manager (PHP-FPM), Orbit keeps operator `local.conf` tuning, validates the effective runtime configuration before an activation or reload, and leaves other production users' services and caches unchanged. [PHP runtimes](/reference/php-runtime#app-updates) owns that runtime boundary.
 
 ## Set the web root
 

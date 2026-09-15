@@ -85,7 +85,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
     public function restoreOrigins(array $mutations): void
     {
         foreach ($mutations as $mutation) {
-            if (($mutation['mutated'] ?? false) !== true) {
+            if ($mutation['mutated'] !== true) {
                 continue;
             }
 
