@@ -140,6 +140,7 @@ final readonly class SetClusterRouterAction
             if ($routes->isEmpty()) {
                 $this->dnsSelection()->prune(clusterIds: [$clusterId]);
             } else {
+                $candidate->refresh();
                 $this->fail($candidate, ClusterRouterReplacementStep::DatabaseCutover->value, $exception);
             }
 
@@ -240,13 +241,11 @@ final readonly class SetClusterRouterAction
                     clusterIds: [$oldRouter->cluster_id],
                 );
             }
-
-            $this->fail($candidate, $failedStep, $exception);
         } catch (Throwable $rollback) {
             $this->fail($candidate, "rollback:{$failedStep}", $rollback);
-
-            throw $rollback;
         }
+
+        $this->fail($candidate, $failedStep, $exception);
     }
 
     private function forward(NodeRole $candidate, ClusterRouterReplacementStep $step, callable $operation): void
@@ -402,22 +401,19 @@ final readonly class SetClusterRouterAction
 
     private function fail(NodeRole $assignment, string $boundary, Throwable $exception): never
     {
-        $step = property_exists($exception, 'step') && is_string($exception->step) ? $exception->step : $boundary;
+        $assignment->refresh();
+        $step = property_exists($exception, 'step') && is_string($exception->step) ? $exception->step : 'baseline';
         $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
             ? $exception->errorCode
             : 'node_role.operation_failed';
-
-        if (ClusterRouterReplacementStep::isReplacementProgress($boundary) || str_starts_with($boundary, 'rollback:')) {
-            $step = $boundary;
-        } elseif ($boundary === 'remove' || $boundary === 'baseline') {
-            $step = "{$boundary}:{$step}";
-        }
+        $replacementBoundary = ClusterRouterReplacementStep::isReplacementProgress($boundary)
+            || str_starts_with($boundary, 'rollback:');
 
         $assignment->update([
-            'status' => $assignment->status === LifecycleStatus::Active
+            'status' => $replacementBoundary && $assignment->status === LifecycleStatus::Active
                 ? LifecycleStatus::Active
                 : LifecycleStatus::Failed,
-            'failed_step' => $step,
+            'failed_step' => $replacementBoundary ? $boundary : "{$boundary}:{$step}",
             'error_code' => $errorCode,
         ]);
 

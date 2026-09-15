@@ -903,11 +903,12 @@ function cluster_router_owned_route(Cluster $cluster, Node $workload): array
         'domain' => 'acme.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
-        'status' => RouteStatus::Active,
+        'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
 
-    return [$route, $target];
+    return [$route->refresh(), $target];
 }
 
 function cluster_router_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
