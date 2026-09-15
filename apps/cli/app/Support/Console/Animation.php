@@ -28,6 +28,9 @@ final class Animation
 
     private float $epoch = 0;
 
+    /** @var array{string, string}|null */
+    private ?array $rendererFrames = null;
+
     private string $displayedFrame = '';
 
     private string $settledFrame = '';
@@ -59,7 +62,10 @@ final class Animation
         $previous = self::$active;
         $this->parent = $previous?->output === $this->output ? $previous : null;
         $this->epoch = $this->parent->epoch ?? 0;
-        $previous?->stop(clear: $this->parent === null, suspend: $this->parent !== null);
+
+        if ($this->parent === null) {
+            $previous?->stop(clear: true);
+        }
 
         if ($this->parent !== null) {
             $this->displayedFrame = $this->parent->displayedFrame;
@@ -98,7 +104,7 @@ final class Animation
 
             $this->start();
             $result = $operation();
-            $this->stop();
+            $this->stop(handoff: $this->parent !== null);
 
             return $result;
         } catch (Throwable $exception) {
@@ -109,7 +115,7 @@ final class Animation
             $cleanupFailure = null;
 
             try {
-                $this->stop(checkStatus: false);
+                $this->stop(checkStatus: false, handoff: $this->parent !== null);
             } catch (Throwable $exception) {
                 $cleanupFailure = $exception;
             }
@@ -192,7 +198,6 @@ final class Animation
             return false;
         }
 
-        $active->stop(suspend: true);
         $active->children[spl_object_id($region)] = $region;
         $region->attach($active, $frame);
         $active->start();
@@ -225,6 +230,24 @@ final class Animation
         $frames = $this->presentationFrames();
         $clear = $this->region?->clearSequence() ?: ($this->parent?->region?->clearSequence() ?? '');
         $payload = json_encode(['frames' => $frames, 'clear' => $clear, 'epoch' => $this->epoch], JSON_THROW_ON_ERROR)."\n";
+
+        if ($this->parent !== null && is_resource($this->parent->process)) {
+            $this->takeRenderer($this->parent);
+        }
+
+        if (is_resource($this->process)) {
+            if ($frames !== $this->rendererFrames) {
+                $this->send($payload);
+                $this->awaitPaint();
+                $this->rendererFrames = $frames;
+            }
+
+            $this->displayedFrame = $frames[0];
+            $this->region?->record($this->displayedFrame);
+
+            return;
+        }
+
         $process = @proc_open(
             [PHP_BINARY, __DIR__.'/Renderers/animate.php'],
             [0 => ['pipe', 'r'], 1 => $stream, 2 => ['pipe', 'w'], 3 => ['pipe', 'w']],
@@ -240,6 +263,14 @@ final class Animation
         $this->pipes = $pipes;
         stream_set_blocking($this->pipes[0], false);
         $this->send($payload);
+        $this->awaitPaint();
+        $this->rendererFrames = $frames;
+        $this->displayedFrame = $frames[0];
+        $this->region?->record($this->displayedFrame);
+    }
+
+    private function awaitPaint(): void
+    {
         $read = [$this->pipes[3]];
         $write = $except = [];
 
@@ -255,9 +286,17 @@ final class Animation
         }
 
         $this->epoch = (float) $receipt['epoch'];
+    }
 
-        $this->displayedFrame = $frames[0];
-        $this->region?->record($this->displayedFrame);
+    private function takeRenderer(self $owner): void
+    {
+        $this->process = $owner->process;
+        $this->pipes = $owner->pipes;
+        $this->epoch = $owner->epoch;
+        $this->rendererFrames = $owner->rendererFrames;
+        $owner->process = null;
+        $owner->pipes = [];
+        $owner->rendererFrames = null;
     }
 
     /** @return array{string, string} */
@@ -304,13 +343,14 @@ final class Animation
         @fflush($this->pipes[0]);
     }
 
-    private function stop(bool $checkStatus = true, bool $clear = false, bool $suspend = false): void
+    private function stop(bool $checkStatus = true, bool $clear = false, bool $handoff = false): void
     {
         if (! is_resource($this->process)) {
             return;
         }
 
         $process = $this->process;
+        $exitCode = 1;
         $settled = '';
         $finalFrames = ['', ''];
         $presentationFailed = false;
@@ -319,10 +359,23 @@ final class Animation
 
         try {
             try {
-                $settled = $suspend ? $this->frames[0] : (! $clear && $this->settled !== null ? ($this->settled)() : '');
+                $settled = ! $clear && $this->settled !== null ? ($this->settled)() : '';
                 $prefix = ! $clear ? ($this->parent?->presentationFrames() ?? ['', '']) : ['', ''];
                 $children = ! $clear ? $this->childrenFrame() : '';
-                $finalFrames = [$prefix[0].$settled.$children, $prefix[1].($settled === $this->frames[0] ? $this->frames[1] : $settled).$children];
+                $finalFrames = [$prefix[0].$settled.$children, $prefix[1].$settled.$children];
+
+                if ($handoff && $this->parent !== null) {
+                    $this->send(json_encode(['frames' => $finalFrames], JSON_THROW_ON_ERROR)."\n");
+                    $this->awaitPaint();
+                    $this->rendererFrames = $finalFrames;
+                    $this->displayedFrame = $finalFrames[0];
+                    $this->settledFrame = $settled === '' ? '' : $settled.$this->childrenFrame();
+                    $this->region?->record($this->displayedFrame);
+                    $this->parent->takeRenderer($this);
+
+                    return;
+                }
+
                 $this->send(json_encode(['final' => $finalFrames], JSON_THROW_ON_ERROR)."\n");
             } catch (Throwable) {
                 $presentationFailed = true;
@@ -354,37 +407,40 @@ final class Animation
                 }
             }
         } finally {
-            foreach ($this->pipes as $pipe) {
-                if (is_resource($pipe)) {
-                    fclose($pipe);
-                }
-            }
-
-            $this->pipes = [];
-            $status ??= proc_get_status($process);
-
-            if ($status['running']) {
-                proc_terminate($process, 9);
-            }
-
-            $exitCode = proc_close($process);
-            $this->process = null;
-            $exitCode = $status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode;
-
-            if ($exitCode !== 0 || $presentationFailed) {
-                $stream = ConsoleMode::outputStream($this->output);
-
-                if (is_resource($stream)) {
-                    @fwrite($stream, ($this->region?->clearSequence() ?? '')."\e[0m\e[?25h");
+            if (is_resource($this->process)) {
+                foreach ($this->pipes as $pipe) {
+                    if (is_resource($pipe)) {
+                        fclose($pipe);
+                    }
                 }
 
-                $settled = '';
-                $finalFrames = ['', ''];
-            }
+                $this->pipes = [];
+                $status ??= proc_get_status($process);
 
-            $this->displayedFrame = $finalFrames[0];
-            $this->settledFrame = $settled === '' ? '' : $settled.$this->childrenFrame();
-            $this->region?->record($this->displayedFrame);
+                if ($status['running']) {
+                    proc_terminate($process, 9);
+                }
+
+                $exitCode = proc_close($process);
+                $this->process = null;
+                $this->rendererFrames = null;
+                $exitCode = $status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode;
+
+                if ($exitCode !== 0 || $presentationFailed) {
+                    $stream = ConsoleMode::outputStream($this->output);
+
+                    if (is_resource($stream)) {
+                        @fwrite($stream, ($this->region?->clearSequence() ?? '')."\e[0m\e[?25h");
+                    }
+
+                    $settled = '';
+                    $finalFrames = ['', ''];
+                }
+
+                $this->displayedFrame = $finalFrames[0];
+                $this->settledFrame = $settled === '' ? '' : $settled.$this->childrenFrame();
+                $this->region?->record($this->displayedFrame);
+            }
 
             if ($masked) {
                 pcntl_sigprocmask(SIG_SETMASK, $previousMask);

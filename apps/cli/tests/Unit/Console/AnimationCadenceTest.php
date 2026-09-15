@@ -1,0 +1,188 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Support\Console\Animation;
+use App\Support\Console\ConsoleMode;
+use App\Support\Console\TerminalRegion;
+use Symfony\Component\Console\Output\StreamOutput;
+
+/** @param list<float> $changes */
+function animation_cadence_is_readable(array $changes): bool
+{
+    if (count($changes) < 3) {
+        return false;
+    }
+
+    for ($index = 1; $index < count($changes); $index++) {
+        $interval = $changes[$index] - $changes[$index - 1];
+
+        if ($interval < 0.18 || $interval > 0.65) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+describe('animation composition cadence', function (): void {
+    it('rejects the observed fast resume interval while accepting a readable phase', function (): void {
+        expect(animation_cadence_is_readable([0.0, 0.3, 0.6, 0.9]))->toBeTrue()
+            ->and(animation_cadence_is_readable([0.0, 0.3, 0.3664124, 0.6664124]))->toBeFalse()
+            ->and(animation_cadence_is_readable([0.0, 0.0412849, 0.3412849]))->toBeFalse()
+            ->and(animation_cadence_is_readable([0.0, 0.3, 1.0]))->toBeFalse();
+    });
+
+    it('keeps outer ticks and the first inner phase readable across admission and resume', function (): void {
+        $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
+        expect(is_resource($process))->toBeTrue();
+        $send = static function (array $message) use ($pipes): void {
+            $payload = json_encode($message, JSON_THROW_ON_ERROR)."\n";
+            expect(fwrite($pipes[0], $payload))->toBe(strlen($payload));
+            fflush($pipes[0]);
+        };
+        $outerFrames = ["@outer:0@\n", "@outer:1@\n"];
+        $nestedFrames = ["@outer:0@\n@inner:0@\n", "@outer:1@\n@inner:1@\n"];
+        $changes = ['outer' => [], 'inner' => []];
+        $glyphs = ['outer' => [], 'inner' => []];
+        $buffer = '';
+        $admitted = false;
+        $resumed = false;
+        $resumeCount = 0;
+
+        try {
+            stream_set_blocking($pipes[1], false);
+            $send(['frames' => $outerFrames]);
+            $deadline = microtime(true) + 4;
+
+            while (microtime(true) < $deadline) {
+                $now = microtime(true);
+
+                if (! $admitted && $changes['outer'] !== [] && $now - $changes['outer'][0] >= 0.08) {
+                    $send(['frames' => $nestedFrames]);
+                    $admitted = true;
+                }
+
+                if (! $resumed && count($changes['inner']) >= 3 && $now - $changes['inner'][2] >= 0.08) {
+                    $send(['frames' => $outerFrames]);
+                    $resumed = true;
+                    $resumeCount = count($changes['outer']);
+                }
+
+                $read = [$pipes[1]];
+                $write = $except = [];
+                $selected = stream_select($read, $write, $except, 0, 10000);
+                expect($selected)->not->toBeFalse();
+
+                if ($selected > 0) {
+                    $chunk = fread($pipes[1], 8192);
+
+                    if ($chunk === '' && feof($pipes[1])) {
+                        break;
+                    }
+
+                    $buffer .= $chunk;
+                    $observed = microtime(true);
+
+                    while (($end = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $end);
+                        $buffer = substr($buffer, $end + 1);
+
+                        if (preg_match('/@(outer|inner):([01])@/', $line, $match) === 1) {
+                            $changes[$match[1]][] = $observed;
+                            $glyphs[$match[1]][] = $match[2];
+                        }
+                    }
+                }
+
+                if ($resumed && count($changes['outer']) >= $resumeCount + 3) {
+                    break;
+                }
+            }
+
+            expect($admitted)->toBeTrue()->and($resumed)->toBeTrue()
+                ->and(count($changes['outer']))->toBeGreaterThanOrEqual(7)
+                ->and(count($changes['inner']))->toBeGreaterThanOrEqual(3)
+                ->and(animation_cadence_is_readable($changes['outer']))->toBeTrue()
+                ->and(animation_cadence_is_readable($changes['inner']))->toBeTrue();
+
+            foreach ($glyphs as $sequence) {
+                for ($index = 1; $index < count($sequence); $index++) {
+                    expect($sequence[$index])->not->toBe($sequence[$index - 1]);
+                }
+            }
+
+            $send(['final' => ["Finished.\n", "Finished.\n"]]);
+            fclose($pipes[0]);
+            unset($pipes[0]);
+            stream_set_blocking($pipes[1], true);
+            expect(stream_get_contents($pipes[1]))->toContain('Finished.', "\e[?25h");
+            $receipts = array_filter(explode("\n", trim(stream_get_contents($pipes[3]))));
+            expect($receipts)->toHaveCount(3);
+            expect(stream_get_contents($pipes[2]))->toBe('');
+        } finally {
+            foreach ($pipes as $pipe) {
+                fclose($pipe);
+            }
+
+            $status = proc_get_status($process);
+
+            if ($status['running']) {
+                proc_terminate($process);
+            }
+
+            $exitCode = proc_close($process);
+        }
+
+        expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
+    });
+
+    it('transfers one render owner through nested callbacks and settled region updates', function (): void {
+        $stream = tmpfile();
+        $output = new StreamOutput($stream);
+        $mode = new ConsoleMode(false, false, true, true, 80);
+        $outer = new Animation($mode, $output, ["outer 0\n", "outer 1\n"]);
+        $region = new TerminalRegion($mode, $output);
+        $inner = new Animation($mode, $output, ["inner 0\n", "inner 1\n"], region: $region,
+            settled: static fn (): string => "Inner finished.\n");
+        $property = new ReflectionProperty(Animation::class, 'process');
+        $calls = [];
+        $rendererPid = null;
+
+        try {
+            $result = $outer->during(function () use ($outer, $inner, $region, $property, &$calls, &$rendererPid): int {
+                $calls[] = getmypid();
+                $process = $property->getValue($outer);
+                $rendererPid = proc_get_status($process)['pid'];
+                $value = $inner->during(function () use ($outer, $inner, $property, $rendererPid, &$calls): int {
+                    $calls[] = getmypid();
+                    expect($property->getValue($outer))->toBeNull()
+                        ->and(proc_get_status($property->getValue($inner))['pid'])->toBe($rendererPid);
+
+                    return 42;
+                });
+                expect($property->getValue($inner))->toBeNull()
+                    ->and(proc_get_status($property->getValue($outer))['pid'])->toBe($rendererPid);
+                $region->replace("Inner verified.\n");
+                expect(proc_get_status($property->getValue($outer))['pid'])->toBe($rendererPid);
+
+                return $value;
+            });
+
+            expect($result)->toBe(42)->and($calls)->toBe([getmypid(), getmypid()])
+                ->and($property->getValue($outer))->toBeNull();
+            rewind($stream);
+            $outputBytes = stream_get_contents($stream);
+            expect($outputBytes)->toContain('Inner finished.', 'Inner verified.')
+                ->and(substr_count($outputBytes, "\e[?25l"))->toBe(1)
+                ->and(substr_count($outputBytes, "\e[?25h"))->toBe(1);
+
+            if (function_exists('posix_kill')) {
+                expect(posix_kill($rendererPid, 0))->toBeFalse();
+            }
+        } finally {
+            fclose($stream);
+        }
+    });
+});

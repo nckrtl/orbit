@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 /**
  * Isolated renderer entry point. Never load application code or execute work here.
- * The parent closes stdin to stop and joins this exact process before writing again.
+ * Composition updates share this process and its clock. The parent closes stdin
+ * to stop and joins this exact process before writing to the terminal itself.
  */
 $writeOutput = static function (string $text): void {
     while ($text !== '') {
@@ -25,6 +26,7 @@ $writeOutput = static function (string $text): void {
 $clear = '';
 $final = '';
 $exitCode = 0;
+$ready = false;
 
 try {
     $line = fgets(STDIN);
@@ -42,6 +44,7 @@ try {
     $phase = (int) floor(max(0, microtime(true) - $epoch) / 0.3);
     $index = $phase % 2;
     $writeOutput("\e[?25l".$initialClear.$frames[$index]);
+    $nextTick = hrtime(true) / 1000000000 + 0.3;
     $ready = fopen('php://fd/3', 'w');
 
     $receipt = json_encode(['ready' => true, 'epoch' => $epoch], JSON_THROW_ON_ERROR)."\n";
@@ -50,11 +53,12 @@ try {
         throw new RuntimeException('Parent notification failed.');
     }
 
-    fclose($ready);
+    $pending = null;
+
     while (true) {
         $read = [STDIN];
         $write = $except = [];
-        $remaining = max(1000, (int) ((($phase + 1) * 0.3 - (microtime(true) - $epoch)) * 1000000));
+        $remaining = max(1000, (int) (($nextTick - hrtime(true) / 1000000000) * 1000000));
         $selected = @stream_select($read, $write, $except, 0, min(300000, $remaining));
 
         if ($selected === false) {
@@ -66,19 +70,39 @@ try {
 
             if (is_string($message)) {
                 $command = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
-                $final = is_array($command) && is_array($command['final'] ?? null) && is_string($command['final'][$index] ?? null)
-                    ? $command['final'][$index] : '';
-            }
 
-            break;
+                if (is_array($command) && array_key_exists('frames', $command)) {
+                    $replacement = $command['frames'];
+
+                    if (! is_array($replacement) || count($replacement) !== 2 || ! is_string($replacement[0]) || ! is_string($replacement[1]) || $pending !== null) {
+                        throw new RuntimeException('Invalid presentation update.');
+                    }
+
+                    $pending = $replacement;
+                } else {
+                    $final = is_array($command) && is_array($command['final'] ?? null) && is_string($command['final'][$index] ?? null)
+                        ? $command['final'][$index] : '';
+
+                    break;
+                }
+            } else {
+                break;
+            }
         }
 
-        $nextPhase = (int) floor(max(0, microtime(true) - $epoch) / 0.3);
-
-        if ($nextPhase !== $phase) {
-            $phase = $nextPhase;
-            $index = $phase % 2;
+        if (hrtime(true) / 1000000000 >= $nextTick) {
+            $updated = $pending !== null;
+            $frames = $pending ?? $frames;
+            $pending = null;
+            $index = 1 - $index;
             $writeOutput($clear.$frames[$index]);
+            $nextTick = hrtime(true) / 1000000000 + 0.3;
+            $lines = substr_count($frames[$index], "\n");
+            $clear = "\r".($lines > 0 ? "\e[{$lines}A" : '')."\e[J";
+
+            if ($updated && fwrite($ready, $receipt) !== strlen($receipt)) {
+                throw new RuntimeException('Parent notification failed.');
+            }
         }
     }
 } catch (Throwable) {
@@ -88,6 +112,10 @@ try {
         $writeOutput($clear.$final."\e[0m\e[?25h");
     } catch (Throwable) {
         $exitCode = 1;
+    }
+
+    if (is_resource($ready)) {
+        fclose($ready);
     }
 }
 
