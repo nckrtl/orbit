@@ -17,7 +17,7 @@ Before coding, draft significant ADR changes and update the user-facing document
 
 Implement the documented behavior using the affected project's conventions. Add tests for success and important failure cases. Check ownership, input validation, and secret handling where the feature changes them.
 
-For command changes, follow the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) when interaction or rendering needs a real terminal.
+For command changes, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) when interaction or rendering needs a real terminal.
 
 Run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Keep the documentation and ADRs aligned with the result and run the documentation checks.
 
