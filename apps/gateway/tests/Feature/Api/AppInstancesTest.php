@@ -1958,7 +1958,7 @@ it('reconciles Cluster activation for an active AppInstance Route without moving
             'status' => RouteStatus::Active,
             'node_id' => null,
             'cluster_id' => $cluster->id,
-            'domain' => 'dev.acme.test',
+            'domain' => 'dev.acme.orbit',
         ])
         ->and($firstRouter->roles()->where('role', RoleName::Router)->sole()->status)
         ->toBe(LifecycleStatus::Active)
