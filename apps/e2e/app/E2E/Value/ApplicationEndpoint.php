@@ -7,8 +7,8 @@ namespace App\E2E\Value;
 use InvalidArgumentException;
 
 /**
- * One application endpoint from either the replacement `domain` contract or the
- * earlier `hostname` contract. A present `domain` never falls back to `hostname`.
+ * One application domain from the Route-owned endpoint contract.
+ * Hostname is never an application-endpoint fallback.
  */
 final readonly class ApplicationEndpoint
 {
@@ -25,10 +25,7 @@ final readonly class ApplicationEndpoint
             return false;
         }
 
-        $endpointKeys = array_slice($keys, count($baseKeys));
-        sort($endpointKeys);
-
-        return in_array($endpointKeys, [['domain'], ['hostname'], ['domain', 'hostname']], true);
+        return array_slice($keys, count($baseKeys)) === ['domain'];
     }
 
     /** @param array<array-key, mixed> $record */
@@ -38,19 +35,9 @@ final readonly class ApplicationEndpoint
             return self::validated($record['domain']);
         }
 
-        if (array_key_exists('hostname', $record)) {
-            return self::validated($record['hostname']);
-        }
-
         $route = $record['route'] ?? null;
-        if (is_array($route) && ! array_is_list($route)) {
-            if (array_key_exists('domain', $route)) {
-                return self::validated($route['domain']);
-            }
-
-            if (array_key_exists('hostname', $route)) {
-                return self::validated($route['hostname']);
-            }
+        if (is_array($route) && ! array_is_list($route) && array_key_exists('domain', $route)) {
+            return self::validated($route['domain']);
         }
 
         throw new InvalidArgumentException('The application endpoint is missing.');

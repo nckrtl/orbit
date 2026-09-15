@@ -55,7 +55,7 @@ expected=healthy
 observed=healthy
 production=()
 if [[ -n "$production_placement" ]]; then
-  mapfile -t production < <(/usr/bin/php -r '$value=json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR); $base=["layout","instance_id","user","home","checkout_path","effective_root","environment_path","database_path","service","socket","current_target"]; $keys=is_array($value)&&!array_is_list($value)?array_keys($value):[]; $endpointKeys=array_slice($keys, count($base)); sort($endpointKeys); if(!is_array($value) || array_is_list($value) || array_slice($keys,0,count($base))!==$base || !in_array($endpointKeys, [["domain"],["hostname"],["domain","hostname"]], true) || !in_array($value["layout"], ["flat","release"], true) || !is_int($value["instance_id"]) || $value["instance_id"]<1 || !is_string($value["user"]) || preg_match("/\\A[a-z_][a-z0-9_-]{0,31}\\z/D", $value["user"])!==1 || !is_string($value["service"]) || preg_match("/\\A[a-zA-Z0-9@_.-]{1,128}\\z/D", $value["service"])!==1 ) exit(65); $ok=static fn(mixed $e): bool => is_string($e) && preg_match("/\\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\\z/D", $e)===1; if(array_key_exists("domain", $value)) { if(!$ok($value["domain"])) exit(65); $endpoint=$value["domain"]; } elseif(array_key_exists("hostname", $value)) { if(!$ok($value["hostname"])) exit(65); $endpoint=$value["hostname"]; } else exit(65); $path=function(mixed $path, bool $nullable=false): string { if($nullable && $path===null) return ""; if(!is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || str_contains($path, "\\n") || str_contains($path, "\\r") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1) exit(65); return $path; }; if(($value["layout"]==="flat")!==($value["current_target"]===null)) exit(65); echo $value["layout"], "\n", $value["instance_id"], "\n", $value["user"], "\n", $path($value["home"]), "\n", $path($value["checkout_path"]), "\n", $path($value["effective_root"]), "\n", $path($value["environment_path"]), "\n", $path($value["database_path"], true), "\n", $value["service"], "\n", $path($value["socket"]), "\n", $path($value["current_target"], true), "\n", $endpoint, "\n";' -- "$production_placement")
+  mapfile -t production < <(/usr/bin/php -r '$value=json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR); $base=["layout","instance_id","user","home","checkout_path","effective_root","environment_path","database_path","service","socket","current_target"]; $keys=is_array($value)&&!array_is_list($value)?array_keys($value):[]; if(!is_array($value) || array_is_list($value) || array_slice($keys,0,count($base))!==$base || array_slice($keys, count($base))!==["domain"] || !in_array($value["layout"], ["flat","release"], true) || !is_int($value["instance_id"]) || $value["instance_id"]<1 || !is_string($value["user"]) || preg_match("/\\A[a-z_][a-z0-9_-]{0,31}\\z/D", $value["user"])!==1 || !is_string($value["service"]) || preg_match("/\\A[a-zA-Z0-9@_.-]{1,128}\\z/D", $value["service"])!==1 ) exit(65); $ok=static fn(mixed $e): bool => is_string($e) && preg_match("/\\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\\z/D", $e)===1; if(!$ok($value["domain"])) exit(65); $path=function(mixed $path, bool $nullable=false): string { if($nullable && $path===null) return ""; if(!is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || str_contains($path, "\\n") || str_contains($path, "\\r") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1) exit(65); return $path; }; if(($value["layout"]==="flat")!==($value["current_target"]===null)) exit(65); echo $value["layout"], "\n", $value["instance_id"], "\n", $value["user"], "\n", $path($value["home"]), "\n", $path($value["checkout_path"]), "\n", $path($value["effective_root"]), "\n", $path($value["environment_path"]), "\n", $path($value["database_path"], true), "\n", $value["service"], "\n", $path($value["socket"]), "\n", $path($value["current_target"], true), "\n", $value["domain"], "\n";' -- "$production_placement")
   [[ "${#production[@]}" -eq 12 ]]
   production_layout=${production[0]}
   production_instance_id=${production[1]}
@@ -68,7 +68,7 @@ if [[ -n "$production_placement" ]]; then
   production_service=${production[8]}
   production_socket=${production[9]}
   production_current=${production[10]}
-  production_hostname=${production[11]}
+  production_domain=${production[11]}
 fi
 assert_production_placement() {
   [[ -n "$production_placement" ]]
@@ -99,7 +99,7 @@ assert_production_caddy() {
   [[ "$caddy_state" == active ]]
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
   caddy_root=$(dirname "$(readlink -f -- /etc/caddy/Caddyfile)")
-  [[ "$(grep -RFl -- "https://$production_hostname {" "$caddy_root" | wc -l)" -eq 1 ]]
+  [[ "$(grep -RFl -- "https://$production_domain {" "$caddy_root" | wc -l)" -eq 1 ]]
   [[ "$(grep -RFl -- "root * $production_root" "$caddy_root" | wc -l)" -eq 1 ]]
   [[ "$(grep -RFl -- "php_fastcgi unix/$production_socket" "$caddy_root" | wc -l)" -eq 1 ]]
 }
@@ -285,7 +285,7 @@ case "$probe" in
   caddy.app-prod)
     if [[ -n "$production_placement" ]]; then
       assert_production_caddy
-      expected="caddy=active,hostname=$production_hostname,root=$production_root,socket=$production_socket"
+      expected="caddy=active,domain=$production_domain,root=$production_root,socket=$production_socket"
       observed=$expected
     else
       caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]]
@@ -302,7 +302,7 @@ case "$probe" in
     if [[ -n "$production_placement" ]]; then
       assert_production_caddy
       sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" --version >/dev/null
-      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve "$production_hostname:443:127.0.0.1" "https://$production_hostname/" >/dev/null
+      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve "$production_domain:443:127.0.0.1" "https://$production_domain/" >/dev/null
       expected="app-prod-laravel:$production_layout:https-operational"
       observed=$expected
     else
