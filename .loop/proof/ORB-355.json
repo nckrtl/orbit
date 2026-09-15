@@ -1,0 +1,425 @@
+{
+  "extension": "app-prod",
+  "mutates": true,
+  "setup": [
+    {
+      "id": "prepare-recorder-gateway",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb355-setup.sh"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "prepare-recorder-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb355-setup.sh"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "firewall",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "firewall"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "settings-access",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "settings-access"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "lifecycle",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "lifecycle"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "modes",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "modes"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "mutation-modes",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "mutation-modes"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "remote-failures",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "remote-failures"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "narrow-consent",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "narrow-consent"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "interruption",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "interruption"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "offline-reachable",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "offline-reachable"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "self-baseline",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-control.py",
+        "self-baseline",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/control"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "self-lockout-human",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-self-lockout.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/self-lockout-human"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "self-restore-human",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-control.py",
+        "self-restore-human",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/control"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "consumer-read-after-human",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-control.py",
+        "consumer-read",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/control/consumer-read-after-human"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "self-lockout-json",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-self-lockout.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/self-lockout-json",
+        "--json-mode"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "self-restore-json",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-control.py",
+        "self-restore-json",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/control"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "consumer-read-after-json",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-control.py",
+        "consumer-read",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/control/consumer-read-after-json"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "role-prepare",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "prepare",
+        "role"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "role-stop",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "stop",
+        "role"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "offline-role",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "offline-role"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "role-restore",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "restore",
+        "role"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "recover-role",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "recover-role"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "prepare-offline-recovery",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-control.py",
+        "prepare-offline-recovery",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof/control"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "node-prepare",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "prepare",
+        "node"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "node-stop",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "stop",
+        "node"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "offline-node",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "offline-node"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "node-restore",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "restore",
+        "node"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "node-allow-recovery",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "allow-recovery",
+        "node"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "recover-node",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb355-live.py",
+        "--candidate",
+        "3e8c0b20bfd343f378f31691b9b23ee0236f4ffc",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-355/proof",
+        "--stage",
+        "recover-node"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "node-delete-recovery",
+      "node": "app-prod-2",
+      "argv": [
+        "sudo",
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb355-offline-host.py",
+        "delete-recovery",
+        "node"
+      ],
+      "timeout_seconds": 120
+    }
+  ],
+  "inputs": [
+    "apps/cli",
+    "packages/php-sdk",
+    ".agents/skills/verifying-cli-output",
+    "docs/reference/cli-ux.md",
+    "docs/cli/node.mdx",
+    "docs/cli/firewall.mdx",
+    "apps/gateway"
+  ]
+}
