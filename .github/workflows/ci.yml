@@ -68,6 +68,11 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
+      - name: Install documentation dependencies for E2E guidance tests
+        if: matrix.directory == 'apps/e2e'
+        working-directory: apps/docs
+        run: composer install --no-interaction --prefer-dist
+
       - name: Validate Composer metadata
         run: composer validate --strict
 
