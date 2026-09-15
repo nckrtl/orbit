@@ -108,6 +108,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:release:list' => ServingNode::InstanceOwning,
         'instance:rollback' => ServingNode::InstanceOwning,
         'instance:show' => ServingNode::InstanceOwning,
+        'instance:transfer' => ServingNode::InstanceTransfer,
         'instance:update' => ServingNode::InstanceOwning,
         'metrics:credentials' => ServingNode::Gateway,
         'metrics:credentials:reset' => ServingNode::Gateway,

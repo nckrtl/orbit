@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
+use App\Http\Controllers\Api\AppInstanceTransfersController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
 use App\Http\Controllers\Api\AppInstanceDeployStepsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
@@ -183,6 +184,9 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances/{candidate}/clone', [AppInstanceClonesController::class, 'store'])
             ->whereNumber('candidate')
             ->name('instance:clone');
+        Route::post('instances/{instance}/transfer', [AppInstanceTransfersController::class, 'store'])
+            ->whereNumber('instance')
+            ->name('instance:transfer');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:destroy');
         Route::get(

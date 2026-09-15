@@ -23,6 +23,8 @@ use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\TestCase;
 
+require_once __DIR__.'/Support/Orb245TransferFakes.php';
+
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);

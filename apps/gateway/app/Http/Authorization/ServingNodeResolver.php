@@ -30,6 +30,7 @@ final readonly class ServingNodeResolver
             ServingNode::AppOwning => $this->appOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
+            ServingNode::InstanceTransfer => $this->instanceTransfer($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::HerdrSessionOwning => $this->herdrSessionOwning($request),
@@ -160,6 +161,31 @@ final readonly class ServingNodeResolver
         }
 
         return [$candidateNode, $destinationNode];
+    }
+
+    /** @return list<Node> */
+    private function instanceTransfer(Request $request): array
+    {
+        $instance = $request->route('instance');
+
+        if (! $instance instanceof AppInstance) {
+            return [];
+        }
+
+        $sourceNode = Node::query()->findOrFail($instance->node_id);
+        $destinationNodeId = $this->positiveInteger($request->input('node_id'));
+
+        if ($destinationNodeId === null) {
+            return [$sourceNode];
+        }
+
+        $destinationNode = Node::query()->findOrFail($destinationNodeId);
+
+        if ($sourceNode->is($destinationNode)) {
+            return [$sourceNode];
+        }
+
+        return [$sourceNode, $destinationNode];
     }
 
     /** @return list<Node> */

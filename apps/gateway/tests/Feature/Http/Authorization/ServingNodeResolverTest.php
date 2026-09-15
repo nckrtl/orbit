@@ -168,6 +168,63 @@ it('throws for a missing candidate clone destination Node', function (): void {
     );
 })->throws(ModelNotFoundException::class);
 
+it('resolves both instance transfer Nodes in request order', function (): void {
+    $app = resolver_app('instance-transfer');
+    $sourceNode = resolver_node('instance-transfer-source');
+    $destinationNode = resolver_node('instance-transfer-destination');
+    $instance = resolver_app_instance($app, $sourceNode, name: 'web');
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['instance' => $instance], ['node_id' => $destinationNode->id]),
+        ServingNode::InstanceTransfer,
+    )))->toBe([$sourceNode->id, $destinationNode->id]);
+});
+
+it('deduplicates an instance transfer on one Node', function (): void {
+    $app = resolver_app('same-node-transfer');
+    $node = resolver_node('same-node-transfer');
+    $instance = resolver_app_instance($app, $node, name: 'web');
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['instance' => $instance], ['node_id' => $node->id]),
+        ServingNode::InstanceTransfer,
+    )))->toBe([$node->id]);
+});
+
+it('keeps the source Node in scope when transfer destination input is incomplete', function (): void {
+    $app = resolver_app('incomplete-instance-transfer');
+    $sourceNode = resolver_node('incomplete-instance-transfer-source');
+    $destinationNode = resolver_node('incomplete-instance-transfer-destination');
+    $instance = resolver_app_instance($app, $sourceNode, name: 'web');
+
+    expect(resolver()->resolve(
+        resolver_request(input: ['node_id' => $destinationNode->id]),
+        ServingNode::InstanceTransfer,
+    ))
+        ->toBeEmpty()
+        ->and(resolver_node_ids(resolver()->resolve(
+            resolver_request(['instance' => $instance]),
+            ServingNode::InstanceTransfer,
+        )))
+        ->toBe([$sourceNode->id])
+        ->and(resolver_node_ids(resolver()->resolve(
+            resolver_request(['instance' => $instance], ['node_id' => 'invalid']),
+            ServingNode::InstanceTransfer,
+        )))
+        ->toBe([$sourceNode->id]);
+});
+
+it('throws for a missing instance transfer destination Node', function (): void {
+    $app = resolver_app('missing-transfer-destination');
+    $sourceNode = resolver_node('missing-transfer-destination-source');
+    $instance = resolver_app_instance($app, $sourceNode, name: 'web');
+
+    resolver()->resolve(
+        resolver_request(['instance' => $instance], ['node_id' => 999_999]),
+        ServingNode::InstanceTransfer,
+    );
+})->throws(ModelNotFoundException::class);
+
 it('resolves the Tool-owning node from a bound Tool and raw node input', function (): void {
     $boundNode = resolver_node('tool-owner');
     $manager = $boundNode

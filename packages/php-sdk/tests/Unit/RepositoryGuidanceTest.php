@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
@@ -282,6 +283,7 @@ describe('repository guidance bootstrap', function (): void {
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
             ->toContain(CloneAppInstanceRequest::class)
+            ->toContain(TransferAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
             ->toContain(RegisterAppInstanceRequest::class)
             ->toContain(DestroyAppInstanceRequest::class)
@@ -343,7 +345,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- App runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- AppInstance: list, show, create, register, clone, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')
@@ -358,6 +360,9 @@ describe('repository guidance bootstrap', function (): void {
         expect($normalizedPublicContract)
             ->toContain(
                 'Keep candidate clone transport limited to the numeric candidate AppInstance ID, destination Node ID, target name, preview name, optional branch, and optional SQLite source path.',
+            )
+            ->toContain(
+                'Keep AppInstance transfer transport limited to the numeric AppInstance ID, destination Node ID, optional rename, and optional SQLite source path.',
             )
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',

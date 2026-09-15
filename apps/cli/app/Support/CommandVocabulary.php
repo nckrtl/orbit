@@ -37,6 +37,7 @@ final readonly class CommandVocabulary
             'deploy',
             'register',
             'rollback',
+            'transfer',
         ],
         'metrics' => ['status'],
         'process' => ['logs', 'restart', 'start', 'stop'],

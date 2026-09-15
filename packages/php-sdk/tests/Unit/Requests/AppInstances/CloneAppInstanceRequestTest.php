@@ -179,6 +179,7 @@ function clone_instance_envelope(): array
             'domain' => 'shop.com.prod.orbit',
             'url' => 'https://shop.com.prod.orbit',
             'removal' => null,
+            'transfer' => null,
             'deploy_steps' => [],
         ],
         'meta' => ['request_id' => clone_instance_request_id()],

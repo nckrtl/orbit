@@ -113,6 +113,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:release:list',
         'instance:rollback',
         'instance:show',
+        'instance:transfer',
         'instance:update',
         'metrics:credentials',
         'metrics:disable',
@@ -167,6 +168,7 @@ describe('command vocabulary', function (): void {
     it('rejects a command whose last segment is outside the vocabulary and family-specific actions', function (): void {
         expect(CommandVocabulary::allowsCommand('app:create'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('instance:clone'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('instance:transfer'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeFalse();
@@ -623,6 +625,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:release:list' => [['instance'], ['json' => false]],
         'instance:rollback' => [['instance'], ['release' => null, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
+        'instance:transfer' => [
+            ['instance', 'node'],
+            ['name' => null, 'sqlite-source-path' => null, 'force' => false, 'json' => false],
+        ],
         'instance:update' => [['instance'], ['branch' => null, 'json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
@@ -953,6 +959,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:release:list' => [['instance' => '1'], ...$profileMissing],
         'instance:rollback' => [['instance' => '1', '--release' => 'release-a'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
+        'instance:transfer' => [
+            ['instance' => '1', 'node' => '2', '--force' => true],
+            ...$profileMissing,
+        ],
         'instance:update' => [['instance' => '1', '--branch' => 'main'], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],
         'metrics:disable' => [['--force' => true], ...$profileMissing],

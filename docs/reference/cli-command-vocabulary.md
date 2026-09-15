@@ -55,7 +55,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
-| `instance` | `clone`, `deploy`, `register`, `rollback` | The CLI clones, deploys, registers, or rolls back an AppInstance. |
+| `instance` | `clone`, `deploy`, `register`, `rollback`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |

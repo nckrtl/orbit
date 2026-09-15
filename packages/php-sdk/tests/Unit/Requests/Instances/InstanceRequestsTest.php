@@ -425,6 +425,7 @@ function instance_gateway_data(): array
         'domain' => 'orbit-docs.test',
         'url' => 'https://orbit-docs.test',
         'removal' => null,
+        'transfer' => null,
         'deploy_steps' => [],
     ];
 }
