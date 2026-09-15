@@ -1,3 +1,8 @@
+---
+title: "Remote file writes on uutils coreutils"
+description: "Why remote file writes broke on uutils coreutils and the portable write sequence that fixes it."
+---
+
 # Remote file writes on uutils coreutils
 
 ## Problem

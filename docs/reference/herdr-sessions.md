@@ -1,3 +1,8 @@
+---
+title: "Herdr sessions"
+description: "How Orbit manages a named Herdr session on a managed Node and issues receive-only observation grants."
+---
+
 # Herdr sessions
 
 This page tells an operator how Orbit manages or observes a named Herdr session on a managed Node and how Commander requests a private receive-only observation grant for one recorded pane.

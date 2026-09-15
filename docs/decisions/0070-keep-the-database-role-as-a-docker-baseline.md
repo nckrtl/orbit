@@ -1,3 +1,9 @@
+---
+title: "ADR 0070: Keep the database role as a Docker baseline"
+sidebarTitle: "0070 Keep the database role as a Docker baseline"
+description: "Accepted on 2026-09-14. Extends ADR 0069."
+---
+
 # ADR 0070: Keep the database role as a Docker baseline
 
 In the context of dedicated Nodes that host shared Docker databases, facing a restored `database` role after the rewrite, we decided for a Docker-only node role and against role-owned database containers, to keep container lifecycle under Node Processes, accepting that a Node can run those Processes without this role.

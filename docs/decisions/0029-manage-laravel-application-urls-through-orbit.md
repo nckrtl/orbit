@@ -1,3 +1,9 @@
+---
+title: "ADR 0029: Manage Laravel application URLs through Orbit"
+sidebarTitle: "0029 Manage Laravel application URLs through Orbit"
+description: "Accepted on 2026-09-05. Extends ADR 0023 and ADR 0028."
+---
+
 # ADR 0029: Manage Laravel application URLs through Orbit
 
 In the context of Laravel AppInstances whose configured application URL can differ from their Route, facing inconsistent links and background application behavior, we decided for Orbit to manage the application URL in development and production and against leaving that setting to the operator, to keep the effective application URL aligned with routing, accepting framework configuration reconciliation on workload Nodes.

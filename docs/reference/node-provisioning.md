@@ -1,3 +1,8 @@
+---
+title: "Node provisioning"
+description: "Which Linux user the Gateway connects as when node:add bootstraps a Node, how it records the machine architecture, and how node:remove hands the machine back."
+---
+
 # Node provisioning
 
 Use `orbit node:add <name> [host]` to set up a Node or change its top-level domain (TLD), roles, or settings. The Gateway sets up SSH access and records the machine architecture. Use `orbit node:remove <node>` to remove the Node from Orbit and restore public SSH access.

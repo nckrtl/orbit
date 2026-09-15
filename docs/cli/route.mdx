@@ -1,0 +1,165 @@
+---
+title: "route"
+description: "Create explicit domains for an App, point them at an App instance, change a domain or publication intent, and remove Routes."
+---
+
+A Route is an App-owned domain with one routing scope: a Node or an active Cluster. Development Routes have one target. Production Routes can have an ordered target pool. Orbit generates a Route for every App instance it creates. The `route` family manages explicit Routes and their targets and domains.
+
+The [Routes reference](/reference/routes) owns the Route record, domain generation, private projection, and the guards that refuse a change while an active App instance depends on it.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`route:create`](#orbit-routecreate) | Create an explicit Route. |
+| [`route:list`](#orbit-routelist) | List Routes. |
+| [`route:show`](#orbit-routeshow) | Show one Route. |
+| [`route:update`](#orbit-routeupdate) | Change the domain or publication intent of an explicit Route. |
+| [`route:target:set`](#orbit-routetargetset) | Set the single configured target. |
+| [`route:target:unset`](#orbit-routetargetunset) | Clear the configured target. |
+| [`route:destroy`](#orbit-routedestroy) | Remove a Route. |
+
+Every command accepts `--json`. Route, App, App instance, Node, and Cluster arguments are numeric IDs. Human output prints the Route scope, target, status, and the Gateway request ID.
+
+## orbit route:create
+
+Create an explicit Route for an App. Give it a target, or give a targetless Route exactly one Node or Cluster scope.
+
+```bash
+orbit route:create <app> <domain> [--publication=INTENT] [--target=ID | --node=ID | --cluster=ID]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | Numeric App ID that owns the Route. |
+| `domain` | yes | Route domain. The Gateway normalizes it and refuses one that another Route owns. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--publication=INTENT` | `private` | `private` or `public`. The Gateway retains the intent even while the Route has no target. |
+| `--target=ID` | none | Numeric App instance target. The Route scope derives from that App instance's Node or active Cluster. |
+| `--node=ID` | none | Numeric Node scope for a targetless Route. |
+| `--cluster=ID` | none | Numeric Cluster scope for a targetless Route. |
+
+```bash
+orbit route:create 4 shop.example.test --target=12
+orbit route:create 4 preview.example.test --cluster=3
+```
+
+The CLI refuses `--target` together with a scope option (`route.scope_conflict`) and a targetless Route without exactly one scope (`route.scope_required`) before it sends a request. Creating the same Route again with identical App, domain, intent, scope, and target returns the existing Route; a retry that changes one of those values fails with `route.retry_conflict`.
+
+| Error code | Meaning |
+| --- | --- |
+| `route.domain_invalid` | The domain is not a valid normalized domain. |
+| `route.domain_conflict` | Another Route owns the domain. |
+| `route.target_app_conflict` | The target App instance belongs to another App. |
+| `route.target_inactive` | The target App instance is not active. |
+| `route.target_conflict` | The target App instance already belongs to another Route. |
+| `route.router_required` | The Cluster scope has no active Router. |
+
+## orbit route:list
+
+List every Route with its domain, provenance (`generated` or `explicit`), publication intent, scope, target, and status.
+
+```bash
+orbit route:list [--json]
+```
+
+## orbit route:show
+
+Show one Route, including its generation basis, lifecycle, and failure metadata when a change is unfinished.
+
+```bash
+orbit route:show <route>
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+
+## orbit route:update
+
+Change the domain or the publication intent of an explicit Route. At least one option is required.
+
+```bash
+orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--domain=DOMAIN` | New explicit domain. |
+| `--publication=INTENT` | New publication intent, `private` or `public`. |
+
+```bash
+orbit route:update 9 --domain=shop.example.com
+```
+
+A domain change reserves a replacement Route while the current Route stays authoritative. The Gateway prepares certificates, Caddy sites, environment values, and private DNS before cutover. It then removes the old Route and its projections. The response returns the replacement Route ID. A publication-only update keeps the Route ID. See [Route changes](/reference/routes#change-an-existing-route) and [public publication](/reference/routes#activate-public-publication) for eligibility and recovery.
+
+<Note>
+During a domain change, inspection shows both Route records, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A conflicting domain or publication request changes no recorded intent.
+</Note>
+
+| Error code | Meaning |
+| --- | --- |
+| `route.update_required` | No option was given. |
+| `route.domain_immutable` | The Route is generated; only an explicit domain can change. |
+| `route.domain_conflict` | Another Route owns the new domain. |
+| `route.reconciliation_required` | The requested change falls outside the supported Route lifecycle. |
+| `route.domain_change_conflict` | A different domain change is already in progress. |
+| `instance.source_profile_missing` | The target has no recorded source profile; recover it through the same creation request with `--recover-source-profile`. |
+
+## orbit route:target:set
+
+Add or replace the one configured App instance target.
+
+```bash
+orbit route:target:set <route> <target>
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+| `target` | yes | Numeric App instance ID. |
+
+```bash
+orbit route:target:set 9 12
+```
+
+Setting the existing target again returns the unchanged Route. The Gateway returns `route.target_conflict` and preserves both associations when the App instance belongs to another Route, or when replacement would detach an active App instance from its sole Route. An App instance from another App or an inactive App instance is rejected.
+
+## orbit route:target:unset
+
+Clear the configured target while keeping the Route, its domain, scope, and publication intent.
+
+```bash
+orbit route:target:unset <route>
+```
+
+Clearing an already empty Route returns it unchanged. The Gateway returns `route.target_conflict` when clearing would leave an active App instance without a Route.
+
+## orbit route:destroy
+
+Remove an untargeted private Route and its managed traffic configuration. The Gateway completes projection cleanup before deleting the record. See [Route removal](/reference/routes#remove-an-untargeted-private-route) for refusal and retry rules.
+
+```bash
+orbit route:destroy <route>
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `route` | yes | Numeric Route ID. |
+
+<Warning>
+The Gateway refuses removal with `route.target_conflict` while an active App instance depends on the Route. Remove the App instance with `instance:destroy` instead; that removal clears the target and deletes a final-target Route as part of its own lifecycle.
+</Warning>
+
+## Related
+
+- [`instance`](/cli/instance) creates the App instances that Routes target and accepts `--domain` for an explicit Route at creation.
+- [`cluster`](/cli/cluster) owns the Router that serves Cluster-scoped Routes.
+- [`dns`](/cli/dns) points a development TLD at a Node from the operator machine.

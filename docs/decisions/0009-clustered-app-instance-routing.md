@@ -1,3 +1,9 @@
+---
+title: "ADR 0009: Adopt clustered AppInstance routing"
+sidebarTitle: "0009 Adopt clustered AppInstance routing"
+description: "Accepted on 2026-08-31."
+---
+
 # ADR 0009: Adopt clustered AppInstance routing
 
 ## Status

@@ -11,7 +11,7 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 4;
+    public const int VERSION = 5;
 
     /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
     private const array OBSERVABLE_PHP_DIRECTORIES = [
@@ -69,6 +69,8 @@ final readonly class StaticProofInputPolicy
         '.gitattributes',
         '.gitignore',
         'AGENTS.md',
+        'CONTRIBUTING.md',
+        'LICENSE',
         'README.md',
         'composer.json',
         'composer.lock',

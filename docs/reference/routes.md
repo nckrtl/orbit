@@ -1,3 +1,8 @@
+---
+title: "Routes"
+description: "What a Route records, how Orbit projects its private traffic path through a Node or Router, and which later changes it coordinates or refuses."
+---
+
 # Routes
 
 A Route gives an App instance a domain and directs private traffic to it. This page explains domain selection, traffic setup, and supported changes. Each active App instance has exactly one authoritative Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires. A domain change creates a replacement Route under [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
@@ -86,6 +91,8 @@ The Gateway prepares the initial private Route before it marks the Route and App
 ### Node scope
 
 For Node routing, Gateway Domain Name System (DNS) records point the domain at the workload Node. Its Caddy service terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the App instance's web root through its runtime.
+
+Before publishing a development Route, the Gateway gives Caddy read access to each local development Web root and traversal access to its parent directories. Caddy cannot read the other source files. The Web root must exist inside its checkout. Symlinks in the Web root are refused except Laravel's `public/storage` link to that checkout's `storage/app/public`. Nested Git worktrees keep access to their own Web roots. If file-access preparation fails, the Gateway restores the preceding permissions and reports `app-dev.source_access_failed` at `source-access` before publishing the Route. If permission recovery also fails, it retains a protected permission snapshot on the Node for recovery.
 
 ### Cluster scope
 

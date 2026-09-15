@@ -46,7 +46,7 @@ if [[ $# -gt 0 && "$1" != --* ]]; then
     candidate=$1
     shift
 fi
-candidate=${candidate:-$(git -C "$root" rev-parse --verify HEAD^{commit})}
+candidate=${candidate:-$(git -C "$root" rev-parse --verify 'HEAD^{commit}')}
 
 scenario_arguments=()
 declare -A selected_scenarios=()
@@ -82,7 +82,7 @@ if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
     printf 'e2e-scenarios: candidate SHA must be 40 lowercase hexadecimal characters\n' >&2
     exit 64
 fi
-if [[ "$(git -C "$root" rev-parse --verify HEAD^{commit})" != "$candidate" ]]; then
+if [[ "$(git -C "$root" rev-parse --verify 'HEAD^{commit}')" != "$candidate" ]]; then
     printf 'e2e-scenarios: candidate must equal this checkout HEAD\n' >&2
     exit 64
 fi

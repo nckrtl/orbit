@@ -1,3 +1,9 @@
+---
+title: "ADR 0058: Separate Incus requirements from delivery flow"
+sidebarTitle: "0058 Separate Incus requirements from delivery flow"
+description: "Accepted on 2026-09-10. Extends ADR 0051."
+---
+
 # ADR 0058: Separate Incus requirements from delivery flow
 
 In the context of selectable feature delivery, facing a proof-named issue label and topology allocation for automated-only work, we decided for an Incus requirement independent of delivery flow and against letting the label select proof, to keep verification proportional to acceptance, accepting that issue classification determines whether machine behavior is exercised.

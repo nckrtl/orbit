@@ -1,3 +1,9 @@
+---
+title: "ADR 0068: Accept only apps.path as the node storage setting path"
+sidebarTitle: "0068 Accept only apps.path as the node storage setting path"
+description: "Accepted on 2026-09-13. Extends ADR 0008."
+---
+
 # ADR 0068: Accept only apps.path as the node storage setting path
 
 In the context of closed node storage settings after one apps root replaced instance and worktree roots, facing operators who send `instance.path` or `worktree.path`, we decided for the single known setting path `apps.path` and against accepting those other keys, to keep one vocabulary with the shipped public NodeSettings shape, accepting that those other keys fail as unknown.

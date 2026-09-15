@@ -1,0 +1,225 @@
+---
+title: "node"
+description: "Add machines to the fleet, assign roles, grant Node-to-Node access, set storage settings, and remove Nodes."
+---
+
+A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family provisions a machine, converges it again after a change, assigns and removes roles, records which Node may call which, and sets the apps root.
+
+The [Node provisioning](/reference/node-provisioning), [Node settings](/reference/node-settings), and [Node retarget](/reference/node-retarget) references own the bootstrap identity, the storage contract, and the public SSH boundaries that these commands follow.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`node:add`](#orbit-nodeadd) | Provision a new machine or converge an existing Node. |
+| [`node:list`](#orbit-nodelist) | List Nodes registered with the active Gateway. |
+| [`node:show`](#orbit-nodeshow) | Show one Node. |
+| [`node:remove`](#orbit-noderemove) | Remove a Node and restore its public SSH recovery rule. |
+| [`node:role:add`](#orbit-noderoleadd) | Add or converge one role assignment. |
+| [`node:role:list`](#orbit-noderolelist) | List the role assignments of one Node. |
+| [`node:role:remove`](#orbit-noderoleremove) | Remove one role assignment and its dependent state. |
+| [`node:access:add`](#orbit-nodeaccessadd) | Allow one Node to run commands on another Node. |
+| [`node:access:remove`](#orbit-nodeaccessremove) | Remove one access edge. |
+| [`node:settings`](#orbit-nodesettings) | Update the typed storage settings of one Node. |
+
+Every command accepts `--json`. Commands that take a `node` argument or `--node` option accept the numeric Node ID; `node:role:*` and `node:settings` also accept the registered Node name.
+
+## orbit node:add
+
+Add a machine to the fleet. The same command provisions a new machine and converges an existing Node after you change its TLD, roles, or settings.
+
+```bash
+orbit node:add <name> [host] [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Node name. It stays stable for the life of the record. |
+| `host` | no | Public SSH host. Required for a new machine. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--ssh-port=PORT` | `22` | Public SSH port. |
+| `--user=USER` | `root` for a new Node, the managed user for an existing Node | Bootstrap SSH user. Name one when the host allows no root login or the managed user cannot log in. |
+| `--orbit-user=USER` | `orbit` | Orbit-managed system user that every later Gateway command runs as. |
+| `--platform=PLATFORM` | `linux` | Node platform. Only `linux` is accepted. |
+| `--architecture=ARCH` | observed on the machine | Machine architecture such as `x86_64` or `aarch64`. A new Node records the observed value, and an explicit value must equal it. |
+| `--tld=TLD` | none | Node TLD. Generated Route domains and production clone previews use it. |
+| `--role=ROLE` | none | Initial role assignment. Repeat the option for more than one role. |
+| `--host-key-fingerprint=SHA256` | none | Approved SSH host key fingerprint. |
+| `--cluster=ID` | none | Numeric Cluster ID to join. |
+| `--wireguard-ip=IP` | generated | Stable WireGuard IP address. |
+| `--lan-ip=IP` | none | Cluster-local LAN IPv4 address that a Router uses to reach this Node. |
+| `--wireguard-endpoint=HOST:PORT` | generated | Per-node WireGuard endpoint override. See [WireGuard endpoints](/reference/wireguard-endpoints). |
+| `--dns-server=IP` | Orbit VPN DNS | Per-node DNS server override. See [Private DNS](/reference/private-dns). |
+| `--setting=PATH:VALUE` | none | Repeatable typed Node setting. The only setting path is `apps.path`. |
+
+The Gateway opens one SSH session as the bootstrap user, installs the base packages, creates the managed user, and then verifies SSH as that user. Bootstrap opens the `orbit:public-ssh-recovery` firewall rule; the first role convergence closes public SSH again, so a Node provisioned with roles ends reachable only over WireGuard.
+
+Provision an app-dev machine with its own TLD and apps root:
+
+```bash
+orbit node:add beast beast.example.com \
+  --role=app-dev \
+  --tld=test \
+  --setting=apps.path:/srv/orbit/apps
+```
+
+Converge an existing Node after adding a role:
+
+```bash
+orbit node:add beast --role=app-dev --role=database
+```
+
+<Note>
+A production Node that receives clones needs `--tld`; the [instance:clone](/cli/instance#orbit-instanceclone) command derives its preview domain from that value.
+</Note>
+
+The roles you can assign are `app-dev`, `app-prod`, `router`, `ingress`, `database`, `metrics`, `gateway`, and `vpn`. The [Database role](/reference/database-role) and [Metrics](/reference/metrics) references list which roles may share one Node.
+
+## orbit node:list
+
+List every Node registered with the active Gateway, with its status, roles, and addresses.
+
+```bash
+orbit node:list [--json]
+```
+
+## orbit node:show
+
+Show one Node, including its recorded architecture, WireGuard and LAN addresses, roles, and raw `settings` member.
+
+```bash
+orbit node:show <node> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Numeric Node ID. |
+
+## orbit node:remove
+
+Remove a Node record and its Gateway-side projections. The Gateway restores the public SSH recovery rule and leaves the machine reachable on its recorded public SSH target so you can provision it again.
+
+```bash
+orbit node:remove <node> [--force] [--offline] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Numeric Node ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation prompt. Required with `--offline`. |
+| `--offline` | Shed roles on the Gateway side and remove a Node that the Gateway cannot reach. The Gateway probes the Node first; a Node that answers keeps every ordinary guard. |
+
+The Gateway refuses the request while the Node still owns App instances, legacy instances, firewall rules, roles, Processes, or Herdr sessions. It never removes the Gateway or VPN Node, or the Node that sends the request.
+
+```bash
+orbit node:remove 7
+orbit node:remove 7 --offline --force
+```
+
+<Warning>
+`--offline --force` changes nothing on the machine. Caddy sites, checkouts, containers, units, and UFW rules stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
+</Warning>
+
+The [Node provisioning reference](/reference/node-provisioning#remove-a-node) lists each removal step and failure code.
+
+## orbit node:role:add
+
+Add one role assignment to a Node, or converge an existing assignment again.
+
+```bash
+orbit node:role:add <node> <role> [--converge] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or registered name. |
+| `role` | yes | Role name. |
+
+| Option | Meaning |
+| --- | --- |
+| `--converge` | Re-run convergence for an assignment that is active or whose failed step starts with `converge:`. |
+
+```bash
+orbit node:role:add beast database
+orbit node:role:add beast metrics --converge
+```
+
+## orbit node:role:list
+
+List the role assignments of one Node with their lifecycle status and failed step, when one exists.
+
+```bash
+orbit node:role:list <node> [--json]
+```
+
+## orbit node:role:remove
+
+Remove one role assignment from a Node. Removing the last role restores the public SSH recovery rule before the Gateway deletes the assignment.
+
+```bash
+orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm destructive role removal and dependent cleanup. |
+| `--purge-data` | Request supported role-owned data cleanup. For `metrics`, this deletes the Prometheus and Grafana volumes and stored credentials. |
+| `--offline` | Remove the role from a Node the Gateway cannot reach. |
+
+```bash
+orbit node:role:remove beast database --force
+```
+
+A role that still hosts a Route target, such as `app-dev` or `app-prod` with active App instances, is refused until those App instances are removed.
+
+## orbit node:access:add
+
+Allow one Node to run Gateway commands on another Node. Access edges authorize Orbit commands and Gateway API actions; they do not change private network reachability, which WireGuard membership already grants.
+
+```bash
+orbit node:access:add <consumer> <serving> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `consumer` | yes | Numeric ID of the Node that sends commands. |
+| `serving` | yes | Numeric ID of the Node that receives them. |
+
+```bash
+orbit node:access:add 3 7
+```
+
+## orbit node:access:remove
+
+Remove one access edge from the active Gateway.
+
+```bash
+orbit node:access:remove <consumer> <serving> [--force] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation prompt. |
+
+## orbit node:settings
+
+Update the typed storage settings of one Node. The only setting path is `apps.path`, the root under which the Gateway creates App instance checkouts.
+
+```bash
+orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or registered name. |
+
+| Option | Meaning |
+| --- | --- |
+| `--setting=PATH:VALUE` | Repeatable setting. The CLI splits at the first colon, so a value may contain more colons. An empty value unsets the setting: `--setting=apps.path:`. |
+
+The command requires at least one `--setting` option. Changing the apps root does not move, rewrite, or delete an existing checkout; the [Node settings reference](/reference/node-settings) lists the validation and failure codes.

@@ -1,3 +1,8 @@
+---
+title: "Product areas"
+description: "Feature guides grouped by the part of Orbit you want to use."
+---
+
 # Product areas
 
 These guides explain how to use each part of Orbit.

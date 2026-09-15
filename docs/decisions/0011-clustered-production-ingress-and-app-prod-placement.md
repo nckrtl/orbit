@@ -1,3 +1,9 @@
+---
+title: "ADR 0011: Define clustered production ingress and app-prod placement"
+sidebarTitle: "0011 Define clustered production ingress and app-prod placement"
+description: "Accepted on 2026-08-31."
+---
+
 # ADR 0011: Define clustered production ingress and app-prod placement
 
 ## Status

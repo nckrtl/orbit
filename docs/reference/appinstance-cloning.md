@@ -1,3 +1,8 @@
+---
+title: "App instance cloning"
+description: "How the Gateway creates a prepared production App instance from a development or production candidate, with an optional SQLite seed."
+---
+
 # App instance cloning
 
 This page tells an operating agent how the Gateway creates a prepared production App instance from an eligible development or production candidate. The Gateway refuses new production placement on ordinary `instance:create` with `instance.candidate_required` before it changes a user, home, source, environment, or Route. Existing production App instances remain manageable without candidate metadata. [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) owns candidate cloning, [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) owns private Route scope and Router projection, [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns stored environment configuration, and [ADR 0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances) owns runtime-definition copies.

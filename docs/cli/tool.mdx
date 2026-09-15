@@ -1,0 +1,157 @@
+---
+title: "tool"
+description: "Install, update, inspect, and remove packages on a Node through the apt, Vite+, Composer, or Homebrew Tool Managers."
+---
+
+A Tool is one manager-native package that Orbit manages on one Node. Its identity is the Node, the Tool Manager, and the package. The `tool` family lists the managers a Node supports, installs a package, updates or removes it, and shows the recorded state.
+
+The [Tools reference](/reference/tools) owns manager lifecycle, first-use provisioning, Homebrew limits, removal outcomes, and Doctor findings.
+
+## Tool Managers
+
+Orbit exposes four code-owned managers on active managed Ubuntu Nodes. A manager is independent of Node roles, and the Gateway provisions it on first use.
+
+| Manager | Package scope | Availability |
+| --- | --- | --- |
+| `apt` | The Node's Advanced Package Tool database | Materialized with the managed Node baseline |
+| `vp` | Orbit's shared Vite+ global package scope | Materialized on first use or when a role requires it |
+| `composer` | Orbit's shared Composer global package scope | Materialized on first use or when a role requires it |
+| `brew` | Orbit's shared Homebrew prefix at `/home/linuxbrew/.linuxbrew` | Materialized or recognized on first use |
+
+Use `vp` for npm-compatible global tools such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for one unqualified Homebrew Core formula with a Linux bottle.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`tool:manager:list`](#orbit-toolmanagerlist) | List the managers a Node supports and their status. |
+| [`tool:install`](#orbit-toolinstall) | Install one package, provisioning its manager first when needed. |
+| [`tool:list`](#orbit-toollist) | List the Tools recorded on a Node. |
+| [`tool:show`](#orbit-toolshow) | Show one Tool. |
+| [`tool:update`](#orbit-toolupdate) | Update one Tool within its constraint. |
+| [`tool:remove`](#orbit-toolremove) | Remove one Tool and delete its record. |
+
+Every command accepts `--json`. `--node` is a positive numeric Node ID; the CLI rejects a name with `tool.node_id_invalid`.
+
+## orbit tool:manager:list
+
+List every manager supported for a Node with a nullable manager ID and its lifecycle status.
+
+```bash
+orbit tool:manager:list --node=ID [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--node=ID` | Numeric target Node ID. |
+
+| Status | Meaning |
+| --- | --- |
+| `uninstalled` | Orbit supports the manager on the Node, but it has no persisted state yet. |
+| `provisioning` | Orbit is installing or verifying the manager. |
+| `active` | The manager is available for Tool operations. |
+| `failed` | Provisioning failed, and the next install retries it. |
+
+## orbit tool:install
+
+Install one manager-native package through the Gateway.
+
+```bash
+orbit tool:install [package] --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `package` | in non-interactive calls | Manager-native package coordinate of at most 255 characters. An interactive terminal prompts for it when omitted. |
+
+| Option | Meaning |
+| --- | --- |
+| `--node=ID` | Numeric target Node ID. |
+| `--manager=MANAGER` | Tool Manager name. An interactive terminal offers the Node's `active` and `uninstalled` managers when omitted; a non-interactive or `--json` call fails with `tool.manager_required`. |
+| `--constraint=CONSTRAINT` | Optional SemVer safety constraint. It only blocks an unsafe candidate; the Gateway owns every package-manager and version decision. |
+
+```bash
+orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
+orbit tool:install laravel/installer --node=12 --manager=composer
+orbit tool:install herdr --node=12 --manager=brew
+```
+
+When the manager is `uninstalled` or `failed`, the Gateway provisions or retries it first and records it `active` before it changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and creates no Tool row; repeating the command retries from live Node state. The result reports `applied` for a new install and `unchanged` when the package is already installed.
+
+<Note>
+The Gateway refuses every Tool mutation with `tool.node_unmanaged` on a roleless operator client or any Node outside Gateway-owned SSH management. When an install creates a Tool row and then fails, for example with `tool.version_probe_failed`, the error names the Tool ID so you can retry or remove it.
+</Note>
+
+The `brew` manager accepts one unqualified lowercase Homebrew Core formula with a stable version and a Linux bottle for the Node architecture. It rejects a tap-qualified formula, cask, URL, local definition, Git reference, or caller option before package mutation, and it never builds from source.
+
+## orbit tool:list
+
+List the Tools recorded on one Node with their manager, package, version, and status.
+
+```bash
+orbit tool:list --node=ID [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--node=ID` | Numeric target Node ID. |
+
+## orbit tool:show
+
+Show one Tool.
+
+```bash
+orbit tool:show <tool> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `tool` | yes | Numeric Tool ID. |
+
+## orbit tool:update
+
+Update one Tool to the manager's current safe candidate.
+
+```bash
+orbit tool:update <tool> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `tool` | yes | Numeric Tool ID. |
+
+The result reports `applied` when the package changed, `unchanged` when it is already current, and `blocked_by_constraint` with the stored constraint when the candidate falls outside it. A Homebrew update uses the verified bottle and keeps the installed Tool callable when no newer bottle exists.
+
+Updating the `herdr` formula changes package files only; it does not restart a managed [Herdr session](/cli/herdr).
+
+## orbit tool:remove
+
+Remove one Tool and delete its record.
+
+```bash
+orbit tool:remove <tool> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `tool` | yes | Numeric Tool ID from a successful install or from a failed install that retained the Tool. |
+
+<Warning>
+The command sends the request without a confirmation prompt. `apt` removes the package without purging its configuration files, and the Gateway treats that state as absence. Removal never runs a dependency autoremove and keeps the manager active after the last Tool is gone; Orbit exposes no manager-removal command.
+</Warning>
+
+| Condition | Result | Tool row |
+| --- | --- | --- |
+| The package is already absent | Removal succeeds without another manager removal | Deleted |
+| A failed Tool never recorded a version | Removal succeeds without probing the package | Deleted |
+| The removal succeeds and the second probe reports absence | Removal succeeds | Deleted |
+| The version probe fails on a proven Tool | `tool.version_probe_failed` | Retained for retry |
+| The manager removal fails or the package remains | `tool.remove_failed` | Retained for retry |
+
+Retry the same command with the retained Tool ID; the Gateway probes live package state before it plans another mutation. Run `orbit doctor --node=ID --family=tool` to confirm the Node: a retained row for an absent package reports `tool.not_installed`, and a completed removal reports the family healthy.
+
+## Related
+
+- [`node`](/cli/node) provisions the managed Node that hosts the managers.
+- [`herdr`](/cli/herdr) requires the `herdr` formula installed through `brew` on the target Node.
+- [`doctor`](/cli/doctor) reports Tool drift without changing packages.

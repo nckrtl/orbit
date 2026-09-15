@@ -1,3 +1,8 @@
+---
+title: "App instance environment variables"
+description: "How the Gateway imports, stores, updates, and synchronizes an App instance .env file without exposing its values."
+---
+
 # App instance environment variables
 
 This page tells an operator how the Gateway reads, stores, and safely replaces an App instance environment file. [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns the environment-configuration boundary.

@@ -25,6 +25,43 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/api/overview.mdx",
+            "title": "Using the API",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/api/php-sdk.mdx",
+            "title": "PHP SDK",
+            "kind": "product",
+            "components": [
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/architecture.md",
             "title": "Architecture",
             "kind": "product",
@@ -54,6 +91,322 @@
                 "0006",
                 "0014"
             ]
+        },
+        {
+            "path": "docs/cli/activity.mdx",
+            "title": "activity",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/app.mdx",
+            "title": "app",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Repository identity",
+                "Route",
+                "Schedule",
+                "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/cluster.mdx",
+            "title": "cluster",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/database.mdx",
+            "title": "database",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/dns.mdx",
+            "title": "dns",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/doctor.mdx",
+            "title": "doctor",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0004"
+            ]
+        },
+        {
+            "path": "docs/cli/env.mdx",
+            "title": "env",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/extension.mdx",
+            "title": "extension",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/firewall.mdx",
+            "title": "firewall",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/gateway.mdx",
+            "title": "gateway",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/herdr.mdx",
+            "title": "herdr",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/instance.mdx",
+            "title": "instance",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "Repository identity",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/metrics.mdx",
+            "title": "metrics",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/node.mdx",
+            "title": "node",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/overview.mdx",
+            "title": "Using the CLI",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Router",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/process.mdx",
+            "title": "process",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/route.mdx",
+            "title": "route",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/schedule.mdx",
+            "title": "schedule",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tool.mdx",
+            "title": "tool",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Tool",
+                "Tool Manager"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/workspace.mdx",
+            "title": "Git worktrees",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Node"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/concepts.md",
@@ -1642,6 +1995,101 @@
             ]
         },
         {
+            "path": "docs/decisions/overview.mdx",
+            "title": "Architecture decisions",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Route",
+                "Router",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0001",
+                "0002",
+                "0003",
+                "0004",
+                "0005",
+                "0006",
+                "0008",
+                "0009",
+                "0010",
+                "0011",
+                "0012",
+                "0013",
+                "0014",
+                "0015",
+                "0016",
+                "0017",
+                "0018",
+                "0019",
+                "0021",
+                "0022",
+                "0023",
+                "0024",
+                "0025",
+                "0026",
+                "0027",
+                "0028",
+                "0029",
+                "0030",
+                "0031",
+                "0032",
+                "0033",
+                "0034",
+                "0035",
+                "0036",
+                "0037",
+                "0038",
+                "0039",
+                "0040",
+                "0041",
+                "0042",
+                "0043",
+                "0044",
+                "0045",
+                "0046",
+                "0047",
+                "0048",
+                "0049",
+                "0050",
+                "0051",
+                "0052",
+                "0053",
+                "0054",
+                "0055",
+                "0056",
+                "0057",
+                "0058",
+                "0059",
+                "0060",
+                "0061",
+                "0062",
+                "0063",
+                "0064",
+                "0065",
+                "0066",
+                "0067",
+                "0068",
+                "0069",
+                "0070",
+                "0071",
+                "0072",
+                "0073",
+                "0074"
+            ]
+        },
+        {
             "path": "docs/domains/README.md",
             "title": "Product areas",
             "kind": "domain",
@@ -1690,6 +2138,7 @@
             "concepts": [
                 "App",
                 "App instance",
+                "Cluster",
                 "Gateway",
                 "Node",
                 "Route"
@@ -1703,6 +2152,41 @@
             "components": [],
             "concepts": [
                 "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/quickstart.mdx",
+            "title": "Quickstart",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/alpha.md",
+            "title": "Source alpha",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
                 "Route"
             ],
             "governing_adrs": []
@@ -1728,7 +2212,7 @@
         },
         {
             "path": "docs/reference/app-processes-and-schedules.md",
-            "title": "App process and Schedule definitions and copies",
+            "title": "App processes and Schedules",
             "kind": "reference",
             "components": [],
             "concepts": [
@@ -1966,6 +2450,42 @@
             ]
         },
         {
+            "path": "docs/reference/first-app.md",
+            "title": "Your first app",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Route",
+                "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-recovery.md",
+            "title": "Update and recover a Gateway",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/gateway-trust.md",
             "title": "Gateway trust",
             "kind": "reference",
@@ -2054,6 +2574,24 @@
                 "0056",
                 "0058"
             ]
+        },
+        {
+            "path": "docs/reference/installation.md",
+            "title": "Install from source",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/local-resolver-overrides.md",

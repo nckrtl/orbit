@@ -81,9 +81,10 @@ final readonly class MintlifyLinksRule implements GroupedRule
      * @param  array<array-key, mixed>  $navigation
      * @return list<Finding>
      */
-    private function navigationPages(array $navigation): array
+    private function navigationPages(array $navigation, ?string $openApi = null): array
     {
         $findings = [];
+        $openApi = is_string($navigation['openapi'] ?? null) ? $navigation['openapi'] : $openApi;
         foreach ($navigation as $key => $value) {
             if (! is_array($value)) {
                 continue;
@@ -91,16 +92,37 @@ final readonly class MintlifyLinksRule implements GroupedRule
 
             if ($key === 'pages') {
                 foreach ($value as $page) {
-                    if (is_string($page) && ! $this->exists('docs/docs.json', $page)) {
+                    if (is_string($page) && ! $this->exists('docs/docs.json', $page)
+                        && ! $this->openApiOperationExists($openApi, $page)) {
                         $findings[] = $this->missing('docs/docs.json', $page);
                     }
                 }
             }
 
-            array_push($findings, ...$this->navigationPages($value));
+            array_push($findings, ...$this->navigationPages($value, $openApi));
         }
 
         return $findings;
+    }
+
+    private function openApiOperationExists(?string $specification, string $page): bool
+    {
+        if ($specification === null || preg_match('/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE) (\/\S+)$/', $page, $matches) !== 1) {
+            return false;
+        }
+
+        $path = $this->repository->docsPath.'/'.ltrim($specification, '/');
+        if (! is_file($path)) {
+            return false;
+        }
+
+        try {
+            $spec = json_decode(file_get_contents($path) ?: '', true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return false;
+        }
+
+        return is_array($spec) && is_array($spec['paths'][$matches[2]][strtolower($matches[1])] ?? null);
     }
 
     private function exists(string $source, string $target): bool

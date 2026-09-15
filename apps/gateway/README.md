@@ -63,12 +63,19 @@ validates and resolves the package in its own shared node scope.
 
 ```bash
 composer setup
-php artisan orbit:bootstrap 85.9.218.89 \
-    --wireguard-endpoint=85.9.218.89:51820 \
-    --private-interface=eth3
+php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' \
+    --wireguard-endpoint='<GATEWAY_PUBLIC_HOST>:51820'
 ```
 
-Run migrations explicitly after each pull. The bootstrap command creates the
+Use a host that peers can reach. Omit `--private-interface` unless you have a
+separate private underlay; inspect `ip -brief address` and use that machine's
+actual interface name. The [installation guide](../../docs/reference/installation.md)
+covers prerequisites, the monorepo checkout path, first connection, and trust.
+Use `composer setup` only for a fresh development installation: it generates
+an application key. For an existing Gateway, follow the
+[update and recovery guide](../../docs/reference/gateway-recovery.md).
+
+The bootstrap command creates the
 gateway SSH key, WireGuard key, root CA, gateway node, roles, and VPN settings
 under `ORBIT_HOME`.
 

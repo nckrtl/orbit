@@ -1,3 +1,9 @@
+---
+title: "ADR 0033: Trust WireGuard members for private Node traffic"
+sidebarTitle: "0033 Trust WireGuard members for private Node traffic"
+description: "Accepted on 2026-09-05. Extends ADR 0009, ADR 0011, and ADR 0023."
+---
+
 # ADR 0033: Trust WireGuard members for private Node traffic
 
 In the context of Orbit Nodes that use WireGuard for private reachability, facing a choice between per-port Node grants and membership-based network trust, we decided for trusting every active WireGuard member for private Node-to-Node traffic and against applying Node grants to ordinary traffic, to keep network reachability separate from Orbit command authorization, accepting that WireGuard membership grants broad private access.

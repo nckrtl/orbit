@@ -1,3 +1,9 @@
+---
+title: "ADR 0038: Cascade AppInstance removal through processes and schedules"
+sidebarTitle: "0038 Cascade AppInstance removal through processes and schedules"
+description: "Accepted on 2026-09-06. Extends ADR 0036."
+---
+
 # ADR 0038: Cascade AppInstance removal through processes and schedules
 
 In the context of removing an AppInstance with owned processes and schedules, facing removal guards and running scheduled commands that can delay deletion, we decided for immediate cascading removal and against requiring separate child removal or waiting for scheduled commands to finish, to make AppInstance removal own its complete cleanup, accepting that an in-flight scheduled command may fail when its source or artifacts disappear.

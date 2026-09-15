@@ -1,3 +1,8 @@
+---
+title: "Concepts"
+description: "Definitions of Gateway, Node, Cluster, App, App instance, Route, Router, Doctor, Process, Schedule, Tool, and the other terms Orbit uses."
+---
+
 # Concepts
 
 These terms describe the parts of Orbit. Follow the links for commands and details.

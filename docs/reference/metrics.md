@@ -1,3 +1,8 @@
+---
+title: "Metrics role"
+description: "What the metrics role runs, how to enable, inspect, and disable it, and how Grafana access is authorized."
+---
+
 # Metrics role
 
 The `metrics` role runs Prometheus and Grafana on one Node and collects metrics from selected managed Nodes. Use it to view machine health at `https://metrics.orbit`. [ADR 0003](/decisions/0003-singleton-metrics-role) defines placement, [ADR 0055](/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers) defines access, and [ADR 0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) defines eligible exporters.
