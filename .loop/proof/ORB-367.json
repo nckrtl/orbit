@@ -1,0 +1,35 @@
+{
+  "extension": "app-prod",
+  "mutates": true,
+  "setup": [
+    {
+      "id": "prepare-recorder",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb367-setup.sh"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "unassisted-node-readd",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-367/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb367-live.py",
+        "--candidate",
+        "01c60e4baaef1da73d288e71bd49d98d47e31e2e",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-367/proof",
+        "--stage",
+        "lifecycle"
+      ],
+      "timeout_seconds": 900
+    }
+  ],
+  "inputs": [
+    ".agents/skills/verifying-cli-output/scripts"
+  ]
+}
