@@ -155,6 +155,7 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
             'resolute',
             'orbit',
             'ssh-ed25519 GATEWAY',
+            'managed',
             'ca-certificates',
             'curl',
             'gnupg',
@@ -926,6 +927,7 @@ it('bootstraps a supplied nckrtl identity without orbit literals or package conf
             'resolute',
             'nckrtl',
             'ssh-ed25519 GATEWAY',
+            'managed',
             'ca-certificates',
             'curl',
             'gnupg',
@@ -1018,6 +1020,7 @@ function run_base_bootstrap_preflight(
         'resolute',
         'orbit',
         'ssh-ed25519 TEST',
+        'managed',
     ]);
     $process->setInput($harness);
     $process->run();

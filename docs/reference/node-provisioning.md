@@ -105,6 +105,10 @@ A failed step rolls the Gateway back and keeps the Node record active. Each fail
 
 Removing a Node's last role also restores the public SSH recovery rule; [Node retarget](/reference/node-retarget#two-boundaries) describes that boundary.
 
-Provisioning the machine again after removal writes a new tunnel configuration and restarts `wg-quick@orbit` while the earlier tunnel is still up. The configuration carries a `PostUp` hook that points the link at Orbit DNS and no `PreDown` hook: the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call, and systemd-resolved drops the link configuration when wg-quick deletes the interface.
+The retained tunnel can still select Orbit DNS even though its Gateway peer is gone. When provisioning the machine again, bootstrap first tries the configured package sources and proxy. If that attempt fails because the source hostnames cannot resolve, bootstrap temporarily clears only the DNS server and route-all domain that match Orbit's retained ownership record on the `orbit` link.
+
+Bootstrap uses the machine's existing network DNS during base package installation, then restores the exact previous link values on success or failure. It holds the same lock as other Orbit DNS updates until restoration finishes. It preserves operator overrides and refuses to reset missing, malformed, or changed ownership state. It changes no global resolver files or IP routes. If the existing network DNS cannot resolve the package sources, bootstrap fails before managed-user setup.
+
+After base bootstrap, provisioning writes a new tunnel configuration and restarts `wg-quick@orbit` while the earlier tunnel is still up. The configuration carries a `PostUp` hook that points the link at Orbit DNS and no `PreDown` hook: the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call, and systemd-resolved drops the link configuration when wg-quick deletes the interface. Private DNS becomes reachable after the Gateway peer and tunnel are ready.
 
 The owning implementation and tests live in `apps/gateway`.

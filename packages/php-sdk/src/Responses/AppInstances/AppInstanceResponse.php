@@ -36,6 +36,7 @@ final readonly class AppInstanceResponse
         /** @var list<DeploymentStepResponse> */
         public array $deploySteps,
         public string $requestId,
+        public ?int $vitePort = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -49,6 +50,7 @@ final readonly class AppInstanceResponse
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
+            vitePort: is_int($data['vite_port'] ?? null) && $data['vite_port'] >= 1024 && $data['vite_port'] <= 65535 ? $data['vite_port'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             environment: is_string($data['environment'] ?? null) ? $data['environment'] : '',
             sourceLayout: is_string($data['source_layout'] ?? null) ? $data['source_layout'] : '',
@@ -80,6 +82,7 @@ final readonly class AppInstanceResponse
             'id' => $this->id,
             'app_id' => $this->appId,
             'node_id' => $this->nodeId,
+            'vite_port' => $this->vitePort,
             'name' => $this->name,
             'environment' => $this->environment,
             'source_layout' => $this->sourceLayout,

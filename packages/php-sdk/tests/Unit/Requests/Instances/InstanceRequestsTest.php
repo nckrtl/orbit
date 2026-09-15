@@ -407,6 +407,7 @@ function instance_gateway_data(): array
         'id' => 7,
         'app_id' => 3,
         'node_id' => 4,
+        'vite_port' => null,
         'name' => 'main',
         'environment' => 'development',
         'source_layout' => 'checkout',

@@ -7,6 +7,7 @@ namespace App\Http\Requests\Processes;
 use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VpDevPreset;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -26,8 +27,9 @@ final class StoreProcessRequest extends FormRequest
                 'max:63',
                 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D',
             ],
-            'runtime' => ['required', Rule::enum(ProcessRuntime::class)],
-            'command' => ['required', 'array', 'min:1', 'max:64'],
+            'preset' => ['sometimes', Rule::in(['vp-dev'])],
+            'runtime' => [$this->has('preset') ? 'missing' : 'required', Rule::enum(ProcessRuntime::class)],
+            'command' => [$this->has('preset') ? 'missing' : 'required', 'array', 'min:1', 'max:64'],
             'command.*' => ['string', 'max:4096', 'not_regex:/[\x00\r\n]/'],
             'image' => [
                 'required_if:runtime,docker',
@@ -80,6 +82,16 @@ final class StoreProcessRequest extends FormRequest
     {
         return [
             function (#[SensitiveParameter] Validator $validator): void {
+                if ($this->has('preset')) {
+                    foreach (['runtime', 'command', 'image', 'working_directory', 'environment', 'ports', 'volumes'] as $field) {
+                        if ($this->exists($field)) {
+                            $validator->errors()->add($field, 'The preset owns this configuration.');
+                        }
+                    }
+                    if ($this->input('target_type') !== 'instance') {
+                        $validator->errors()->add('target_type', 'The preset requires an AppInstance.');
+                    }
+                }
                 $this->validateSystemdExecutable($validator);
                 $this->validateEnvironmentNames($validator);
                 $this->validatePorts($validator);
@@ -92,7 +104,7 @@ final class StoreProcessRequest extends FormRequest
         /** @var array<string, mixed> $validated */
         $validated = $this->validated();
         /** @var list<string> $command */
-        $command = $validated['command'];
+        $command = isset($validated['preset']) ? VpDevPreset::command() : $validated['command'];
         /** @var array<string, string> $environment */
         $environment = is_array($validated['environment'] ?? null) ? $validated['environment'] : [];
         /** @var list<string> $ports */
@@ -103,7 +115,7 @@ final class StoreProcessRequest extends FormRequest
             targetType: ProcessTargetType::from((string) $validated['target_type']),
             targetId: (int) $validated['target_id'],
             name: (string) $validated['name'],
-            runtime: ProcessRuntime::from((string) $validated['runtime']),
+            runtime: isset($validated['preset']) ? ProcessRuntime::Systemd : ProcessRuntime::from((string) $validated['runtime']),
             command: $command,
             image: is_string($validated['image'] ?? null) ? $validated['image'] : null,
             workingDirectory: is_string($validated['working_directory'] ?? null)
@@ -114,9 +126,10 @@ final class StoreProcessRequest extends FormRequest
             volumes: $volumes,
             restartPolicy: is_string($validated['restart_policy'] ?? null)
                 ? $validated['restart_policy']
-                : 'never',
+                : (isset($validated['preset']) ? 'on-failure' : 'never'),
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
+            preset: isset($validated['preset']) ? (string) $validated['preset'] : null,
         );
     }
 

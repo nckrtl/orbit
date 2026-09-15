@@ -40,7 +40,7 @@ Every command accepts `--json`. Human and JSON output include the Gateway reques
 Install one stopped or initially running systemd service or Docker container, or record an App-owned definition.
 
 ```bash
-orbit process:create <name> (--instance=ID | --node=ID-or-name | --app=APP --for=ENV[,ENV]) [options]
+orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --app=APP --for=ENV[,ENV]) [options]
 ```
 
 | Argument | Required | Meaning |
@@ -49,7 +49,8 @@ orbit process:create <name> (--instance=ID | --node=ID-or-name | --app=APP --for
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--instance=ID` | none | Positive App instance ID. |
+| `--instance=ID-or-domain` | none | Positive App instance ID or exact, unambiguous development Route domain. |
+| `--preset=vp-dev` | none | Configure VitePlus with an assigned port, strict binding, and Route proxy integration. App instance only. |
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list before it sends the request. |
 | `--app=APP` | none | Numeric App ID for a definition. |
 | `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--app`. |
@@ -64,7 +65,15 @@ orbit process:create <name> (--instance=ID | --node=ID-or-name | --app=APP --for
 | `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
 | `--start` | off | Start the Process after installing it. Not accepted for a definition. |
 
-The two runtimes accept these values.
+To configure VitePlus for a development App instance:
+
+```bash
+orbit process:create assets --instance=commander.test --preset=vp-dev --start
+```
+
+The preset owns the command, systemd runtime, working directory, and port environment. It refuses custom runtime, command, working-directory, and Docker options. Its default restart policy is `on-failure`. Omit `--start` to install it stopped. An identical create keeps its recorded desired state; use `process:start` to start an existing stopped Process. See [assigned Vite ports](/reference/assigned-vite-ports) for allocation, wake, and application setup.
+
+The two generic runtimes accept these values.
 
 | Runtime | Required | Optional | Default working directory |
 | --- | --- | --- | --- |

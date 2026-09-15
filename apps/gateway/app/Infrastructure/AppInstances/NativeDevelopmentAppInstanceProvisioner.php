@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppInstances;
 use App\Actions\Routes\CreateRouteAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
@@ -29,6 +30,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
 
     public function reserve(AppInstance $appInstance, ?string $domain): void
     {
+        app(VitePortAllocator::class)->assign($appInstance);
         $route = $this->routes->ensureForAppInstance($appInstance, $domain);
 
         if ($route->status === RouteStatus::Failed) {

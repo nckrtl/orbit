@@ -20,6 +20,7 @@ use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceRemover;
@@ -135,6 +136,7 @@ use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\AppDev\RemoteVitePortRuntime;
 use App\Infrastructure\AppInstances\NativeAppInstanceEnvironmentOperationLock;
 use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
 use App\Infrastructure\AppInstances\NativeAppInstanceTransferRuntime;
@@ -341,6 +343,7 @@ final class AppServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        VitePortRuntime::class => RemoteVitePortRuntime::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         AppInstanceCheckoutInspector::class => RemoteAppInstanceCheckoutInspector::class,
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,

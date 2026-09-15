@@ -42,6 +42,7 @@ final class AppInstanceData extends Data
         public ?AppInstanceTransferData $transfer,
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
+        public ?int $vitePort = null,
     ) {}
 
     public static function fromModel(AppInstance $appInstance): self
@@ -60,6 +61,7 @@ final class AppInstanceData extends Data
             id: $appInstance->id,
             appId: $appInstance->app_id,
             nodeId: $appInstance->node_id,
+            vitePort: $appInstance->vite_port,
             name: $appInstance->name,
             environment: $appInstance->environment,
             sourceLayout: $appInstance->source_layout,

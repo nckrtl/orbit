@@ -1447,3 +1447,16 @@ function process_definition_cli_json(): string
         'request_id' => process_cli_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
+
+it('sends an explicit preset with an instance domain and leaves port preparation to the Gateway', function (): void {
+    $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
+    $this->artisan('process:create', ['name' => 'assets', '--instance' => 'commander.test', '--preset' => 'vp-dev', '--start' => true, '--json' => true])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false]);
+});
+
+it('refuses preset overrides without sending a request', function (array $options): void {
+    $mock = MockClient::global([]);
+    $this->artisan('process:create', ['name' => 'assets', '--instance' => 'commander.test', '--preset' => 'vp-dev', '--json' => true, ...$options])->assertExitCode(1);
+    $mock->assertNothingSent();
+})->with([[['--runtime' => 'systemd']], [['--command' => ['/bin/true']]], [['--working-directory' => '/tmp']], [['--port' => ['5173:5173']]]]);

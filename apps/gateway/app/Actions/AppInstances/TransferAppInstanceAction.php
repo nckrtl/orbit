@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\TransferAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
@@ -377,6 +378,8 @@ final readonly class TransferAppInstanceAction
         $path = StoragePath::parse($transfer->destination_path);
 
         if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
+            app(VitePortAllocator::class)->assign($instance);
+            app(VitePortAllocator::class)->assign($instance, $destination);
             $capture = $this->sources->capture($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
                 'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
@@ -599,6 +602,7 @@ final readonly class TransferAppInstanceAction
 
             $lockedInstance->update([
                 'node_id' => $destination->id,
+                'vite_port' => (int) DB::table('vite_port_assignments')->where('app_instance_id', $instance->id)->where('node_id', $destination->id)->value('port'),
                 'name' => $lockedTransfer->destination_name,
                 'checkout_path' => $lockedTransfer->destination_path,
                 'source_layout' => AppInstanceSourceLayout::Checkout,
@@ -671,6 +675,7 @@ final readonly class TransferAppInstanceAction
             );
         }
 
+        app(VitePortAllocator::class)->release($instance, $sourceNode);
         $this->checkpoint($transfer, AppInstanceTransferStep::Completed, [
             'status' => AppInstanceTransferStatus::Completed,
             'completed_at' => now(),
@@ -751,6 +756,7 @@ final readonly class TransferAppInstanceAction
         if ($destination instanceof Node) {
             try {
                 $this->sources->discardDestination($destination, StoragePath::parse($transfer->destination_path));
+                app(VitePortAllocator::class)->release($instance, $destination);
             } catch (Throwable) {
                 $incomplete[] = 'destination-checkout';
             }

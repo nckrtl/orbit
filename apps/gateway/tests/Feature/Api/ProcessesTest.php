@@ -11,6 +11,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -746,3 +747,27 @@ function processes_api_record(AppInstance $instance): Process
         'status' => LifecycleStatus::Active,
     ]);
 }
+
+it('creates an explicit Vite preset without raw runtime input and preserves desired state on retry', function (): void {
+    $payload = ['target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true];
+    $this->postJson('/api/v1/processes', $payload)->assertCreated()
+        ->assertJsonPath('data.runtime_config.preset', 'vp-dev')
+        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/vp', 'dev', '--host=127.0.0.1', '--port=${ORBIT_DEV_SERVER_PORT}', '--strictPort', '--base=/__orbit/vite/'])
+        ->assertJsonPath('data.restart_policy', 'on-failure')
+        ->assertJsonPath('data.desired_state', 'running');
+    $payload['start'] = false;
+    $this->postJson('/api/v1/processes', $payload)->assertOk()->assertJsonPath('data.desired_state', 'running');
+    $payload['name'] = 'another';
+    $this->postJson('/api/v1/processes', $payload)->assertConflict()->assertJsonPath('error.code', 'process.preset_exists');
+});
+
+it('rejects custom runtime fields on a preset even when explicitly empty', function (string $field, mixed $value): void {
+    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'assets', 'preset' => 'vp-dev', $field => $value])->assertUnprocessable();
+    expect(Process::query()->count())->toBe(0);
+})->with(['runtime' => ['runtime', 'systemd'], 'command' => ['command', []], 'image' => ['image', null], 'working directory' => ['working_directory', '/tmp'], 'ports' => ['ports', []], 'environment' => ['environment', []], 'volumes' => ['volumes', []]]);
+
+it('resolves an exact development Route domain for process creation', function (): void {
+    $route = Route::query()->create(['app_id' => $this->instance->app_id, 'node_id' => $this->node->id, 'domain' => 'vite.orbit.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['app_instance_id' => $this->instance->id, 'position' => 0]);
+    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => 'vite.orbit.test', 'name' => 'assets', 'preset' => 'vp-dev'])->assertCreated()->assertJsonPath('data.target_id', $this->instance->id)->assertJsonPath('data.desired_state', 'stopped');
+});

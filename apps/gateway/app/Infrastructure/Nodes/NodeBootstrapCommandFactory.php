@@ -16,18 +16,18 @@ final readonly class NodeBootstrapCommandFactory
         private NodeBootstrapPackageCatalog $packages = new NodeBootstrapPackageCatalog,
     ) {}
 
-    public function make(Node $node, string $managedUser): RemoteCommand
+    public function make(Node $node, string $managedUser, bool $rolelessOperator = false): RemoteCommand
     {
-        return $this->command($node, $managedUser);
+        return $this->command($node, $managedUser, $rolelessOperator);
     }
 
-    public function makeWithPasswordlessSudo(Node $node, string $managedUser): RemoteCommand
+    public function makeWithPasswordlessSudo(Node $node, string $managedUser, bool $rolelessOperator = false): RemoteCommand
     {
-        return $this->command($node, $managedUser, ['sudo', '-n', '--']);
+        return $this->command($node, $managedUser, $rolelessOperator, ['sudo', '-n', '--']);
     }
 
     /** @param list<string> $argumentPrefix */
-    private function command(Node $node, string $managedUser, array $argumentPrefix = []): RemoteCommand
+    private function command(Node $node, string $managedUser, bool $rolelessOperator, array $argumentPrefix = []): RemoteCommand
     {
         return new RemoteCommand(
             arguments: [
@@ -41,16 +41,17 @@ final readonly class NodeBootstrapCommandFactory
                 ...UbuntuRelease::supportedCodenames(),
                 $managedUser,
                 $this->keys->publicKey(),
+                ! $rolelessOperator && $node->dns_server_override === null ? 'managed' : 'preserve',
                 ...$this->packages->forNode($node),
             ],
-            input: OsReleaseParserProgram::render()."\n".<<<'BASH'
+            input: OsReleaseParserProgram::render()."\n".NodeBootstrapDnsProgram::render()."\n".<<<'BASH'
                 managed_user=$1
                 orbit_key=$2
-                shift 2
+                bootstrap_dns_policy=$3
+                shift 3
 
                 export DEBIAN_FRONTEND=noninteractive
-                apt-get update
-                apt-get install --yes --no-install-recommends -- "$@"
+                install_bootstrap_packages "$@"
 
                 user_created=false
                 if ! id -u -- "$managed_user" >/dev/null 2>&1; then

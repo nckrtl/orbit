@@ -11,6 +11,7 @@ describe(AppInstanceResponse::class, function (): void {
             'id' => 7,
             'app_id' => 3,
             'node_id' => 4,
+            'vite_port' => null,
             'name' => 'main',
             'environment' => 'development',
             'source_layout' => 'checkout',
@@ -31,6 +32,7 @@ describe(AppInstanceResponse::class, function (): void {
             'id' => 7,
             'app_id' => 3,
             'node_id' => 4,
+            'vite_port' => null,
             'name' => 'main',
             'environment' => 'development',
             'source_layout' => 'checkout',
@@ -96,4 +98,12 @@ describe(AppInstanceResponse::class, function (): void {
             'error_code' => null,
         ]);
     });
+});
+
+it('exposes a valid assigned Vite port and rejects invalid transport values', function (): void {
+    $response = AppInstanceResponse::fromGatewayData(['id' => 7, 'vite_port' => 5210], 'request-id');
+    expect($response->vitePort)->toBe(5210)->and($response->toArray()['vite_port'])->toBe(5210);
+    foreach ([0, 1023, 65536, '5173', false] as $invalid) {
+        expect(AppInstanceResponse::fromGatewayData(['vite_port' => $invalid], 'request-id')->vitePort)->toBeNull();
+    }
 });

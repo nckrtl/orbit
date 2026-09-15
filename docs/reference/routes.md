@@ -155,9 +155,9 @@ The Router uses the workload Node's configured LAN address. It uses WireGuard on
 
 The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) over the Route's HTTPS domain on port 443. Cluster DNS points that domain at the Router. The application serves its web root on the same domain. See [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin).
 
-Workload Caddy reverse-proxies that path to `127.0.0.1:5173` on the owning Node. Router Caddy forwards the path with the Route domain as the HTTP `Host` value and TLS server name. HTTPS and WSS terminate with the Route's Orbit certificate-authority certificates. The toolchain process speaks HTTP on loopback and does not present a certificate to the browser.
+Workload Caddy reverse-proxies that path to the App instance's assigned `vite_port` on Node loopback. Existing instances without an assignment retain port `5173`. Use the [VitePlus preset](/reference/assigned-vite-ports) to configure the assigned endpoint. Router Caddy forwards the path with the Route domain as the HTTP `Host` value and TLS server name. HTTPS and WSS terminate with the Route's Orbit certificate-authority certificates. The toolchain process speaks HTTP on loopback and does not present a certificate to the browser.
 
-Two App instances that use port 5173 on different Nodes stay isolated because each Caddy site proxies only to its own Node loopback. When the process on that loopback is stopped, Caddy returns a proxy error for that domain's reserved path and does not select another App instance.
+App instances on one Node have distinct assignments. Separate Nodes can reuse the same port. When the process on that loopback is stopped, Caddy returns a proxy error for that domain's reserved path and does not select another App instance.
 
 An operator configures the frontend toolchain to publish asset and HMR URLs on the reserved path. A development systemd Process receives these environment values from the Route domain.
 
@@ -166,32 +166,36 @@ An operator configures the frontend toolchain to publish asset and HMR URLs on t
 | `ORBIT_DEV_SERVER_ORIGIN` | `https://<route-domain>/__orbit/vite` |
 | `ORBIT_DEV_SERVER_HOST` | The Route domain |
 | `ORBIT_DEV_SERVER_PATH` | `/__orbit/vite` |
-| `ORBIT_DEV_SERVER_PORT` | `5173` |
+| `ORBIT_DEV_SERVER_PORT` | The instance assignment, or `5173` for a legacy instance. |
 
-A Vite development server that follows the contract binds loopback port 5173 and publishes the Cluster origin:
+A Vite development server that follows the contract binds its assigned loopback port and publishes the Cluster origin:
 
 ```js
 import { defineConfig } from 'vite'
 
 const origin = process.env.ORBIT_DEV_SERVER_ORIGIN
+const path = process.env.ORBIT_DEV_SERVER_PATH
 
 export default defineConfig({
+    base: path ? `${path}/` : '/',
     server: {
         host: '127.0.0.1',
         port: Number(process.env.ORBIT_DEV_SERVER_PORT || 5173),
         strictPort: true,
-        origin,
+        origin: origin ? new URL(origin).origin : undefined,
         hmr: origin
             ? {
                 protocol: 'wss',
                 host: process.env.ORBIT_DEV_SERVER_HOST,
                 clientPort: 443,
-                path: process.env.ORBIT_DEV_SERVER_PATH,
+                path: 'hmr',
             }
             : undefined,
     },
 })
 ```
+
+The preset sets `--base=/__orbit/vite/`. Workload Caddy preserves the prefix for assigned endpoints, so Vite can generate module imports under that base. Legacy unassigned endpoints retain prefix stripping. Vite prepends its base to the HMR path, so configure `hmr.path` as `hmr`.
 
 Laravel's `@vite` directive reads the `public/hot` file. The file must contain `ORBIT_DEV_SERVER_ORIGIN` so the browser requests `/__orbit/vite/@vite/client` on the Route domain. The [process reference](/reference/app-processes-and-schedules#add-a-process) describes the injected certificate and origin environment.
 

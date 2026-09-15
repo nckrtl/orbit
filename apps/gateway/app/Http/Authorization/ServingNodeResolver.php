@@ -274,6 +274,18 @@ final readonly class ServingNodeResolver
 
         $targetType = $request->input('target_type');
         $targetId = $this->positiveInteger($request->input('target_id'));
+        $selector = $request->input('target_id');
+        if ($targetType === 'instance' && $targetId === null && is_string($selector) && preg_match('/\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z0-9-]+\z/D', $selector) === 1) {
+            $instances = AppInstance::query()->where('environment', 'development')->whereHas('routes', static fn ($query) => $query->where('domain', $selector))->limit(2)->get();
+            if ($instances->count() > 1) {
+                throw new ResourceOperationException('process.target_ambiguous', 'The Route matches multiple development AppInstances.', 409);
+            }
+            if ($instances->isEmpty()) {
+                throw new ModelNotFoundException()->setModel(AppInstance::class);
+            }
+            $targetId = $instances->sole()->id;
+            $request->merge(['target_id' => $targetId]);
+        }
 
         if (! is_string($targetType) || $targetId === null) {
             return [];

@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $app_id
+ * @property int|null $vite_port
  * @property int $node_id
  * @property string $name
  * @property string $environment
@@ -99,6 +100,7 @@ final class AppInstance extends Model
     protected $fillable = [
         'app_id',
         'node_id',
+        'vite_port',
         'name',
         'environment',
         'source_layout',
@@ -254,6 +256,7 @@ final class AppInstance extends Model
     {
         return [
             'migration_required' => 'boolean',
+            'vite_port' => 'integer',
             'clone_candidate_id' => 'integer',
             'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',

@@ -373,3 +373,11 @@ function process_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('transports a preset and domain selector without synthesizing runtime configuration', function (): void {
+    $mock = new MockClient([CreateProcessRequest::class => MockResponse::make(process_envelope(), 201)]);
+    $request = new CreateProcessRequest(target: new AppInstanceProcessTarget('commander.test'), name: 'assets', preset: 'vp-dev', start: true);
+    process_connector($mock)->send($request);
+
+    expect($request->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false]);
+});

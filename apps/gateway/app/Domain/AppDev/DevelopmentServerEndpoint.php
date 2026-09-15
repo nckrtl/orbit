@@ -17,8 +17,8 @@ final readonly class DevelopmentServerEndpoint
         return 'https://'.$domain.self::PATH;
     }
 
-    public static function upstream(): string
+    public static function upstream(?int $port = null): string
     {
-        return self::LOOPBACK_HOST.':'.self::PORT;
+        return self::LOOPBACK_HOST.':'.($port ?? self::PORT);
     }
 }
