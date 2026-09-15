@@ -12,6 +12,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\AppInstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
@@ -137,6 +138,14 @@ final readonly class AppDevSiteRepository
                 });
             });
         }
+
+        $routeQuery->where(static function (Builder $query): void {
+            $query->where('status', '!=', RouteStatus::Retiring->value)
+                ->orWhereNotIn('id', AppInstanceTransfer::query()
+                    ->select('source_route_id')
+                    ->whereNotNull('cutover_at')
+                    ->whereColumn('source_route_id', '!=', 'destination_route_id'));
+        });
 
         $routes = $routeQuery->get();
         /** @var Collection<int, Route> $routes */

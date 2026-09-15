@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\AppInstances\TransferAppInstanceAction;
 use App\Data\AppInstances\TransferAppInstanceData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
@@ -21,6 +22,7 @@ use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
@@ -45,6 +47,7 @@ use Tests\Support\Orb245SourceLock;
 use Tests\Support\Orb245SqliteSeeder;
 use Tests\Support\Orb245TransferRuntime;
 use Tests\Support\Orb245TransferSource;
+use Tests\Support\Orb368RouterLock;
 
 beforeEach(function (): void {
     $this->orbitApp = OrbitApp::query()->create([
@@ -104,13 +107,15 @@ beforeEach(function (): void {
     $this->reader = new Orb245EnvironmentReader;
     $this->writer = new Orb245EnvironmentWriter;
     $this->projection = new Orb245Projection;
+    $this->environmentLock = new Orb245EnvironmentLock;
+    $this->routerLock = new Orb368RouterLock;
     $this->action = new TransferAppInstanceAction(
         $this->accounts,
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
         app(ManagedCheckoutOverlap::class),
         $this->destinationGuard,
-        new Orb245EnvironmentLock,
+        $this->environmentLock,
         new Orb245SourceLock,
         $this->sources,
         $this->runtime,
@@ -126,6 +131,9 @@ beforeEach(function (): void {
         $this->writer,
         new RouteStateResolver,
         $this->projection,
+        $this->projection,
+        app(DevelopmentProjectionOperationLock::class),
+        $this->routerLock,
     );
     $this->data = new TransferAppInstanceData(
         nodeId: $this->destinationNode->id,
@@ -209,6 +217,110 @@ it('keeps an explicit Route identity while moving its scope', function (): void 
     expect($route?->id)->toBe($this->route->id)
         ->and($route?->domain)->toBe('shop.example.test')
         ->and($route?->cluster_id)->toBe($this->destinationCluster->id);
+});
+
+it('finalizes a generated Route replacement so environment access and immediate reverse transfer succeed', function (): void {
+    $forward = $this->action->execute($this->instance, $this->data);
+    $route = $forward['appInstance']->authoritativeRoute();
+
+    expect($route->replacement_step)->toBeNull()
+        ->and($route->replaces_route_id)->toBeNull()
+        ->and($route->replaced_by_route_id)->toBeNull();
+    $context = new AppInstanceEnvironmentContextResolver()->resolve($forward['appInstance'], true);
+    expect($context->nodeId)->toBe($this->destinationNode->id)
+        ->and($context->routeDomain)->toBe('web.shop.other.orbit');
+
+    $reverse = $this->action->execute($forward['appInstance'], new TransferAppInstanceData(
+        nodeId: $this->sourceNode->id,
+        name: null,
+        sqliteSourcePath: null,
+    ));
+
+    expect($reverse['appInstance']->id)->toBe($this->instance->id)
+        ->and($reverse['appInstance']->node_id)->toBe($this->sourceNode->id)
+        ->and($reverse['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($reverse['appInstance']->routes)->toHaveCount(1);
+    expect(new AppInstanceEnvironmentContextResolver()->resolve($reverse['appInstance'], true)->routeDomain)
+        ->toBe('web.shop.dev.orbit');
+});
+
+it('owns the source Cluster Router before waiting for the environment lock shared with Cluster updates', function (): void {
+    $this->environmentLock->beforeRun = function (): void {
+        expect($this->routerLock->ownedClusterId)->toBe($this->sourceCluster->id);
+    };
+
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($this->routerLock->ownedClusterId)->toBeNull();
+});
+
+it('returns a completed legacy transfer without requiring original Router evidence', function (): void {
+    $completed = $this->action->execute($this->instance, $this->data);
+    $completed['transfer']->update(['source_router_node_id' => null]);
+    $calls = $this->sources->calls;
+
+    $result = $this->action->execute($completed['appInstance'], $this->data);
+
+    expect($result['created'])->toBeFalse()
+        ->and($result['transfer']->id)->toBe($completed['transfer']->id)
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($this->sources->calls)->toBe($calls);
+});
+
+it('retains the source Route and Vite reservation until projection retirement can be retried', function (): void {
+    $this->projection->failRetirementOnce = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $destination = Route::query()->findOrFail($transfer->destination_route_id);
+
+    expect($this->route->refresh()->status)->toBe(RouteStatus::Retiring)
+        ->and($destination->replacement_step)->toBe(RouteReplacementStep::DatabaseCutover)
+        ->and($transfer->source_router_node_id)->toBe($this->sourceCluster->routerAssignment->node_id)
+        ->and($transfer->completed_at)->toBeNull()
+        ->and($this->sources->calls)->toBe(['capture', 'materialize'])
+        ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'activate']);
+    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->count())->toBe(2);
+
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($this->projection->calls)->toBe(['converge', 'retire', 'retire'])
+        ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup'])
+        ->and($this->runtime->calls)->not->toContain('restore');
+    $this->assertModelMissing($this->route);
+});
+
+it('refuses cleanup before remote deletion when the replacement ownership changed', function (): void {
+    $this->projection->failRetirementOnce = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $destination = Route::query()->findOrFail($transfer->destination_route_id);
+    $destination->update(['replaces_route_id' => null]);
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_cleanup_conflict'));
+
+    expect($this->projection->calls)->toBe(['converge', 'retire'])
+        ->and($this->sources->calls)->toBe(['capture', 'materialize'])
+        ->and($this->runtime->calls)->not->toContain('cleanup', 'restore')
+        ->and($transfer->refresh()->completed_at)->toBeNull();
+    $this->assertModelExists($this->route);
+});
+
+it('retains legacy post-cutover state when the original Router identity is unknown', function (): void {
+    $this->projection->failRetirementOnce = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $transfer->update(['source_router_node_id' => null]);
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_source_router_unknown'));
+
+    expect($this->projection->calls)->toBe(['converge', 'retire'])
+        ->and($this->sources->calls)->toBe(['capture', 'materialize'])
+        ->and($transfer->refresh()->completed_at)->toBeNull();
+    $this->assertModelExists($this->route);
 });
 
 it('refuses ineligible sources and destinations before source mutation', function (
@@ -421,6 +533,8 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
 
     expect($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
         ->and($transfer->recovery_evidence)->toHaveKey('incomplete')
+        ->and($this->route->refresh()->status)->toBe(RouteStatus::Retiring)
+        ->and(Route::query()->findOrFail($transfer->destination_route_id)->replacement_step)->toBe(RouteReplacementStep::DatabaseCutover)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
 
     expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->count())->toBe(2);
@@ -436,7 +550,7 @@ it('completes transfer from verified placement state without application HTTP he
     $this->action->execute($this->instance, $this->data);
 
     expect($this->projection->httpChecks)->toBe(0)
-        ->and($this->projection->calls)->toBe(['converge']);
+        ->and($this->projection->calls)->toBe(['converge', 'retire']);
 });
 
 /**
