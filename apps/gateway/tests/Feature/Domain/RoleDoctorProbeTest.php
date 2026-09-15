@@ -107,6 +107,27 @@ it('reports lifecycle and each conflicting assignment once without leaking store
         ->not->toContain('secret-step', 'secret-code', 'failed_step', 'error_code');
 });
 
+it('does not report a conflict when database shares a node with router', function (): void {
+    $node = role_probe_node('database-router');
+    $cluster = Cluster::query()->create(['name' => 'database-router']);
+    $node->update(['cluster_id' => $cluster->id]);
+    role_probe_assignment($node, RoleName::Router, clusterId: $cluster->id);
+    role_probe_assignment($node, RoleName::Database);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect($report->checked)
+        ->toBe(2)
+        ->and($report->issues)
+        ->toBeEmpty()
+        ->and($roleCalls)
+        ->toBe(2);
+});
+
 it('marks every conflicting singleton row across the fleet', function (): void {
     $selected = role_probe_node('selected-singleton');
     $other = role_probe_node('other-singleton');

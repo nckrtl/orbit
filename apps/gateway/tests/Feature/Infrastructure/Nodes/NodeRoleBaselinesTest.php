@@ -50,6 +50,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process;
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
     expect(class_exists(AppDevRoleBaseline::class))->toBeTrue();
@@ -374,6 +375,87 @@ it('converges Docker prerequisites and leaves them installed on remove', functio
     $baseline->removeUnreachable($node, $assignment);
 
     expect($events)->toBe(['ssh:database']);
+});
+
+it('converges database beside router without rewriting routing or node processes', function (): void {
+    $events = [];
+    [$node, $routerAssignment] = role_baseline_models(RoleName::Router, 'shared-router-database');
+    $databaseAssignment = $node->roles()->create([
+        'role' => RoleName::Database,
+        'status' => 'provisioning',
+    ]);
+    $process = Process::query()->create([
+        'owner_type' => Node::class,
+        'owner_id' => $node->id,
+        'name' => 'valkey',
+        'runtime' => 'docker',
+        'working_directory' => '/data',
+        'runtime_config' => [
+            'image' => 'valkey/valkey:8',
+            'command' => ['valkey-server'],
+            'ports' => ['127.0.0.1:6379:6379'],
+        ],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => 'running',
+        'status' => 'active',
+    ]);
+    $processSnapshot = $process->only([
+        'id',
+        'owner_type',
+        'owner_id',
+        'name',
+        'runtime',
+        'runtime_config',
+        'restart_policy',
+        'desired_state',
+        'status',
+    ]);
+    $routerSnapshot = $routerAssignment->only(['id', 'node_id', 'cluster_id', 'role', 'status']);
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet
+        ->shouldReceive('reconcile')
+        ->once()
+        ->andReturnUsing(static function () use (&$events): void {
+            $events[] = 'metrics';
+        });
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+        router_role_baseline($events),
+        new NodeRoleBaselineClusterRouterOperationLock($events),
+        database_role_baseline($events),
+    );
+
+    $dispatcher->converge($node, $databaseAssignment);
+
+    expect($events)
+        ->toBe(['guard:gateway', 'ssh:database', 'metrics'])
+        ->and($process->fresh()->only(array_keys($processSnapshot)))
+        ->toBe($processSnapshot)
+        ->and($routerAssignment->fresh()->only(array_keys($routerSnapshot)))
+        ->toBe($routerSnapshot);
 });
 
 it('refuses database convergence without a WireGuard address', function (): void {

@@ -303,6 +303,29 @@ describe(AssignRoleAction::class, function (): void {
             ->and($node->roles()->count())
             ->toBe(2);
     });
+
+    it('assigns database beside router in both assignment orders', function (
+        RoleName $first,
+        RoleName $second,
+    ): void {
+        $cluster = Cluster::query()->create(['name' => "database-router-{$first->value}"]);
+        $node = Node::query()->create([
+            'name' => "database-router-{$first->value}",
+            'public_ssh_host' => $first === RoleName::Router ? '192.0.2.88' : '192.0.2.89',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+        $action->execute($node, $first);
+        $assigned = $action->execute($node, $second);
+
+        expect($assigned->role)
+            ->toBe($second)
+            ->and($node->roles()->pluck('role')->map->value->sort()->values()->all())
+            ->toBe(['database', 'router']);
+    })->with([
+        'database then router' => [RoleName::Database, RoleName::Router],
+        'router then database' => [RoleName::Router, RoleName::Database],
+    ]);
 });
 
 /** @return array{0: 'claim-lock'|'claim-source-read'|'role-policy', 1: int|null}|null */
