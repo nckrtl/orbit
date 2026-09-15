@@ -1,3 +1,8 @@
+---
+title: "VPN dnsmasq uplink resolvers"
+description: "Why the VPN DNS backend needs independent uplink resolvers and how to verify that forwarding cannot loop back."
+---
+
 # VPN dnsmasq uplink resolvers
 
 ## Problem

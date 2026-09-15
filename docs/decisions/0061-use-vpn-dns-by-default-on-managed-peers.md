@@ -1,3 +1,9 @@
+---
+title: "ADR 0061: Use VPN DNS by default on managed peers"
+sidebarTitle: "0061 Use VPN DNS by default on managed peers"
+description: "Accepted on 2026-09-12. Extends ADR 0023."
+---
+
 # ADR 0061: Use VPN DNS by default on managed peers
 
 In the context of managed Nodes resolving private Route hostnames, facing missing DNS suffix configuration when Cluster naming changes, we decided for Orbit VPN DNS as the default resolver on managed peers and against distributing private suffix lists, to centralize name resolution, accepting that ordinary DNS resolution also depends on VPN DNS availability.

@@ -1,3 +1,8 @@
+---
+title: "Mission"
+description: "Why Orbit exists, how the Gateway, CLI, and Nodes divide the work, and what Orbit manages for humans and coding agents."
+---
+
 # Mission
 
 Orbit manages local development, production hosting, and day-to-day machine maintenance. You or your AI agent can operate it through the same command-line interface (CLI).

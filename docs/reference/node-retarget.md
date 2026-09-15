@@ -1,3 +1,8 @@
+---
+title: "Node retarget"
+description: "How the Gateway moves a Node to a new public SSH target over public SSH or WireGuard without changing its identity."
+---
+
 # Node retarget
 
 `orbit:node-retarget NAME HOST [--ssh-port=PORT]` moves an active node's

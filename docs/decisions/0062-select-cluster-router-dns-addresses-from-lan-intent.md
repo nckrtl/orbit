@@ -1,3 +1,9 @@
+---
+title: "ADR 0062: Select Cluster Router DNS addresses from LAN intent"
+sidebarTitle: "0062 Select Cluster Router DNS addresses from LAN intent"
+description: "Accepted on 2026-09-12. Supersedes ADR 0009 only where Cluster Router DNS publication always selects the Router's WireGuard address."
+---
+
 # ADR 0062: Select Cluster Router DNS addresses from LAN intent
 
 In the context of Cluster members reaching private Routes, facing a VPN detour between Nodes with configured LAN connectivity, we decided for central DNS address selection from registered Node and Cluster configuration and against automatic reachability detection, to use explicitly configured LAN paths, accepting that an unreachable configured LAN path does not fall back to WireGuard.

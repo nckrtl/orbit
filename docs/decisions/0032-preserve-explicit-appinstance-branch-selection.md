@@ -1,3 +1,9 @@
+---
+title: "ADR 0032: Preserve explicit AppInstance branch selection"
+sidebarTitle: "0032 Preserve explicit AppInstance branch selection"
+description: "Accepted on 2026-09-05. Extends ADR 0025."
+---
+
 # ADR 0032: Preserve explicit AppInstance branch selection
 
 In the context of AppInstances that need a source branch different from their App default, facing default-branch updates that would overwrite a deliberate instance choice, we decided for a persistent explicit branch selection and against inferring that choice from an instance name or replacing it during an App default change, to preserve source intent independently from instance identity, accepting branch-selection intent in AppInstance lifecycle records.

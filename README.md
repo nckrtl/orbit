@@ -1,62 +1,44 @@
 # Orbit
 
-Orbit is one Git repository with five independently installable PHP projects.
-The repository keeps their release boundaries and Composer lock files separate.
+Orbit connects application development, hosting, and machine maintenance. Use its command-line interface yourself or through an AI agent. A self-hosted Gateway coordinates your Linux machines over SSH and WireGuard.
 
-```text
-apps/cli            Laravel Zero client
-apps/docs           Documentation linter and context generator
-apps/e2e            Incus proof harness
-apps/gateway        Laravel control plane
-packages/php-sdk    Framework-neutral PHP SDK
-```
-
-## Bootstrap
-
-Use PHP 8.5 and Composer 2, then install all projects in parallel:
+Register a Git repository, create a development App instance, and get a private HTTPS URL:
 
 ```bash
-bin/bootstrap
+orbit app:create hello https://github.com/YOUR-ACCOUNT/hello.git --root=public
+orbit instance:create APP_ID NODE_ID default
 ```
 
-The equivalent Composer command is `composer bootstrap`.
+Replace the repository and IDs with your own values. The [installation guide](docs/reference/installation.md) sets up the Gateway and CLI. Then follow [your first app](docs/reference/first-app.md) to add a machine and serve a page.
 
-Run affected Pest tests through TIA and the changed project's `composer check`
-locally. For a repository-wide TIA run:
+## Alpha status
 
-```bash
-bin/test
-```
+Orbit is being prepared for a source-based alpha. Use disposable machines and test data. The [alpha guide](docs/reference/alpha.md) defines the trial path, limits, and release criteria. It does not claim that the fresh-machine trial or production readiness has passed.
 
-The equivalent Composer command is `composer test`.
+The CLI requires PHP 8.5 and Composer 2. Managed Nodes, including the Gateway, require Ubuntu 26.04; Ubuntu 24.04 is unsupported. [Requirements](docs/reference/installation.md#requirements) separate local CLI tools from managed-machine needs.
 
-Each project keeps its own `AGENTS.md`, quality commands, and release contract.
-Read the nearest guidance file before changing a project.
+## Documentation and feedback
 
-The maintained documentation corpus stays under root `docs/`. Run
-`composer docs-lint` to verify it, `composer docs-build` to update its committed
-context index, and `composer docs-context` to select an ordered reading set.
+Start with these guides:
 
-The former standalone repositories are history snapshots. This repository is
-the source of truth. Add an explicit split or artifact workflow before the next
-standalone package publication; do not maintain the old repositories by hand.
+- [Install from source](docs/reference/installation.md)
+- [Run your first app](docs/reference/first-app.md)
+- [Update, back up, and recover](docs/reference/gateway-recovery.md)
+- [Report a bug](https://github.com/nckrtl/orbit/issues/new?template=bug_report.yml)
+- [Contribute](CONTRIBUTING.md)
 
-## Feature work
+Maintained documentation lives in `docs/`, with Mintlify navigation in `docs/docs.json`.
 
-Feature branches use one repository worktree. A worktree contains the CLI,
-Gateway, SDK, and E2E harness at one commit, so cross-project changes stay
-atomic.
+## Repository
 
-```bash
-bin/worktree-create ORB-217
-```
+Each project owns its Composer dependencies and checks:
 
-The command creates `/fast/worktrees/orbit/orb-217` on branch
-`orb-217`, initializes an ignored `.loop/plan.md` beside
-`.loop/proof/`, and bootstraps all projects. Publish the workspace with
-`bin/loop-artifacts publish ORB-217` after committing the candidate. Review and
-merge that same candidate. See [the implementation loop](docs/reference/implementation-loop.md).
+| Path | Purpose |
+| --- | --- |
+| `apps/cli` | Laravel Zero command-line client |
+| `apps/gateway` | Laravel control plane |
+| `packages/php-sdk` | Framework-neutral HTTP client |
+| `apps/docs` | Documentation checks and context generator |
+| `apps/e2e` | Incus verification harness |
 
-Repository-owned skills under `.agents/skills/` are independently invokable
-helpers for decision records, issue creation, documentation writing and auditing, planning, implementation, review, and merge
-operations. They are optional task guides for contributors and coding agents.
+The [MIT license](LICENSE) covers the project. Third-party dependencies retain their own licenses.

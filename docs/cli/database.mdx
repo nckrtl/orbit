@@ -1,0 +1,137 @@
+---
+title: "database"
+description: "Register, inspect, update, and destroy the mysql, pgsql, and sqlite connections that App instances can attach."
+---
+
+A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry. It does not start, stop, or query a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it.
+
+The [Database connections reference](/reference/database-connections) owns the driver fields, the API, and the keys that an attachment writes. Attach a registered connection to an App instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`database:create`](#orbit-databasecreate) | Create one connection record. |
+| [`database:list`](#orbit-databaselist) | List registered connections. |
+| [`database:show`](#orbit-databaseshow) | Show one connection. |
+| [`database:update`](#orbit-databaseupdate) | Replace the supplied fields on one connection. |
+| [`database:destroy`](#orbit-databasedestroy) | Destroy one connection record. |
+
+Every command accepts `--json`. No response ever includes the password; `has_password` reports whether one is stored.
+
+## orbit database:create
+
+Create one connection with a unique slug. The Gateway encrypts the password before it writes the row.
+
+```bash
+orbit database:create <slug> --driver=DRIVER [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Lowercase kebab name of at most 63 characters. |
+
+| Option | Meaning |
+| --- | --- |
+| `--driver=DRIVER` | `mysql`, `pgsql`, or `sqlite`. |
+| `--node=NODE` | Numeric Node ID or registered Node name to associate. The `database` role is not required. |
+| `--host=HOST` | Hostname or IP address for mysql and pgsql, without userinfo or port. |
+| `--port=PORT` | TCP port for mysql and pgsql. Defaults to `3306` for mysql and `5432` for pgsql. |
+| `--database=NAME` | Database name for mysql and pgsql. |
+| `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
+| `--username=USER` | Username. Required for mysql and pgsql. |
+| `--password=SECRET` | Password. Required for mysql and pgsql. |
+
+| Driver | Required fields | Optional fields |
+| --- | --- | --- |
+| `mysql` | `--host`, `--database`, `--username`, `--password` | `--node`, `--port` |
+| `pgsql` | `--host`, `--database`, `--username`, `--password` | `--node`, `--port` |
+| `sqlite` | `--path` | `--node`, `--username`, `--password` |
+
+```bash
+orbit database:create app --driver=mysql --host=db.example.test --database=app --username=app --password=secret
+orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
+orbit database:create postgres --driver=pgsql --node=beast --host=127.0.0.1 --database=app --username=app --password=secret
+```
+
+The Gateway answers `validation.failed` when a mysql or pgsql record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
+
+<Note>
+A connection with `--node` can align with a Node-owned Docker Process on that Node. When an App instance on the same Node attaches it, the Gateway writes `127.0.0.1` and the published host port instead of the stored host and port.
+</Note>
+
+## orbit database:list
+
+List every registered connection ordered by slug.
+
+```bash
+orbit database:list [--json]
+```
+
+## orbit database:show
+
+Show one connection with its driver, Node association, host, port, database, path, username, and `has_password`.
+
+```bash
+orbit database:show <slug> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+
+## orbit database:update
+
+Replace the supplied fields on one connection. The command requires at least one field option and accepts the same field options as `database:create`.
+
+```bash
+orbit database:update <slug> [options]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--driver=DRIVER` | `mysql`, `pgsql`, or `sqlite`. |
+| `--node=NODE` | Node ID or registered name. An empty value, `--node=`, clears the association. |
+| `--host=HOST` | Hostname or IP for mysql and pgsql. |
+| `--port=PORT` | TCP port for mysql and pgsql. |
+| `--database=NAME` | Database name for mysql and pgsql. |
+| `--path=PATH` | Unix absolute sqlite path. |
+| `--username=USER` | Username. |
+| `--password=SECRET` | Password. |
+
+```bash
+orbit database:update app --password=rotated-secret
+orbit database:update app --node=
+```
+
+Updating a record does not rewrite the keys already stored on attached App instances. Run `instance:database:add` again with the same prefix to re-project them, then `env:sync` to install them.
+
+## orbit database:destroy
+
+Destroy one connection record.
+
+```bash
+orbit database:destroy <slug> [--force] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation prompt. A non-interactive call without it returns `database.confirmation_required`. |
+
+```bash
+orbit database:destroy app --force
+```
+
+<Warning>
+The Gateway answers `database.connection_attached` while any App instance still attaches the connection. Remove those attachments with `instance:database:remove` first.
+</Warning>
+
+## Related
+
+- [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd) and [`instance:database:remove`](/cli/instance#orbit-instancedatabaseremove) attach and detach a connection on one App instance.
+- [`process`](/cli/process) creates the Docker Node Process that runs a shared database server.
+- [`doctor --family=database_connection`](/cli/doctor) reports missing, unhealthy, or mismatched attachments.

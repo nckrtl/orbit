@@ -1,3 +1,9 @@
+---
+title: "ADR 0004: Define the verify-only Doctor boundary"
+sidebarTitle: "0004 Define the verify-only Doctor boundary"
+description: "Accepted on 2026-08-28."
+---
+
 # ADR 0004: Define the verify-only Doctor boundary
 
 ## Status

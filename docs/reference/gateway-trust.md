@@ -1,3 +1,8 @@
+---
+title: "Gateway trust"
+description: "How the CLI registers, selects, and removes Gateway profiles and pins the Gateway root certificate in the operating-system trust store."
+---
+
 # Gateway trust
 
 This page tells an operator how the CLI registers, selects, and removes Gateway profiles, and how it pins a Gateway root certificate. It also covers operating-system trust-store changes and recovery when a local profile changes during a trust command.

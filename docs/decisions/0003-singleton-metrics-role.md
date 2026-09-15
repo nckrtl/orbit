@@ -1,3 +1,9 @@
+---
+title: "ADR 0003: Adopt the singleton Metrics role contract"
+sidebarTitle: "0003 Adopt the singleton Metrics role contract"
+description: "Accepted on 2026-08-28."
+---
+
 # ADR 0003: Adopt the singleton Metrics role contract
 
 ## Status

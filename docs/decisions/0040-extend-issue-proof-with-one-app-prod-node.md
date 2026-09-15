@@ -1,3 +1,9 @@
+---
+title: "ADR 0040: Extend issue proof with one app-prod Node"
+sidebarTitle: "0040 Extend issue proof with one app-prod Node"
+description: "Accepted on 2026-09-06. Extends ADR 0006, ADR 0035, and ADR 0037 for issue-owned topology extension while preserving the three-node shared snapshot."
+---
+
 # ADR 0040: Extend issue proof with one app-prod Node
 
 In the context of proving routing across two production workload Nodes, facing a shared topology with only one app-prod Node, we decided for one declared temporary app-prod Node in the issue's proof and against enlarging the shared snapshot or substituting disposable scenario results, to obtain retained multi-node acceptance evidence, accepting an additional Node per extended attempt and snapshot refresh at closeout.

@@ -1,0 +1,428 @@
+---
+title: "instance"
+description: "Create, register, clone, deploy, roll back, and remove App instances, and attach Database connections to them."
+---
+
+An App instance is one placement of an App on one Node. A development App instance owns a checkout or worktree on an app-dev Node. A production App instance owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Every active App instance has exactly one Route.
+
+The [Applications guide](/domains/applications) walks through creation and registration. The [production release layout](/reference/deployments), [App instance cloning](/reference/appinstance-cloning), [App instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) references own the contracts behind the commands on this page.
+
+## Commands
+
+Every command accepts `--json`. `instance:deploy` and `instance:rollback` return newline-delimited JSON (NDJSON) instead of one document.
+
+Placement commands create, adopt, inspect, and remove an App instance on one Node.
+
+| Command | Result |
+| --- | --- |
+| [`instance:create`](#orbit-instancecreate) | Create a development App instance on an app-dev Node. |
+| [`instance:register`](#orbit-instanceregister) | Adopt the current Git checkout or worktree as a managed App instance. |
+| [`instance:list`](#orbit-instancelist) | List App instances. |
+| [`instance:show`](#orbit-instanceshow) | Show one App instance with its Route, source, and deploy steps. |
+| [`instance:transfer`](#orbit-instancetransfer) | Move a development App instance to another Node. |
+| [`instance:destroy`](#orbit-instancedestroy) | Remove an App instance and its owned Processes, Schedules, and Route. |
+
+Release commands prepare and operate a production App instance.
+
+| Command | Result |
+| --- | --- |
+| [`instance:clone`](#orbit-instanceclone) | Clone a candidate into a prepared production App instance. |
+| [`instance:update`](#orbit-instanceupdate) | Change the deployment branch of a production App instance. |
+| [`instance:deploy-step:create`](#orbit-instancedeploy-stepcreate) | Record one named deploy step. |
+| [`instance:deploy-step:list`](#orbit-instancedeploy-steplist) | List deploy steps in phase and placement order. |
+| [`instance:deploy-step:update`](#orbit-instancedeploy-stepupdate) | Change one named deploy step. |
+| [`instance:deploy-step:destroy`](#orbit-instancedeploy-stepdestroy) | Remove one named deploy step. |
+| [`instance:deploy`](#orbit-instancedeploy) | Deploy the configured branch as a fresh release. |
+| [`instance:release:list`](#orbit-instancereleaselist) | List retained releases and the current selection. |
+| [`instance:rollback`](#orbit-instancerollback) | Select one retained release. |
+
+Attachment commands write a registered Database connection into stored App instance configuration.
+
+| Command | Result |
+| --- | --- |
+| [`instance:database:add`](#orbit-instancedatabaseadd) | Add a Database connection and write prefixed stored environment keys. |
+| [`instance:database:remove`](#orbit-instancedatabaseremove) | Remove a Database connection and clear those keys. |
+
+## orbit instance:create
+
+Create a development App instance on a Node with the active `app-dev` role. New production placements require [`instance:clone`](#orbit-instanceclone); `instance:create` refuses them with `instance.candidate_required`.
+
+```bash
+orbit instance:create <app> <node> <name> [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `app` | yes | Numeric App ID. |
+| `node` | yes | Numeric Node ID. |
+| `name` | yes | App instance name. `default` is reserved for the App's default development source. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--root=PATH` | the App root | Relative web-root override for this App instance. |
+| `--domain=HOST` | generated | Explicit Route domain for the development source. |
+| `--branch=BRANCH` | see below | Explicit source branch. It must exist on the remote. |
+| `--recover-source-profile` | off | Adopt complete source evidence for a checkpoint that has no recorded source profile. |
+
+Development placement and branch selection follow the requested name.
+
+| Creation input | Managed placement | Selected branch |
+| --- | --- | --- |
+| `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The App `default_branch`. |
+| Another name without `--branch` | `<node-apps-root>/<app-slug>/<name>` | The matching remote branch, or a new branch from the fetched `default_branch` commit. |
+| Any name with `--branch` | The placement for the requested name | The existing remote branch. |
+
+```bash
+orbit instance:create 4 7 default
+orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
+```
+
+The Gateway records each provisioning boundary, so an identical retry resumes an incomplete creation. A retry that adds, removes, or changes `--branch` returns `instance.placement_conflict`. A branch that does not exist returns `instance.branch_resolution_failed`.
+
+<Note>
+Active means Orbit prepared the source, selected any PHP runtime, aligned a Laravel `APP_URL`, and published the Route. It does not mean the application is healthy; missing dependencies or an application key can still return HTTP 500.
+</Note>
+
+## orbit instance:register
+
+Adopt the current Git checkout or worktree as a managed App instance. Run it on the app-dev Node that holds the source.
+
+```bash
+orbit instance:register [options]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--path=PATH` | the current directory | Existing Git checkout or worktree. |
+| `--include-worktrees` | off | Adopt the checkout and every linked worktree as one preflighted set. |
+| `--app=ID` | resolved from the origin | Existing numeric App ID. |
+| `--app-name=NAME` | inferred | Confirmed App display name for a new App. |
+| `--app-slug=SLUG` | the repository name | Confirmed App slug for a new App. |
+| `--default-branch=BRANCH` | the remote default | Confirmed App default branch for a new App. |
+| `--name=NAME` | inferred | Non-default App instance name. |
+| `--root=PATH` | `public` for an unambiguous Laravel checkout | Confirmed App root, or a root override for an existing App. |
+| `--domain=HOST` | generated | Explicit Route domain for the primary source. |
+
+The CLI refuses a directory outside a Git checkout and refuses a credential-bearing origin before it sends a request. The Gateway resolves the App by canonical repository identity, verifies the source on the caller Node, moves it into managed placement, and provisions the same Route and runtime that `instance:create` provisions.
+
+In an interactive terminal the CLI shows the inferred values, asks only for unresolved ones, and asks you to confirm the ownership transfer. `--json` and other non-interactive calls refuse when a required value stays unresolved and send no request.
+
+```bash
+cd ~/apps/acme
+orbit instance:register
+orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --json
+```
+
+Registration also completes the manual migration of an App instance whose list and show output reports `migration_required: true`. The [Applications guide](/domains/applications#register-an-existing-development-source) describes inferred identity and placement.
+
+## orbit instance:list
+
+List App instances with their App, Node, status, Route domain, and nullable `removal` progress.
+
+```bash
+orbit instance:list [--json]
+```
+
+## orbit instance:show
+
+Show one App instance. Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
+
+```bash
+orbit instance:show <instance> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+
+## orbit instance:destroy
+
+Remove an App instance. The Gateway clears its Route target, removes every owned Process and Schedule, and deletes the record.
+
+```bash
+orbit instance:destroy <instance> [--force] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Delete dirty or unpublished development source after identity checks pass, and accept a checkout together with its registered linked worktrees. |
+
+Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. Forced removal waives only those three refusals. It never waives the source path, ownership, layout, origin, branch, or worktree inventory checks, which return `instance.source_path_mismatch`, `instance.source_ownership_mismatch`, `instance.source_layout_mismatch`, `instance.source_origin_mismatch`, `instance.source_branch_mismatch`, or `instance.source_worktrees_mismatch`.
+
+```bash
+orbit instance:destroy 12
+orbit instance:destroy 12 --force
+```
+
+<Warning>
+Production removal retains `releases/`, `.env`, an existing `database.sqlite`, and local PHP-FPM tuning for recovery. Development removal deletes the checkout. Repeating the same command resumes an interrupted removal from its first unfinished step.
+</Warning>
+
+## orbit instance:clone
+
+Clone a candidate into a prepared production App instance. The candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions.
+
+```bash
+orbit instance:clone <candidate> <node> <name> --preview-name=NAME [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `candidate` | yes | Numeric candidate App instance ID. |
+| `node` | yes | Numeric destination Node ID with the active `app-prod` role. |
+| `name` | yes | Target production App instance name. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--preview-name=NAME` | required | Preview name that the Gateway combines with the destination Node TLD. |
+| `--branch=BRANCH` | the candidate branch | Target branch that must exist in the App repository. |
+| `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate to seed `database.sqlite`. |
+
+Provision the production Node with `node:add --tld` before cloning; `shop.com` on a Node whose TLD is `prod.orbit` becomes the private preview `shop.com.prod.orbit`. The candidate must have no staged, unstaged, untracked, or submodule change, and its commit must be reachable from the App repository.
+
+```bash
+orbit node:add production production.example --role=app-prod --tld=prod.orbit
+orbit instance:clone 12 9 primary --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite
+```
+
+Cloning ends with an active App instance that has no selected release. Update and synchronize target environment values, configure deploy steps, then run `instance:deploy` to create and select the first release. An identical retry resumes an interrupted clone; a request that changes the candidate, destination, name, preview, branch, or SQLite selection is refused.
+
+## orbit instance:update
+
+Change the deployment branch of a production App instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+
+```bash
+orbit instance:update <instance> --branch=BRANCH [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--branch=BRANCH` | Deployment branch. A later App default change does not replace it. |
+
+The Gateway refuses a development App instance with a bounded conflict before it stores a branch.
+
+## orbit instance:deploy-step:create
+
+Record one named deploy step on a production App instance. The Gateway stores it at the end of its phase unless you place it.
+
+```bash
+orbit instance:deploy-step:create <instance> <name> --command=COMMAND [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+| `name` | yes | Step name: 1 through 63 lowercase letters, digits, or hyphens, unique within the App instance. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--command=COMMAND` | required | Command the Gateway runs as the production user from the fresh release. |
+| `--phase=PHASE` | `before_activation` | `before_activation` or `after_activation`. |
+| `--timeout=SECONDS` | `300` | Timeout from 1 through 900 seconds. |
+| `--before=NAME` | none | Place before this step in the same phase. Exclusive with `--after`. |
+| `--after=NAME` | none | Place after this step in the same phase. Exclusive with `--before`. |
+
+```bash
+orbit instance:deploy-step:create 15 install --command="composer install --no-dev --optimize-autoloader"
+orbit instance:deploy-step:create 15 migrate --command="php artisan migrate --force" --after=install
+orbit instance:deploy-step:create 15 restart-queue --command="php artisan queue:restart" --phase=after_activation
+```
+
+The Gateway refuses a duplicate name, a placement that names an unknown step or a step in another phase, a thirty-third step, a timeout over 900 seconds, or a step-timeout sum over 3,600 seconds.
+
+## orbit instance:deploy-step:list
+
+List deploy steps in phase and placement order. `--json` returns the steps and the `request_id` as one object.
+
+```bash
+orbit instance:deploy-step:list <instance> [--json]
+```
+
+## orbit instance:deploy-step:update
+
+Change one named deploy step. Options you omit stay unchanged.
+
+```bash
+orbit instance:deploy-step:update <instance> <name> [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+| `name` | yes | Existing step name. |
+
+| Option | Meaning |
+| --- | --- |
+| `--command=COMMAND` | New command. |
+| `--phase=PHASE` | `before_activation` or `after_activation`. |
+| `--timeout=SECONDS` | Timeout from 1 through 900 seconds. |
+| `--before=NAME` | Place before this step in the same phase. Exclusive with `--after`. |
+| `--after=NAME` | Place after this step in the same phase. Exclusive with `--before`. |
+
+```bash
+orbit instance:deploy-step:update 15 migrate --timeout=600
+```
+
+## orbit instance:deploy-step:destroy
+
+Remove one named deploy step. Remaining steps keep their relative order.
+
+```bash
+orbit instance:deploy-step:destroy <instance> <name> [--json]
+```
+
+## orbit instance:deploy
+
+Deploy the configured branch of a production App instance. The Gateway creates a fresh release, fetches the branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps.
+
+```bash
+orbit instance:deploy <instance> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+
+Human output names each phase and step and labels standard output and standard error while a step is still running. `--json` writes the same events as NDJSON, one event per line, without prompts or prose.
+
+| Event type | Fields |
+| --- | --- |
+| `phase` | `phase` is `source_preparation`, `environment_sync`, `before_activation`, `activation`, `php_refresh`, `after_activation`, or `rollback`. `step_name` is present only for a named step. |
+| `output` | `stream` is `stdout` or `stderr`. `data_base64` carries at most 16 KiB of decoded bytes. |
+| `result` | `status` is `succeeded` or `failed`, with nullable `failed_step`, `error_code`, and `selected_release`. This is the final line. |
+
+Every event carries `type`, a monotonically increasing `sequence`, and the `request_id`. A failed `result` stays a `result` event; the CLI uses the one-line error envelope only when the Gateway refuses the command before the stream opens or when the stream is malformed or truncated.
+
+| Stream outcome | Exit status |
+| --- | --- |
+| The final event is a succeeded result. | `0` |
+| The final event is a failed result. | Nonzero. The command names the failed boundary and the selected release. |
+| The stream is malformed, truncated, or ends without a result. | Nonzero. The CLI never infers success from earlier events. |
+| You press Ctrl-C. | Nonzero. The CLI closes its connection and submits no second request. |
+
+```bash
+orbit instance:deploy 15
+orbit instance:deploy 15 --json > deploy.ndjson
+```
+
+A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during the PHP cache refresh or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per App instance, so a competing request waits or returns a busy refusal.
+
+<Note>
+A development App instance cannot be deployed. With `--json` the stream ends with a failed `result` whose `error_code` is `deployment_config.unavailable`.
+</Note>
+
+## orbit instance:release:list
+
+List retained release names and the current selection. It returns no deployment history.
+
+```bash
+orbit instance:release:list <instance> [--json]
+```
+
+## orbit instance:rollback
+
+Select one retained release through `current`. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
+
+```bash
+orbit instance:rollback <instance> --release=NAME [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+
+| Option | Meaning |
+| --- | --- |
+| `--release=NAME` | Retained release name from `instance:release:list`. |
+
+The command streams the same `phase`, `output`, and `result` events as `instance:deploy`, with the `rollback` phase, and uses the same exit status table.
+
+```bash
+orbit instance:release:list 15
+orbit instance:rollback 15 --release=20260914T101500Z
+```
+
+<Warning>
+Orbit selects the older code only. You own any data or application recovery that the switch needs.
+</Warning>
+
+## orbit instance:database:add
+
+Add a registered Database connection on an App instance and write prefixed keys into its stored environment configuration.
+
+```bash
+orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Database connection slug from `database:list`. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=SELECTOR` | required | Positive App instance ID or exact Route domain. |
+| `--prefix=PREFIX` | `DB` | Uppercase key prefix that starts with a letter, at most 32 characters. |
+
+For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. When the connection names the same Node as the App instance and aligns with a Node-owned Docker Process, the Gateway writes host `127.0.0.1` and the published host port.
+
+```bash
+orbit instance:database:add app --instance=12
+orbit instance:database:add reporting --instance=shop.example.test --prefix=REPORTING
+```
+
+Add changes stored configuration only. Run `orbit env:sync --instance=SELECTOR` to install it in the workload `.env`.
+
+## orbit instance:database:remove
+
+Remove a Database connection from an App instance and clear the prefixed stored keys. Other stored keys stay in place.
+
+```bash
+orbit instance:database:remove <slug> --instance=SELECTOR [--prefix=PREFIX] [--force] [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--instance=SELECTOR` | required | Positive App instance ID or exact Route domain. |
+| `--prefix=PREFIX` | `DB` | Prefix of the attachment to remove. |
+| `--force` | off | Skip the confirmation prompt. A non-interactive call without it returns `database.confirmation_required`. |
+
+```bash
+orbit instance:database:remove app --instance=12 --force
+```
+
+An unknown attachment returns `database.attachment_missing`.
+
+## orbit instance:transfer
+
+Move an active development App instance to another app-dev Node in an active Cluster. Both Nodes must belong to active Clusters. The operation stops source processes, copies the source into an independent checkout, moves or replaces its Route, and deletes the old placement. See [App instance transfer](/reference/appinstance-transfer) for preflight, retained content, and recovery.
+
+```bash
+orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
+```
+
+Use these options to select the destination and confirm downtime.
+
+| Option | Meaning |
+| --- | --- |
+| `--name=NAME` | Optional destination name. |
+| `--sqlite-source-path=PATH` | Optional SQLite database to copy from the source. |
+| `--force` | Confirm downtime and deletion of the old placement. |
+| `--json` | Confirm the transfer without prompts and return machine-readable output. |
+
+Production, standalone, and same-Node transfers are refused.
+
+## Related
+
+- [`app`](/cli/app) owns the repository and source defaults that an App instance inherits.
+- [`route`](/cli/route) shows and changes the domain of an App instance.
+- [`env`](/cli/env) imports, updates, and synchronizes the stored environment that deployments render.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) run services and timers on an App instance.
+- [`database`](/cli/database) registers the connections that `instance:database:add` attaches.

@@ -1,3 +1,8 @@
+---
+title: "Database role"
+description: "What the database role converges on a Node, which roles it may share, and how add, converge, and remove behave."
+---
+
 # Database role
 
 This page tells an operator what the `database` role converges on a Node, which other roles it may share, and how add, converge, and remove behave. [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) records the role boundary, and [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker databases; this page states what the operator observes.

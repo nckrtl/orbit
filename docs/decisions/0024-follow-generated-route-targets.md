@@ -1,3 +1,9 @@
+---
+title: "ADR 0024: Make generated Route identity follow its target"
+sidebarTitle: "0024 Make generated Route identity follow its target"
+description: "Accepted on 2026-09-04. Extends ADR 0023."
+---
+
 # ADR 0024: Make generated Route identity follow its target
 
 In the context of Route-owned hostnames that can outlive their single target, facing target replacement and clearing across Nodes, we decided for a stored target-derived generation basis that moves atomically with the target and remains after clearing, and against permanent original-Node binding or fixed generated hostnames, to keep generated names predictable, accepting that Orbit must retain the last basis while a Route has no target.
