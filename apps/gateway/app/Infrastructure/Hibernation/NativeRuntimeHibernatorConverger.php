@@ -9,6 +9,8 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\ProtectedInput;
+use Throwable;
 
 final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernatorConverger
 {
@@ -48,18 +50,35 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
 
     private function install(string $path, string $contents, string $step): void
     {
-        $this->run(
-            step: $step,
-            errorCode: 'gateway.hibernator_install_failed',
-            arguments: ['sudo', 'install', '-m', '0644', '/dev/stdin', $path],
-            input: $contents,
-        );
+        $input = null;
+
+        try {
+            $input = ProtectedInput::fromString($contents);
+            $metadata = stream_get_meta_data($input->stream());
+
+            $this->run(
+                step: $step,
+                errorCode: 'gateway.hibernator_install_failed',
+                arguments: ['sudo', 'install', '-m', '0644', $metadata['uri'], $path],
+            );
+        } catch (NodeProvisioningException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw new NodeProvisioningException(
+                step: $step,
+                errorCode: 'gateway.hibernator_install_failed',
+                message: "Gateway hibernator step [{$step}] failed.",
+                previous: $exception,
+            );
+        } finally {
+            $input?->close();
+        }
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function run(string $step, string $errorCode, array $arguments, ?string $input = null): void
+    private function run(string $step, string $errorCode, array $arguments): void
     {
-        $result = $this->processes->run(new ProcessInvocation($arguments, input: $input));
+        $result = $this->processes->run(new ProcessInvocation($arguments));
 
         if ($result->succeeded()) {
             return;
