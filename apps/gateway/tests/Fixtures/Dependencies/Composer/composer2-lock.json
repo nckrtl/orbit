@@ -1,0 +1,22 @@
+{
+  "_readme": ["Composer 2 fixture; no packages are installed"],
+  "content-hash": "f2eddb281f3b752df6afc62fcd1a6d571",
+  "packages": [
+    {
+      "name": "sample/shared", "version": "dev-main",
+      "source": {"type": "git", "url": "https://fixture-user:fixture-secret@127.0.0.1:1/repo.git", "reference": "abc123"},
+      "dist": {"type": "zip", "url": "https://127.0.0.1:1/archive?token=fixture-secret", "reference": "abc123", "shasum": "0123456789abcdef0123456789abcdef01234567"},
+      "require": {"sample/cycle": "^1.0", "ext-json": "*"},
+      "extra": {"branch-alias": {"dev-main": "1.0.x-dev"}}
+    },
+    {"name": "sample/app", "version": "v2.1.0", "require": {"sample/shared": "^1.0@dev", "lib-libxml": "*"}, "require-dev": {"sample/uninstalled-test-tool": "^9.0"}},
+    {"name": "sample/cycle", "version": "1.0.0", "require": {"sample/shared": "^1.0@dev"}},
+    {"name": "sample/logger", "version": "3.0.1", "provide": {"psr/log-implementation": "3.0"}}
+  ],
+  "packages-dev": [
+    {"name": "sample/tool", "version": "1.4.0", "type": "composer-plugin", "require": {"sample/shared": "^1.0@dev", "composer-plugin-api": "^2.0", "composer-runtime-api": "^2.2"}, "extra": {"class": "MustNeverLoad"}}
+  ],
+  "aliases": [{"package": "sample/shared", "version": "dev-main", "alias": "1.0.x-dev", "alias_normalized": "1.0.9999999.9999999-dev"}],
+  "minimum-stability": "stable",
+  "plugin-api-version": "2.6.0"
+}

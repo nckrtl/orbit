@@ -1,0 +1,7 @@
+{
+  "name": "sample/root",
+  "require": {"Sample/Bundle": "^1.0", "sample/old": "^1.0", "php-64bit": "*", "hhvm": "*"},
+  "require-dev": {"sample/testing": "^2.0"},
+  "provide": {"sample/root-api": "1.0"},
+  "repositories": {"packagist.org": false}
+}

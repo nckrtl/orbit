@@ -1,0 +1,14 @@
+{
+  "name": "sample/root",
+  "require": {
+    "php": "^8.5",
+    "sample/app": "^2.0",
+    "sample/shared": "dev-main#abc123 as 1.0.x-dev",
+    "psr/log-implementation": "^3.0"
+  },
+  "require-dev": {"sample/tool": "^1.0", "sample/shared": "^1.0@dev"},
+  "scripts": {"post-install-cmd": "php -r 'throw new Exception(\"must never execute\");'"},
+  "autoload": {"files": ["must-not-load.php"]},
+  "repositories": [{"type": "composer", "url": "https://fixture-user:fixture-secret@127.0.0.1:1/packages"}],
+  "config": {"allow-plugins": true}
+}

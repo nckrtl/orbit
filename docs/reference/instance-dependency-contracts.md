@@ -22,6 +22,16 @@ Resolution IDs preserve installation paths and peer contexts, including two reso
 
 Parsers compute regular and development reachability from actual root paths. An edge's declaration scope alone cannot establish all target scopes. A package can have both direct and transitive paths, both regular and development reachability, and peer relationships.
 
+## Composer reader
+
+`ReadComposerDependencyGraphAction` accepts the contents of root `composer.json` and `composer.lock` and returns a Composer graph. It reads JSON data only, without files, Composer execution, project autoloading, plugins, scripts, or network requests. Source collection, file absence, hashes, and publication belong to the caller.
+
+The reader includes `packages` and `packages-dev`. Root `require` and `require-dev` establish separate reachability paths; locked package `require` edges carry those paths through cycles. A dependency's own `require-dev` does not install its development tools. Package names are canonical lowercase names. Versions remain opaque, including branches. Inline alias constraints remain intact, and lock aliases refer to the underlying locked resolution rather than creating invented versions. Source or distribution revisions are retained without repository URLs.
+
+Platform requirements such as `php`, `ext-*`, `lib-*`, and Composer runtime APIs remain unresolved edges, never catalog packages. A unique locked provider or replacement can satisfy a virtual requirement. Requirements on the root package's canonical `name`, or on its explicit `provide` and `replace` names, have null targets because the root is not a package resolution. The root does not need a redundant `provide` declaration for its own name. Missing package targets, ambiguous providers, duplicate locked names, malformed records, and packages without a root path fail explicitly. Path repositories and local path distributions are unsupported layouts. Repository-disable entries are accepted in both named form (`{"packagist.org": false}`) and anonymous form (`[{"packagist.org": false}]`).
+
+The reader throws `DependencyParseException` with a stable error code and no input text. Invalid JSON or graph records use `dependencies.invalid_composer_input`; unsupported layouts use `dependencies.unsupported_layout`. It rejects unsafe retained values rather than exposing credentials. It does not resolve version constraints or contact registries to repair input. Collection must still ensure the manifest and lockfile belong to one stable source observation.
+
 ## Observation values
 
 Scan results use these values to distinguish observed source from a failed collection attempt.
