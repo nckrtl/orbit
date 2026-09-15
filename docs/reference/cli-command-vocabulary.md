@@ -49,7 +49,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 
 | Family | Actions | Result |
 | --- | --- | --- |
-| `dns` | `resolve` | The CLI writes a development TLD resolver mapping. |
+| `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/concepts#doctor) compares Gateway intent with Node state. |
 | `env` | `import`, `sync` | The CLI imports or synchronizes AppInstance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |

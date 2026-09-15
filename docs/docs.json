@@ -36,6 +36,7 @@
         "pages": [
           "reference/node-provisioning",
           "reference/private-dns",
+          "reference/local-resolver-overrides",
           "reference/metrics"
         ]
       }
