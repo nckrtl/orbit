@@ -1032,6 +1032,7 @@ it('prepares Cluster Router paths before activation and Node scope before deacti
     app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
     $generated->update(['status' => RouteStatus::Active]);
     $explicit->update(['status' => RouteStatus::Active]);
+    $explicitId = $explicit->id;
     $events = bind_node_tld_projection();
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
@@ -1047,7 +1048,7 @@ it('prepares Cluster Router paths before activation and Node scope before deacti
         ->and($generated->status)
         ->toBe(RouteStatus::Active)
         ->and($explicit->id)
-        ->toBe($explicit->id)
+        ->toBe($explicitId)
         ->and($explicit->domain)
         ->toBe('fixed.example.test')
         ->and($explicit->cluster_id)
@@ -1171,16 +1172,21 @@ it('does not return reconciliation_required after Cluster activation or deactiva
     bind_node_tld_projection();
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+    $replacement = reconciliation_node('still-refused-router', null);
+    $replacement->update(['cluster_id' => $cluster->id]);
+    $before = reconciliation_route_by_domain('feature.acme.dev.test')->fresh(['targets'])->toArray();
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($cluster, $replacement))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('route.reconciliation_required');
+        })
+        ->and(reconciliation_route_by_domain('feature.acme.dev.test')->fresh(['targets'])->toArray())
+        ->toBe($before);
+
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Inactive));
 
     expect($cluster->refresh()->state)
-        ->toBe(ClusterState::Inactive)
-        ->and(fn () => app(UpdateClusterAction::class)->execute(
-            $cluster,
-            reconciliation_update(tldProvided: true, tld: 'next-cluster.test'),
-        ))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('route.reconciliation_required');
-        });
+        ->toBe(ClusterState::Inactive);
 });
 
 it('requires a Router only after a TLD-less active Cluster owns a Route', function (): void {

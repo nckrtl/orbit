@@ -484,8 +484,8 @@ final readonly class ConvergeRouteAction
 
             $replacement = Route::query()->create([
                 'app_id' => $locked->app_id,
-                'node_id' => $placement?->nodeId ?? $locked->node_id,
-                'cluster_id' => $placement?->clusterId ?? $locked->cluster_id,
+                'node_id' => $placement instanceof RoutePlacement ? $placement->nodeId : $locked->node_id,
+                'cluster_id' => $placement instanceof RoutePlacement ? $placement->clusterId : $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
                 'domain' => $domain,
                 'provenance' => $locked->provenance,
@@ -529,6 +529,10 @@ final readonly class ConvergeRouteAction
             effectiveTld: null,
         ));
         $candidate = $this->candidateWithPlacement($route, $placement);
+
+        if ($route->replacement_step === null) {
+            $this->checkpoint($route, RouteReplacementStep::Reserved);
+        }
 
         if (
             $route->node_id === $placement->nodeId
