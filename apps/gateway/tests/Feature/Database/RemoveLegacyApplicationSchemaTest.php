@@ -38,7 +38,7 @@ function restore_legacy_application_tables(): void
         $table->text('checkout_path');
         $table->string('document_root')->default('public');
         $table->string('php_version')->default('8.5');
-        $table->string('hostname')->unique();
+        $table->string('domain')->unique();
         $table->string('certificate_mode');
         $table->string('status')->default('provisioning')->index();
         $table->string('failed_step')->nullable();
@@ -55,7 +55,7 @@ function restore_legacy_application_tables(): void
         $table->text('checkout_path');
         $table->string('checkout_path_origin')->nullable();
         $table->string('php_version')->nullable();
-        $table->string('hostname')->unique();
+        $table->string('domain')->unique();
         $table->string('status')->default('provisioning')->index();
         $table->string('failed_step')->nullable();
         $table->string('error_code')->nullable();
@@ -94,7 +94,7 @@ function operator_prepared_supported_graph(): array
         'app_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
-        'hostname' => 'acme.app-dev.orbit',
+        'domain' => 'acme.app-dev.orbit',
         'status' => RouteStatus::Pending,
         'publication' => RoutePublication::Private,
         'provenance' => RouteProvenance::Generated,
@@ -140,7 +140,7 @@ function supported_legacy_schema_snapshot(
             'source_layout',
             'status',
         ]),
-        'route' => $route->fresh()->only(['id', 'app_id', 'node_id', 'hostname', 'status']),
+        'route' => $route->fresh()->only(['id', 'app_id', 'node_id', 'domain', 'status']),
         'route_targets' => $route->targets()->orderBy('position')->pluck('app_instance_id')->all(),
         'process' => $process->fresh()->only(['id', 'owner_type', 'owner_id', 'name', 'runtime', 'status']),
     ];
@@ -182,7 +182,7 @@ it('drops leftover tables on an ordinary update and keeps supported records unch
         'name' => 'legacy',
         'environment' => 'development',
         'checkout_path' => '/srv/orbit/legacy/acme',
-        'hostname' => 'legacy.app-dev.orbit',
+        'domain' => 'legacy.app-dev.orbit',
         'certificate_mode' => 'orbit-ca',
         'status' => 'active',
         'created_at' => now(),
@@ -194,7 +194,7 @@ it('drops leftover tables on an ordinary update and keeps supported records unch
         'branch' => 'feature',
         'checkout_path' => '/srv/orbit/legacy/acme/feature',
         'checkout_path_origin' => 'derived',
-        'hostname' => 'feature.legacy.app-dev.orbit',
+        'domain' => 'feature.legacy.app-dev.orbit',
         'status' => 'active',
         'created_at' => now(),
         'updated_at' => now(),
