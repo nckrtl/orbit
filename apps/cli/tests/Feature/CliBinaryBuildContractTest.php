@@ -66,7 +66,7 @@ it('refuses an unsupported target', function (): void {
         ->and($output)->toContain('unsupported target: windows x64');
 });
 
-it('keeps the workflow artifact names and dest paths aligned with the builder', function (): void {
+it('keeps the workflow artifact names, dest paths, and hosts aligned with the builder', function (): void {
     $workflow = file_get_contents(cli_binary_repo_root().'/.github/workflows/orbit-cli-binary.yml');
     $builder = file_get_contents(cli_binary_builder_script());
 
@@ -79,6 +79,12 @@ it('keeps the workflow artifact names and dest paths aligned with the builder', 
         ->and($workflow)->toContain('bin/orbit-build-cli-binary mac arm')
         ->and($workflow)->toContain('bin/orbit-build-cli-binary linux x64')
         ->and($workflow)->toContain('working-dir=apps/cli/phpacker')
+        ->and($workflow)->toContain('runs-on: ubuntu-latest')
+        ->and($workflow)->toContain('runs-on: [self-hosted, macOS, ARM64, mini]')
+        ->and($workflow)->toContain("vars.ORBIT_MINI_RUNNER == 'true'")
+        ->and($workflow)->not->toContain('macos-latest')
+        ->and($workflow)->not->toContain('macos-14')
+        ->and($workflow)->not->toContain('macos-15')
         ->and($builder)->toContain('--dest=./builds/dist')
         ->and($builder)->toContain('packages/php-sdk')
         ->and($builder)->toContain('vendor/nckrtl/orbit-php-sdk')

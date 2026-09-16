@@ -34,7 +34,7 @@ git rev-parse HEAD
 
 Replace angle-bracket placeholders before running commands. Keep `packages/php-sdk` beside `apps/cli`: Composer resolves the SDK through that relative path. This installation does not require separately published packages or a binary.
 
-Orbit Ops can place a standalone CLI binary from GitHub Actions onto a Node. The [CLI binaries](/reference/cli-binaries) page names the artifacts and dest paths. A binary does not replace this Gateway source installation.
+Orbit Ops can place a standalone CLI binary onto a Node. The [CLI binaries](/reference/cli-binaries) page names the artifacts, dest paths, and builders. A binary does not replace this Gateway source installation.
 
 ## Install the CLI
 
