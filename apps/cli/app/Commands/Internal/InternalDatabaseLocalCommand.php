@@ -13,10 +13,10 @@ use App\Support\GatewayFailureRenderer;
 use JsonException;
 use LaravelZero\Framework\Commands\Command;
 
-final class InternalDatabaseQueryLocalCommand extends Command
+final class InternalDatabaseLocalCommand extends Command
 {
     #[\Override]
-    protected $signature = 'internal:database-query-local';
+    protected $signature = 'internal:database-local';
 
     #[\Override]
     protected $description = 'Run one SQL statement against a local SQLite file through PDO.';

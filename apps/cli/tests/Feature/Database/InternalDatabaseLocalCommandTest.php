@@ -38,9 +38,11 @@ it('queries a local sqlite file through PDO and keeps SQL off argv', function ()
         'row_count' => 1,
         'truncated' => false,
     ]);
-    expect(app(Kernel::class)->all()['internal:database-query-local']->getDefinition()->hasArgument('sql'))
+    expect(app(Kernel::class)->all()['internal:database-local']->getDefinition()->hasArgument('sql'))
         ->toBeFalse();
-    expect(app(Kernel::class)->all()['internal:database-query-local']->isHidden())->toBeTrue();
+    expect(app(Kernel::class)->all()['internal:database-local']->isHidden())->toBeTrue();
+    expect(collect(app(Kernel::class)->all())->keys()->all())
+        ->not->toContain('internal:database-query-local');
 
     unlink($path);
 });
@@ -161,7 +163,7 @@ function internal_database_query_display(string $payload): array
         }
     });
 
-    $tester = new CommandTester(app(Kernel::class)->all()['internal:database-query-local']);
+    $tester = new CommandTester(app(Kernel::class)->all()['internal:database-local']);
 
     return [$tester->execute([], ['interactive' => false]), $tester->getDisplay(true)];
 }
