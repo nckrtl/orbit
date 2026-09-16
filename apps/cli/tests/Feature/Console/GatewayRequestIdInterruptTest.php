@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Commands\GatewayCommand;
 use App\Support\Console\ConsoleInterrupted;
+use App\Support\Console\ConsoleMode;
 use App\Support\Console\InterruptIntent;
 use App\Support\Console\PromptAborted;
+use App\Support\Console\PromptContext;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Support\GatewayRequestId;
@@ -13,14 +15,6 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Exception\InvalidArgumentException as ConsoleInputException;
 use Symfony\Component\Console\Tester\CommandTester;
-
-beforeEach(function (): void {
-    InterruptIntent::clear();
-});
-
-afterEach(function (): void {
-    InterruptIntent::clear();
-});
 
 it('keeps SIGINT and SIGTERM as cancellation when the request-ID resolver wraps the throw', function (int $signal): void {
     if (! defined('SIGINT') || ! function_exists('pcntl_signal') || ! function_exists('posix_kill')) {
@@ -82,9 +76,10 @@ it('returns 128 plus the signal when a command swallows ConsoleInterrupted and r
         }
     };
     $command->setLaravel(app());
+    $entry = InterruptIntent::pending();
 
     expect(new CommandTester($command)->execute([]))->toBe(128 + $signal)
-        ->and(InterruptIntent::pending())->toBeNull();
+        ->and(InterruptIntent::pending())->toBe($entry);
 })->with([SIGINT, SIGTERM]);
 
 it('gives pending cancellation precedence over PromptAborted and console input exceptions', function (): void {
@@ -135,9 +130,10 @@ it('gives pending cancellation precedence over PromptAborted and console input e
     };
     foreach ([[$aborted, 130], [$invalid, 143], [$consoleInput, 130]] as [$command, $status]) {
         $command->setLaravel(app());
-        expect(new CommandTester($command)->execute([]))->toBe($status);
+        $entry = InterruptIntent::pending();
+        expect(new CommandTester($command)->execute([]))->toBe($status)
+            ->and(InterruptIntent::pending())->toBe($entry);
     }
-    expect(InterruptIntent::pending())->toBeNull();
 });
 
 it('restores parent intent after a nested command and keeps sequential commands independent', function (): void {
@@ -181,9 +177,10 @@ it('restores parent intent after a nested command and keeps sequential commands 
     };
     $nested->setLaravel(app());
     $parent->setLaravel(app());
+    $entry = InterruptIntent::pending();
 
     expect(new CommandTester($parent)->execute([]))->toBe(130)
-        ->and(InterruptIntent::pending())->toBeNull();
+        ->and(InterruptIntent::pending())->toBe($entry);
 
     $sequential = new class extends GatewayCommand
     {
@@ -227,8 +224,52 @@ it('returns 128 plus the signal when GatewayCommand sees a wrapped resolver fail
     };
     $command->setLaravel(app());
     $tester = new CommandTester($command);
+    $entry = InterruptIntent::pending();
 
     expect($tester->execute([]))->toBe(128 + $signal)
         ->and($tester->getDisplay())->not->toContain('Gateway request ID resolver failed.')
-        ->and(InterruptIntent::pending())->toBeNull();
+        ->and(InterruptIntent::pending())->toBe($entry);
+})->with([SIGINT, SIGTERM]);
+
+it('does not use a swallowed prompt return value inside an existing command scope', function (int $signal): void {
+    $command = new class($signal) extends GatewayCommand
+    {
+        public bool $consumedPromptResult = false;
+
+        #[Override]
+        protected $signature = 'test:swallowed-prompt';
+
+        #[Override]
+        protected $description = 'Fixture';
+
+        public function __construct(private readonly int $signal)
+        {
+            parent::__construct();
+        }
+
+        public function handle(): int
+        {
+            $signal = $this->signal;
+            $value = PromptContext::run(
+                new ConsoleMode(false, false, false, false, 80),
+                $this->output,
+                function () use ($signal): int {
+                    try {
+                        throw new ConsoleInterrupted($signal);
+                    } catch (ConsoleInterrupted) {
+                        return 99;
+                    }
+                },
+            );
+            $this->consumedPromptResult = true;
+
+            return $value === 99 ? self::SUCCESS : self::FAILURE;
+        }
+    };
+    $command->setLaravel(app());
+    $entry = InterruptIntent::pending();
+
+    expect(new CommandTester($command)->execute([]))->toBe(128 + $signal)
+        ->and($command->consumedPromptResult)->toBeFalse()
+        ->and(InterruptIntent::pending())->toBe($entry);
 })->with([SIGINT, SIGTERM]);

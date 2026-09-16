@@ -93,7 +93,10 @@ abstract class PromptContext extends Prompt
                         pcntl_async_signals(true);
                     }
 
-                    return TableTheme::run($mode, $operation);
+                    $result = TableTheme::run($mode, $operation);
+                    InterruptIntent::throwIfPending();
+
+                    return $result;
                 } catch (Throwable $exception) {
                     $failure = $exception;
 

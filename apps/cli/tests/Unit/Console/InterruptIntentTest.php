@@ -7,16 +7,9 @@ use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
+use App\Support\Console\PromptContext;
 use App\Support\Console\SpinnerDisplay;
 use Symfony\Component\Console\Output\BufferedOutput;
-
-beforeEach(function (): void {
-    InterruptIntent::clear();
-});
-
-afterEach(function (): void {
-    InterruptIntent::clear();
-});
 
 it('records only SIGINT and SIGTERM', function (): void {
     InterruptIntent::record(SIGINT);
@@ -58,6 +51,7 @@ it('treats ConsoleInterrupted as cancellation even after wrapping', function ():
 });
 
 it('shows progress interruption when a wrapped resolver failure follows SIGINT', function (): void {
+    $entry = InterruptIntent::pending();
     $output = new BufferedOutput;
     $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Remove App instance');
     $display->admit('remove', 'Remove App instance', 'Removing App instance', 'Removed App instance');
@@ -74,10 +68,11 @@ it('shows progress interruption when a wrapped resolver failure follows SIGINT',
     }
 
     expect($output->fetch())->toContain('Operation interrupted.')->not->toContain('Operation failed.')
-        ->and(InterruptIntent::pending())->toBeNull();
+        ->and(InterruptIntent::pending())->toBe($entry);
 });
 
 it('does not settle animation, progress, or spinner as success when a callback swallows the signal and returns', function (): void {
+    $entry = InterruptIntent::pending();
     $mode = new ConsoleMode(false, false, false, false, 80);
     $output = new BufferedOutput;
     $swallowed = function (): int {
@@ -90,19 +85,38 @@ it('does not settle animation, progress, or spinner as success when a callback s
 
     expect(fn () => new Animation($mode, $output, ["○ Working\n", "◉ Working\n"])->during($swallowed))
         ->toThrow(ConsoleInterrupted::class);
-    expect(InterruptIntent::pending())->toBeNull();
+    expect(InterruptIntent::pending())->toBe($entry);
     expect(new Animation($mode, $output, ["○ Next\n", "◉ Next\n"])->during(fn (): int => 7))->toBe(7);
+    expect(InterruptIntent::pending())->toBe($entry);
 
     $progress = new ProgressDisplay($mode, $output, 'Remove App instance');
     $progress->admit('remove', 'Remove App instance', 'Removing App instance', 'Removed App instance');
     expect(fn () => $progress->during('remove', $swallowed))->toThrow(ConsoleInterrupted::class);
     expect($output->fetch())->toContain('Operation interrupted.')
         ->not->toContain('Operation failed.', 'Removed App instance');
-    expect(InterruptIntent::pending())->toBeNull();
+    expect(InterruptIntent::pending())->toBe($entry);
 
     $spinnerOutput = new BufferedOutput;
     $spinner = new SpinnerDisplay($mode, $spinnerOutput);
     expect(fn () => $spinner->during('Waiting', $swallowed))->toThrow(ConsoleInterrupted::class);
     expect($spinnerOutput->fetch())->toContain('Wait interrupted.')->not->toContain('Wait finished.');
-    expect(InterruptIntent::pending())->toBeNull();
+    expect(InterruptIntent::pending())->toBe($entry);
 });
+
+it('does not return a swallowed prompt result for SIGINT or SIGTERM, standalone or inside a command', function (int $signal): void {
+    $entry = InterruptIntent::pending();
+    $mode = new ConsoleMode(false, false, false, false, 80);
+    $output = new BufferedOutput;
+    $swallowed = function () use ($signal): int {
+        try {
+            throw new ConsoleInterrupted($signal);
+        } catch (ConsoleInterrupted) {
+            return 99;
+        }
+    };
+
+    expect(fn () => PromptContext::run($mode, $output, $swallowed))->toThrow(ConsoleInterrupted::class);
+    expect(InterruptIntent::pending())->toBe($entry);
+    expect(PromptContext::run($mode, $output, fn (): int => 7))->toBe(7);
+    expect(InterruptIntent::pending())->toBe($entry);
+})->with([SIGINT, SIGTERM]);
