@@ -130,7 +130,7 @@ These values do not sanitize raw input or authorize publication. Parsers and col
 
 The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. The Composer update executor owns bounded development Composer mutation and absent-ecosystem skips. The Vite+ npm update adapter owns bounded development npm mutation through a verified Vite+ installation and its absent-ecosystem skips.
 
-The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. Bun mutation remains a later adapter. Yarn refusal for a whole update remains with later orchestration. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
+The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. The Vite+ Yarn refusal adapter owns Classic and modern Yarn detection and rejects those roots before any Vite+ or Yarn command. Bun mutation remains a later adapter. Whole-update Yarn refusal before Composer remains with later orchestration. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
 
 ## Managed source collection
 
@@ -231,6 +231,26 @@ The update runs the shared Vite+ supervisor with the recorded root, the verified
 `--no-save` is a verified Vite+ 0.3.0 option and a pnpm option: do not update the ranges in `package.json`. Vite+ 0.3.0 then selects pnpm and updates regular and development dependencies within the declared constraints. It still writes the updated lockfile and installs in-range packages. Process ownership, deadline, termination, output bounds, cancellation, and result codes match the Composer and npm executors.
 
 Vite+ can add `devEngines.packageManager` manager-selection metadata to the manifest; dependency constraints remain unchanged.
+
+## Vite+ Yarn refusal adapter
+
+`UpdateYarnDependenciesAction` inspects one development App instance root for Classic or modern Yarn and refuses mutation. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It does not run Vite+, Yarn, npm, pnpm, or Bun. Shared update preflight, instance locks, Composer mutation, npm and pnpm mutation, Bun mutation, and post-update scanning belong to the later coordinator. Whole-update Yarn refusal before Composer also belongs to that coordinator.
+
+Production refusal, identity checks, and safe source handling match the Composer and Vite+ update executors. Verified absence of Yarn signals returns `absent` without a package-manager command.
+
+### Yarn project probe
+
+A fixed Python probe inspects root files without executing them or running a package manager. It uses the same Yarn family signals as collection: `packageManager`, `devEngines.packageManager`, `yarn.lock`, `.yarnrc.yml`, and `yarn.config.cjs`. It does not evaluate `yarn.config.cjs` or other configuration.
+
+Duplicate object keys in `package.json`, including escaped-equivalent keys, fail with `dependencies.invalid_manifest` before family selection. `pnpm-workspace.yaml` or a `workspaces` field fails with `dependencies.unsupported_layout`.
+
+A present Classic root reports family `classic`. Classic signals are a `yarn.lock` without `__metadata` and `yarn@1` declarations. A present modern root reports family `modern`. Modern signals are a `yarn.lock` with `__metadata`, `.yarnrc.yml`, `yarn.config.cjs`, and Yarn declarations with major version 2 or later. A modern signal wins when both families appear. Any present Yarn family is unsupported.
+
+The action maps a present Classic or modern receipt to `dependencies.unsupported_format` with `mayHaveMutated=false`. It never accepts a Vite+ path, never runs `vp update`, and never substitutes `yarn`, `yarn upgrade`, `yarn up`, or `--latest`. A Yarn lock or declaration without `package.json` is still present Yarn, not a successful skip. Roots with only npm, pnpm, or Bun signals remain absent. The probe is limited to 45 seconds and 64 KiB.
+
+### No Yarn command mapping
+
+The action performs one probe SSH invocation. Probe cancellation or timeout keeps `mayHaveMutated=false`. Malformed receipts, including a present result that names Vite+, fail with `dependencies.unreadable_source`. There is no Yarn update supervisor and no delegated Vite+ command for either family.
 
 ## Single-instance HTTP API
 

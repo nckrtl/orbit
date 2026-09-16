@@ -137,6 +137,8 @@ The pnpm step reuses that same verified Vite+ supervisor and `vp update --no-sav
 
 `--no-save` is also a pnpm option: it updates the lockfile and installed regular and development packages within declared constraints, and it does not rewrite ranges in `package.json`. The action never substitutes raw pnpm for Vite+, never passes `--latest` or `-D`/`-P`, and refuses Yarn, workspaces, `pnpm-workspace.yaml`, and conflicting managers before mutation. Roots that contain only npm or only Bun remain absent for this adapter.
 
+The Yarn step is a refusal adapter, not a Vite+ or Yarn updater. It inspects Classic `yarn.lock` files, modern metadata locks, `.yarnrc.yml`, `yarn.config.cjs`, and Yarn `packageManager` or `devEngines` declarations. Classic and modern roots fail with `dependencies.unsupported_format` before any `vp` or `yarn` command. The probe never maps those families onto `vp update`, raw Yarn, or `--latest`. Constraint-rewriting Yarn delegation is rejected rather than applied. Roots without Yarn signals remain absent for this adapter.
+
 An update respects the existing declared version constraints. Changing those constraints is an upgrade and is outside this feature. The command has no `--latest` or `--all` update mode. A successful update can retain a package version when its constraints prevent movement.
 
 Orbit validates target, source layout, and package-manager support before package mutation. Yarn selection rejects the entire update before either Composer or JavaScript package work starts. It serializes managed updates for the same instance, bounds command execution, and reports verified progress. It does not discard existing source changes, commit, push, test, or deploy automatically.
