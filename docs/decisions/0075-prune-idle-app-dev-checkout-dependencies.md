@@ -1,3 +1,9 @@
+---
+title: "ADR 0075: Prune idle app-dev checkout dependencies"
+sidebarTitle: "0075 Prune idle app-dev checkout dependencies"
+description: "Accepted on 2026-09-14. Extends ADR 0074."
+---
+
 # ADR 0075: Prune idle app-dev checkout dependencies
 
 In the context of hibernated development AppInstances that keep reconstructable vendor and node_modules trees on disk, facing wasted Node storage after long idle, we decided for a second idle tier that deletes those reconstructable checkout dependencies and restores them before Process start on the next HTTP wake, and against pruning while a keep-alive Process is desired running or splitting wake pages by tier, to reclaim disk without changing the HTTP wake contract, accepting that a cold first request waits for dependency restore.

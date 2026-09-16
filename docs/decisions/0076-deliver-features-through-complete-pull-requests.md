@@ -1,3 +1,9 @@
+---
+title: "ADR 0076: Deliver features through complete pull requests"
+sidebarTitle: "0076 Deliver features through complete pull requests"
+description: "Proposed; accepted through merge. Supersedes ADR 0010 and the earlier proof, evidence, and merge-gate decisions."
+---
+
 # ADR 0076: Deliver features through complete pull requests
 
 In the context of Orbit feature contributions, facing different procedures for contributors and internal automation, we decided for one complete pull request containing implementation, tests, documentation, and architectural decisions, and against mandatory plan approval and separate ADR merges, to make review cover the delivered feature, accepting that contributors may implement a proposal the maintainer rejects.
