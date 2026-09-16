@@ -86,6 +86,7 @@
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
+              "reference/agentation",
               "reference/php-runtime",
               "reference/appinstance-cloning",
               "reference/deployments",
@@ -500,7 +501,8 @@
               "decisions/0078-assign-vite-ports-to-development-appinstances",
               "decisions/0079-publish-orbit-cli-binaries-from-github-actions",
               "decisions/0080-add-node-owned-custom-proxy-routes",
-              "decisions/0081-query-registered-databases-through-pdo"
+              "decisions/0081-query-registered-databases-through-pdo",
+              "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes"
             ]
           }
         ]

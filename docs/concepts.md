@@ -17,6 +17,7 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Route** — A domain the Gateway publishes on the private network. See [ADR 0064](/decisions/0064-name-application-endpoints-as-domains), [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes), and [Routes](/reference/routes).
 - **Route replacement** — The Route Orbit creates for a domain change. See [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
 - **Development-server endpoint** — The reserved path `/__orbit/vite` on an App instance Route domain that carries live frontend assets and hot module replacement through Cluster HTTPS to the owning Node. See [Routes](/reference/routes#development-server-endpoint).
+- **Agentation endpoint** — The reserved path `/__orbit/agentation` on an App instance Route domain that reverse-proxies the per-app Agentation HTTP Process. Orbit projects that origin as `AGENTATION_URL` and hibernates the Antigravity watcher with the App instance. See [Agentation](/reference/agentation).
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
 - **Database** — A Node role that installs and manages Docker for shared database processes. See [Database role](/reference/database-role).

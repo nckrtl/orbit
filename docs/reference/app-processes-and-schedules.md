@@ -107,6 +107,8 @@ A development systemd Process on a Node with the active `app-dev` role installs 
 
 Use `orbit process:create assets --instance=commander.test --preset=vp-dev --start` for VitePlus. Orbit assigns its port, applies strict binding, and prepares its proxy and readiness check. Configure application asset and HMR URLs for the Route origin. See [assigned Vite ports](/reference/assigned-vite-ports).
 
+Use `orbit process:create agentation --instance=commander.test --preset=agentation-mcp --start` for the Agentation HTTP server, then `orbit process:create agentation-watch --instance=commander.test --preset=antigravity-watch --start` for the watcher. Orbit assigns the HTTP port, publishes `/__orbit/agentation`, and projects `AGENTATION_URL`. Neither preset accepts keep-alive. See [Agentation](/reference/agentation).
+
 A generic development systemd Process runs as the Node's managed runtime user. It reads the environment file in the recorded checkout and receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY` for the App instance Route domain from that user's certificate projection. When the App instance has a Route, the unit also receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, `ORBIT_DEV_SERVER_PATH`, and `ORBIT_DEV_SERVER_PORT` so the frontend toolchain publishes assets and hot module replacement on the [development-server endpoint](/reference/routes#development-server-endpoint).
 
 A production systemd Process runs as the App instance's dedicated production user. It reads the persistent environment file in the recorded production home and uses the `current` path as its default working directory. Orbit resolves the recorded Node, user, home, and current release when it performs an operation, independent of Node role co-location or certificate mode.
@@ -135,6 +137,7 @@ The CLI exposes these Process operations through the Gateway.
 | Command | Result |
 | --- | --- |
 | `orbit process:create NAME --instance=ID ...` | Install one stopped or initially running systemd service or Docker container on an App instance. |
+| `orbit process:create NAME --instance=ID --preset=PRESET` | Install a VitePlus, Agentation HTTP, or Antigravity watcher Process. Supported presets are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. |
 | `orbit process:create NAME --node=ID-or-name ...` | Install one stopped or initially running systemd service or Docker container on a managed Node. |
 | `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record one App-owned process definition. |
 | `orbit process:list --instance=ID` | List the Process records owned by one App instance with their desired and observed states. |

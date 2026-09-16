@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Requests\Processes;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
-use App\Domain\Processes\VpDevPreset;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -27,7 +27,7 @@ final class StoreProcessRequest extends FormRequest
                 'max:63',
                 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D',
             ],
-            'preset' => ['sometimes', Rule::in(['vp-dev'])],
+            'preset' => ['sometimes', Rule::in(ProcessPresets::names())],
             'runtime' => [$this->has('preset') ? 'missing' : 'required', Rule::enum(ProcessRuntime::class)],
             'command' => [$this->has('preset') ? 'missing' : 'required', 'array', 'min:1', 'max:64'],
             'command.*' => ['string', 'max:4096', 'not_regex:/[\x00\r\n]/'],
@@ -91,6 +91,9 @@ final class StoreProcessRequest extends FormRequest
                     if ($this->input('target_type') !== 'instance') {
                         $validator->errors()->add('target_type', 'The preset requires an AppInstance.');
                     }
+                    if (($this->input('keep_alive') === true) && is_string($this->input('preset')) && ProcessPresets::refusesKeepAlive($this->input('preset'))) {
+                        $validator->errors()->add('keep_alive', 'This preset hibernates with the AppInstance and cannot keep-alive.');
+                    }
                 }
                 $this->validateSystemdExecutable($validator);
                 $this->validateEnvironmentNames($validator);
@@ -104,7 +107,7 @@ final class StoreProcessRequest extends FormRequest
         /** @var array<string, mixed> $validated */
         $validated = $this->validated();
         /** @var list<string> $command */
-        $command = isset($validated['preset']) ? VpDevPreset::command() : $validated['command'];
+        $command = isset($validated['preset']) ? ProcessPresets::command((string) $validated['preset']) : $validated['command'];
         /** @var array<string, string> $environment */
         $environment = is_array($validated['environment'] ?? null) ? $validated['environment'] : [];
         /** @var list<string> $ports */
@@ -126,7 +129,7 @@ final class StoreProcessRequest extends FormRequest
             volumes: $volumes,
             restartPolicy: is_string($validated['restart_policy'] ?? null)
                 ? $validated['restart_policy']
-                : (isset($validated['preset']) ? 'on-failure' : 'never'),
+                : (isset($validated['preset']) ? ProcessPresets::restartPolicy((string) $validated['preset']) : 'never'),
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
             preset: isset($validated['preset']) ? (string) $validated['preset'] : null,

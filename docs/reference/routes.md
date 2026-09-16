@@ -244,6 +244,15 @@ The preset sets `--base=/__orbit/vite/`. Workload Caddy preserves the prefix for
 
 Laravel's `@vite` directive reads the `public/hot` file. The file must contain `ORBIT_DEV_SERVER_ORIGIN` so the browser requests `/__orbit/vite/@vite/client` on the Route domain. The [process reference](/reference/app-processes-and-schedules#add-a-process) describes the injected certificate and origin environment.
 
+### Agentation endpoint
+
+The reserved path `/__orbit/agentation` publishes the App instance Agentation HTTP Process over the Route's HTTPS domain on port 443. Workload Caddy reverse-proxies that path to the assigned `agentation_port` on Node loopback and strips the reserved prefix so the upstream Agentation API keeps `/health` and `/sessions` at its root. Sites without an assignment have no Agentation handle. See [ADR 0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes) and [Agentation](/reference/agentation).
+
+| Variable | Value |
+| --- | --- |
+| `AGENTATION_URL` | `https://<route-domain>/__orbit/agentation` |
+| `ORBIT_AGENTATION_PORT` | The instance assignment, starting at `4747`. |
+
 ### Private network and publication
 
 Orbit exposes the Route only after its runtime, certificates, Caddy configuration, and firewall rules are ready. Private DNS is published last.

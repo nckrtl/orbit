@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
@@ -20,6 +21,7 @@ use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use Psr\Log\LoggerInterface;
+use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
@@ -770,4 +772,100 @@ it('resolves an exact development Route domain for process creation', function (
     $route = Route::query()->create(['app_id' => $this->instance->app_id, 'node_id' => $this->node->id, 'domain' => 'vite.orbit.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['app_instance_id' => $this->instance->id, 'position' => 0]);
     $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => 'vite.orbit.test', 'name' => 'assets', 'preset' => 'vp-dev'])->assertCreated()->assertJsonPath('data.target_id', $this->instance->id)->assertJsonPath('data.desired_state', 'stopped');
+});
+
+it('creates an Agentation HTTP preset, assigns a port, and projects AGENTATION_URL', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance',
+        'target_id' => $this->instance->id,
+        'name' => 'agentation',
+        'preset' => 'agentation-mcp',
+        'start' => true,
+    ])->assertCreated()
+        ->assertJsonPath('data.runtime_config.preset', 'agentation-mcp')
+        ->assertJsonPath('data.runtime_config.command', ['/usr/local/bin/agentation-mcp', 'server', '--port=${ORBIT_AGENTATION_PORT}'])
+        ->assertJsonPath('data.restart_policy', 'on-failure')
+        ->assertJsonPath('data.keep_alive', false)
+        ->assertJsonPath('data.desired_state', 'running');
+
+    expect($this->instance->refresh()->agentation_port)
+        ->toBe(4747)
+        ->and($this->instance->environmentValues()->where('env_key', 'AGENTATION_URL')->sole()->env_value)
+        ->toBe('https://{{app_instance.domain}}/__orbit/agentation');
+
+    $sites = app(AgentationSiteProjection::class);
+    expect($sites)->toBeInstanceOf(FakeAgentationSiteProjection::class);
+    assert($sites instanceof FakeAgentationSiteProjection);
+    expect($sites->projected)->toContain($this->instance->id);
+});
+
+it('assigns distinct Agentation ports on one Node and refuses a second HTTP preset', function (): void {
+    $other = AppInstance::query()->create([
+        'app_id' => $this->instance->app_id,
+        'node_id' => $this->node->id,
+        'name' => 'other',
+        'environment' => 'development',
+        'checkout_path' => '/home/orbit/apps/other',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'agentation', 'preset' => 'agentation-mcp'])->assertCreated();
+    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => $other->id, 'name' => 'agentation', 'preset' => 'agentation-mcp'])->assertCreated();
+    $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'second', 'preset' => 'agentation-mcp'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'process.preset_exists');
+
+    expect($this->instance->refresh()->agentation_port)->toBe(4747)
+        ->and($other->refresh()->agentation_port)->toBe(4748);
+});
+
+it('refuses Agentation keep-alive and a watcher without the HTTP Process', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance',
+        'target_id' => $this->instance->id,
+        'name' => 'agentation',
+        'preset' => 'agentation-mcp',
+        'keep_alive' => true,
+    ])->assertUnprocessable();
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance',
+        'target_id' => $this->instance->id,
+        'name' => 'watch',
+        'preset' => 'antigravity-watch',
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'process.preset_dependency_missing');
+    expect(Process::query()->count())->toBe(0);
+});
+
+it('creates an Antigravity watcher after the HTTP Process and refuses removing the HTTP parent first', function (): void {
+    $http = $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance',
+        'target_id' => $this->instance->id,
+        'name' => 'agentation',
+        'preset' => 'agentation-mcp',
+        'start' => true,
+    ])->assertCreated();
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance',
+        'target_id' => $this->instance->id,
+        'name' => 'watch',
+        'preset' => 'antigravity-watch',
+        'start' => true,
+    ])->assertCreated()
+        ->assertJsonPath('data.runtime_config.preset', 'antigravity-watch')
+        ->assertJsonPath('data.restart_policy', 'always')
+        ->assertJsonPath('data.keep_alive', false)
+        ->assertJsonPath('data.desired_state', 'running');
+
+    $this->deleteJson('/api/v1/processes/'.$http->json('data.id'))
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'process.has_dependent');
+
+    $this->deleteJson('/api/v1/processes/'.Process::query()->where('name', 'watch')->value('id'))->assertOk();
+    $this->deleteJson('/api/v1/processes/'.$http->json('data.id'))->assertOk();
+
+    expect($this->instance->refresh()->agentation_port)
+        ->toBeNull()
+        ->and($this->instance->environmentValues()->where('env_key', 'AGENTATION_URL')->exists())
+        ->toBeFalse();
 });

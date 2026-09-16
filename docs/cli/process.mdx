@@ -50,7 +50,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --app
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--instance=ID-or-domain` | none | Positive App instance ID or exact, unambiguous development Route domain. |
-| `--preset=vp-dev` | none | Configure VitePlus with an assigned port, strict binding, and Route proxy integration. App instance only. |
+| `--preset=PRESET` | none | Configure a development App instance Process. Supported values are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. |
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list before it sends the request. |
 | `--app=APP` | none | Numeric App ID for a definition. |
 | `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--app`. |
@@ -72,6 +72,15 @@ orbit process:create assets --instance=commander.test --preset=vp-dev --start
 ```
 
 The preset owns the command, systemd runtime, working directory, and port environment. It refuses custom runtime, command, working-directory, and Docker options. Its default restart policy is `on-failure`. Omit `--start` to install it stopped. An identical create keeps its recorded desired state; use `process:start` to start an existing stopped Process. See [assigned Vite ports](/reference/assigned-vite-ports) for allocation, wake, and application setup.
+
+To publish Agentation on the Route origin and start the hibernate-tied watcher:
+
+```bash
+orbit process:create agentation --instance=commander.test --preset=agentation-mcp --start
+orbit process:create agentation-watch --instance=commander.test --preset=antigravity-watch --start
+```
+
+`agentation-mcp` assigns a Node-scoped loopback port, projects `AGENTATION_URL`, and publishes `/__orbit/agentation`. `antigravity-watch` requires that HTTP Process, refuses `--keep-alive`, and restarts with `always`. See [Agentation](/reference/agentation).
 
 The two generic runtimes accept these values.
 

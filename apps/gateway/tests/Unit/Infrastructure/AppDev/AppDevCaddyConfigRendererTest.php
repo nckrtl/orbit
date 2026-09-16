@@ -294,6 +294,33 @@ it('proxies a local HTTP custom proxy site without Host rewrite or an https hop'
         ->not->toContain('tls_trusted_ca_certs');
 });
 
+it('proxies the reserved Agentation path only when a port is assigned', function (): void {
+    $without = new AppDevCaddyConfigRenderer()->render(collect([
+        development_server_site('commander.test', '/apps/commander'),
+    ]));
+    $with = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 12,
+            nodeAddress: '10.44.0.10',
+            scope: 'app-instance-6',
+            checkoutPath: '/apps/commander',
+            documentRoot: 'public',
+            phpVersion: '8.5',
+            domain: 'commander.test',
+            agentationPort: 4747,
+        ),
+    ]));
+
+    expect($without)
+        ->not->toContain('/__orbit/agentation')
+        ->and($with)
+        ->toContain('path /__orbit/agentation /__orbit/agentation/*')
+        ->toContain('uri strip_prefix /__orbit/agentation')
+        ->toContain('reverse_proxy 127.0.0.1:4747')
+        ->and(caddy_adapt($with)->succeeded())
+        ->toBeTrue();
+});
+
 it('keeps assigned Vite endpoints separate and preserves their base path', function (): void {
     $sites = collect([
         new AppDevSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-10', checkoutPath: '/apps/first', documentRoot: 'public', phpVersion: null, domain: 'first.test', vitePort: 5174),

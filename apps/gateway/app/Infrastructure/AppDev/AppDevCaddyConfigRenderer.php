@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Hibernation\RuntimeHibernation;
 use Illuminate\Support\Collection;
@@ -150,7 +151,7 @@ final readonly class AppDevCaddyConfigRenderer
             return $application;
         }
 
-        $handlers = $this->withDevelopmentServer($application, $site->vitePort);
+        $handlers = $this->withDevelopmentServer($application, $site->vitePort, $site->agentationPort);
         $wake = $this->hibernationWake($site);
 
         return $wake === null ? $handlers : $wake.PHP_EOL.$handlers;
@@ -199,11 +200,12 @@ final readonly class AppDevCaddyConfigRenderer
             CADDY;
     }
 
-    private function withDevelopmentServer(string $applicationHandler, ?int $port): string
+    private function withDevelopmentServer(string $applicationHandler, ?int $port, ?int $agentationPort): string
     {
         $path = DevelopmentServerEndpoint::PATH;
         $upstream = DevelopmentServerEndpoint::upstream($port);
         $rewrite = $port === null ? "uri strip_prefix {$path}" : '';
+        $agentation = $this->agentationHandle($agentationPort);
 
         return <<<CADDY
             @orbit_vite {
@@ -213,9 +215,30 @@ final readonly class AppDevCaddyConfigRenderer
                 {$rewrite}
                 reverse_proxy {$upstream}
             }
-            handle {
+            {$agentation}handle {
                 {$applicationHandler}
             }
+            CADDY;
+    }
+
+    private function agentationHandle(?int $port): string
+    {
+        if ($port === null) {
+            return '';
+        }
+
+        $path = AgentationEndpoint::PATH;
+        $upstream = AgentationEndpoint::upstream($port);
+
+        return <<<CADDY
+            @orbit_agentation {
+                path {$path} {$path}/*
+            }
+            handle @orbit_agentation {
+                uri strip_prefix {$path}
+                reverse_proxy {$upstream}
+            }
+
             CADDY;
     }
 

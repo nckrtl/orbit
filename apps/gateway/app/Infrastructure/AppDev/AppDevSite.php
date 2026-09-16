@@ -29,6 +29,7 @@ final readonly class AppDevSite
         public ?string $localUnixUpstream = null,
         public ?int $vitePort = null,
         public ?string $localHttpUpstream = null,
+        public ?int $agentationPort = null,
     ) {}
 
     public function poolName(): string

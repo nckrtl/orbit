@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Processes\AgentationMcpPreset;
+use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\VpDevPreset;
 use App\Models\Process;
@@ -56,6 +59,10 @@ final readonly class SystemdProcessRenderer
         if ($process->isVpDev()) {
             $command = VpDevPreset::command();
             $environmentProjection['commandPrefix'] = array_values(array_filter($environmentProjection['commandPrefix'], static fn (string $value): bool => ! str_starts_with($value, 'ORBIT_DEV_SERVER_PORT=')));
+        } elseif ($process->isAgentationMcp()) {
+            $command = AgentationMcpPreset::command();
+        } elseif ($process->isAntigravityWatch()) {
+            $command = AntigravityWatchPreset::command();
         }
         $environmentFileLine = is_string($environmentFile) && $environmentFile !== ''
             ? ['EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile)]
@@ -81,8 +88,9 @@ final readonly class SystemdProcessRenderer
                 .implode(
                     ' ',
                     array_map(
-                        fn (string $argument): string => $process->isVpDev() && $argument === '--port=${ORBIT_DEV_SERVER_PORT}'
-                            ? '"--port=${ORBIT_DEV_SERVER_PORT}"'
+                        fn (string $argument): string => ($process->isVpDev() && $argument === '--port=${ORBIT_DEV_SERVER_PORT}')
+                            || ($process->isAgentationMcp() && $argument === '--port=${'.AgentationEndpoint::PORT_KEY.'}')
+                            ? '"'.$argument.'"'
                             : $this->quoteArgument($argument),
                         [...$environmentProjection['commandPrefix'], ...$command],
                     ),
@@ -112,6 +120,14 @@ final readonly class SystemdProcessRenderer
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
             $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) ($target->appInstance->vite_port ?? DevelopmentServerEndpoint::PORT);
+
+            if (is_int($target->appInstance?->agentation_port)) {
+                $agentationOrigin = AgentationEndpoint::origin($target->routeDomain);
+                $directives[] = 'Environment='.AgentationEndpoint::URL_KEY.'='.$this->escapeDirectivePath($agentationOrigin);
+                $directives[] = 'Environment='.AgentationEndpoint::PORT_KEY.'='.(string) $target->appInstance->agentation_port;
+                $commandValues[] = AgentationEndpoint::URL_KEY.'='.$agentationOrigin;
+                $commandValues[] = AgentationEndpoint::PORT_KEY.'='.(string) $target->appInstance->agentation_port;
+            }
         }
 
         if ($certificates && $target->certificateScope !== null) {

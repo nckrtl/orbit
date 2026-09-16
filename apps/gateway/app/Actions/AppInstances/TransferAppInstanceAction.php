@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\TransferAppInstanceData;
+use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\VitePortAllocator;
@@ -662,6 +663,9 @@ final readonly class TransferAppInstanceAction
             $lockedInstance->update([
                 'node_id' => $destination->id,
                 'vite_port' => (int) DB::table('vite_port_assignments')->where('app_instance_id', $instance->id)->where('node_id', $destination->id)->value('port'),
+                ...($lockedInstance->agentation_port === null ? [] : [
+                    'agentation_port' => app(AgentationPortAllocator::class)->nextAvailable($destination->id, $lockedInstance->id),
+                ]),
                 'name' => $lockedTransfer->destination_name,
                 'checkout_path' => $lockedTransfer->destination_path,
                 'source_layout' => AppInstanceSourceLayout::Checkout,

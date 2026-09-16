@@ -5,15 +5,21 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\AppDev\AgentationPortAllocator;
+use App\Domain\AppDev\AgentationSiteProjection;
+use App\Domain\AppDev\AgentationUrlProjection;
+use App\Domain\Processes\AgentationMcpPreset;
+use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessSpecification;
+use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
-use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -28,15 +34,27 @@ final readonly class AddProcessAction
 
     private ProcessSpecification $specifications;
 
+    private AgentationPortAllocator $agentationPorts;
+
+    private AgentationUrlProjection $agentationUrls;
+
+    private AgentationSiteProjection $agentationSites;
+
     public function __construct(
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
         private ProcessAdmissionLock $admissions,
         ?ProcessRuntimeLease $lease = null,
         ?ProcessSpecification $specifications = null,
+        ?AgentationPortAllocator $agentationPorts = null,
+        ?AgentationUrlProjection $agentationUrls = null,
+        ?AgentationSiteProjection $agentationSites = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
         $this->specifications = $specifications ?? new ProcessSpecification;
+        $this->agentationPorts = $agentationPorts ?? app(AgentationPortAllocator::class);
+        $this->agentationUrls = $agentationUrls ?? app(AgentationUrlProjection::class);
+        $this->agentationSites = $agentationSites ?? app(AgentationSiteProjection::class);
     }
 
     /** @return array{process: Process, created: bool} */
@@ -70,13 +88,7 @@ final readonly class AddProcessAction
                 ),
             };
             if ($data->preset !== null) {
-                if ($data->preset !== VpDevPreset::NAME || $target->appInstance?->environment !== 'development') {
-                    throw new ResourceOperationException('process.preset_target_invalid', 'The vp-dev preset requires a development AppInstance.', 422);
-                }
-                $other = Process::query()->where('owner_type', AppInstance::class)->where('owner_id', $data->targetId)->where('name', '!=', $data->name)->get()->contains(fn (Process $process): bool => $process->isVpDev());
-                if ($other) {
-                    throw new ResourceOperationException('process.preset_exists', 'This AppInstance already has a vp-dev Process.', 409);
-                }
+                $this->assertPresetAdmission($data, $target);
             }
             $attributes = $this->specifications->attributes($data, $target);
             $process = Process::query()->firstOrNew([
@@ -158,7 +170,77 @@ final readonly class AddProcessAction
                 'error_code' => null,
             ]);
 
-            return ['process' => $fresh->refresh(), 'created' => $admission['created']];
+            $fresh = $fresh->refresh();
+            $this->projectAgentationSite($fresh);
+
+            return ['process' => $fresh, 'created' => $admission['created']];
         });
+    }
+
+    private function projectAgentationSite(Process $process): void
+    {
+        if (! $process->isAgentationMcp()) {
+            return;
+        }
+
+        $owner = $process->owner instanceof AppInstance
+            ? $process->owner
+            : AppInstance::query()->find($process->owner_id);
+
+        if ($owner instanceof AppInstance) {
+            $this->agentationSites->project($owner);
+        }
+    }
+
+    private function assertPresetAdmission(AddProcessData $data, ProcessTarget $target): void
+    {
+        if ($data->preset === null || ! ProcessPresets::isKnown($data->preset)) {
+            throw new ResourceOperationException('process.preset_target_invalid', 'The Process preset is not supported.', 422);
+        }
+
+        if ($target->appInstance?->environment !== 'development') {
+            throw new ResourceOperationException(
+                errorCode: 'process.preset_target_invalid',
+                message: "The {$data->preset} preset requires a development AppInstance.",
+                status: 422,
+            );
+        }
+
+        if ($data->keepAlive && ProcessPresets::refusesKeepAlive($data->preset)) {
+            throw new ResourceOperationException(
+                errorCode: 'process.preset_keep_alive_invalid',
+                message: "The {$data->preset} preset hibernates with the AppInstance and cannot keep-alive.",
+                status: 422,
+            );
+        }
+
+        $siblings = Process::query()
+            ->where('owner_type', AppInstance::class)
+            ->where('owner_id', $data->targetId)
+            ->where('name', '!=', $data->name)
+            ->get();
+
+        $duplicate = $siblings->contains(fn (Process $process): bool => ($process->runtime_config['preset'] ?? null) === $data->preset);
+
+        if ($duplicate) {
+            throw new ResourceOperationException(
+                errorCode: 'process.preset_exists',
+                message: "This AppInstance already has a {$data->preset} Process.",
+                status: 409,
+            );
+        }
+
+        if ($data->preset === AntigravityWatchPreset::NAME && ! $siblings->contains(fn (Process $process): bool => $process->isAgentationMcp())) {
+            throw new ResourceOperationException(
+                errorCode: 'process.preset_dependency_missing',
+                message: 'The antigravity-watch preset requires an agentation-mcp Process on this AppInstance.',
+                status: 422,
+            );
+        }
+
+        if ($data->preset === AgentationMcpPreset::NAME) {
+            $this->agentationPorts->assign($target->appInstance);
+            $this->agentationUrls->project($target->appInstance);
+        }
     }
 }
