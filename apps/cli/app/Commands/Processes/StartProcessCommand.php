@@ -26,4 +26,9 @@ final class StartProcessCommand extends ProcessActionCommand
     {
         return 'started';
     }
+
+    protected function progressLabels(): array
+    {
+        return ['Start Process', 'Starting Process', 'Started Process'];
+    }
 }

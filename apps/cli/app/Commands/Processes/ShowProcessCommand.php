@@ -53,10 +53,11 @@ final class ShowProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ShowProcessDefinitionRequest($appId, $name),
             AppRuntimeDefinitionResponse::class,
+            ['Show Process definition', 'Loading Process definition', 'Loaded Process definition'],
         );
 
         return $response instanceof AppRuntimeDefinitionResponse

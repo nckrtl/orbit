@@ -174,10 +174,11 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new UpdateProcessDefinitionRequest($appId, $name, $definition),
             AppRuntimeDefinitionResponse::class,
+            ['Update Process definition', 'Updating Process definition', 'Updated Process definition'],
         );
 
         return $response instanceof AppRuntimeDefinitionResponse

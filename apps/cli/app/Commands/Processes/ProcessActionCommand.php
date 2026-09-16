@@ -27,25 +27,24 @@ abstract class ProcessActionCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $process = $this->send($connector, $this->request($processId), ProcessResponse::class);
+        $process = $this->sendWithProgress(
+            $connector,
+            $this->request($processId),
+            ProcessResponse::class,
+            $this->progressLabels(),
+        );
 
         if (! $process instanceof ProcessResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedProcessPayload($process->toArray()));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Process [{$process->name}] {$this->pastTense()}.");
-        $this->line("Request ID: {$process->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderProcess($process, "Process [{$process->name}] {$this->pastTense()}.");
     }
 
     abstract protected function request(int $processId): GatewayRequest;
 
     abstract protected function pastTense(): string;
+
+    /** @return array{0: string, 1: string, 2: string} */
+    abstract protected function progressLabels(): array;
 }

@@ -119,10 +119,11 @@ final class UpdateScheduleCommand extends ScheduleCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new UpdateScheduleDefinitionRequest($appId, $name, $definition),
             AppRuntimeDefinitionResponse::class,
+            ['Update Schedule definition', 'Updating Schedule definition', 'Updated Schedule definition'],
         );
 
         return $response instanceof AppRuntimeDefinitionResponse

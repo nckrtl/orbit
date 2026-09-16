@@ -197,7 +197,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $process = $this->send(
+        $process = $this->sendWithProgress(
             $connector,
             new CreateProcessRequest(
                 target: $target,
@@ -215,22 +215,14 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 preset: $preset,
             ),
             ProcessResponse::class,
+            ['Create Process', 'Creating Process', 'Created Process'],
         );
 
         if (! $process instanceof ProcessResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedProcessPayload($process->toArray()));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Process [{$process->name}] is {$process->runtimeStatus}.");
-        $this->line("Request ID: {$process->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderProcess($process, "Process [{$process->name}] is {$process->runtimeStatus}.");
     }
 
     /**
@@ -328,10 +320,11 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new CreateProcessDefinitionRequest($appId, $definition),
             AppRuntimeDefinitionResponse::class,
+            ['Create Process definition', 'Creating Process definition', 'Created Process definition'],
         );
 
         return $response instanceof AppRuntimeDefinitionResponse

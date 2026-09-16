@@ -48,10 +48,11 @@ final class ProcessLogsCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ProcessLogsRequest($processId, $lines),
             ProcessLogsResponse::class,
+            ['Read Process logs', 'Reading Process logs', 'Read Process logs'],
         );
 
         if (! $response instanceof ProcessLogsResponse) {
@@ -78,7 +79,7 @@ final class ProcessLogsCommand extends ProcessCommand
             $this->line($logs);
         }
 
-        $this->line("Request ID: {$response->requestId}");
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

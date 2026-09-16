@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Commands\Processes;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\ConsoleWriter;
+use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
 abstract class ProcessCommand extends GatewayCommand
 {
@@ -154,6 +156,30 @@ abstract class ProcessCommand extends GatewayCommand
             .'REFRESH[_-]?TOKEN|OPERATION[_-]?TOKEN|EXECUTOR[_-]?SECRET|PRIVATE[_-]?KEY|'
             .'PRE[_-]?SHARED[_-]?KEY|PASSWORD[_-]?HASH|PASSWORD|PASSWD|PWD|SECRET|TOKEN|'
             .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*';
+    }
+
+    protected function renderProcess(ProcessResponse $process, string $message): int
+    {
+        if ($this->option('json') === true) {
+            $this->writeJson($this->sanitizedProcessPayload($process->toArray()));
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+            'ID' => $process->id,
+            'Name' => $process->name,
+            'Target' => "{$process->targetType}:{$process->targetId}",
+            'Runtime' => $process->runtime,
+            'Desired state' => $process->desiredState,
+            'Runtime status' => $process->runtimeStatus,
+            'Restart' => $process->restartPolicy,
+            'Keep-alive' => $process->keepAlive ? 'yes' : 'no',
+            'Working directory' => $process->workingDirectory,
+            'Request ID' => $process->requestId,
+        ]));
+
+        return self::SUCCESS;
     }
 
     /** @return list<string> */

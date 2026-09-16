@@ -27,7 +27,12 @@ abstract class ScheduleItemCommand extends ScheduleUuidCommand
             return self::FAILURE;
         }
 
-        $schedule = $this->send($connector, $this->request($scheduleId), ScheduleResponse::class);
+        $schedule = $this->sendWithProgress(
+            $connector,
+            $this->request($scheduleId),
+            ScheduleResponse::class,
+            $this->progressLabels(),
+        );
 
         if (! $schedule instanceof ScheduleResponse) {
             return self::FAILURE;
@@ -39,4 +44,7 @@ abstract class ScheduleItemCommand extends ScheduleUuidCommand
     }
 
     abstract protected function request(string $scheduleId): GatewayRequest;
+
+    /** @return array{0: string, 1: string, 2: string} */
+    abstract protected function progressLabels(): array;
 }

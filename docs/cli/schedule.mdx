@@ -32,7 +32,7 @@ The [Schedules reference](/reference/schedules) owns the stored fields, executio
 | [`schedule:enable`](#orbit-scheduleenable) | Enable and start an installed App instance timer. |
 | [`schedule:destroy`](#orbit-scheduledestroy) | Remove one Schedule or one definition. |
 
-Every command accepts `--json`. Output shows `desired_timer_state` separately from the lifecycle `status`, and every result includes the Gateway request ID.
+Every command accepts `--json`. Output shows `desired_timer_state` separately from the lifecycle `status`, and every result includes the Gateway request ID. Human output uses the shared table, detail tree, and progress helpers. `schedule:destroy` requires default-No confirmation or `--yes`. `schedule:create` still requires exactly one explicit target in every mode.
 
 ## orbit schedule:create
 
@@ -170,7 +170,7 @@ Use it after `schedule:create --no-start` or for a production copy that preparat
 Remove one Schedule through the Gateway, or one definition by name.
 
 ```bash
-orbit schedule:destroy <schedule> [--app=APP] [--json]
+orbit schedule:destroy <schedule> [--app=APP] [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -180,9 +180,10 @@ orbit schedule:destroy <schedule> [--app=APP] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--app=APP` | Numeric App ID. Selects a definition. |
+| `--yes` | Confirm destruction without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 <Warning>
-The command sends the request without a confirmation prompt. The Gateway marks the Schedule `removing`, disables and stops its timer, lets an active command finish, and then removes the exact timer, service, script, and record. A failure leaves the Schedule `removing`, and repeating the command resumes cleanup.
+After confirmation the Gateway marks the Schedule `removing`, disables and stops its timer, lets an active command finish, and then removes the exact timer, service, script, and record. A failure leaves the Schedule `removing`, and repeating the command resumes cleanup.
 </Warning>
 
 ## Error codes

@@ -54,10 +54,11 @@ final class ShowScheduleCommand extends ScheduleItemCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ShowScheduleDefinitionRequest($appId, $name),
             AppRuntimeDefinitionResponse::class,
+            ['Show Schedule definition', 'Loading Schedule definition', 'Loaded Schedule definition'],
         );
 
         return $response instanceof AppRuntimeDefinitionResponse
@@ -68,5 +69,10 @@ final class ShowScheduleCommand extends ScheduleItemCommand
     protected function request(string $scheduleId): GatewayRequest
     {
         return new ShowScheduleRequest($scheduleId);
+    }
+
+    protected function progressLabels(): array
+    {
+        return ['Show Schedule', 'Loading Schedule', 'Loaded Schedule'];
     }
 }

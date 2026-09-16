@@ -8,6 +8,7 @@ use App\Commands\Concerns\RendersAppRuntimeDefinitions;
 use App\Commands\Concerns\SelectsAppDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Apps\ListScheduleDefinitionsRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
@@ -43,10 +44,11 @@ final class ListSchedulesCommand extends ScheduleCommand
         }
 
         if ($appId !== null) {
-            $response = $this->send(
+            $response = $this->sendWithProgress(
                 $connector,
                 new ListScheduleDefinitionsRequest($appId),
                 AppRuntimeDefinitionsResponse::class,
+                ['List Schedule definitions', 'Loading Schedule definitions', 'Loaded Schedule definitions'],
             );
 
             return $response instanceof AppRuntimeDefinitionsResponse
@@ -54,7 +56,12 @@ final class ListSchedulesCommand extends ScheduleCommand
                 : self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListSchedulesRequest, SchedulesResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new ListSchedulesRequest,
+            SchedulesResponse::class,
+            ['List Schedules', 'Loading Schedules', 'Loaded Schedules'],
+        );
 
         if (! $response instanceof SchedulesResponse) {
             return self::FAILURE;
@@ -80,11 +87,18 @@ final class ListSchedulesCommand extends ScheduleCommand
             ];
         }
 
-        $this->table(
+        if ($rows === []) {
+            $this->writeHumanMessage('No Schedules.');
+            $this->writeHumanMessage("Request ID: {$response->requestId}");
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['UUID', 'Target', 'Name', 'Calendar', 'Desired timer', 'Lifecycle', 'Last run'],
             $rows,
-        );
-        $this->line("Request ID: {$response->requestId}");
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

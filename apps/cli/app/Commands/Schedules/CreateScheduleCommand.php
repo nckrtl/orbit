@@ -110,7 +110,7 @@ final class CreateScheduleCommand extends ScheduleCommand
             return self::FAILURE;
         }
 
-        $schedule = $this->send(
+        $schedule = $this->sendWithProgress(
             $connector,
             new CreateScheduleRequest(
                 target: $target,
@@ -121,6 +121,7 @@ final class CreateScheduleCommand extends ScheduleCommand
                 start: $this->option('no-start') === true ? false : null,
             ),
             ScheduleResponse::class,
+            ['Create Schedule', 'Creating Schedule', 'Created Schedule'],
         );
 
         if (! $schedule instanceof ScheduleResponse) {
@@ -225,10 +226,11 @@ final class CreateScheduleCommand extends ScheduleCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new CreateScheduleDefinitionRequest($appId, $definition),
             AppRuntimeDefinitionResponse::class,
+            ['Create Schedule definition', 'Creating Schedule definition', 'Created Schedule definition'],
         );
 
         return $response instanceof AppRuntimeDefinitionResponse

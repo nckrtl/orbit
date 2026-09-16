@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -22,6 +23,7 @@ use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -307,13 +309,10 @@ it('lists one node-targeted process collection', function (): void {
         ]),
     ]);
 
-    $this
-        ->artisan('process:list', ['--node' => '4'])
-        ->expectsTable(
-            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'],
-            [[12, 'postgres', 'docker', 'running', 'running', 'unless-stopped', 'no']],
-        )
-        ->assertExitCode(0);
+    [$exit, $output] = process_cli_display('process:list', ['--node' => '4']);
+    expect($exit)->toBe(0);
+    expect($output)->toContain('postgres');
+    expect($output)->toContain('Request ID: '.process_cli_request_id());
 });
 
 it('lists one target process collection for humans', function (): void {
@@ -324,14 +323,10 @@ it('lists one target process collection for humans', function (): void {
         ]),
     ]);
 
-    $this
-        ->artisan('process:list', ['--instance' => '7'])
-        ->expectsTable(
-            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'],
-            [[12, 'redis', 'docker', 'running', 'running', 'unless-stopped', 'no']],
-        )
-        ->expectsOutput('Request ID: '.process_cli_request_id())
-        ->assertExitCode(0);
+    [$exit, $output] = process_cli_display('process:list', ['--instance' => '7']);
+    expect($exit)->toBe(0);
+    expect($output)->toContain('redis');
+    expect($output)->toContain('Request ID: '.process_cli_request_id());
 });
 
 it('runs one process lifecycle action', function (
@@ -343,11 +338,15 @@ it('runs one process lifecycle action', function (
         $requestClass => process_cli_response(),
     ]);
 
-    $this
-        ->artisan($command, ['process' => '12'])
-        ->expectsOutput("Process [redis] {$verb}.")
-        ->expectsOutput('Request ID: '.process_cli_request_id())
-        ->assertExitCode(0);
+    $arguments = ['process' => '12'];
+    if ($command === 'process:destroy') {
+        $arguments['--yes'] = true;
+    }
+
+    [$exit, $output] = process_cli_display($command, $arguments);
+    expect($exit)->toBe(0);
+    expect($output)->toContain("Process [redis] {$verb}.");
+    expect($output)->toContain(process_cli_request_id());
 
     expect($mock->getLastRequest())->toBeInstanceOf($requestClass);
 })->with([
@@ -356,6 +355,21 @@ it('runs one process lifecycle action', function (
     'restart' => ['process:restart', RestartProcessRequest::class, 'restarted'],
     'remove' => ['process:destroy', DestroyProcessRequest::class, 'removed'],
 ]);
+
+it('refuses JSON process destruction without --yes', function (): void {
+    $mock = MockClient::global();
+
+    [$exit, $output] = process_cli_display('process:destroy', ['process' => '12', '--json' => true]);
+    expect($exit)->toBe(1);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'input.confirmation_required',
+            'message' => 'Supply --yes to confirm this operation.',
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+});
 
 it('prints one bounded log tail without follow mode', function (): void {
     $mock = MockClient::global([
@@ -1213,7 +1227,7 @@ it('lists shows updates and destroys App process definitions by name', function 
     ],
     'destroy' => [
         'process:destroy',
-        ['process' => 'queue', '--app' => '7'],
+        ['process' => 'queue', '--app' => '7', '--yes' => true],
         DestroyProcessDefinitionRequest::class,
         '/api/v1/apps/7/process-definitions/queue',
     ],
@@ -1284,6 +1298,17 @@ function process_cli_response(int $status = 200): MockResponse
         'data' => process_cli_payload(),
         'meta' => ['request_id' => process_cli_request_id()],
     ], $status);
+}
+
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{0: int, 1: string}
+ */
+function process_cli_display(string $command, array $arguments = []): array
+{
+    $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+    return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
 }
 
 /** @return array<string, mixed> */
