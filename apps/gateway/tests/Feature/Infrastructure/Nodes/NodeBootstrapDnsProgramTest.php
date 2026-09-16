@@ -235,6 +235,7 @@ function run_bootstrap_dns_shell(array $options = []): array
             fi
             if [ "$CONTEND" = 1 ] && [ "$mode" = install ]; then
                 (
+                    trap - HUP EXIT INT TERM
                     exec 9>peer.lock
                     if command flock -n 9; then
                         printf 'acquired-before-restoration' > contender-state
@@ -243,7 +244,9 @@ function run_bootstrap_dns_shell(array $options = []): array
                     touch contender-blocked
                     command flock -w 2 9 || exit 1
                     printf '%s|%s' "$(cat dns)" "$(cat domain)" > contender-state
-                    printf '192.0.2.53' > dns
+                    printf '192.0.2.53' > dns.tmp
+                    mv -f dns.tmp dns
+                    touch contender-published
                 ) &
                 for attempt in {1..100}; do
                     [ ! -e contender-state ] || return 84
@@ -266,6 +269,12 @@ function run_bootstrap_dns_shell(array $options = []): array
     $process->setTimeout(10);
     try {
         $process->run();
+        if (($options['contend'] ?? false) === true) {
+            $deadline = microtime(true) + 2.0;
+            while (! is_file($root.'/contender-published') && microtime(true) < $deadline) {
+                usleep(5000);
+            }
+        }
 
         return [
             'exit' => $process->getExitCode(),
