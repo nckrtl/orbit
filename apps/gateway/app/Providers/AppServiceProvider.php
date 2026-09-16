@@ -61,6 +61,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
 use App\Domain\Doctor\AppStateInspector;
+use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
@@ -111,6 +112,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
+use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -170,6 +172,7 @@ use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
 use App\Infrastructure\DatabaseConnections\RemoteManagedMysqlUserProvisioner;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
+use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
@@ -233,6 +236,7 @@ use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
+use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
 use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
@@ -307,6 +311,7 @@ final class AppServiceProvider extends ServiceProvider
         RouteDomainProjector::class => NativeDevelopmentRouteProjector::class,
         ClusterRouterReplacementProjector::class => NativeClusterRouterReplacementProjector::class,
         RouteRemovalProjector::class => NativeRouteRemovalProjector::class,
+        CustomProxyRouteProjector::class => NativeCustomProxyRouteProjector::class,
         PublicRouteEdgeProjector::class => NativePublicRouteEdgeProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
@@ -318,6 +323,7 @@ final class AppServiceProvider extends ServiceProvider
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
         PublicRouteEdgeInspector::class => NativePublicRouteEdgeInspector::class,
         PrivateRouteProjectionInspector::class => NativePrivateRouteProjectionInspector::class,
+        CustomProxyRouteInspector::class => NativeCustomProxyRouteInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
         MetricsCredentialRuntime::class => MetricsSshExecutor::class,

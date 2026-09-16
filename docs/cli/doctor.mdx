@@ -24,7 +24,7 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=ID` | every registered Node the caller may address | Numeric Node ID. The CLI rejects a value that is not a positive integer with `doctor.node_id_invalid`. |
-| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, and `database_connection`. |
+| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, and `route`. |
 
 ```bash
 orbit doctor
@@ -49,7 +49,7 @@ Doctor selects only Nodes that the caller may address through Node access. A `--
 
 The Gateway observes each Node once over its fixed SSH boundary before it runs the selected family probes. That observation contains only reachability, platform, architecture, and whether the managed WireGuard address is present. When a Node is unreachable, database-only checks still run, and every live-state family with managed resources on that Node reports one `*.node_unreachable` issue instead of inspecting resources.
 
-Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
+Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, `route`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
 
 Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues, `drift` with drift only, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. The report never contains raw output, commands, paths, URLs, branch names, credentials, environment values, configuration contents, or exception text.
 
@@ -68,10 +68,11 @@ Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resou
 | `firewall` | UFW backend state and each named rule the Gateway owns on the Node. | `firewall.backend_inactive`, `firewall.lifecycle_not_active`, `firewall.rule_missing`, `firewall.rule_mismatch`, `firewall.node_unreachable`, `firewall.inspection_failed` |
 | `herdr` | The Process, private observer, and session identity of each named Herdr session. | `herdr.process_unhealthy`, `herdr.listener_unhealthy`, `herdr.session_unhealthy`, `herdr.node_unreachable`, `herdr.inspection_failed` |
 | `database_connection` | Registry records and App instance attachments against the stored environment keys they project. | `database_connection.missing`, `database_connection.unhealthy`, `database_connection.env_mismatch`, `database_connection.inspection_failed` |
+| `route` | Custom proxy DNS, Orbit CA leaf, Caddy site, and local upstream reachability on the serving Node. | `route.dns_mismatch`, `route.certificate_mismatch`, `route.caddy_mismatch`, `route.upstream_unreachable`, `route.node_unreachable`, `route.inspection_failed` |
 
 A sleeping development App instance is not drift. When the awake marker is absent, Doctor does not report `process.state_mismatch` for a Process that is desired running, not keep-alive, and observed stopped; the [hibernation reference](/reference/app-dev-runtime-hibernation#inspect) owns that rule. A prepared production home without a `current` link is healthy before its first deployment; the [release layout reference](/reference/deployments#inspect-release-placement-with-doctor) owns that rule.
 
-The reference pages describe each family's comparison in more detail: [Schedules](/reference/schedules#inspect-schedule-drift), [Tools](/reference/tools#check-removal-with-doctor), [Database connections](/reference/database-connections#inspect-attachments-with-doctor), [Herdr sessions](/reference/herdr-sessions#doctor), and [App instance environment variables](/reference/environment-variables#inspect-the-projection-with-doctor).
+The reference pages describe each family's comparison in more detail: [Schedules](/reference/schedules#inspect-schedule-drift), [Tools](/reference/tools#check-removal-with-doctor), [Database connections](/reference/database-connections#inspect-attachments-with-doctor), [Herdr sessions](/reference/herdr-sessions#doctor), [App instance environment variables](/reference/environment-variables#inspect-the-projection-with-doctor), and [custom proxy Routes](/reference/routes#custom-proxy-routes).
 
 <Warning>
 Doctor keeps no report history. The Gateway writes one ordinary Activity row for the request and stores no findings, so keep the returned report and request ID if you need them later.
@@ -82,3 +83,4 @@ Doctor keeps no report history. The Gateway writes one ordinary Activity row for
 - [`activity`](/cli/activity) finds the Activity row that a Doctor request created.
 - [`node`](/cli/node) converges a Node or role again after Doctor reports drift.
 - [`process`](/cli/process) and [`schedule`](/cli/schedule) start, stop, or replace the resources that Doctor compares.
+- [`route`](/cli/route) creates and removes the custom proxy Routes the `route` family inspects.

@@ -1,9 +1,9 @@
 ---
 title: "route"
-description: "Create explicit domains for an App, point them at an App instance, change a domain or publication intent, and remove Routes."
+description: "Create explicit App domains and Node-owned custom proxy hostnames, point App Routes at App instances, change a domain or publication intent, and remove Routes."
 ---
 
-A Route is an App-owned domain with one routing scope: a Node or an active Cluster. Development Routes have one target. Production Routes can have an ordered target pool. Orbit generates a Route for every App instance it creates. Generated domains use an explicit hostname, an active Cluster TLD, then the Node TLD. The `route` family manages explicit Routes and their targets and domains.
+A Route is a domain the Gateway publishes on the private network. An App Route has one routing scope: a Node or an active Cluster. Development App Routes have one target. Production App Routes can have an ordered target pool. A custom proxy Route gives a Node-local service an exact hostname. Orbit generates an App Route for every App instance it creates. Generated domains use an explicit hostname, an active Cluster TLD, then the Node TLD. The `route` family manages explicit App Routes, custom proxy Routes, and App Route targets and domains.
 
 The [Routes reference](/reference/routes) owns the Route record, domain generation, private projection, and the guards that refuse a change while an active App instance depends on it.
 
@@ -23,43 +23,54 @@ Every command accepts `--json`. Route, App, App instance, Node, and Cluster argu
 
 ## orbit route:create
 
-Create an explicit Route for an App. Give it a target, or give a targetless Route exactly one Node or Cluster scope.
+Create an explicit App Route or a Node-owned custom proxy Route.
 
 ```bash
 orbit route:create <app> <domain> [--publication=INTENT] [--target=ID | --node=ID | --cluster=ID]
+orbit route:create <domain> --node=NODE --upstream=URL
+orbit route:create <domain> --node=NODE --process=PROCESS
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `app` | yes | Numeric App ID that owns the Route. |
-| `domain` | yes | Route domain. The Gateway normalizes it and refuses one that another Route owns. |
+| `app` | App form | Numeric App ID that owns the App Route. |
+| `domain` | yes | Route domain. The Gateway normalizes it and refuses one that another Route or a reserved platform name owns. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--publication=INTENT` | `private` | `private` or `public`. The Gateway retains the intent even while the Route has no target. |
-| `--target=ID` | none | Numeric App instance target. The Route scope derives from that App instance's Node or active Cluster. |
-| `--node=ID` | none | Numeric Node scope for a targetless Route. |
-| `--cluster=ID` | none | Numeric Cluster scope for a targetless Route. |
+| `--publication=INTENT` | `private` | `private` or `public` for an App Route. Custom proxy Routes are private only. |
+| `--target=ID` | none | Numeric App instance target. The App Route scope derives from that App instance's Node or active Cluster. |
+| `--node=NODE` | none | Numeric Node scope for a targetless App Route, or the serving Node ID or name for a custom proxy Route. |
+| `--cluster=ID` | none | Numeric Cluster scope for a targetless App Route. |
+| `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
+| `--process=PROCESS` | none | Node-owned Process name or ID on the serving Node for a custom proxy Route. |
 
 ```bash
 orbit route:create 4 shop.example.test --target=12
 orbit route:create 4 preview.example.test --cluster=3
+orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
+orbit route:create executor.orbit --node=beast --process=executor
 ```
 
-The CLI refuses `--target` together with a scope option (`route.scope_conflict`) and a targetless Route without exactly one scope (`route.scope_required`) before it sends a request. Creating the same Route again with identical App, domain, intent, scope, and target returns the existing Route; a retry that changes one of those values fails with `route.retry_conflict`.
+`--upstream` or `--process` selects the custom proxy form. That form requires `--node` and forbids `app`, `--target`, `--cluster`, and public publication. The first positional argument is the domain. The CLI resolves `--node` as an ID or registered Node name.
+
+The App form refuses `--target` together with a scope option (`route.scope_conflict`) and a targetless Route without exactly one scope (`route.scope_required`) before it sends a request. Creating the same App Route again with identical App, domain, intent, scope, and target returns the existing Route; a retry that changes one of those values fails with `route.retry_conflict`. Creating the same custom proxy Route again with identical domain, Node, and upstream or Process returns the existing Route.
 
 | Error code | Meaning |
 | --- | --- |
 | `route.domain_invalid` | The domain is not a valid normalized domain. |
-| `route.domain_conflict` | Another Route owns the domain. |
+| `route.domain_conflict` | Another Route owns the domain, or the name is reserved (`gateway.orbit`, `metrics.orbit`). |
 | `route.target_app_conflict` | The target App instance belongs to another App. |
 | `route.target_inactive` | The target App instance is not active. |
 | `route.target_conflict` | The target App instance already belongs to another Route. |
 | `route.router_required` | The Cluster scope has no active Router. |
+| `route.upstream_invalid` | The upstream is not a loopback HTTP URL on the serving Node. |
+| `route.upstream_unresolved` | The Process has no single Node-local listener the Gateway can use. |
+| `route.process_conflict` | The Process is missing, not Node-owned, or not on the serving Node. |
 
 ## orbit route:list
 
-List every Route with its domain, provenance (`generated` or `explicit`), publication intent, scope, target, and status.
+List every Route with its domain, kind (`app` or `custom_proxy`), provenance (`generated` or `explicit`), publication intent, scope, target or upstream, and status.
 
 ```bash
 orbit route:list [--json]
@@ -67,7 +78,7 @@ orbit route:list [--json]
 
 ## orbit route:show
 
-Show one Route, including its generation basis, lifecycle, and failure metadata when a change is unfinished.
+Show one Route, including its kind, generation basis, custom proxy upstream or Process, lifecycle, and failure metadata when a change is unfinished.
 
 ```bash
 orbit route:show <route>
@@ -151,7 +162,7 @@ Clearing an already empty Route returns it unchanged. The Gateway returns `route
 
 ## orbit route:destroy
 
-Remove an untargeted private Route and its managed traffic configuration. The Gateway completes projection cleanup before deleting the record. See [Route removal](/reference/routes#remove-an-untargeted-private-route) for refusal and retry rules.
+Remove an untargeted private App Route or a custom proxy Route and its managed traffic configuration. The Gateway completes projection cleanup before deleting the record. See [Route removal](/reference/routes#remove-an-untargeted-private-route) for refusal and retry rules. A custom proxy Route has no App instance target, so destroy cleans that hostname without touching App Routes.
 
 ```bash
 orbit route:destroy <route> [--yes]
@@ -169,6 +180,8 @@ Route removal and target clearing ask for confirmation with No selected. Supply 
 
 ## Related
 
-- [`instance`](/cli/instance) creates the App instances that Routes target and accepts `--domain` for an explicit Route at creation.
-- [`cluster`](/cli/cluster) owns the Router that serves Cluster-scoped Routes.
+- [`instance`](/cli/instance) creates the App instances that App Routes target and accepts `--domain` for an explicit Route at creation.
+- [`process`](/cli/process) installs the Node-owned Process a custom proxy Route can target.
+- [`cluster`](/cli/cluster) owns the Router that serves Cluster-scoped App Routes.
 - [`dns`](/cli/dns) points a development TLD at a Node from the operator machine.
+- [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns uniqueness, DNS, Caddy, and the Executor example.

@@ -11,7 +11,8 @@ final readonly class RouteResponse
 {
     public function __construct(
         public int $id,
-        public int $appId,
+        public string $kind,
+        public ?int $appId,
         public ?int $nodeId,
         public ?int $clusterId,
         public ?int $generationBasisNodeId,
@@ -29,6 +30,8 @@ final readonly class RouteResponse
         public ?RouteTargetResponse $target,
         /** @var list<RouteTargetResponse> */
         public array $targets,
+        public ?int $processId,
+        public ?string $upstream,
         public string $requestId,
     ) {}
 
@@ -44,7 +47,8 @@ final readonly class RouteResponse
 
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
-            appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
+            kind: is_string($data['kind'] ?? null) && $data['kind'] !== '' ? $data['kind'] : 'app',
+            appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : null,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : null,
             clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : null,
             generationBasisNodeId: is_int($data['generation_basis_node_id'] ?? null)
@@ -65,6 +69,8 @@ final readonly class RouteResponse
             targetSetStep: is_string($data['target_set_step'] ?? null) ? $data['target_set_step'] : null,
             target: $target,
             targets: $targets,
+            processId: is_int($data['process_id'] ?? null) ? $data['process_id'] : null,
+            upstream: is_string($data['upstream'] ?? null) ? $data['upstream'] : null,
             requestId: $requestId,
         );
     }
@@ -74,6 +80,7 @@ final readonly class RouteResponse
     {
         return [
             'id' => $this->id,
+            'kind' => $this->kind,
             'app_id' => $this->appId,
             'node_id' => $this->nodeId,
             'cluster_id' => $this->clusterId,
@@ -94,6 +101,8 @@ final readonly class RouteResponse
                 static fn (RouteTargetResponse $target): array => $target->toArray(),
                 $this->targets,
             ),
+            'process_id' => $this->processId,
+            'upstream' => $this->upstream,
             'request_id' => $this->requestId,
         ];
     }

@@ -746,6 +746,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'target' => null,
                 'node' => null,
                 'cluster' => null,
+                'upstream' => null,
+                'process' => null,
                 'json' => false,
             ],
         ],
@@ -820,6 +822,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],
+            'route:create' => ['app', 'domain'],
             default => [],
         };
         expect(collect($definition->getArguments())

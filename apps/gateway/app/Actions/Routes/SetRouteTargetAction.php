@@ -28,6 +28,14 @@ final readonly class SetRouteTargetAction
 
     public function execute(Route $route, int $appInstanceId): Route
     {
+        if ($route->isCustomProxy()) {
+            throw new ResourceOperationException(
+                errorCode: 'route.kind_unsupported',
+                message: 'A custom proxy Route cannot own App instance targets.',
+                status: 409,
+            );
+        }
+
         /** @var list<int> $expectedTargetIds */
         $expectedTargetIds = $route
             ->targets()

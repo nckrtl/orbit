@@ -46,7 +46,7 @@ it('lists every accepted family including schedule in doctor help', function ():
         ->toContain('schedule', 'database_connection')
         ->not->toContain('workspace');
     expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
-        ->toBe('Limit checks to node, role, app, instance, schedule, tool, process, firewall, herdr, or database_connection');
+        ->toBe('Limit checks to node, role, app, instance, schedule, tool, process, firewall, herdr, database_connection, or route');
 
     expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
     expect(Artisan::output())

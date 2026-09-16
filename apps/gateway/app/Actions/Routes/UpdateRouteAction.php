@@ -27,6 +27,14 @@ final readonly class UpdateRouteAction
 
     public function execute(Route $route, UpdateRouteData $data): Route
     {
+        if ($route->isCustomProxy()) {
+            throw new ResourceOperationException(
+                errorCode: 'route.kind_unsupported',
+                message: 'A custom proxy Route cannot change domain or publication through App Route update.',
+                status: 409,
+            );
+        }
+
         /** @var list<int> $targetIds */
         $targetIds = $route
             ->targets()

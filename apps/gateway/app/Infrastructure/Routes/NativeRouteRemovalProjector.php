@@ -29,6 +29,12 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
 
     public function cleanupCertificates(Route $route): void
     {
+        $route->loadMissing('node');
+
+        if ($route->isCustomProxy() && $route->node instanceof Node) {
+            $this->certificates->removeCustomProxy($route, $route->node);
+        }
+
         $router = $this->router($route);
 
         if (! $router instanceof Node) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
@@ -13,10 +14,12 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property RouteKind $kind
+ * @property int|null $app_id
  * @property int|null $node_id
  * @property int|null $cluster_id
  * @property int|null $generation_basis_node_id
@@ -32,19 +35,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property RouteReplacementStep|null $replacement_step
  * @property array<string, mixed>|null $target_set_intent
  * @property string|null $target_set_step
- * @property-read App $app
+ * @property-read App|null $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
  * @property-read Node|null $generationBasisNode
  * @property-read Route|null $replaces
  * @property-read Route|null $replacedBy
  * @property-read Collection<int, RouteTarget> $targets
+ * @property-read RouteCustomProxy|null $customProxy
  */
 final class Route extends Model
 {
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
+        'kind' => 'app',
         'status' => 'pending',
         'public_publication' => 'inactive',
     ];
@@ -52,6 +57,7 @@ final class Route extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'kind',
         'app_id',
         'node_id',
         'cluster_id',
@@ -69,6 +75,11 @@ final class Route extends Model
         'target_set_intent',
         'target_set_step',
     ];
+
+    public function isCustomProxy(): bool
+    {
+        return $this->kind === RouteKind::CustomProxy;
+    }
 
     public function isAuthoritative(): bool
     {
@@ -117,10 +128,17 @@ final class Route extends Model
         return $this->hasMany(RouteTarget::class)->orderBy('position')->orderBy('id');
     }
 
+    /** @return HasOne<RouteCustomProxy, $this> */
+    public function customProxy(): HasOne
+    {
+        return $this->hasOne(RouteCustomProxy::class);
+    }
+
     /** @return array<string, class-string|string> */
     protected function casts(): array
     {
         return [
+            'kind' => RouteKind::class,
             'provenance' => RouteProvenance::class,
             'publication' => RoutePublication::class,
             'public_publication' => RoutePublicPublication::class,

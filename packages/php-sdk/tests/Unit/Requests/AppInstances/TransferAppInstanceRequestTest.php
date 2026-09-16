@@ -148,6 +148,7 @@ function transfer_instance_envelope(): array
             'status' => 'active',
             'route' => [
                 'id' => 41,
+                'kind' => 'app',
                 'app_id' => 3,
                 'node_id' => null,
                 'cluster_id' => 2,
@@ -167,6 +168,8 @@ function transfer_instance_envelope(): array
                     'app_instance_id' => 11,
                     'position' => 0,
                 ],
+                'process_id' => null,
+                'upstream' => null,
             ],
             'domain' => 'preview.shop.other.orbit',
             'url' => 'https://preview.shop.other.orbit',

@@ -24,6 +24,7 @@ final class DoctorIssueCodeCatalog
                 ?? HerdrSessionDoctorIssueCode::InspectionFailed,
             DoctorFamily::DatabaseConnection => DatabaseConnectionDoctorIssueCode::tryFrom($code)
                 ?? DatabaseConnectionDoctorIssueCode::InspectionFailed,
+            DoctorFamily::Route => RouteDoctorIssueCode::tryFrom($code) ?? RouteDoctorIssueCode::InspectionFailed,
         };
     }
 }
