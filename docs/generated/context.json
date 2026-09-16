@@ -371,6 +371,7 @@
                 "Cluster",
                 "Gateway",
                 "Node",
+                "Process",
                 "Route",
                 "Router"
             ],
@@ -456,7 +457,8 @@
                 "0047",
                 "0056",
                 "0064",
-                "0065"
+                "0065",
+                "0080"
             ]
         },
         {
@@ -2098,6 +2100,35 @@
             ]
         },
         {
+            "path": "docs/decisions/0080-add-node-owned-custom-proxy-routes.md",
+            "title": "ADR 0080: Add node-owned custom proxy Routes",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Router",
+                "Web root"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0064",
+                "0069",
+                "0080"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2204,7 +2235,8 @@
                 "0076",
                 "0077",
                 "0078",
-                "0079"
+                "0079",
+                "0080"
             ]
         },
         {
@@ -2871,6 +2903,7 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "App",
                 "Cluster",
                 "Gateway",
                 "Node",
@@ -2937,7 +2970,8 @@
                 "0062",
                 "0063",
                 "0065",
-                "0067"
+                "0067",
+                "0080"
             ]
         },
         {
@@ -3048,6 +3082,26 @@
             ],
             "governing_adrs": [
                 "0022"
+            ]
+        },
+        {
+            "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",
+            "title": "Migrate an unmanaged Executor hostname",
+            "kind": "solution",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0080"
             ]
         },
         {

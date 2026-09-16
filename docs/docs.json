@@ -127,7 +127,8 @@
             "pages": [
               "solutions/doctor-incus-proof",
               "solutions/vpn-dnsmasq-uplink-resolvers",
-              "solutions/remote-file-writes-on-uutils-coreutils"
+              "solutions/remote-file-writes-on-uutils-coreutils",
+              "solutions/migrate-unmanaged-executor-hostname"
             ]
           }
         ]
@@ -497,7 +498,8 @@
               "decisions/0076-deliver-features-through-complete-pull-requests",
               "decisions/0077-allow-database-beside-router",
               "decisions/0078-assign-vite-ports-to-development-appinstances",
-              "decisions/0079-publish-orbit-cli-binaries-from-github-actions"
+              "decisions/0079-publish-orbit-cli-binaries-from-github-actions",
+              "decisions/0080-add-node-owned-custom-proxy-routes"
             ]
           }
         ]

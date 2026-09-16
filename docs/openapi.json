@@ -3919,7 +3919,8 @@
                         "process",
                         "firewall",
                         "herdr",
-                        "database_connection"
+                        "database_connection",
+                        "route"
                       ]
                     }
                   }
@@ -12763,7 +12764,8 @@
               "process",
               "firewall",
               "herdr",
-              "database_connection"
+              "database_connection",
+              "route"
             ]
           },
           "status": {
