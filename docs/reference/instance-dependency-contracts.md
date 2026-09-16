@@ -130,7 +130,7 @@ These values do not sanitize raw input or authorize publication. Parsers and col
 
 The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. The Composer update executor owns bounded development Composer mutation and absent-ecosystem skips. The Vite+ npm update adapter owns bounded development npm mutation through a verified Vite+ installation and its absent-ecosystem skips.
 
-The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. The Vite+ Yarn refusal adapter owns Classic and modern Yarn detection and rejects those roots before any Vite+ or Yarn command. Bun mutation remains a later adapter. Whole-update Yarn refusal before Composer remains with later orchestration. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
+The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. The Vite+ bun update adapter owns bounded development Bun mutation through that supervisor with a verified Bun pass-through. The Vite+ Yarn refusal adapter owns Classic and modern Yarn detection and rejects those roots before any Vite+ or Yarn command. Whole-update Yarn refusal before Composer remains with later orchestration. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
 
 ## Managed source collection
 
@@ -232,9 +232,39 @@ The update runs the shared Vite+ supervisor with the recorded root, the verified
 
 Vite+ can add `devEngines.packageManager` manager-selection metadata to the manifest; dependency constraints remain unchanged.
 
+## Vite+ bun update adapter
+
+`UpdateBunDependenciesAction` runs a bounded Vite+ update for one development App instance root whose JavaScript manager is bun. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It reuses the shared Vite+ supervisor from the npm adapter with a verified Bun pass-through. Shared update preflight, instance locks, Composer mutation, npm and pnpm mutation, Yarn refusal, and post-update scanning belong to the later coordinator.
+
+Production refusal, identity checks, safe source handling, execution bounds, and result semantics match the Composer and npm update executors. Verified absence of a bun project returns `absent` without Vite+.
+
+### bun project probe
+
+A fixed Python probe inspects root files without executing them or running a package manager. It uses the same manager-family signals as collection, including `packageManager`, `devEngines.packageManager`, lockfiles, `.pnpmfile.cjs`, `pnpmfile.cjs`, `bunfig.toml`, and Yarn configuration files.
+
+A Yarn signal fails with `dependencies.unsupported_format`. `pnpm-workspace.yaml` or a `workspaces` field fails with `dependencies.unsupported_layout`. Conflicting manager families fail with `dependencies.ambiguous_manager`. Duplicate object keys in `package.json`, including escaped-equivalent keys, fail with `dependencies.invalid_manifest` before manager selection.
+
+A bun lock or declaration without `package.json`, or a bun declaration or `bunfig.toml` without `bun.lock`, is `dependencies.incomplete_source`. Binary-only `bun.lockb` fails with `dependencies.unsupported_format` before mutation. Vite+ 0.3.0 selects bun from `packageManager`, `devEngines.packageManager`, `bun.lock`, `bun.lockb`, or `bunfig.toml`. A present bun root requires the text `bun.lock`. When both Bun locks exist, the text lock remains required.
+
+Other manifests with only npm or pnpm locks are absent. An unreadable or malformed manifest fails with `dependencies.invalid_manifest`. The probe is limited to 45 seconds and 64 KiB.
+
+### Verified bun Vite+ delegation
+
+For a present bun project, the probe resolves a verified Vite+ binary from the same Orbit-managed installation layouts as the npm adapter, in this order: `/opt/orbit/vite-plus/bin/vp` with `VP_HOME=/opt/orbit/vite-plus`, `$HOME/.vite-plus/bin/vp`, then `$HOME/.local/share/vite-plus/bin/vp`. It also accepts each home's `current/bin/vp` fallback. It reads the version through `vp --version`, bounded to 10 seconds. The probe reports the resolved path and parsed version. The action supports only verified Vite+ versions for bun delegation; version 0.3.0 is verified, and further versions require their own verification before being added.
+
+A missing, unexecutable, unreadable, or unverified Vite+ installation fails with `dependencies.unsupported_delegation` before package mutation. The action validates the reported path against those managed homes, `/opt/orbit/vite-plus/bin/vp`, and the published launcher `/usr/local/bin/vp`. It rejects malformed receipts with `dependencies.unreadable_source`. The `/opt/orbit/vite-plus` layout exports `VP_HOME=/opt/orbit/vite-plus` for both the version probe and the update. The action never substitutes a raw bun invocation for Vite+.
+
+### Constrained bun update
+
+The update runs the shared Vite+ supervisor with the recorded root, the verified `vp` path, and a 600-second deadline. The program changes to the root and runs `vp update --no-save -- --lockfile-only --save-text-lockfile`. It does not pass `--latest`, `-D`, `-P`, `--no-optional`, `--recursive`, `--filter`, `--global`, `--interactive`, or `--workspace`.
+
+`--no-save` is a verified Vite+ 0.3.0 option. For bun it does not write a lockfile. The `--lockfile-only --save-text-lockfile` pass-through is the verified Bun mapping: keep declared ranges unchanged, write an updated text `bun.lock`, and include regular and development dependencies within those ranges. Process ownership, deadline, termination, output bounds, cancellation, and result codes match the Composer and npm executors.
+
+Vite+ can add `devEngines.packageManager` manager-selection metadata to the manifest; dependency constraints remain unchanged.
+
 ## Vite+ Yarn refusal adapter
 
-`UpdateYarnDependenciesAction` inspects one development App instance root for Classic or modern Yarn and refuses mutation. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It does not run Vite+, Yarn, npm, pnpm, or Bun. Shared update preflight, instance locks, Composer mutation, npm and pnpm mutation, Bun mutation, and post-update scanning belong to the later coordinator. Whole-update Yarn refusal before Composer also belongs to that coordinator.
+`UpdateYarnDependenciesAction` inspects one development App instance root for Classic or modern Yarn and refuses mutation. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It does not run Vite+, Yarn, npm, pnpm, or Bun. Shared update preflight, instance locks, Composer mutation, npm, pnpm, and Bun mutation, and post-update scanning belong to the later coordinator. Whole-update Yarn refusal before Composer also belongs to that coordinator.
 
 Production refusal, identity checks, and safe source handling match the Composer and Vite+ update executors. Verified absence of Yarn signals returns `absent` without a package-manager command.
 
