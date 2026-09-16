@@ -42,7 +42,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
         $effectivePrefix = $prefix ?? 'DB';
 
         if (! $this->confirmAction(
-            "Remove Database connection [{$slug}] from App instance [{$instance}] and clear stored {$effectivePrefix}_* keys? Workload .env stays unchanged.",
+            "Remove Database connection [{$slug}] from AppInstance [{$instance}] and clear stored {$effectivePrefix}_* keys? Workload .env stays unchanged.",
             'Database connection removal cancelled.',
             option: 'force',
             requiredCode: 'database.confirmation_required',

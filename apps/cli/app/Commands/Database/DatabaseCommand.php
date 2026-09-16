@@ -85,6 +85,10 @@ abstract class DatabaseCommand extends GatewayCommand
             return '—';
         }
 
+        if ($value === '') {
+            return '""';
+        }
+
         if (is_bool($value)) {
             return $value ? 'true' : 'false';
         }

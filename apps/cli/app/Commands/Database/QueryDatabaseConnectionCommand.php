@@ -61,14 +61,11 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
             'Request ID' => $result->requestId,
         ]));
 
-        if ($result->truncated) {
-            $this->writeHumanMessage('Result truncated at the Gateway row limit. The omitted total is not known.');
-        }
-
         if ($result->columns === [] && $result->rows === []) {
             $this->writeHumanMessage(
                 $result->write ? 'Statement completed.' : 'No matching records found.',
             );
+            $this->writeTruncationWarning($result->truncated);
 
             return self::SUCCESS;
         }
@@ -86,7 +83,7 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
             $cells = [];
 
             foreach ($result->columns as $column) {
-                $cells[] = $row[$column] ?? null;
+                $cells[] = $this->queryCell($row[$column] ?? null);
             }
 
             $rows[] = $cells;
@@ -96,7 +93,34 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
             $this->output,
             $this->humanRenderer()->table($headers, $rows, 'No matching records found.'),
         );
+        $this->writeTruncationWarning($result->truncated);
 
         return self::SUCCESS;
+    }
+
+    private function writeTruncationWarning(bool $truncated): void
+    {
+        if (! $truncated) {
+            return;
+        }
+
+        $this->writeHumanMessage('Result truncated at the Gateway row limit. The omitted total is not known.');
+    }
+
+    private function queryCell(bool|float|int|string|null $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+
+        if ($value === '') {
+            return '""';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        return (string) $value;
     }
 }

@@ -87,6 +87,16 @@ it('lists connections with deterministic human output', function (): void {
     expect($output)->not->toContain(DATABASE_CLI_SECRET);
 });
 
+it('lists an empty registry without a table', function (): void {
+    database_cli_mock(ListDatabaseConnectionsRequest::class, []);
+
+    [$exit, $output] = database_cli_display('database:list');
+    expect($exit)->toBe(0);
+    expect($output)->toContain('No Database connections.');
+    expect($output)->toContain('Request ID: '.database_cli_request_id());
+    expect($output)->not->toContain('SLUG');
+});
+
 it('shows a connection by slug', function (): void {
     $mockClient = database_cli_mock(ShowDatabaseConnectionRequest::class, database_cli_gateway_data());
 
@@ -444,15 +454,19 @@ it('renders query null boolean float and formatter-tag cells literally', functio
         'slug' => 'app',
         'driver' => 'mysql',
         'write' => false,
-        'columns' => ['flag', 'amount', 'note'],
+        'columns' => ['flag', 'amount', 'note', 'empty_cell', 'dash_cell'],
         'rows' => [[
             'flag' => true,
             'amount' => 1.5,
             'note' => '<info>id</info>',
+            'empty_cell' => '',
+            'dash_cell' => '—',
         ], [
             'flag' => false,
             'amount' => null,
             'note' => 'plain',
+            'empty_cell' => 'NULL',
+            'dash_cell' => 'kept',
         ]],
         'row_count' => 2,
         'truncated' => false,
@@ -460,12 +474,19 @@ it('renders query null boolean float and formatter-tag cells literally', functio
 
     [$exit, $output] = database_cli_display('database:query', [
         'slug' => 'app',
-        'sql' => 'SELECT flag, amount, note FROM users',
+        'sql' => 'SELECT flag, amount, note, empty_cell, dash_cell FROM users',
     ]);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
     expect($exit)->toBe(0);
     expect($output)->toContain('<info>id</info>');
     expect($output)->toContain('1.5');
     expect($output)->toContain('plain');
+    expect($flat)->toContain('true');
+    expect($flat)->toContain('false');
+    expect($flat)->toContain('NULL');
+    expect($flat)->toContain('""');
+    expect($flat)->toContain('—');
+    expect($flat)->toContain('Write permission no');
 });
 
 it('lists tables and describes schema through typed inspection requests', function (): void {

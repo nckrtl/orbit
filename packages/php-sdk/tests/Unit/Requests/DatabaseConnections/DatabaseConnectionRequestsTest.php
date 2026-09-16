@@ -142,6 +142,17 @@ describe('database connection requests', function (): void {
             ->toBe('/api/v1/instances/app.test/database-connections/app-db');
     });
 
+    it('omits an absent remove prefix as a JSON object', function (): void {
+        $withoutPrefix = new RemoveInstanceDatabaseRequest(12, 'app');
+
+        expect($withoutPrefix->body()->all())
+            ->toBe([])
+            ->and((string) $withoutPrefix->body())
+            ->toBe('{}')
+            ->and((string) (new RemoveInstanceDatabaseRequest(12, 'app', 'CACHE_DB'))->body())
+            ->toBe('{"prefix":"CACHE_DB"}');
+    });
+
     it('maps attachment envelopes without exposing a password', function (): void {
         $requestId = '11111111-1111-4111-8111-111111111111';
         $payload = [

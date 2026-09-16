@@ -11,7 +11,7 @@ A Database connection is a Gateway-owned registry record. The operator registers
 
 The operator adds a connection on an App instance only. Add writes prefixed keys into the Gateway-owned stored App instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [App instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
 
-The CLI uses the shared table and detail tree, shows progress on Gateway calls, and never prints a password. Destroy and attachment removal require default-No confirmation or `--force`.
+The CLI uses the shared table and detail tree, shows progress on Gateway calls, and never prints a password. Destroy and attachment removal require default-No confirmation or `--force`. Human query cells render SQL null as `NULL` and an empty string as `""` so those values stay distinct from each other and from a literal em dash. JSON query cells stay exact.
 
 ## Create a connection
 
