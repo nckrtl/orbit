@@ -87,7 +87,8 @@
             ],
             "governing_adrs": [
                 "0004",
-                "0014"
+                "0014",
+                "0081"
             ]
         },
         {
@@ -2129,6 +2130,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0081-query-registered-databases-through-pdo.md",
+            "title": "ADR 0081: Query registered databases through PDO",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0071",
+                "0079",
+                "0081"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2236,7 +2260,8 @@
                 "0077",
                 "0078",
                 "0079",
-                "0080"
+                "0080",
+                "0081"
             ]
         },
         {
@@ -2583,7 +2608,8 @@
             "governing_adrs": [
                 "0044",
                 "0069",
-                "0070"
+                "0070",
+                "0081"
             ]
         },
         {
