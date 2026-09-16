@@ -32,6 +32,9 @@ jobs:
           - name: PHP SDK
             directory: packages/php-sdk
 
+    env:
+      ORBIT_TIA_DIRECTORY: .orbit-tia
+
     defaults:
       run:
         working-directory: ${{ matrix.directory }}
@@ -39,6 +42,11 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          ref: ${{ github.head_ref || github.ref_name }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -81,8 +89,31 @@ jobs:
       - name: Run project quality checks
         run: composer check
 
+      - name: Compute Pest TIA cache prefix
+        id: orbit-tia-key
+        working-directory: .
+        run: |
+          printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/tests/Pest.php', matrix.directory), format('{0}/phpunit.xml', matrix.directory), format('{0}/phpunit.xml.dist', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Pest TIA graph
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ matrix.directory }}/.orbit-tia
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ steps.orbit-tia-key.outputs.prefix }}-main-
+            orbit-tia-php8.5-${{ matrix.directory }}-
+
       - name: Run affected tests
         run: vendor/bin/pest --parallel --processes=2 --tia --compact
+
+      - name: Save Pest TIA graph
+        if: success()
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ matrix.directory }}/.orbit-tia
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
   required:
     name: Required checks
