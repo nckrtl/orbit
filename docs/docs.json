@@ -122,7 +122,8 @@
               "solutions/doctor-incus-proof",
               "solutions/vpn-dnsmasq-uplink-resolvers",
               "solutions/remote-file-writes-on-uutils-coreutils",
-              "solutions/migrate-unmanaged-executor-hostname"
+              "solutions/migrate-unmanaged-executor-hostname",
+              "solutions/sqlite-wal-default"
             ]
           }
         ]
@@ -495,7 +496,8 @@
               "decisions/0079-publish-orbit-cli-binaries-from-github-actions",
               "decisions/0080-add-node-owned-custom-proxy-routes",
               "decisions/0081-query-registered-databases-through-pdo",
-              "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes"
+              "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
+              "decisions/0083-default-sqlite-journal-mode-to-wal"
             ]
           }
         ]

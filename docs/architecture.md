@@ -31,7 +31,7 @@ The CLI lives in `apps/cli`. It sends HTTP requests to the Gateway and returns r
 
 ## Gateway
 
-The Gateway lives in `apps/gateway`. It stores Orbit's records in SQLite, authorizes actions, and coordinates changes on Nodes. Nodes hold the files and run the services that apply those settings.
+The Gateway lives in `apps/gateway`. It stores Orbit's records in SQLite, authorizes actions, and coordinates changes on Nodes. Nodes hold the files and run the services that apply those settings. The Gateway SQLite connection uses WAL journal mode; [ADR 0083](/decisions/0083-default-sqlite-journal-mode-to-wal) owns that default.
 
 ## Nodes and roles
 

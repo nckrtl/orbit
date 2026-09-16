@@ -88,7 +88,8 @@
             "governing_adrs": [
                 "0004",
                 "0014",
-                "0081"
+                "0081",
+                "0083"
             ]
         },
         {
@@ -2182,6 +2183,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0083-default-sqlite-journal-mode-to-wal.md",
+            "title": "ADR 0083: Default SQLite journal_mode to WAL",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0083"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2291,7 +2311,8 @@
                 "0079",
                 "0080",
                 "0081",
-                "0082"
+                "0082",
+                "0083"
             ]
         },
         {
@@ -3158,6 +3179,24 @@
             ],
             "governing_adrs": [
                 "0022"
+            ]
+        },
+        {
+            "path": "docs/solutions/sqlite-wal-default.md",
+            "title": "SQLite WAL default",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0083"
             ]
         },
         {
