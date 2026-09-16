@@ -66,15 +66,6 @@
             ]
           },
           {
-            "group": "Source alpha",
-            "pages": [
-              "reference/alpha",
-              "reference/installation",
-              "reference/first-app",
-              "reference/gateway-recovery"
-            ]
-          },
-          {
             "group": "Applications",
             "pages": [
               "domains/applications",
@@ -98,6 +89,7 @@
             "group": "Fleet",
             "pages": [
               "reference/gateway-trust",
+              "reference/gateway-recovery",
               "reference/node-provisioning",
               "reference/node-settings",
               "reference/node-retarget",
@@ -120,7 +112,8 @@
               "reference/proof-plans",
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
-              "reference/cli-ux"
+              "reference/cli-ux",
+              "reference/alpha"
             ]
           },
           {
@@ -513,7 +506,7 @@
     "links": [
       {
         "label": "Website",
-        "href": "https://orbit-website.test"
+        "href": "https://orbit.nckrtl.com"
       }
     ],
     "primary": {
@@ -535,5 +528,15 @@
         "curl"
       ]
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/reference/installation",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/reference/first-app",
+      "destination": "/quickstart"
+    }
+  ]
 }

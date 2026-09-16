@@ -7,7 +7,7 @@ description: "Artifact names, dest paths, builders, and download steps for the O
 
 Orbit Ops downloads a standalone `orbit` binary and copies it onto Nodes. This page is the artifact contract. It does not describe fleet rollout, node inventory, or upgrade orchestration.
 
-The operator path for the source alpha remains a monorepo checkout. See [Install from source](/reference/installation). A binary does not replace Gateway source installation. [ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions) owns this split.
+The operator path for the source alpha remains a monorepo checkout. See the [Quickstart](/quickstart). A binary does not replace Gateway source installation. [ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions) owns this split.
 
 ## When a binary is built
 

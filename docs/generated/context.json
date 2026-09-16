@@ -2377,7 +2377,8 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Route"
+                "Route",
+                "Web root"
             ],
             "governing_adrs": []
         },
@@ -2726,23 +2727,6 @@
             ]
         },
         {
-            "path": "docs/reference/first-app.md",
-            "title": "Your first app",
-            "kind": "reference",
-            "components": [],
-            "concepts": [
-                "App",
-                "App instance",
-                "Database",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Route",
-                "Web root"
-            ],
-            "governing_adrs": []
-        },
-        {
             "path": "docs/reference/gateway-recovery.md",
             "title": "Update and recover a Gateway",
             "kind": "reference",
@@ -2841,24 +2825,6 @@
                 "0049",
                 "0056"
             ]
-        },
-        {
-            "path": "docs/reference/installation.md",
-            "title": "Install from source",
-            "kind": "reference",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "App",
-                "Database",
-                "Gateway",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": []
         },
         {
             "path": "docs/reference/local-resolver-overrides.md",

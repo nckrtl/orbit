@@ -32,7 +32,7 @@ macos-arm64 must be a native Apple silicon build. mini is the intended ARM build
 - `bin/orbit-build-cli-binary` must stage `apps/cli` and `packages/php-sdk`, install production Composer dependencies, build a PHAR with `apps/cli/box.json` GZ compression, and invoke the isolated PHPacker install. It must not stage a `packages/core` tree and must not compress the PHAR a second time.
 - `phpacker/phpacker` ^0.6.4 must live in the isolated Composer project at `apps/cli/phpacker`. It must not join `apps/cli` require-dev, because PHPacker requires Symfony 7 and the CLI uses Symfony 8. The staged PHAR install must use `--no-dev`.
 - Orbit Ops owns copying a downloaded binary onto Nodes. This decision does not define fleet install, node inventory, upgrade rollout, or runner provisioning.
-- The source-alpha install path in [Installation](/reference/installation) remains a monorepo checkout. A binary is an additional distribution, not a replacement for Gateway source installation.
+- The source-alpha install path in the [Quickstart](/quickstart) remains a monorepo checkout. A binary is an additional distribution, not a replacement for Gateway source installation.
 
 ## Rejected alternatives
 

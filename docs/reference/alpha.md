@@ -13,10 +13,10 @@ Follow the guides in this order and keep the source commit used on each machine.
 
 | Step | Guide | Required observation |
 | --- | --- | --- |
-| Install the CLI and Gateway | [Installation](/reference/installation) | Composer platform checks pass and the Gateway services start. |
-| Connect the CLI | [Installation](/reference/installation#connect-the-cli) | A trusted HTTPS request to `gateway:status` succeeds. |
-| Add one development Node | [First app](/reference/first-app) | The Node and its `app-dev` role become active over WireGuard. |
-| Serve an application | [First app](/reference/first-app#verify-the-page) | Private DNS resolves the returned hostname and HTTPS serves the expected page. |
+| Install the CLI and Gateway | [Quickstart](/quickstart#install-orbit) | Composer platform checks pass and the Gateway services start. |
+| Connect the CLI | [Quickstart](/quickstart#connect-the-cli) | A trusted HTTPS request to `gateway:status` succeeds. |
+| Add one development Node | [Quickstart](/quickstart#add-a-development-node) | The Node and its `app-dev` role become active over WireGuard. |
+| Serve an application | [Quickstart](/quickstart#open-the-page) | Private DNS resolves the returned hostname and HTTPS serves the expected page. |
 | Recover an update | [Gateway recovery](/reference/gateway-recovery) | A restored disposable Gateway reads its saved state and serves the same application through the same fleet. |
 
 The guides describe the current source contract. A documentation build or an automated test does not prove that this complete path works on a fresh machine.
@@ -28,7 +28,7 @@ The first trial has a deliberately small environment and workload. Orbit Ops can
 | Area | Trial boundary |
 | --- | --- |
 | Distribution | Full monorepo source at one recorded commit or published release tag; this trial does not require a binary. Standalone Composer package publication needs a separate distribution workflow. |
-| Machines | Ubuntu 26.04 Gateway and managed Nodes; see [requirements](/reference/installation#requirements). |
+| Machines | Ubuntu 26.04 Gateway and managed Nodes; see [what you need](/quickstart#your-part). |
 | Application | One standalone development Node and one public Git repository with a static page. Application databases and dependency installation need separate application setup. |
 | Network | Private HTTPS through WireGuard and Orbit DNS; no public production launch is implied. |
 | Production | Production deployment commands exist, but this trial establishes no production readiness, availability guarantee, or application-data recovery guarantee. |
