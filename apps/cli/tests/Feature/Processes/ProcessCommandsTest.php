@@ -1460,3 +1460,29 @@ it('refuses preset overrides without sending a request', function (array $option
     $this->artisan('process:create', ['name' => 'assets', '--instance' => 'commander.test', '--preset' => 'vp-dev', '--json' => true, ...$options])->assertExitCode(1);
     $mock->assertNothingSent();
 })->with([[['--runtime' => 'systemd']], [['--command' => ['/bin/true']]], [['--working-directory' => '/tmp']], [['--port' => ['5173:5173']]]]);
+
+it('sends Agentation presets without synthesizing runtime configuration', function (string $preset): void {
+    $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
+    $this->artisan('process:create', ['name' => 'agentation', '--instance' => 'commander.test', '--preset' => $preset, '--start' => true, '--json' => true])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'target_type' => 'instance',
+        'target_id' => 'commander.test',
+        'name' => 'agentation',
+        'preset' => $preset,
+        'start' => true,
+        'keep_alive' => false,
+    ]);
+})->with(['agentation-mcp', 'antigravity-watch']);
+
+it('refuses Agentation keep-alive without sending a request', function (): void {
+    $mock = MockClient::global([]);
+    $this->artisan('process:create', [
+        'name' => 'watch',
+        '--instance' => 'commander.test',
+        '--preset' => 'antigravity-watch',
+        '--keep-alive' => true,
+        '--json' => true,
+    ])->assertExitCode(1);
+    $mock->assertNothingSent();
+});

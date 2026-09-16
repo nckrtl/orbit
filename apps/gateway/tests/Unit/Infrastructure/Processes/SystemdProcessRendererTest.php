@@ -270,3 +270,60 @@ it('expands only the preset port and gives its owned environment file precedence
     expect($unit)->toContain('EnvironmentFile=/etc/orbit/vite/app-instance-64.env')->toContain('"--port=${ORBIT_DEV_SERVER_PORT}"')->toContain('"--strictPort"')->toContain('"--host=127.0.0.1"')->not->toContain('"ORBIT_DEV_SERVER_PORT=5210"');
     expect(strpos($unit, 'EnvironmentFile=-/apps/main/.env'))->toBeLessThan(strpos($unit, 'EnvironmentFile=/etc/orbit/vite/app-instance-64.env'));
 });
+
+it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): void {
+    $instance = new AppInstance(['agentation_port' => 4749]);
+    $instance->id = 12;
+    $process = new Process([
+        'name' => 'agentation',
+        'runtime_config' => [
+            'preset' => 'agentation-mcp',
+            'command' => ['/usr/local/bin/agentation-mcp', 'server'],
+            'environment_file' => '/apps/commander/.env',
+        ],
+        'working_directory' => '/apps/commander',
+        'restart_policy' => 'on-failure',
+    ]);
+    $process->id = 22;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'beast']),
+        user: 'orbit',
+        checkoutPath: '/apps/commander',
+        appInstance: $instance,
+        environmentFile: '/apps/commander/.env',
+        routeDomain: 'commander.test',
+    );
+
+    $unit = new SystemdProcessRenderer()->render($process, $target);
+
+    expect($unit)
+        ->toContain('Environment=AGENTATION_URL=https://commander.test/__orbit/agentation')
+        ->toContain('Environment=ORBIT_AGENTATION_PORT=4749')
+        ->toContain('"/usr/local/bin/agentation-mcp"')
+        ->toContain('"server"')
+        ->toContain('"--port=${ORBIT_AGENTATION_PORT}"');
+});
+
+it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): void {
+    $instance = new AppInstance(['agentation_port' => 4747]);
+    $process = new Process([
+        'name' => 'watch',
+        'runtime_config' => ['preset' => 'antigravity-watch', 'command' => ['/usr/local/bin/agy']],
+        'working_directory' => '/apps/commander',
+        'restart_policy' => 'always',
+    ]);
+    $process->id = 23;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'beast']),
+        user: 'orbit',
+        checkoutPath: '/apps/commander',
+        appInstance: $instance,
+        routeDomain: 'commander.test',
+    );
+
+    expect(new SystemdProcessRenderer()->render($process, $target))
+        ->toContain('Environment=AGENTATION_URL=https://commander.test/__orbit/agentation')
+        ->toContain('"/usr/local/bin/agy"')
+        ->toContain('"--dangerously-skip-permissions"')
+        ->toContain('Restart=always');
+});

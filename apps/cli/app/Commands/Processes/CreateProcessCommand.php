@@ -21,7 +21,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
     protected $signature = 'process:create
         {name : Process name}
         {--instance= : Positive AppInstance ID or exact development Route domain}
-        {--preset= : Process preset: vp-dev}
+        {--preset= : Process preset: vp-dev, agentation-mcp, or antigravity-watch}
         {--node= : Node ID or registered name}
         {--app= : Numeric App ID}
         {--for= : Comma-separated definition environments}
@@ -62,13 +62,16 @@ final class CreateProcessCommand extends TargetedProcessCommand
 
         $preset = $this->stringOption('preset');
         if ($preset !== null) {
-            if ($preset !== 'vp-dev') {
-                return $this->renderGatewayFailure('process.preset_invalid', 'The supported Process preset is vp-dev.');
+            if (! in_array($preset, ['vp-dev', 'agentation-mcp', 'antigravity-watch'], true)) {
+                return $this->renderGatewayFailure('process.preset_invalid', 'Supported Process presets are vp-dev, agentation-mcp, and antigravity-watch.');
             }
             foreach (['app', 'node', 'runtime', 'command', 'image', 'working-directory', 'environment', 'port', 'volume'] as $option) {
                 if ($this->input->hasParameterOption('--'.$option)) {
-                    return $this->renderGatewayFailure('process.preset_option_invalid', 'The vp-dev preset requires --instance and owns runtime, command, working directory, and environment configuration.');
+                    return $this->renderGatewayFailure('process.preset_option_invalid', 'A Process preset requires --instance and owns runtime, command, working directory, and environment configuration.');
                 }
+            }
+            if ($this->option('keep-alive') === true && in_array($preset, ['agentation-mcp', 'antigravity-watch'], true)) {
+                return $this->renderGatewayFailure('process.preset_keep_alive_invalid', 'The Agentation presets hibernate with the AppInstance and cannot keep-alive.');
             }
         }
         $runtime = $this->stringOption('runtime');

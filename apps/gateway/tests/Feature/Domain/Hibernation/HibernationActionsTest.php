@@ -186,6 +186,37 @@ it('does not mark an AppInstance asleep when every desired-running Process is ke
         ->toBe([]);
 });
 
+it('stops and starts an Antigravity watcher with AppInstance hibernation', function (): void {
+    $http = hibernation_action_process($this->instance, 'agentation', DesiredProcessState::Running);
+    $http->forceFill([
+        'runtime_config' => ['preset' => 'agentation-mcp', 'command' => ['/usr/local/bin/agentation-mcp', 'server']],
+    ])->save();
+    $watcher = hibernation_action_process($this->instance, 'watch', DesiredProcessState::Running, 'always');
+    $watcher->forceFill([
+        'runtime_config' => ['preset' => 'antigravity-watch', 'command' => ['/usr/local/bin/agy']],
+        'keep_alive' => false,
+    ])->save();
+    $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
+
+    $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($halted->halted)
+        ->toBe(1)
+        ->and($this->runtime->stopped)
+        ->toBe([$http->id, $watcher->id])
+        ->and($watcher->fresh()->desired_state)
+        ->toBe(DesiredProcessState::Running)
+        ->and($watcher->fresh()->keep_alive)
+        ->toBeFalse();
+
+    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+
+    expect($this->runtime->started)
+        ->toBe([$http->id, $watcher->id])
+        ->and($this->markers->awake)
+        ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
 it('starts a desired-running keep-alive Process on wake when it is down', function (): void {
     $queue = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
     $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);

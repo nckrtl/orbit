@@ -12,6 +12,7 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -136,6 +137,7 @@ use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
 use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
+use App\Infrastructure\AppDev\RemoteAgentationSiteProjection;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
@@ -283,6 +285,7 @@ final class AppServiceProvider extends ServiceProvider
         AppInstanceTransferSource::class => RemoteAppInstanceTransferSource::class,
         AppInstanceTransferRuntime::class => NativeAppInstanceTransferRuntime::class,
         AppInstanceTransferRouteProjector::class => NativeDevelopmentRouteProjector::class,
+        AgentationSiteProjection::class => RemoteAgentationSiteProjection::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,
         AppDevTldConverger::class => NativeAppDevTldConverger::class,

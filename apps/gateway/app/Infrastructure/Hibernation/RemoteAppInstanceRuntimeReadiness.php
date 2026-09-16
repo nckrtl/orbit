@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Hibernation;
 
+use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
@@ -50,6 +51,12 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
                     }
                     usleep(250_000);
                 }
+
+                continue;
+            }
+            if ($process->isAgentationMcp()) {
+                $instance->refresh()->load('node');
+                $this->waitUntilAgentationReady($instance, $deadline);
 
                 continue;
             }
@@ -111,6 +118,50 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
         throw new HibernationException(
             errorCode: 'hibernation.development_server_not_ready',
             message: 'The development server did not accept connections before the wake timeout.',
+        );
+    }
+
+    private function waitUntilAgentationReady(AppInstance $instance, int $deadline): void
+    {
+        $port = (string) ($instance->agentation_port ?? AgentationEndpoint::PORT);
+        $remaining = max(1, $deadline - time());
+        $result = $this->ssh->execute(
+            $this->connection($instance->node, (float) ($remaining + 5)),
+            new RemoteCommand(
+                arguments: [
+                    'python3',
+                    '-c',
+                    <<<'PY'
+import urllib.request, sys
+for _ in range(int(sys.argv[2])):
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        response = opener.open('http://127.0.0.1:' + sys.argv[1] + '/health', timeout=1)
+        if response.status == 200:
+            print('ready')
+            raise SystemExit(0)
+    except Exception:
+        pass
+    import time
+    time.sleep(0.25)
+print('waiting')
+raise SystemExit(1)
+PY
+                    ,
+                    $port,
+                    (string) ($remaining * 4),
+                ],
+                timeout: (float) ($remaining + 5),
+            ),
+        );
+
+        if ($result->succeeded() && trim($result->stdout) === 'ready') {
+            return;
+        }
+
+        throw new HibernationException(
+            errorCode: 'hibernation.agentation_not_ready',
+            message: 'The Agentation HTTP endpoint did not become ready before the wake timeout.',
         );
     }
 

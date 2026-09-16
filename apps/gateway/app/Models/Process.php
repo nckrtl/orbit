@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Processes\AgentationMcpPreset;
+use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\VpDevPreset;
@@ -57,6 +59,16 @@ final class Process extends Model
     public function isVpDev(): bool
     {
         return ($this->runtime_config['preset'] ?? null) === VpDevPreset::NAME;
+    }
+
+    public function isAgentationMcp(): bool
+    {
+        return ($this->runtime_config['preset'] ?? null) === AgentationMcpPreset::NAME;
+    }
+
+    public function isAntigravityWatch(): bool
+    {
+        return ($this->runtime_config['preset'] ?? null) === AntigravityWatchPreset::NAME;
     }
 
     /** @return array<array-key, mixed> */
