@@ -5,7 +5,7 @@ description: "Per-app Agentation HTTP Processes, AGENTATION_URL projection, and 
 
 # Agentation watch mode
 
-This page tells an operator how Orbit runs Agentation's HTTP annotation server as an App instance Process, publishes it on the Route origin, projects `AGENTATION_URL`, and ties the Antigravity watcher to hibernation. [ADR 0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes) records the design. [App processes and schedules](/reference/app-processes-and-schedules) owns Process add, start, stop, and removal. [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) owns idle halt and wake. The Agentation toolbar itself stays an application concern.
+This page tells an operator how Orbit runs Agentation's HTTP annotation server as an App instance Process, publishes it on the Route origin, projects `AGENTATION_URL`, and ties the Antigravity watcher to hibernation. [ADR 0082](/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes) records the design. [App processes and schedules](/reference/app-processes-and-schedules) owns Process add, start, stop, and removal. Idle halt and wake live on the [hibernation](/reference/app-dev-runtime-hibernation) page. The Agentation toolbar itself stays an application concern.
 
 ## What Orbit owns
 
@@ -78,7 +78,7 @@ Removing the HTTP Process while the watcher still exists returns `process.has_de
 
 ## Hibernate and wake
 
-Do not add keep-alive to either preset. Hibernation stops both Processes after the idle HTTP window and starts them again on the next request when their desired state is `running`. Wake waits until the HTTP Process answers `/health` on the assigned loopback port. A desired-stopped watcher stays stopped.
+Do not add keep-alive to either preset. Hibernation stops both Processes after the idle HTTP window and starts them again on the next request when their desired state is `running`. Wake waits until the HTTP Process answers `/health` on the assigned loopback port. A watcher whose desired state is stopped stays stopped.
 
 Verify the wiring like this:
 

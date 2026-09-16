@@ -316,7 +316,9 @@ it('proxies the reserved Agentation path only when a port is assigned', function
         ->and($with)
         ->toContain('path /__orbit/agentation /__orbit/agentation/*')
         ->toContain('uri strip_prefix /__orbit/agentation')
-        ->toContain('reverse_proxy 127.0.0.1:4747');
+        ->toContain('reverse_proxy 127.0.0.1:4747')
+        ->and(caddy_adapt($with)->succeeded())
+        ->toBeTrue();
 });
 
 it('keeps assigned Vite endpoints separate and preserves their base path', function (): void {

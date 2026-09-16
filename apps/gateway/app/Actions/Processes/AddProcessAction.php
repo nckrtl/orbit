@@ -220,9 +220,7 @@ final readonly class AddProcessAction
             ->where('name', '!=', $data->name)
             ->get();
 
-        $duplicate = $siblings->contains(function (Process $process) use ($data): bool {
-            return ($process->runtime_config['preset'] ?? null) === $data->preset;
-        });
+        $duplicate = $siblings->contains(fn (Process $process): bool => ($process->runtime_config['preset'] ?? null) === $data->preset);
 
         if ($duplicate) {
             throw new ResourceOperationException(
@@ -240,7 +238,7 @@ final readonly class AddProcessAction
             );
         }
 
-        if ($data->preset === AgentationMcpPreset::NAME && $target->appInstance instanceof AppInstance) {
+        if ($data->preset === AgentationMcpPreset::NAME) {
             $this->agentationPorts->assign($target->appInstance);
             $this->agentationUrls->project($target->appInstance);
         }
