@@ -24,6 +24,8 @@ final readonly class SqliteNodeDatabaseInspector
 {
     public const int ROW_LIMIT = 500;
 
+    public const string REMOTE_COMMAND = 'internal:database-query-local';
+
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
@@ -35,33 +37,27 @@ final readonly class SqliteNodeDatabaseInspector
     {
         $result = $this->run($connection, $sql, $write);
 
-        if (trim($result->stdout) === '') {
-            return $this->redactor->query($connection, new DatabaseQueryResult([], [], 0, false));
-        }
-
         try {
             $decoded = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            throw new ResourceOperationException(
-                errorCode: 'database.query_failed',
-                message: "Database connection [{$connection->slug}] query failed.",
-                status: 502,
-            );
+            $this->fail($connection);
         }
 
-        if (! is_array($decoded)) {
-            throw new ResourceOperationException(
-                errorCode: 'database.query_failed',
-                message: "Database connection [{$connection->slug}] query failed.",
-                status: 502,
-            );
+        if (! is_array($decoded) || isset($decoded['error'])) {
+            $this->fail($connection);
         }
 
-        $rows = [];
         $columns = [];
-        $truncated = false;
+        $rows = [];
+        $truncated = $decoded['truncated'] === true;
 
-        foreach ($decoded as $row) {
+        foreach ($decoded['columns'] ?? [] as $column) {
+            if (is_string($column)) {
+                $columns[] = $column;
+            }
+        }
+
+        foreach ($decoded['rows'] ?? [] as $row) {
             if (! is_array($row)) {
                 continue;
             }
@@ -76,7 +72,6 @@ final readonly class SqliteNodeDatabaseInspector
 
             foreach ($row as $key => $value) {
                 $name = (string) $key;
-                $columns[$name] = $name;
                 $normalized[$name] = is_bool($value) || is_int($value) || is_float($value) || is_string($value) || $value === null
                     ? $value
                     : null;
@@ -85,9 +80,12 @@ final readonly class SqliteNodeDatabaseInspector
             $rows[] = $normalized;
         }
 
+        $rowCount = $decoded['row_count'] ?? count($rows);
+        $rowCount = is_int($rowCount) ? max($rowCount, 0) : count($rows);
+
         return $this->redactor->query(
             $connection,
-            new DatabaseQueryResult(array_values($columns), $rows, count($rows), $truncated),
+            new DatabaseQueryResult($columns, $rows, $rowCount, $truncated),
         );
     }
 
@@ -149,25 +147,32 @@ final readonly class SqliteNodeDatabaseInspector
     /**
      * @return non-empty-list<string>
      */
-    public function arguments(DatabaseConnection $connection, bool $write): array
+    public function arguments(): array
     {
-        $path = $connection->path ?? '';
-        $arguments = ['sqlite3', '-json'];
+        return ['orbit', self::REMOTE_COMMAND];
+    }
 
-        if (! $write) {
-            $arguments[] = '--readonly';
-        }
-
-        $arguments[] = '--';
-        $arguments[] = $path;
-
-        return $arguments;
+    /**
+     * @return array{token: string, path: string, sql: string, write: bool}
+     */
+    public function payload(DatabaseConnection $connection, string $sql, bool $write, string $token): array
+    {
+        return [
+            'token' => $token,
+            'path' => $connection->path ?? '',
+            'sql' => $sql,
+            'write' => $write,
+        ];
     }
 
     private function run(DatabaseConnection $connection, string $sql, bool $write): CommandResult
     {
         $node = $this->owningNode($connection);
-        $input = ProtectedInput::fromString($sql);
+        $token = bin2hex(random_bytes(32));
+        $input = ProtectedInput::fromString(json_encode(
+            $this->payload($connection, $sql, $write, $token),
+            JSON_THROW_ON_ERROR,
+        ));
 
         try {
             $result = $this->ssh->execute(
@@ -179,18 +184,14 @@ final readonly class SqliteNodeDatabaseInspector
                     knownHostsFile: $this->knownHosts->path(),
                     commandTimeout: 30.0,
                 ),
-                new RemoteCommand($this->arguments($connection, $write), protectedInput: $input, timeout: 30.0),
+                new RemoteCommand($this->arguments(), protectedInput: $input, timeout: 30.0),
             );
         } finally {
             $input->close();
         }
 
         if (! $result->succeeded()) {
-            throw new ResourceOperationException(
-                errorCode: 'database.query_failed',
-                message: "Database connection [{$connection->slug}] query failed.",
-                status: 502,
-            );
+            $this->fail($connection);
         }
 
         return $result;
@@ -238,5 +239,14 @@ final readonly class SqliteNodeDatabaseInspector
         }
 
         return $node;
+    }
+
+    private function fail(DatabaseConnection $connection): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'database.query_failed',
+            message: "Database connection [{$connection->slug}] query failed.",
+            status: 502,
+        );
     }
 }

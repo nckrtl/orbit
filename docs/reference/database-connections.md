@@ -136,9 +136,9 @@ The operator inspects a registered connection with query, tables, schema, and de
 
 Query is read-only by default. The Gateway answers `database.write_required` when the statement would write and the request omits `write: true`. `--write` on the CLI sends that permission flag; it is not proof that rows mutated. `row_count` is the inspector-reported count and is driver-specific. Query accepts one statement. Stacked statements return `database.sql_multiple_statements`.
 
-SQLite query, tables, schema, and describe run on the associated Node. The Gateway answers `database.sqlite_node_required` when that connection has no Node. The remote command is `sqlite3` with the stored path. SQL travels on protected stdin and does not enter argv.
+SQLite query, tables, schema, and describe run on the associated Node. The Gateway answers `database.sqlite_node_required` when that connection has no Node. The remote command is the hidden Orbit CLI command `internal:database-query-local`, which opens the file with PDO. SQL and the lane token travel on protected stdin and do not enter argv. The inspector never invokes `sqlite3`. [ADR 0081](/decisions/0081-query-registered-databases-through-pdo) owns that split.
 
-MySQL and PostgreSQL inspection uses the stored host, port, database, username, and password from the Gateway. The password never enters a DSN, response, activity record, error, or debug output. Responses, activity records, errors, and debug output replace a password-shaped value with `[REDACTED]`. Query returns at most 500 rows and sets `truncated` when more remain.
+MySQL and PostgreSQL inspection uses PDO on the Gateway with the stored host, port, database, username, and password. The password never enters a DSN, response, activity record, error, or debug output. Responses, activity records, errors, and debug output replace a password-shaped value with `[REDACTED]`. Query returns at most 500 rows and sets `truncated` when more remain.
 
 An unknown table returns `database.table_missing` (HTTP 404). A failed remote or driver execution returns `database.query_failed` (HTTP 502).
 

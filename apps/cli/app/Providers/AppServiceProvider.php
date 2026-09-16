@@ -12,6 +12,8 @@ use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\NativeGitRegistrationDiscovery;
 use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileRequestProfiler;
+use App\Support\Console\StandardInput;
+use App\Support\Console\StandardInputReader;
 use Illuminate\Support\ServiceProvider;
 
 final class AppServiceProvider extends ServiceProvider
@@ -26,6 +28,7 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(StandardInputReader::class, StandardInput::class);
         $this->app->singleton(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);

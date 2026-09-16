@@ -185,6 +185,8 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('app:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:frobnicate'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('cluster:attach'))->toBeFalse();
+        expect(CommandVocabulary::allowsCommand('internal:database-query-local'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('internal:frobnicate'))->toBeFalse();
     });
 
     it('accepts every registered Orbit command last segment', function (): void {
@@ -267,7 +269,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(114);
+    expect($orbitCommands)->toHaveCount(115);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -281,6 +283,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
             'herdr:session:list',
             'herdr:session:restart',
             'herdr:session:show',
+            'internal:database-query-local',
         ]);
 });
 

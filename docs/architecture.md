@@ -57,7 +57,7 @@ A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server 
 
 ## Database connections
 
-The Gateway stores named MySQL, PostgreSQL, and SQLite connections. Register a host or SQLite path, or create a MySQL user and database through a Node Docker Process and register that connection, then attach the connection to an App instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. See [Database connections](/reference/database-connections).
+The Gateway stores named MySQL, PostgreSQL, and SQLite connections. Register a host or SQLite path, or create a MySQL user and database through a Node Docker Process and register that connection, then attach the connection to an App instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. Query, tables, schema, and describe use PDO for every driver: mysql and pgsql on the Gateway, sqlite on the owning Node through a hidden Orbit CLI command. See [Database connections](/reference/database-connections) and [ADR 0081](/decisions/0081-query-registered-databases-through-pdo).
 
 ## Doctor
 
