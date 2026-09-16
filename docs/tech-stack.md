@@ -40,4 +40,4 @@ Orbit uses these tools to keep its code and documentation consistent:
 - Librarian checks documentation.
 - Incus creates temporary Linux machines for end-to-end testing.
 
-Project scripts and GitHub CI use test impact analysis (TIA) to run affected tests alongside quality checks. CI validates all five projects and maintained documentation. The [feature delivery reference](/reference/implementation-loop#ci-and-local-verification) explains checks and review.
+Project scripts and GitHub CI use impacted TIA to run affected tests alongside quality checks. Incus acceptance remains the independent review proof. CI validates all five projects and maintained documentation. The [feature delivery reference](/reference/implementation-loop#ci-and-local-verification) explains checks and review.

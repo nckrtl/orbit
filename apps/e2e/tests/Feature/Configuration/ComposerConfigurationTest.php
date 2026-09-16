@@ -43,7 +43,11 @@ describe('Composer configuration', function (): void {
                     expect(preg_match('/(?:^|\s)tests\//', $command))->toBe(0);
                 });
             } else {
-                expect($contents)->not->toContain('tests/');
+                expect($contents)->not->toMatch('/vendor\/bin\/pest[^\n]*tests\//');
+
+                if ($path !== '.github/workflows/ci.yml') {
+                    expect($contents)->not->toContain('tests/');
+                }
             }
         }
 
@@ -147,6 +151,48 @@ describe('Composer configuration', function (): void {
         foreach (['pint.json', 'phpstan.neon'] as $file) {
             expect(file_get_contents(base_path($file)))->not->toMatch('/database|routes/i');
         }
+    });
+
+    it('persists per-project Pest TIA graphs on a named checkout', function (): void {
+        $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
+
+        expect($workflow)
+            ->toBeString()
+            ->toContain('fetch-depth: 0')
+            ->toContain('ref: ${{ github.head_ref || github.ref_name }}')
+            ->toContain('repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}')
+            ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
+            ->toContain('actions/cache/restore@v6')
+            ->toContain('actions/cache/save@v6')
+            ->toContain('path: ${{ matrix.directory }}/.orbit-tia')
+            ->toContain("format('{0}/composer.lock', matrix.directory)")
+            ->toContain("format('{0}/tests/Pest.php', matrix.directory)")
+            ->toContain("format('{0}/phpunit.xml', matrix.directory)")
+            ->toContain("format('{0}/phpunit.xml.dist', matrix.directory)")
+            ->toContain('orbit-tia-php8.5-${{ matrix.directory }}-')
+            ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}')
+            ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
+            ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
+            ->toContain('if: success()')
+            ->toContain('coverage: pcov')
+            ->toContain('vendor/bin/pest --parallel --processes=2 --tia --compact')
+            ->not->toContain('bin/tia-cache')
+            ->not->toContain('tia-baseline.yml')
+            ->not->toContain('vendor/.orbit-guidance-tia')
+            ->not->toMatch('/vendor\/bin\/pest[^\n]*tests\//');
+
+        expect(strpos($workflow, 'Restore Pest TIA graph'))
+            ->toBeLessThan(strpos($workflow, 'Run affected tests'));
+        expect(strpos($workflow, 'Run affected tests'))
+            ->toBeLessThan(strpos($workflow, 'Save Pest TIA graph'));
+
+        $ignored = new Process(
+            ['git', 'check-ignore', '-q', 'apps/cli/.orbit-tia/graph.json'],
+            base_path('../..'),
+        );
+        $ignored->run();
+
+        expect($ignored->getExitCode())->toBe(0, 'The hosted TIA graph must stay out of the candidate tree.');
     });
 
     it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
