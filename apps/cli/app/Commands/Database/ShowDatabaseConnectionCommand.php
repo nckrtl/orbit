@@ -33,10 +33,11 @@ final class ShowDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $connection = $this->send(
+        $connection = $this->sendWithProgress(
             $connector,
             new ShowDatabaseConnectionRequest($slug),
             DatabaseConnectionResponse::class,
+            ['Show Database connection', 'Loading Database connection', 'Loaded Database connection'],
         );
 
         if (! $connection instanceof DatabaseConnectionResponse) {

@@ -63,7 +63,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $connection = $this->send(
+        $connection = $this->sendWithProgress(
             $connector,
             new CreateDatabaseUserRequest(
                 processId: $processId,
@@ -73,6 +73,7 @@ final class CreateDatabaseUserCommand extends DatabaseCommand
                 password: $password,
             ),
             DatabaseConnectionResponse::class,
+            ['Create Database user', 'Creating Database user', 'Created Database user'],
         );
 
         if (! $connection instanceof DatabaseConnectionResponse) {

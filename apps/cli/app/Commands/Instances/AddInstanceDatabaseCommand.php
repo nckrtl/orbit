@@ -38,7 +38,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
             return self::FAILURE;
         }
 
-        $attachment = $this->send(
+        $attachment = $this->sendWithProgress(
             $connector,
             new AddInstanceDatabaseRequest(
                 appInstance: $instance,
@@ -46,6 +46,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
                 prefix: $prefix,
             ),
             DatabaseConnectionAttachmentResponse::class,
+            ['Add Database connection', 'Adding Database connection', 'Added Database connection'],
         );
 
         if (! $attachment instanceof DatabaseConnectionAttachmentResponse) {

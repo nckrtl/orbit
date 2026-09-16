@@ -6,6 +6,7 @@ namespace App\Commands\Database;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseQueryResponse;
 
@@ -36,10 +37,11 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $result = $this->send(
+        $result = $this->sendWithProgress(
             $connector,
             new QueryDatabaseConnectionRequest($slug, $sql, $this->option('write') === true),
             DatabaseQueryResponse::class,
+            ['Run Database query', 'Running Database query', 'Ran Database query'],
         );
 
         if (! $result instanceof DatabaseQueryResponse) {
@@ -48,6 +50,22 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
 
         if ($this->option('json') === true) {
             $this->writeJson($result->toArray());
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Database query [{$result->slug}].", [
+            'Write permission' => $result->write ? 'yes' : 'no',
+            'Reported row count' => $result->rowCount,
+            'Truncated' => $result->truncated ? 'yes' : 'no',
+            'Request ID' => $result->requestId,
+        ]));
+
+        if ($result->columns === [] && $result->rows === []) {
+            $this->writeHumanMessage(
+                $result->write ? 'Statement completed.' : 'No matching records found.',
+            );
+            $this->writeTruncationWarning($result->truncated);
 
             return self::SUCCESS;
         }
@@ -65,17 +83,44 @@ final class QueryDatabaseConnectionCommand extends DatabaseCommand
             $cells = [];
 
             foreach ($result->columns as $column) {
-                $cells[] = $this->displayValue($row[$column] ?? null);
+                $cells[] = $this->queryCell($row[$column] ?? null);
             }
 
             $rows[] = $cells;
         }
 
-        return $this->renderInspectionTable(
-            "Database query [{$result->slug}].",
-            $headers,
-            $rows,
-            $result->requestId,
+        ConsoleWriter::write(
+            $this->output,
+            $this->humanRenderer()->table($headers, $rows, 'No matching records found.'),
         );
+        $this->writeTruncationWarning($result->truncated);
+
+        return self::SUCCESS;
+    }
+
+    private function writeTruncationWarning(bool $truncated): void
+    {
+        if (! $truncated) {
+            return;
+        }
+
+        $this->writeHumanMessage('Result truncated at the Gateway row limit. The omitted total is not known.');
+    }
+
+    private function queryCell(bool|float|int|string|null $value): string
+    {
+        if ($value === null) {
+            return 'NULL';
+        }
+
+        if ($value === '') {
+            return '""';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        return (string) $value;
     }
 }

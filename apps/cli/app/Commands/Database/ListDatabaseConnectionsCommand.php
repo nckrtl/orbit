@@ -6,6 +6,7 @@ namespace App\Commands\Database;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionsResponse;
 
@@ -26,7 +27,12 @@ final class ListDatabaseConnectionsCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListDatabaseConnectionsRequest, DatabaseConnectionsResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new ListDatabaseConnectionsRequest,
+            DatabaseConnectionsResponse::class,
+            ['List Database connections', 'Loading Database connections', 'Loaded Database connections'],
+        );
 
         if (! $response instanceof DatabaseConnectionsResponse) {
             return self::FAILURE;
@@ -44,14 +50,24 @@ final class ListDatabaseConnectionsCommand extends DatabaseCommand
             $rows[] = [
                 $connection->slug,
                 $connection->driver,
-                $connection->host ?? $connection->path ?? '—',
-                $connection->database ?? '—',
-                $connection->hasPassword ? 'stored' : '—',
+                $connection->host ?? $connection->path,
+                $connection->database,
+                $connection->hasPassword ? 'stored' : null,
             ];
         }
 
-        $this->table(['Slug', 'Driver', 'Endpoint', 'Database', 'Password'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        if ($rows === []) {
+            $this->writeHumanMessage('No Database connections.');
+            $this->writeHumanMessage("Request ID: {$response->requestId}");
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Slug', 'Driver', 'Endpoint', 'Database', 'Password'],
+            $rows,
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

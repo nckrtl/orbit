@@ -33,10 +33,11 @@ final class ListDatabaseTablesCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $result = $this->send(
+        $result = $this->sendWithProgress(
             $connector,
             new ListDatabaseTablesRequest($slug),
             DatabaseTablesResponse::class,
+            ['List Database tables', 'Loading Database tables', 'Loaded Database tables'],
         );
 
         if (! $result instanceof DatabaseTablesResponse) {

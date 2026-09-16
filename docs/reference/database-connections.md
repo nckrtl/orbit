@@ -11,6 +11,8 @@ A Database connection is a Gateway-owned registry record. The operator registers
 
 The operator adds a connection on an App instance only. Add writes prefixed keys into the Gateway-owned stored App instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [App instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
 
+The CLI uses the shared table and detail tree, shows progress on Gateway calls, and never prints a password. Destroy and attachment removal require default-No confirmation or `--force`. Human query cells render SQL null as `NULL` and an empty string as `""` so those values stay distinct from each other and from a literal em dash. JSON query cells stay exact.
+
 ## Create a connection
 
 Create one record with a unique slug:
@@ -132,7 +134,7 @@ A duplicate slug on registry create returns `database.slug_conflict` (HTTP 409) 
 
 The operator inspects a registered connection with query, tables, schema, and describe. The Gateway refuses SQL that is not sent against a stored slug. The request never accepts a host, path, username, or password of its own.
 
-Query is read-only by default. The Gateway answers `database.write_required` when the statement would write and the request omits `write: true`. `--write` on the CLI sends that flag. Query accepts one statement. Stacked statements return `database.sql_multiple_statements`.
+Query is read-only by default. The Gateway answers `database.write_required` when the statement would write and the request omits `write: true`. `--write` on the CLI sends that permission flag; it is not proof that rows mutated. `row_count` is the inspector-reported count and is driver-specific. Query accepts one statement. Stacked statements return `database.sql_multiple_statements`.
 
 SQLite query, tables, schema, and describe run on the associated Node. The Gateway answers `database.sqlite_node_required` when that connection has no Node. The remote command is `sqlite3` with the stored path. SQL travels on protected stdin and does not enter argv.
 

@@ -41,10 +41,11 @@ final class DescribeDatabaseTableCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $result = $this->send(
+        $result = $this->sendWithProgress(
             $connector,
             new DescribeDatabaseTableRequest($slug, $table),
             DatabaseDescribeResponse::class,
+            ['Describe Database table', 'Loading Database table', 'Loaded Database table'],
         );
 
         if (! $result instanceof DatabaseDescribeResponse) {

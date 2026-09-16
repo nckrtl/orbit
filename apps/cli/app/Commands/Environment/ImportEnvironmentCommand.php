@@ -34,13 +34,14 @@ final class ImportEnvironmentCommand extends EnvironmentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ImportAppInstanceEnvironmentRequest(
                 appInstance: $selector,
                 replace: $this->option('replace') === true ? true : null,
             ),
             EnvironmentOperationResponse::class,
+            ['Import environment', 'Importing environment', 'Imported environment'],
         );
 
         return $response instanceof EnvironmentOperationResponse

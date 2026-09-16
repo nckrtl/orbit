@@ -9,11 +9,19 @@ use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
+use Saloon\Repositories\Body\JsonBodyRepository;
 use Saloon\Traits\Body\HasJsonBody;
 
 final class RemoveInstanceDatabaseRequest extends GatewayRequest implements HasBody
 {
-    use HasJsonBody;
+    use HasJsonBody {
+        body as private jsonBody;
+    }
+
+    public function body(): JsonBodyRepository
+    {
+        return $this->jsonBody()->setJsonFlags(JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT);
+    }
 
     #[\Override]
     protected Method $method = Method::DELETE;

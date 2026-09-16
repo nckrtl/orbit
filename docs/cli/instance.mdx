@@ -398,7 +398,7 @@ orbit instance:database:remove <slug> --instance=SELECTOR [--prefix=PREFIX] [--f
 | --- | --- | --- |
 | `--instance=SELECTOR` | required | Positive App instance ID or exact Route domain. |
 | `--prefix=PREFIX` | `DB` | Prefix of the attachment to remove. |
-| `--force` | off | Skip the confirmation prompt. A non-interactive call without it returns `database.confirmation_required`. |
+| `--force` | off | Confirm removal without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `database.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 ```bash
 orbit instance:database:remove app --instance=12 --force
