@@ -18,12 +18,11 @@ trait RendersAppRuntimeDefinitions
             return self::SUCCESS;
         }
 
-        $safe = $this->commandSafeDefinition($definition);
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("{$label} definition [{$definition->name}].", [
             'ID' => $definition->id,
             'App ID' => $definition->appId,
             'Environments' => implode(', ', $definition->environments),
-            'Specification' => json_encode($safe['spec'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            'Specification' => json_encode($definition->spec, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             'Request ID' => $definition->requestId,
         ]));
 

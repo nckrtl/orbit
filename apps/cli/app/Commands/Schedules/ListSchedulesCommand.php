@@ -88,7 +88,7 @@ final class ListSchedulesCommand extends ScheduleCommand
         }
 
         if ($rows === []) {
-            $this->writeHumanMessage('No Schedules.');
+            $this->writeHumanMessage('No matching records found.');
             $this->writeHumanMessage("Request ID: {$response->requestId}");
 
             return self::SUCCESS;

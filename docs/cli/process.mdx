@@ -33,7 +33,7 @@ The [App process and Schedule definitions](/reference/app-processes-and-schedule
 | [`process:logs`](#orbit-processlogs) | Return a bounded log tail. |
 | [`process:destroy`](#orbit-processdestroy) | Remove one Process and its artifacts, or one definition. |
 
-Every command accepts `--json`. Human and JSON output include the Gateway request ID. Human output uses the shared table, detail tree, and progress helpers. Process environment values stay redacted. `process:destroy` requires default-No confirmation or `--yes`.
+Every command accepts `--json`. Human and JSON output include the Gateway request ID. Human output uses the shared table, detail tree, and progress helpers. Process list and detail include lifecycle state, failed step, and error code. Human definition show, create, update, and destroy include the complete specification, including `command`. Process lists still omit `spec.command`. Process environment values stay redacted. `process:destroy` requires default-No confirmation or `--yes`.
 
 ## orbit process:create
 

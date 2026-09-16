@@ -97,20 +97,22 @@ final class ListProcessesCommand extends TargetedProcessCommand
                 $process->runtime,
                 $process->desiredState,
                 $process->runtimeStatus,
+                $process->status,
+                $process->failedStep,
                 $process->restartPolicy,
                 $process->keepAlive ? 'yes' : 'no',
             ];
         }
 
         if ($rows === []) {
-            $this->writeHumanMessage('No Processes.');
+            $this->writeHumanMessage('No matching records found.');
             $this->writeHumanMessage("Request ID: {$response->requestId}");
 
             return self::SUCCESS;
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'],
+            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Lifecycle', 'Failed step', 'Restart', 'Keep-alive'],
             $rows,
         ));
         $this->writeHumanMessage("Request ID: {$response->requestId}");

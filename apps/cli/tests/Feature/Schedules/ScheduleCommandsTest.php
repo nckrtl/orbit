@@ -30,6 +30,8 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
+    $this->previousColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-schedule-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
@@ -42,6 +44,11 @@ beforeEach(function (): void {
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    if ($this->previousColumns === false) {
+        putenv('COLUMNS');
+    } else {
+        putenv('COLUMNS='.$this->previousColumns);
+    }
 });
 
 it('adds one Node Schedule through exactly one typed request and renders human output', function (): void {
@@ -210,6 +217,8 @@ it('lists the unfiltered collection without command text in human output', funct
     [$exit, $output] = schedule_cli_display('schedule:list');
     expect($exit)->toBe(Command::SUCCESS);
     expect($output)->toContain('daily-report');
+    expect($output)->toContain('disabled');
+    expect($output)->toContain('active');
     expect($output)->toContain('Request ID: '.schedule_cli_request_id());
     expect($output)->not->toContain('php artisan report:send');
 
@@ -253,6 +262,8 @@ it('sends one UUID request and renders separate timer and lifecycle states', fun
     expect($exit)->toBe(Command::SUCCESS);
     expect($output)->toContain('daily-report');
     expect($output)->toContain(schedule_cli_uuid());
+    expect($output)->toContain('disabled');
+    expect($output)->toContain('active');
 
     $mock->assertSentCount(1, $requestClass);
     expect($mock->getLastPendingRequest()?->getUrl())->toBe(
@@ -264,6 +275,25 @@ it('sends one UUID request and renders separate timer and lifecycle states', fun
     'remove' => ['schedule:destroy', DestroyScheduleRequest::class],
     'activate' => ['schedule:enable', EnableScheduleRequest::class],
 ]);
+
+it('refuses JSON schedule definition destruction without --yes', function (): void {
+    $mock = MockClient::global();
+
+    [$exit, $output] = schedule_cli_display('schedule:destroy', [
+        'schedule' => 'hourly-report',
+        '--app' => '7',
+        '--json' => true,
+    ]);
+    expect($exit)->toBe(Command::FAILURE);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'input.confirmation_required',
+            'message' => 'Supply --yes to confirm this operation.',
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+});
 
 it('refuses JSON schedule destruction without --yes', function (): void {
     $mock = MockClient::global();

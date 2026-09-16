@@ -27,6 +27,8 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
+    $this->previousColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-process-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
@@ -44,6 +46,11 @@ function process_cli_secret(string $suffix): string
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    if ($this->previousColumns === false) {
+        putenv('COLUMNS');
+    } else {
+        putenv('COLUMNS='.$this->previousColumns);
+    }
 });
 
 it('adds one explicit Docker process through the active gateway', function (): void {
@@ -326,6 +333,43 @@ it('lists one target process collection for humans', function (): void {
     [$exit, $output] = process_cli_display('process:list', ['--instance' => '7']);
     expect($exit)->toBe(0);
     expect($output)->toContain('redis');
+    expect($output)->toContain('active');
+    expect($output)->toContain('running');
+    expect($output)->toContain('Request ID: '.process_cli_request_id());
+});
+
+it('lists a failed process lifecycle in human output', function (): void {
+    MockClient::global([
+        ListProcessesRequest::class => MockResponse::make([
+            'data' => [process_cli_payload([
+                'name' => 'assets',
+                'desired_state' => 'stopped',
+                'runtime_status' => 'absent',
+                'status' => 'failed',
+                'failed_step' => 'vite-environment',
+                'error_code' => 'vite.environment_failed',
+            ])],
+            'meta' => ['request_id' => process_cli_request_id()],
+        ]),
+    ]);
+
+    [$exit, $output] = process_cli_display('process:list', ['--instance' => '7']);
+    expect($exit)->toBe(0);
+    expect($output)->toContain('failed');
+    expect($output)->toContain('vite-environment');
+});
+
+it('lists an empty process registry without a table', function (): void {
+    MockClient::global([
+        ListProcessesRequest::class => MockResponse::make([
+            'data' => [],
+            'meta' => ['request_id' => process_cli_request_id()],
+        ]),
+    ]);
+
+    [$exit, $output] = process_cli_display('process:list', ['--instance' => '7']);
+    expect($exit)->toBe(0);
+    expect($output)->toContain('No matching records found.');
     expect($output)->toContain('Request ID: '.process_cli_request_id());
 });
 
@@ -355,6 +399,25 @@ it('runs one process lifecycle action', function (
     'restart' => ['process:restart', RestartProcessRequest::class, 'restarted'],
     'remove' => ['process:destroy', DestroyProcessRequest::class, 'removed'],
 ]);
+
+it('refuses JSON process definition destruction without --yes', function (): void {
+    $mock = MockClient::global();
+
+    [$exit, $output] = process_cli_display('process:destroy', [
+        'process' => 'queue',
+        '--app' => '7',
+        '--json' => true,
+    ]);
+    expect($exit)->toBe(1);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'input.confirmation_required',
+            'message' => 'Supply --yes to confirm this operation.',
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+});
 
 it('refuses JSON process destruction without --yes', function (): void {
     $mock = MockClient::global();
@@ -1165,16 +1228,17 @@ it('records keep-alive on an App process definition', function (): void {
         CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
     ]);
 
-    $this
-        ->artisan('process:create', [
-            'name' => 'queue',
-            '--app' => '7',
-            '--for' => 'development',
-            '--runtime' => 'systemd',
-            '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
-            '--keep-alive' => true,
-        ])
-        ->assertExitCode(0);
+    [$exit, $output] = process_cli_display('process:create', [
+        'name' => 'queue',
+        '--app' => '7',
+        '--for' => 'development',
+        '--runtime' => 'systemd',
+        '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+        '--keep-alive' => true,
+    ]);
+    expect($exit)->toBe(0);
+    expect($output)->toContain('queue:work');
+    expect($output)->toContain('/usr/bin/php');
 
     expect((string) $mock->getLastPendingRequest()?->body())
         ->toContain('"keep_alive":true');
