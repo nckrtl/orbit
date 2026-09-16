@@ -128,10 +128,16 @@ describe('database connection requests', function (): void {
     });
 
     it('omits an absent add prefix and encodes hostname selectors', function (): void {
-        expect(new AddInstanceDatabaseRequest(12, 'app')->body()->all())
+        $withoutPrefix = new AddInstanceDatabaseRequest(12, 'app');
+
+        expect($withoutPrefix->body()->all())
             ->toBe([])
+            ->and((string) $withoutPrefix->body())
+            ->toBe('{}')
             ->and(new AddInstanceDatabaseRequest('app.test', 'app-db', 'CACHE_DB')->body()->all())
             ->toBe(['prefix' => 'CACHE_DB'])
+            ->and((string) (new AddInstanceDatabaseRequest('app.test', 'app-db', 'CACHE_DB'))->body())
+            ->toBe('{"prefix":"CACHE_DB"}')
             ->and(new AddInstanceDatabaseRequest('app.test', 'app-db')->resolveEndpoint())
             ->toBe('/api/v1/instances/app.test/database-connections/app-db');
     });
