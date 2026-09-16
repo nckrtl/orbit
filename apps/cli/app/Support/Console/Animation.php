@@ -96,7 +96,7 @@ final class Animation
                     $handlers[$signal] = pcntl_signal_get_handler($signal);
                     pcntl_signal($signal, static function (int $received): never {
                         throw new ConsoleInterrupted($received);
-                    });
+                    }, restart_syscalls: false);
                 }
 
                 pcntl_async_signals(true);
@@ -104,6 +104,7 @@ final class Animation
 
             $this->start();
             $result = $operation();
+            InterruptIntent::throwIfPending();
             $this->stop(handoff: $this->parent !== null);
 
             return $result;

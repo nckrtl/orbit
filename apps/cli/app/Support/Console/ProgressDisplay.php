@@ -74,11 +74,14 @@ final class ProgressDisplay
         );
 
         try {
-            return $animation->during($operation);
+            $result = $animation->during($operation);
+            InterruptIntent::throwIfPending();
+
+            return $result;
         } catch (Throwable $exception) {
             try {
                 $this->complete($id, ProgressState::Failure);
-                $this->finish($exception instanceof ConsoleInterrupted ? 'Operation interrupted.' : 'Operation failed.');
+                $this->finish(InterruptIntent::cancellation($exception) ? 'Operation interrupted.' : 'Operation failed.');
             } catch (Throwable) {
                 // Output failure must not replace the callback's original failure.
             }
