@@ -1,0 +1,115 @@
+{
+  "mutates": true,
+  "setup": [
+    {
+      "id": "prepare-recorder-gateway",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb358-setup.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "prepare-recorder-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb358-setup.sh"
+      ],
+      "timeout_seconds": 300
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "prepare",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb358-live.py",
+        "--candidate",
+        "db54cd60949aedf0ba57b5f12c3ea54555693cf9",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/proof",
+        "--stage",
+        "prepare"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "processes",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb358-live.py",
+        "--candidate",
+        "db54cd60949aedf0ba57b5f12c3ea54555693cf9",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/proof",
+        "--stage",
+        "processes"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "preset",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb358-live.py",
+        "--candidate",
+        "db54cd60949aedf0ba57b5f12c3ea54555693cf9",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/proof",
+        "--stage",
+        "preset"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "schedules",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb358-live.py",
+        "--candidate",
+        "db54cd60949aedf0ba57b5f12c3ea54555693cf9",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/proof",
+        "--stage",
+        "schedules"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "consent",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb358-live.py",
+        "--candidate",
+        "db54cd60949aedf0ba57b5f12c3ea54555693cf9",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/proof",
+        "--stage",
+        "consent"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "coverage-report",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb358-live.py",
+        "--candidate",
+        "db54cd60949aedf0ba57b5f12c3ea54555693cf9",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-358/proof",
+        "--stage",
+        "coverage-report"
+      ],
+      "timeout_seconds": 240
+    }
+  ]
+}
