@@ -24,7 +24,8 @@ Test impact analysis needs a recorded dependency graph before it can select affe
 - Feature worktrees must keep cache writes private and must not promote their mutable graphs into the main baseline.
 - Closeout must queue serialized baseline maintenance after a merge without making its completion a merge or cleanup gate.
 - A failed refresh must preserve the last successful publication.
-- Test impact analysis must not replace focused acceptance tests or full continuous integration suites.
+- Test impact analysis must not replace focused acceptance tests or Incus acceptance.
+- Hosted GitHub Actions persist each project's `.orbit-tia` graph in Actions cache after a successful Pest run so CI can replay impacted tests. That cache is not a published main baseline and does not call `bin/tia-cache`.
 
 ## Rejected alternatives
 
@@ -37,10 +38,11 @@ Test impact analysis needs a recorded dependency graph before it can select affe
 - New worktrees can select affected tests using previously recorded main dependencies.
 - Maintenance needs a separate checkout, installed dependencies, and a coverage driver.
 - Missing or incompatible publications still require recording, and a failed refresh can leave a project without a reusable baseline.
+- Hosted CI can replay affected tests when a compatible `.orbit-tia` graph exists. A detached HEAD or shallow clone still forces a fresh graph.
 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
 - ADRs: extends [ADR 0051](/decisions/0051-select-discovery-only-feature-delivery)
 - Detail: [docs/reference/implementation-loop.md](/reference/implementation-loop)
-- Verify: TIA cache lifecycle and worktree cleanup tests; `composer docs-lint`
+- Verify: TIA cache lifecycle and worktree cleanup tests; hosted CI TIA cache contract; `composer docs-lint`
