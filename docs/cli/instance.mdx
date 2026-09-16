@@ -9,7 +9,7 @@ The [Applications guide](/domains/applications) walks through creation and regis
 
 ## Commands
 
-Every command accepts `--json`. `instance:deploy` and `instance:rollback` return newline-delimited JSON (NDJSON) instead of one document.
+Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress. `instance:deploy` and `instance:rollback` return newline-delimited JSON (NDJSON) instead of one document.
 
 Placement commands create, adopt, inspect, and remove an App instance on one Node.
 
@@ -102,15 +102,16 @@ orbit instance:register [options]
 | `--name=NAME` | inferred | Non-default App instance name. |
 | `--root=PATH` | `public` for an unambiguous Laravel checkout | Confirmed App root, or a root override for an existing App. |
 | `--domain=HOST` | generated | Explicit Route domain for the primary source. |
+| `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
 
 The CLI refuses a directory outside a Git checkout and refuses a credential-bearing origin before it sends a request. The Gateway resolves the App by canonical repository identity, verifies the source on the caller Node, moves it into managed placement, and provisions the same Route and runtime that `instance:create` provisions.
 
-In an interactive terminal the CLI shows the inferred values, asks only for unresolved ones, and asks you to confirm the ownership transfer. `--json` and other non-interactive calls refuse when a required value stays unresolved and send no request.
+In an interactive terminal the CLI shows the inferred values, asks only for unresolved ones, and asks for default-No ownership consent naming the source. JSON and noninteractive calls require `--yes` and refuse unresolved required values before mutation. Invalid prompted values can be corrected; cancellation or end of input leaves the source unchanged.
 
 ```bash
 cd ~/apps/acme
 orbit instance:register
-orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --json
+orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --yes --json
 ```
 
 Registration also completes the manual migration of an App instance whose list and show output reports `migration_required: true`. The [Applications guide](/domains/applications#register-an-existing-development-source) describes inferred identity and placement.
@@ -140,7 +141,7 @@ orbit instance:show <instance> [--json]
 Remove an App instance. The Gateway clears its Route target, removes every owned Process and Schedule, and deletes the record.
 
 ```bash
-orbit instance:destroy <instance> [--force] [--json]
+orbit instance:destroy <instance> [--yes] [--force] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -149,7 +150,10 @@ orbit instance:destroy <instance> [--force] [--json]
 
 | Option | Meaning |
 | --- | --- |
+| `--yes` | Confirm removal without prompting. Required for JSON and noninteractive calls. |
 | `--force` | Delete dirty or unpublished development source after identity checks pass, and accept a checkout together with its registered linked worktrees. |
+
+Interactive removal defaults to No. `--force` does not supply consent.
 
 Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. Forced removal waives only those three refusals. It never waives the source path, ownership, layout, origin, branch, or worktree inventory checks, which return `instance.source_path_mismatch`, `instance.source_ownership_mismatch`, `instance.source_layout_mismatch`, `instance.source_origin_mismatch`, `instance.source_branch_mismatch`, or `instance.source_worktrees_mismatch`.
 
@@ -194,6 +198,8 @@ Cloning ends with an active App instance that has no selected release. Update an
 ## orbit instance:update
 
 Change the deployment branch of a production App instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+
+The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing App instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
 
 ```bash
 orbit instance:update <instance> --branch=BRANCH [--json]
@@ -273,10 +279,10 @@ orbit instance:deploy-step:update 15 migrate --timeout=600
 
 ## orbit instance:deploy-step:destroy
 
-Remove one named deploy step. Remaining steps keep their relative order.
+Remove one named deploy step. Remaining steps keep their relative order. Confirm the named target at a default-No prompt, or pass `--yes`. JSON and noninteractive calls require `--yes`.
 
 ```bash
-orbit instance:deploy-step:destroy <instance> <name> [--json]
+orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 ```
 
 ## orbit instance:deploy
@@ -415,7 +421,9 @@ Use these options to select the destination and confirm downtime.
 | `--name=NAME` | Optional destination name. |
 | `--sqlite-source-path=PATH` | Optional SQLite database to copy from the source. |
 | `--force` | Confirm downtime and deletion of the old placement. |
-| `--json` | Confirm the transfer without prompts and return machine-readable output. |
+| `--json` | Return machine-readable output without prompts. Requires `--force` for consent. |
+
+Without `--force`, an interactive call asks for default-No consent naming the source, destination and effect. JSON and noninteractive calls without `--force` return `instance.confirmation_required` before mutation.
 
 Production, standalone, and same-Node transfers are refused.
 

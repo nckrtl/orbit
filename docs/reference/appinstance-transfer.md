@@ -16,7 +16,7 @@ An authorized client sends one App instance selector and the destination Node to
 
 The request accepts no destination path, Cluster, Route, Process, or extra persistent-data selector. The Gateway refuses malformed JSON, duplicate members, unknown members, and invalid values before it changes stored or remote state.
 
-The caller needs directed access to both the source Node and the destination Node. `--json` confirms the transfer and disables prompts. Interactive CLI calls prompt once unless `--force` is present.
+The caller needs directed access to both the source Node and the destination Node. Interactive CLI calls require a default-No confirmation naming the source, destination, downtime and old-placement deletion, unless `--force` supplies explicit consent. JSON and noninteractive calls require `--force`; `--json` only selects machine output and disables prompts. Missing consent returns `instance.confirmation_required` before mutation.
 
 ## Check eligibility
 
@@ -61,6 +61,8 @@ A generated Route whose destination domain changes uses the destination Cluster 
 A failure before cutover restores the source Route, environment, processes, and schedules as authoritative. The Gateway removes successfully reversible destination state and retains bounded recovery evidence when that cleanup is incomplete. Only the identical request can resume.
 
 Once cutover makes the destination authoritative, retry proceeds only forward. The Gateway never restarts source execution, completes Route publication and runtime activation, and resumes exact old-placement cleanup without copying source again.
+
+For a pending transfer to the same destination, the CLI asks to retry the transfer and names its original source Node, including after cutover. The Gateway still checks that the request matches the pending transfer.
 
 The transfer records the original Router before cutover. If an older incomplete transfer passed cutover without this evidence, cleanup stops with `instance.transfer_source_router_unknown`. Recover the original Router identity from retained operation evidence before retrying; the current Cluster membership alone does not establish that identity.
 

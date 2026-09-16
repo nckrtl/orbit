@@ -13,6 +13,7 @@ use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\HumanRenderer;
+use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
@@ -35,38 +36,57 @@ use Saloon\Http\Response;
 use Symfony\Component\Console\Exception\ExceptionInterface;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Throwable;
 
 abstract class GatewayCommand extends Command
 {
     #[\Override]
     public function run(InputInterface $input, OutputInterface $output): int
     {
-        try {
-            return PromptContext::preserve(fn (): int => parent::run($input, $output));
-        } catch (PromptAborted $exception) {
-            if ($input->hasParameterOption('--json', true)) {
-                ConsoleWriter::write($output, GatewayFailureRenderer::json('input.invalid', $exception->getMessage())."\n");
-            } else {
-                ConsoleWriter::write($output, new HumanRenderer(ConsoleMode::detect($input, $output))->failure($exception->getMessage()));
-            }
+        return InterruptIntent::run(function () use ($input, $output): int {
+            try {
+                $status = PromptContext::preserve(fn (): int => parent::run($input, $output));
+            } catch (PromptAborted $exception) {
+                if (($cancelled = InterruptIntent::exitStatus()) !== null) {
+                    return $cancelled;
+                }
 
-            return self::FAILURE;
-        } catch (ConsoleInterrupted $exception) {
-            return $exception->getCode();
-        } catch (ExceptionInterface $exception) {
-            if (! $input->hasParameterOption('--json', true)) {
+                if ($input->hasParameterOption('--json', true)) {
+                    ConsoleWriter::write($output, GatewayFailureRenderer::json('input.invalid', $exception->getMessage())."\n");
+                } else {
+                    ConsoleWriter::write($output, new HumanRenderer(ConsoleMode::detect($input, $output))->failure($exception->getMessage()));
+                }
+
+                $status = self::FAILURE;
+            } catch (ConsoleInterrupted $exception) {
+                return $exception->getCode();
+            } catch (ExceptionInterface $exception) {
+                if (($cancelled = InterruptIntent::exitStatus()) !== null) {
+                    return $cancelled;
+                }
+
+                if (! $input->hasParameterOption('--json', true)) {
+                    throw $exception;
+                }
+
+                $message = trim($exception->getMessage());
+
+                ConsoleWriter::write($output, GatewayFailureRenderer::json(
+                    'input.invalid',
+                    $message !== '' ? $message : 'Command input is invalid.',
+                )."\n");
+
+                $status = self::FAILURE;
+            } catch (Throwable $exception) {
+                if (($cancelled = InterruptIntent::exitStatus()) !== null) {
+                    return $cancelled;
+                }
+
                 throw $exception;
             }
 
-            $message = trim($exception->getMessage());
-
-            ConsoleWriter::write($output, GatewayFailureRenderer::json(
-                'input.invalid',
-                $message !== '' ? $message : 'Command input is invalid.',
-            )."\n");
-
-            return self::FAILURE;
-        }
+            return InterruptIntent::exitStatus() ?? $status;
+        });
     }
 
     /** Resolve after framework setup and input binding, using the selected stream. */

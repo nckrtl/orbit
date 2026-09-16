@@ -11,6 +11,8 @@ use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 
 final class CreateDeployStepCommand extends DeploymentCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:deploy-step:create
         {instance : Numeric instance ID}
@@ -56,7 +58,7 @@ final class CreateDeployStepCommand extends DeploymentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new CreateInstanceDeployStepRequest(
+        $response = $this->sendWithProgress($connector, new CreateInstanceDeployStepRequest(
             appInstanceId: $instanceId,
             name: $name,
             command: $command,
@@ -64,7 +66,7 @@ final class CreateDeployStepCommand extends DeploymentCommand
             timeoutSeconds: $timeoutSeconds,
             before: $this->stringOption('before'),
             after: $this->stringOption('after'),
-        ), DeploymentStepResponse::class);
+        ), DeploymentStepResponse::class, ['Create deploy step', 'Creating deploy step', 'Created deploy step']);
 
         if (! $response instanceof DeploymentStepResponse) {
             return self::FAILURE;
@@ -81,10 +83,7 @@ final class CreateDeployStepCommand extends DeploymentCommand
             return self::SUCCESS;
         }
 
-        $this->line('Name: '.$this->terminalValue($step->name));
-        $this->line('Phase: '.$step->phase);
-        $this->line('Command: '.$this->terminalValue($step->command));
-        $this->line("Timeout: {$step->timeoutSeconds} seconds");
+        $this->writeDeployStep($step);
 
         return self::SUCCESS;
     }

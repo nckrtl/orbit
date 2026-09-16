@@ -9,10 +9,11 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
-use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 
 final class ShowInstanceCommand extends GatewayCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:show
         {instance : Numeric instance ID}
@@ -37,7 +38,7 @@ final class ShowInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class);
+        $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class, ['Show App instance', 'Loading App instance', 'Loaded App instance']);
 
         if (! $instance instanceof AppInstanceResponse) {
             return self::FAILURE;
@@ -49,52 +50,9 @@ final class ShowInstanceCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info("{$instance->name} (#{$instance->id}): {$instance->status}");
-        $this->line("App: {$instance->appId}");
-        $this->line("Node: {$instance->nodeId}");
-        $this->line("Environment: {$instance->environment}");
-        $this->line("Source layout: {$instance->sourceLayout}");
-        $this->line("Checkout: {$instance->checkoutPath}");
-        $this->line('Vite port: '.($instance->vitePort ?? '-'));
-        $this->line('Root override: '.($instance->root ?? '-'));
-        $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
-        $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));
-        $this->line('Branch override: '.($instance->branchOverride ?? '-'));
-        $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));
-        $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
-        $this->line('Route domain: '.($instance->domain ?? '-'));
-        $this->line('URL: '.($instance->url ?? '-'));
-        $this->line('Deploy steps:');
-
-        if ($instance->deploySteps === []) {
-            $this->line('- none');
-        }
-
-        foreach ($instance->deploySteps as $step) {
-            $this->renderDeployStep($step);
-        }
-
-        if ($instance->removal !== null) {
-            $this->line('Removal mode: '.($instance->removal->force ? 'forced' : 'normal'));
-            $this->line(
-                "Removal progress: {$instance->removal->completed}/{$instance->removal->total} completed; "
-                ."{$instance->removal->remaining} remaining",
-            );
-            $this->line('Removal step: '.($instance->removal->currentStep ?? '-'));
-            $this->line('Removal failed step: '.($instance->removal->failedStep ?? '-'));
-            $this->line('Removal error code: '.($instance->removal->errorCode ?? '-'));
-        }
-
-        $this->line("Request ID: {$instance->requestId}");
+        $this->writeInstanceDetails($instance);
+        $this->writeDeploySteps($instance->deploySteps);
 
         return self::SUCCESS;
-    }
-
-    private function renderDeployStep(DeploymentStepResponse $step): void
-    {
-        $this->line('- Name: '.$step->name);
-        $this->line('  Phase: '.$step->phase);
-        $this->line("  Timeout: {$step->timeoutSeconds} seconds");
-        $this->line('  Command: '.$step->command);
     }
 }

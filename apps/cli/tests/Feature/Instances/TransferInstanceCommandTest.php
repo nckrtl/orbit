@@ -9,11 +9,17 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
+
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=400');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-transfer-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -26,6 +32,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -104,8 +111,11 @@ describe('instance:transfer request', function (): void {
         'zero Node' => ['11', '0', 'node.id_invalid', 'Node ID must be a positive integer.'],
     ]);
 
-    it('requires confirmation unless --force or --json is present', function (): void {
-        $mock = MockClient::global();
+    it('requires explicit force consent for noninteractive transfer', function (): void {
+        $mock = MockClient::global([
+            ShowAppInstanceRequest::class => MockResponse::make(['data' => transfer_cli_payload(), 'meta' => ['request_id' => transfer_cli_request_id()]]),
+            ShowNodeRequest::class => MockResponse::make(['data' => ['id' => 8, 'name' => 'destination'], 'meta' => ['request_id' => transfer_cli_request_id()]]),
+        ]);
 
         $exitCode = Artisan::call('instance:transfer', [
             'instance' => '11',
@@ -117,8 +127,8 @@ describe('instance:transfer request', function (): void {
             ->toBe(1)
             ->and(Artisan::output())
             ->toContain('Use --force to confirm AppInstance transfer downtime and old-placement deletion.')
-            ->and($mock->getLastPendingRequest())
-            ->toBeNull();
+            ->and($mock->getRecordedResponses())->toHaveCount(2);
+        expect($mock->getLastRequest())->toBeInstanceOf(ShowNodeRequest::class);
     });
 });
 
@@ -126,20 +136,20 @@ describe('instance:transfer output', function (): void {
     it('reports destination placement, domain, and completed cleanup', function (): void {
         MockClient::global(transfer_cli_responses());
 
-        $this
-            ->artisan('instance:transfer', [
-                'instance' => '11',
-                'node' => '8',
-                '--force' => true,
-            ])
-            ->expectsOutput('AppInstance [preview] transferred.')
-            ->expectsOutput('Instance ID: 11')
-            ->expectsOutput('Destination Node: 8')
-            ->expectsOutput('Destination path: /srv/orbit/apps/shop/preview')
-            ->expectsOutput('Authoritative domain: preview.shop.other.orbit')
-            ->expectsOutput('Cleanup: completed')
-            ->expectsOutput('Request ID: '.transfer_cli_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:transfer', [
+            'instance' => '11',
+            'node' => '8',
+            '--force' => true,
+        ]))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'App instance: preview',
+            'ID 11',
+            'Destination Node 8',
+            'Destination path /srv/orbit/apps/shop/preview',
+            'Authoritative domain preview.shop.other.orbit',
+            'Cleanup completed',
+            'Request ID '.transfer_cli_request_id(),
+        );
     });
 
     it('renders a deterministic JSON result without prompting', function (): void {
@@ -149,6 +159,7 @@ describe('instance:transfer output', function (): void {
             'instance' => '11',
             'node' => '8',
             '--json' => true,
+            '--force' => true,
             '--no-interaction' => true,
         ]);
 

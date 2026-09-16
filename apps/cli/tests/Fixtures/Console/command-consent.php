@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Git\GitRegistrationDiscovery;
+use App\Services\Git\GitRegistrationFacts;
 use Illuminate\Contracts\Console\Kernel;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -18,6 +20,18 @@ $kernel->bootstrap();
 $configuration = json_decode(file_get_contents($argv[1]), true, flags: JSON_THROW_ON_ERROR);
 config()->set('orbit.home', $configuration['home']);
 app(GatewayConfigRepository::class)->add(new GatewayProfile('fixture', 'https://fixture.invalid', '/fixture/ca.pem'));
+if (isset($configuration['registration_facts'])) {
+    $facts = new GitRegistrationFacts(...$configuration['registration_facts']);
+    app()->instance(GitRegistrationDiscovery::class, new readonly class($facts) implements GitRegistrationDiscovery
+    {
+        public function __construct(private GitRegistrationFacts $facts) {}
+
+        public function inspect(string $path): ?GitRegistrationFacts
+        {
+            return $this->facts;
+        }
+    });
+}
 $replies = $configuration['replies'];
 MockClient::global(['*' => static function (PendingRequest $pending) use (&$replies, $configuration): MockResponse {
     $request = $pending->getRequest();

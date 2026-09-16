@@ -7,17 +7,22 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
 use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
 final class DestroyInstanceCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:destroy
         {instance : Numeric instance ID}
+        {--yes : Confirm removal without prompting}
         {--force : Delete dirty or unpublished source after identity checks}
         {--json : Return machine-readable JSON}';
 
@@ -40,15 +45,34 @@ final class DestroyInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        if ($this->option('yes') !== true) {
+            $existing = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
+                ['Resolve App instance', 'Loading App instance', 'Loaded App instance']);
+            if (! $existing instanceof AppInstanceResponse) {
+                return self::FAILURE;
+            }
+            $effect = $existing->environment === 'production'
+                ? 'remove its Route and runtime while retaining production content'
+                : 'delete its owned development source, Route and runtime';
+            if ($this->option('force') === true && $existing->environment !== 'production') {
+                $effect .= ', including dirty or unpublished work and registered linked worktrees';
+            }
+            if (! $this->confirmAction("Remove App instance [{$existing->name}] (#{$existing->id}) and {$effect}?", 'App instance removal cancelled.')) {
+                return self::FAILURE;
+            }
+        }
+
+        $progress = $this->progressDisplay('Remove App instance');
+        $progress->admit('remove', 'Remove App instance', 'Removing App instance', 'Removed App instance');
         try {
-            $response = $this->sendOrThrow(
+            $response = $progress->during('remove', fn (): object => $this->sendOrThrow(
                 $connector,
                 new DestroyAppInstanceRequest(
                     $instanceId,
                     force: $this->option('force') === true ? true : null,
                 ),
                 AppInstanceRemovalResponse::class,
-            );
+            ));
         } catch (GatewayApiException $exception) {
             $this->renderRemovalFailure($exception);
 
@@ -59,15 +83,18 @@ final class DestroyInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $progress->complete('remove', ProgressState::Success);
+        $progress->finish('App instance removed.');
+
         if ($this->option('json') === true) {
             $this->writeJson($response->toArray());
 
             return self::SUCCESS;
         }
 
-        $this->info("Instance [{$response->removal->name}] removed.");
+        $this->writeHumanMessage("Instance [{$response->removal->name}] removed.");
         $this->writeProgress($response->removal);
-        $this->line("Request ID: {$response->requestId}");
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }
@@ -99,13 +126,14 @@ final class DestroyInstanceCommand extends GatewayCommand
 
     private function writeProgress(AppInstanceRemovalProgressResponse $progress): void
     {
-        $this->line('Mode: '.($progress->force ? 'forced' : 'normal'));
-        $this->line("Progress: {$progress->completed}/{$progress->total} completed; {$progress->remaining} remaining");
-        $this->line('Current step: '.($progress->currentStep ?? '-'));
-
-        if ($progress->failedStep !== null) {
-            $this->line("Failed step: {$progress->failedStep}");
-            $this->line('Error code: '.($progress->errorCode ?? '-'));
-        }
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Removal: {$progress->name}", [
+            'ID' => $progress->id,
+            'Mode' => $progress->force ? 'forced' : 'normal',
+            'Status' => $progress->status,
+            'Progress' => "{$progress->completed}/{$progress->total} completed; {$progress->remaining} remaining",
+            'Current step' => $progress->currentStep,
+            'Failed step' => $progress->failedStep,
+            'Error code' => $progress->errorCode,
+        ]));
     }
 }

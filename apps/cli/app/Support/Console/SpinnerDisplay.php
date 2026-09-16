@@ -20,6 +20,17 @@ final readonly class SpinnerDisplay
      */
     public function during(string $label, Closure $operation): mixed
     {
+        return InterruptIntent::runIfAbsent(fn (): mixed => $this->duringInScope($label, $operation));
+    }
+
+    /**
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $operation
+     * @return TResult
+     */
+    private function duringInScope(string $label, Closure $operation): mixed
+    {
         $label = TerminalText::safe($label);
         $prefixWidth = $this->mode->columns >= 2 + TerminalText::minimumWidth($label) ? 2 : 0;
         $parts = TerminalText::wrap($label, $this->mode->columns - $prefixWidth);
@@ -37,11 +48,12 @@ final readonly class SpinnerDisplay
             )->during(function () use ($operation, &$settled): mixed {
                 try {
                     $value = $operation();
+                    InterruptIntent::throwIfPending();
                     $settled = $this->outcome('Wait finished.');
 
                     return $value;
                 } catch (Throwable $exception) {
-                    $settled = $this->outcome($exception instanceof ConsoleInterrupted ? 'Wait interrupted.' : 'Wait failed.', 'red');
+                    $settled = $this->outcome(InterruptIntent::cancellation($exception) ? 'Wait interrupted.' : 'Wait failed.', 'red');
 
                     throw $exception;
                 }
@@ -49,7 +61,7 @@ final readonly class SpinnerDisplay
         } catch (Throwable $exception) {
             if (! $this->mode->machine && ! $this->mode->mayRepaint) {
                 try {
-                    ConsoleWriter::write($this->output, $this->outcome($exception instanceof ConsoleInterrupted ? 'Wait interrupted.' : 'Wait failed.', 'red'));
+                    ConsoleWriter::write($this->output, $this->outcome(InterruptIntent::cancellation($exception) ? 'Wait interrupted.' : 'Wait failed.', 'red'));
                 } catch (Throwable) {
                     // Preserve the operation's exception when its output is unavailable.
                 }

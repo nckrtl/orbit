@@ -7,6 +7,7 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
@@ -30,7 +31,7 @@ final class ListInstancesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListAppInstancesRequest, AppInstancesResponse::class);
+        $response = $this->sendWithProgress($connector, new ListAppInstancesRequest, AppInstancesResponse::class, ['List App instances', 'Loading App instances', 'Loaded App instances']);
 
         if (! $response instanceof AppInstancesResponse) {
             return self::FAILURE;
@@ -49,24 +50,24 @@ final class ListInstancesCommand extends GatewayCommand
                 $instance->id,
                 $instance->appId,
                 $instance->nodeId,
-                $instance->vitePort ?? '-',
+                $instance->vitePort ?? null,
                 $instance->name,
                 $instance->environment,
                 $instance->sourceLayout,
-                $instance->effectiveRoot ?? '-',
-                $instance->selectedBranch ?? '-',
-                $instance->branchOverride ?? '-',
+                $instance->effectiveRoot ?? null,
+                $instance->selectedBranch ?? null,
+                $instance->branchOverride ?? null,
                 $instance->migrationRequired ? 'yes' : 'no',
-                $instance->domain ?? '-',
-                $instance->url ?? '-',
+                $instance->domain ?? null,
+                $instance->url ?? null,
                 $instance->status,
                 $instance->removal === null
-                    ? '-'
+                    ? null
                     : $this->removalSummary($instance->removal),
             ];
         }
 
-        $this->table(
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             [
                 'ID',
                 'App',
@@ -85,8 +86,9 @@ final class ListInstancesCommand extends GatewayCommand
                 'Removal',
             ],
             $rows,
-        );
-        $this->line("Request ID: {$response->requestId}");
+            'No App instances found.',
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }
@@ -98,10 +100,10 @@ final class ListInstancesCommand extends GatewayCommand
             ." {$removal->completed}/{$removal->total} completed"
             ."; {$removal->remaining} remaining"
             .'; '
-            .($removal->currentStep ?? '-');
+            .($removal->currentStep ?? '—');
 
         if ($removal->failedStep !== null) {
-            $summary .= "; failed {$removal->failedStep} (".($removal->errorCode ?? '-').')';
+            $summary .= "; failed {$removal->failedStep} (".($removal->errorCode ?? '—').')';
         }
 
         return $summary;

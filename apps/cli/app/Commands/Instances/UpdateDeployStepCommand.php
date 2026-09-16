@@ -11,6 +11,8 @@ use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 
 final class UpdateDeployStepCommand extends DeploymentCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:deploy-step:update
         {instance : Numeric instance ID}
@@ -63,7 +65,7 @@ final class UpdateDeployStepCommand extends DeploymentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new UpdateInstanceDeployStepRequest(
+        $response = $this->sendWithProgress($connector, new UpdateInstanceDeployStepRequest(
             appInstanceId: $instanceId,
             name: $name,
             hasCommand: $hasCommand,
@@ -76,7 +78,7 @@ final class UpdateDeployStepCommand extends DeploymentCommand
             before: $hasBefore ? (string) $this->option('before') : null,
             hasAfter: $hasAfter,
             after: $hasAfter ? (string) $this->option('after') : null,
-        ), DeploymentStepResponse::class);
+        ), DeploymentStepResponse::class, ['Update deploy step', 'Updating deploy step', 'Updated deploy step']);
 
         if (! $response instanceof DeploymentStepResponse) {
             return self::FAILURE;
@@ -88,10 +90,7 @@ final class UpdateDeployStepCommand extends DeploymentCommand
             return self::SUCCESS;
         }
 
-        $this->line('Name: '.$this->terminalValue($response->name));
-        $this->line('Phase: '.$response->phase);
-        $this->line('Command: '.$this->terminalValue($response->command));
-        $this->line("Timeout: {$response->timeoutSeconds} seconds");
+        $this->writeDeployStep($response);
 
         return self::SUCCESS;
     }

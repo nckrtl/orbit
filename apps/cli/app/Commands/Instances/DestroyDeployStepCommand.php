@@ -6,8 +6,12 @@ namespace App\Commands\Instances;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
+use Orbit\Sdk\Responses\Deployments\DeployStepsResponse;
 
 final class DestroyDeployStepCommand extends DeploymentCommand
 {
@@ -15,6 +19,7 @@ final class DestroyDeployStepCommand extends DeploymentCommand
     protected $signature = 'instance:deploy-step:destroy
         {instance : Numeric instance ID}
         {name : Deploy step name}
+        {--yes : Confirm removal without prompting}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -35,10 +40,31 @@ final class DestroyDeployStepCommand extends DeploymentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        if ($this->option('yes') !== true) {
+            $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
+                ['Resolve App instance', 'Loading App instance', 'Loaded App instance']);
+            if (! $instance instanceof AppInstanceResponse) {
+                return self::FAILURE;
+            }
+            $steps = $this->sendWithProgress($connector, new ListInstanceDeployStepsRequest($instanceId), DeployStepsResponse::class,
+                ['Resolve deploy step', 'Loading deploy steps', 'Loaded deploy steps']);
+            if (! $steps instanceof DeployStepsResponse) {
+                return self::FAILURE;
+            }
+            $step = array_find($steps->steps, static fn (DeploymentStepResponse $candidate): bool => $candidate->name === $name);
+            if ($step === null) {
+                return $this->renderGatewayFailure('deploy_step.not_found', 'The deploy step was not found.', $steps->requestId);
+            }
+            if (! $this->confirmAction("Remove deploy step [{$step->name}] from App instance [{$instance->name}] (#{$instance->id})?", 'Deploy step removal cancelled.')) {
+                return self::FAILURE;
+            }
+        }
+
+        $response = $this->sendWithProgress(
             $connector,
             new DestroyInstanceDeployStepRequest($instanceId, $name),
             DeploymentStepResponse::class,
+            ['Remove deploy step', 'Removing deploy step', 'Removed deploy step'],
         );
 
         if (! $response instanceof DeploymentStepResponse) {
@@ -51,7 +77,8 @@ final class DestroyDeployStepCommand extends DeploymentCommand
             return self::SUCCESS;
         }
 
-        $this->line('Destroyed deploy step '.$this->terminalValue($response->name).'.');
+        $this->writeHumanMessage('Destroyed deploy step '.$response->name.'.');
+        $this->writeHumanMessage('Request ID: '.$response->requestId);
 
         return self::SUCCESS;
     }

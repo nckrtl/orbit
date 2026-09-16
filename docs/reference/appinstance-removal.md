@@ -9,6 +9,10 @@ This page tells an operator how Orbit removes one App instance, what `--force` c
 
 Registration transfers an adopted checkout or worktree into App instance ownership. Orbit removes that source through `instance:destroy`; it exposes no separate unregister command or lifecycle.
 
+Removal requires a default-No confirmation naming the App instance and effect, or explicit `--yes`. JSON and noninteractive calls require `--yes`. The separate `--force` option permits the source overrides below and never supplies consent. Decline, cancellation and end of input stop before mutation.
+
+Human output shows waiting feedback, the verified outcome and any remaining removal checkpoints. JSON keeps the bounded removal-progress contract.
+
 ## Choose normal or forced removal
 
 Use normal removal when the development source is clean and its current commit is published:

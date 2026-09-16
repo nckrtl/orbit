@@ -7,6 +7,10 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
+use App\Support\GatewayFailureRenderer;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
@@ -71,40 +75,45 @@ HELP;
             return self::FAILURE;
         }
 
-        $instance = $this->send(
-            $connector,
-            new CloneAppInstanceRequest(
-                candidateId: $candidateId,
-                nodeId: $nodeId,
-                name: $name,
-                previewName: $previewName,
-                branch: $this->stringOption('branch'),
-                sqliteSourcePath: $this->stringOption('sqlite-source-path'),
-            ),
-            AppInstanceResponse::class,
-        );
+        $progress = $this->progressDisplay('Clone App instance');
+        $progress->admit('clone', 'Clone source', 'Cloning source', 'Cloned source');
+        $progress->admit('releases', 'Read selected release', 'Loading selected release', 'Loaded selected release');
+        $instance = null;
+        try {
+            $instance = $progress->during('clone', function () use ($connector, $candidateId, $nodeId, $name, $previewName): AppInstanceResponse {
+                $response = $this->sendOrThrow($connector, new CloneAppInstanceRequest(
+                    candidateId: $candidateId,
+                    nodeId: $nodeId,
+                    name: $name,
+                    previewName: $previewName,
+                    branch: $this->stringOption('branch'),
+                    sqliteSourcePath: $this->stringOption('sqlite-source-path'),
+                ), AppInstanceResponse::class);
+                if (! $response instanceof AppInstanceResponse || $response->route === null || $response->route->domain === '') {
+                    throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response instanceof AppInstanceResponse ? $response->requestId : null);
+                }
 
-        if (! $instance instanceof AppInstanceResponse) {
-            return self::FAILURE;
-        }
+                return $response;
+            });
+            $progress->complete('clone', ProgressState::Success);
+            $releases = $progress->during('releases', fn (): object => $this->sendOrThrow(
+                $connector, new ListAppInstanceReleasesRequest($instance->id), DeploymentReleasesResponse::class,
+            ));
+        } catch (GatewayApiException $exception) {
+            if ($instance instanceof AppInstanceResponse) {
+                $this->writeHumanMessage("App instance [{$instance->name}] (#{$instance->id}) was cloned; the selected release could not be read. Clone request ID: {$instance->requestId}");
+            }
 
-        if ($instance->route === null || $instance->route->domain === '') {
             return $this->renderGatewayFailure(
-                'gateway.invalid_response',
-                'Gateway response is invalid.',
-                $instance->requestId,
+                $exception->errorCode() ?? 'gateway.request_failed', $exception->getMessage(), $exception->requestId(),
+                details: GatewayFailureRenderer::safeDetails($exception->errorCode() ?? 'gateway.request_failed', $exception->details()),
             );
         }
-
-        $releases = $this->send(
-            $connector,
-            new ListAppInstanceReleasesRequest($instance->id),
-            DeploymentReleasesResponse::class,
-        );
-
         if (! $releases instanceof DeploymentReleasesResponse) {
             return self::FAILURE;
         }
+        $progress->complete('releases', ProgressState::Success);
+        $progress->finish('App instance cloned.');
 
         if ($this->option('json') === true) {
             $this->writeJson([
@@ -121,13 +130,14 @@ HELP;
             return self::SUCCESS;
         }
 
-        $this->info("Production AppInstance [{$instance->name}] cloned.");
-        $this->line("Target ID: {$instance->id}");
-        $this->line('Configured branch: '.($instance->selectedBranch ?? '-'));
-        $this->line("Preview domain: {$instance->route->domain}");
-        $this->line('Selected release: '.($releases->selectedRelease ?? '-'));
-        $this->line("Clone request ID: {$instance->requestId}");
-        $this->line("Release request ID: {$releases->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+            'Target ID' => $instance->id,
+            'Configured branch' => $instance->selectedBranch,
+            'Preview domain' => $instance->route->domain,
+            'Selected release' => $releases->selectedRelease,
+            'Clone request ID' => $instance->requestId,
+            'Release request ID' => $releases->requestId,
+        ]));
 
         return self::SUCCESS;
     }

@@ -14,7 +14,11 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
 
+require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
+
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=400');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-deployments-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -27,6 +31,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -37,14 +42,11 @@ describe('retained releases', function (): void {
             ListAppInstanceReleasesRequest::class => deployment_cli_releases_response(),
         ]);
 
-        $this
-            ->artisan('instance:release:list', ['instance' => '17'])
-            ->expectsOutput('Retained releases:')
-            ->expectsOutput('- release-a')
-            ->expectsOutput('- release-b (selected)')
-            ->expectsOutput('Selected release: release-b')
-            ->expectsOutput('Request ID: '.deployment_cli_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:release:list', ['instance' => '17']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'RELEASE SELECTED', 'release-a no', 'release-b yes',
+            'Selected release: release-b', 'Request ID: '.deployment_cli_request_id(),
+        );
 
         expect($mock->getLastRequest())
             ->toBeInstanceOf(ListAppInstanceReleasesRequest::class)

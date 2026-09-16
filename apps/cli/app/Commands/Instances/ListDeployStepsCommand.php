@@ -11,6 +11,8 @@ use Orbit\Sdk\Responses\Deployments\DeployStepsResponse;
 
 final class ListDeployStepsCommand extends DeploymentCommand
 {
+    use InstanceOutput;
+
     #[\Override]
     protected $signature = 'instance:deploy-step:list
         {instance : Numeric instance ID}
@@ -33,10 +35,11 @@ final class ListDeployStepsCommand extends DeploymentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ListInstanceDeployStepsRequest($instanceId),
             DeployStepsResponse::class,
+            ['List deploy steps', 'Loading deploy steps', 'Loaded deploy steps'],
         );
 
         if (! $response instanceof DeployStepsResponse) {
@@ -49,18 +52,8 @@ final class ListDeployStepsCommand extends DeploymentCommand
             return self::SUCCESS;
         }
 
-        if ($response->steps === []) {
-            $this->line('- none');
-        }
-
-        foreach ($response->steps as $step) {
-            $this->line('- Name: '.$this->terminalValue($step->name));
-            $this->line('  Phase: '.$step->phase);
-            $this->line('  Command: '.$this->terminalValue($step->command));
-            $this->line("  Timeout: {$step->timeoutSeconds} seconds");
-        }
-
-        $this->line('Request ID: '.$response->requestId);
+        $this->writeDeploySteps($response->steps);
+        $this->writeHumanMessage('Request ID: '.$response->requestId);
 
         return self::SUCCESS;
     }

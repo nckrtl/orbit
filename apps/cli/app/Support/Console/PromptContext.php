@@ -78,54 +78,59 @@ abstract class PromptContext extends Prompt
             $handlers = [];
             $async = null;
 
-            try {
-                if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal_get_handler')) {
-                    $async = pcntl_async_signals();
+            return InterruptIntent::runIfAbsent(function () use ($mode, $operation, $scopeTerminal, $previousOutput, $previousCursorHidden, &$handlers, &$async, &$failure): mixed {
+                try {
+                    if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal_get_handler')) {
+                        $async = pcntl_async_signals();
 
-                    foreach ([SIGINT, SIGTERM] as $signal) {
-                        $handlers[$signal] = pcntl_signal_get_handler($signal);
-                        pcntl_signal($signal, static function (int $received): never {
-                            throw new ConsoleInterrupted($received);
-                        }, restart_syscalls: false);
+                        foreach ([SIGINT, SIGTERM] as $signal) {
+                            $handlers[$signal] = pcntl_signal_get_handler($signal);
+                            pcntl_signal($signal, static function (int $received): never {
+                                throw new ConsoleInterrupted($received);
+                            }, restart_syscalls: false);
+                        }
+
+                        pcntl_async_signals(true);
                     }
 
-                    pcntl_async_signals(true);
-                }
+                    $result = TableTheme::run($mode, $operation);
+                    InterruptIntent::throwIfPending();
 
-                return TableTheme::run($mode, $operation);
-            } catch (Throwable $exception) {
-                $failure = $exception;
-
-                throw $exception;
-            } finally {
-                $cleanupFailure = null;
-
-                try {
-                    self::restoreTerminal($scopeTerminal);
+                    return $result;
                 } catch (Throwable $exception) {
-                    $cleanupFailure = $exception;
-                }
+                    $failure = $exception;
 
-                try {
-                    if ($previousCursorHidden) {
-                        $previousOutput->write("\e[?25l", false, OutputInterface::OUTPUT_RAW);
+                    throw $exception;
+                } finally {
+                    $cleanupFailure = null;
+
+                    try {
+                        self::restoreTerminal($scopeTerminal);
+                    } catch (Throwable $exception) {
+                        $cleanupFailure = $exception;
                     }
-                } catch (Throwable $exception) {
-                    $cleanupFailure ??= $exception;
-                }
 
-                foreach ($handlers as $signal => $handler) {
-                    pcntl_signal($signal, $handler);
-                }
+                    try {
+                        if ($previousCursorHidden) {
+                            $previousOutput->write("\e[?25l", false, OutputInterface::OUTPUT_RAW);
+                        }
+                    } catch (Throwable $exception) {
+                        $cleanupFailure ??= $exception;
+                    }
 
-                if ($async !== null) {
-                    pcntl_async_signals($async);
-                }
+                    foreach ($handlers as $signal => $handler) {
+                        pcntl_signal($signal, $handler);
+                    }
 
-                if ($failure === null && $cleanupFailure !== null) {
-                    throw $cleanupFailure;
+                    if ($async !== null) {
+                        pcntl_async_signals($async);
+                    }
+
+                    if ($failure === null && $cleanupFailure !== null) {
+                        throw $cleanupFailure;
+                    }
                 }
-            }
+            });
         });
     }
 

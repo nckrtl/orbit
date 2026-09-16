@@ -130,7 +130,7 @@ Partial work reports the verified outcome and remaining failure. A request that 
 
 ## Terminal behavior
 
-Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Handle interruption while an HTTP response is pending, without waiting for the remote operation to finish. A client interruption does not establish that the server stopped or rolled back. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
+Decorated terminals may repaint active output in place. Restore cursor visibility and terminal settings on success, failure, cancellation, and timeout. Handle interruption while an HTTP response is pending, without waiting for the remote operation to finish. SIGINT and SIGTERM remain cancellation (exit 128 plus the signal) even when a request-ID or transport layer wraps the throw. A client interruption does not establish that the server stopped or rolled back. Piped and undecorated output has no escape codes or repeated animation frames; emit readable settled results. Keep color selection separate from input availability and live terminal capability.
 
 When stdin is a pipe, measure the selected output's terminal. Plain output may write one complete waiting line before admitted slow work, followed by its settled outcome. A forced color option cannot turn a pipe into a terminal.
 
@@ -140,7 +140,7 @@ Measure ordinary terminal cells without assuming emoji sequences collapse into o
 
 Tables keep all supplied columns and wrap headers and values within their cells. Their minimum width includes borders, separators, padding, and room for each column's widest indivisible character. Below that width, a read-only table uses a plain labeled record display that preserves every field. An interactive data list reports the required width and stops without selecting a row. It never hides a column or truncates a selector to force a selection into the available space.
 
-Prompt and progress state belongs to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, and terminal settings. A forced color option does not make a pipe repaintable or permit escape codes in machine output.
+Prompt, progress, and interruption state belong to one invocation. Finishing a nested or sequential command restores the surrounding command's prompt configuration, output, cursor, terminal settings, and interrupt intent. A forced color option does not make a pipe repaintable or permit escape codes in machine output.
 
 An interactive prompt without decoration still shows input edits, search results, and the current selection before submission. Append changed prompt frames without escape codes when repainting is unavailable. These user-driven updates are separate from animation. SIGINT and SIGTERM interrupt a waiting prompt, restore its terminal, and stop before the command can use a submitted value.
 

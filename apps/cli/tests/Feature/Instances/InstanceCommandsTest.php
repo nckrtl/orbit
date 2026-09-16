@@ -22,7 +22,11 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Process\Process;
 
+require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
+
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=400');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -71,42 +75,15 @@ describe('instance:register', function (): void {
         expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 
-    it('shows inferred values confirms ownership transfer and registers the source', function (): void {
-        $mockClient = MockClient::global([
-            RegisterAppInstanceRequest::class => registration_mock_response(),
-        ]);
-
-        $this
-            ->artisan('instance:register')
-            ->expectsOutput('Source: /work/acme')
-            ->expectsOutput('Repository: git@github.com:acme/acme.git')
-            ->expectsOutput('App slug: acme')
-            ->expectsOutput('Default branch: main')
-            ->expectsOutput('Root: public')
-            ->expectsConfirmation('Transfer this source to Orbit ownership?', 'yes')
-            ->expectsOutput('Instance [default] is active.')
-            ->expectsOutput('Managed path: /home/orbit/apps/acme/default')
-            ->assertExitCode(0);
-
-        expect($mockClient->getLastRequest())
-            ->toBeInstanceOf(RegisterAppInstanceRequest::class)
-            ->and($mockClient->getLastRequest()?->body()->all())
-            ->toBe([
-                'source_path' => '/work/acme',
-            ]);
-    });
-
-    it('cancels without a request when the operator declines the ownership transfer', function (): void {
-        $mockClient = MockClient::global();
-
-        $this
-            ->artisan('instance:register')
-            ->expectsOutput('Source: /work/acme')
-            ->expectsConfirmation('Transfer this source to Orbit ownership?', 'no')
-            ->expectsOutputToContain('Registration was cancelled.')
-            ->assertExitCode(1);
-
-        expect($mockClient->getLastPendingRequest())->toBeNull();
+    it('registers the source after explicit ownership consent', function (): void {
+        $mockClient = MockClient::global([RegisterAppInstanceRequest::class => registration_mock_response()]);
+        expect(Artisan::call('instance:register', ['--yes' => true]))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'App instance: default', 'Source layout checkout',
+            'Managed path /home/orbit/apps/acme/default',
+        );
+        expect($mockClient->getLastRequest())->toBeInstanceOf(RegisterAppInstanceRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())->toBe(['source_path' => '/work/acme']);
     });
 
     it('registers with --json on an interactive terminal without a prompt or prose', function (): void {
@@ -114,7 +91,7 @@ describe('instance:register', function (): void {
             RegisterAppInstanceRequest::class => registration_mock_response(),
         ]);
 
-        $exitCode = Artisan::call('instance:register', ['--json' => true]);
+        $exitCode = Artisan::call('instance:register', ['--json' => true, '--yes' => true]);
         $output = trim(Artisan::output());
 
         expect($exitCode)->toBe(0);
@@ -145,6 +122,7 @@ describe('instance:register', function (): void {
 
         $this
             ->artisan('instance:register', [
+                '--yes' => true,
                 '--no-interaction' => true,
                 '--json' => true,
             ])
@@ -163,6 +141,7 @@ describe('instance:register', function (): void {
 
         $this
             ->artisan('instance:register', [
+                '--yes' => true,
                 '--app-name' => 'Confirmed',
                 '--app-slug' => 'confirmed',
                 '--default-branch' => 'trunk',
@@ -225,6 +204,7 @@ describe('instance:register', function (): void {
 
         $this
             ->artisan('instance:register', [
+                '--yes' => true,
                 '--app' => '3',
                 '--include-worktrees' => true,
                 '--name' => 'feature',
@@ -281,6 +261,7 @@ describe('credential-bearing registration origins', function (): void {
 
         $this
             ->artisan('instance:register', [
+                '--yes' => true,
                 '--json' => $json,
                 '--no-interaction' => true,
             ])
@@ -328,6 +309,7 @@ describe('credential-bearing registration origins', function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -489,18 +471,18 @@ describe('instance:create', function (): void {
     it('reports the created AppInstance for humans', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 
-        $this
-            ->artisan('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev'])
-            ->expectsOutput('Instance [dev] is active.')
-            ->expectsOutput('Source layout: checkout')
-            ->expectsOutput('Effective root: public')
-            ->expectsOutput('Selected branch: dev')
-            ->expectsOutput('Branch override: -')
-            ->expectsOutput('Migration required: no')
-            ->expectsOutput('Route domain: dev.orbit.test')
-            ->expectsOutput('URL: https://dev.orbit.test')
-            ->expectsOutput('Request ID: '.instance_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'App instance: dev',
+            'Source layout checkout',
+            'Effective root public',
+            'Selected branch dev',
+            'Branch override —',
+            'Migration required no',
+            'Route domain dev.orbit.test',
+            'URL https://dev.orbit.test',
+            'Request ID '.instance_request_id(),
+        );
     });
 
     it('reports production placement identity for humans', function (): void {
@@ -514,12 +496,12 @@ describe('instance:create', function (): void {
         ];
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201, $payload)]);
 
-        $this
-            ->artisan('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev'])
-            ->expectsOutput('Production user: orbit-app-3')
-            ->expectsOutput('Production home: /home/orbit-app-3')
-            ->expectsOutput('Effective root: /home/orbit-app-3/current/public')
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'Production user orbit-app-3',
+            'Production home /home/orbit-app-3',
+            'Effective root /home/orbit-app-3/current/public',
+        );
     });
 });
 
@@ -554,46 +536,12 @@ describe('instance:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('instance:list')
-            ->expectsTable(
-                [
-                    'ID',
-                    'App',
-                    'Node',
-                    'Vite port',
-                    'Name',
-                    'Environment',
-                    'Source layout',
-                    'Root',
-                    'Selected branch',
-                    'Branch override',
-                    'Migration required',
-                    'Route domain',
-                    'URL',
-                    'Status',
-                    'Removal',
-                ],
-                [[
-                    5,
-                    3,
-                    2,
-                    '-',
-                    'dev',
-                    'development',
-                    'checkout',
-                    'public',
-                    'dev',
-                    '-',
-                    'no',
-                    'dev.orbit.test',
-                    'https://dev.orbit.test',
-                    'active',
-                    '-',
-                ]],
-            )
-            ->expectsOutput('Request ID: '.instance_request_id())
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:list'))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'ID APP NODE VITE PORT NAME ENVIRONMENT SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE MIGRATION REQUIRED ROUTE DOMAIN URL STATUS REMOVAL',
+            '5 3 2 — dev development checkout public dev — no dev.orbit.test https://dev.orbit.test active —',
+            'Request ID: '.instance_request_id(),
+        );
     });
 
     it('lists bounded unfinished removal progress for humans and JSON', function (): void {
@@ -605,12 +553,8 @@ describe('instance:list', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('instance:list')
-            ->expectsOutputToContain(
-                'normal 0/1 completed; 1 remaining; runtime_cleanup; failed runtime_cleanup (instance.runtime_interrupted)',
-            )
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:list'))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain('normal 0/1 completed; 1 remaining; runtime_cleanup; failed runtime_cleanup (instance.runtime_interrupted)');
 
         MockClient::destroyGlobal();
         MockClient::global([
@@ -627,6 +571,19 @@ describe('instance:list', function (): void {
 });
 
 describe('instance:update', function (): void {
+    it('shows the accepted deployment branch separately from the unchanged source branch', function (): void {
+        $payload = instance_payload();
+        $payload['environment'] = 'production';
+        $payload['selected_branch'] = 'main';
+        $mock = MockClient::global([
+            UpdateAppInstanceRequest::class => instance_mock_response(payload: $payload),
+        ]);
+
+        expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release/next']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain('Deployment branch release/next Selected branch main');
+        expect($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
+    });
+
     it('updates the deployment branch without sending steps', function (): void {
         $mock = MockClient::global([
             UpdateAppInstanceRequest::class => instance_mock_response(),
@@ -656,24 +613,23 @@ describe('instance:show', function (): void {
     it('shows AppInstance source details for humans', function (): void {
         MockClient::global([ShowAppInstanceRequest::class => instance_mock_response()]);
 
-        $this
-            ->artisan('instance:show', ['instance' => '5'])
-            ->expectsOutput('dev (#5): active')
-            ->expectsOutput('App: 3')
-            ->expectsOutput('Node: 2')
-            ->expectsOutput('Source layout: checkout')
-            ->expectsOutput('Checkout: /home/orbit/apps/orbit-docs/dev')
-            ->expectsOutput('Root override: -')
-            ->expectsOutput('Effective root: public')
-            ->expectsOutput('Selected branch: dev')
-            ->expectsOutput('Branch override: -')
-            ->expectsOutput('Migration required: no')
-            ->expectsOutput('Starting commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-            ->expectsOutput('Route domain: dev.orbit.test')
-            ->expectsOutput('URL: https://dev.orbit.test')
-            ->expectsOutput('Deploy steps:')
-            ->expectsOutput('- none')
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'App instance: dev ID 5 App 3 Node 2 Status active',
+            'App 3',
+            'Node 2',
+            'Source layout checkout',
+            'Checkout /home/orbit/apps/orbit-docs/dev',
+            'Root override —',
+            'Effective root public',
+            'Selected branch dev',
+            'Branch override —',
+            'Migration required no',
+            'Starting commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'Route domain dev.orbit.test',
+            'URL https://dev.orbit.test',
+            'No deploy steps found.',
+        );
     });
 
     it('prints deploy steps in phase and placement order', function (): void {
@@ -686,13 +642,13 @@ describe('instance:show', function (): void {
         ]];
         MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
 
-        $this
-            ->artisan('instance:show', ['instance' => '5'])
-            ->expectsOutput('Deploy steps:')
-            ->expectsOutput('- Name: migrate')
-            ->expectsOutput('  Phase: before_activation')
-            ->expectsOutput('  Timeout: 300 seconds')
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'NAME',
+            'migrate',
+            'before_activation',
+            '300',
+        );
     });
 
     it('shows bounded unfinished removal progress for humans', function (): void {
@@ -700,15 +656,15 @@ describe('instance:show', function (): void {
         MockClient::destroyGlobal();
         MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
 
-        $this
-            ->artisan('instance:show', ['instance' => '5'])
-            ->expectsOutput('dev (#5): removing')
-            ->expectsOutput('Removal mode: forced')
-            ->expectsOutput('Removal progress: 0/1 completed; 1 remaining')
-            ->expectsOutput('Removal step: runtime_cleanup')
-            ->expectsOutput('Removal failed step: runtime_cleanup')
-            ->expectsOutput('Removal error code: instance.runtime_interrupted')
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'App instance: dev ID 5 App 3 Node 2 Status removing',
+            'Removal mode forced',
+            'Removal progress 0/1 completed; 1 remaining',
+            'Removal step runtime_cleanup',
+            'Removal failed step runtime_cleanup',
+            'Removal error code instance.runtime_interrupted',
+        );
     });
 
     it('shows bounded unfinished removal progress as JSON', function (): void {
@@ -732,7 +688,7 @@ describe('instance:destroy', function (): void {
         $mockClient = MockClient::global([DestroyAppInstanceRequest::class => removal_mock_response()]);
 
         $this
-            ->artisan('instance:destroy', ['instance' => '5', '--json' => true])
+            ->artisan('instance:destroy', ['--yes' => true, 'instance' => '5', '--json' => true])
             ->expectsOutput(removal_json())
             ->assertExitCode(0);
 
@@ -742,13 +698,13 @@ describe('instance:destroy', function (): void {
     it('transports explicit force and renders bounded progress', function (): void {
         $mockClient = MockClient::global([DestroyAppInstanceRequest::class => removal_mock_response(force: true)]);
 
-        $this
-            ->artisan('instance:destroy', ['instance' => '5', '--force' => true])
-            ->expectsOutput('Instance [dev] removed.')
-            ->expectsOutput('Mode: forced')
-            ->expectsOutput('Progress: 1/1 completed; 0 remaining')
-            ->expectsOutput('Current step: -')
-            ->assertExitCode(0);
+        expect(Artisan::call('instance:destroy', ['--yes' => true, 'instance' => '5', '--force' => true]))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'Instance [dev] removed.',
+            'Mode forced',
+            'Progress 1/1 completed; 0 remaining',
+            'Current step —',
+        );
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe(['force' => true]);
     });
@@ -770,15 +726,15 @@ describe('instance:destroy', function (): void {
             ),
         ]);
 
-        $this
-            ->artisan('instance:destroy', ['instance' => '5'])
-            ->expectsOutputToContain('AppInstance removal was accepted but remains incomplete.')
-            ->expectsOutput('Mode: normal')
-            ->expectsOutput('Progress: 0/1 completed; 1 remaining')
-            ->expectsOutput('Current step: runtime_cleanup')
-            ->expectsOutput('Failed step: runtime_cleanup')
-            ->expectsOutput('Error code: instance.runtime_interrupted')
-            ->assertExitCode(1);
+        expect(Artisan::call('instance:destroy', ['--yes' => true, 'instance' => '5']))->toBe(1);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'AppInstance removal was accepted but remains incomplete.',
+            'Mode normal',
+            'Progress 0/1 completed; 1 remaining',
+            'Current step runtime_cleanup',
+            'Failed step runtime_cleanup',
+            'Error code instance.runtime_interrupted',
+        );
 
         MockClient::destroyGlobal();
         MockClient::global([
@@ -790,7 +746,7 @@ describe('instance:destroy', function (): void {
         ]);
         $expected = json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $this
-            ->artisan('instance:destroy', ['instance' => '5', '--json' => true])
+            ->artisan('instance:destroy', ['--yes' => true, 'instance' => '5', '--json' => true])
             ->expectsOutput($expected)
             ->assertExitCode(1);
     });
