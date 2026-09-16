@@ -1,0 +1,15 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "nckrtl/orbit-cli-phpacker",
+    "description": "Isolated PHPacker 0.6.4 install for Orbit CLI binary builds. Kept separate because PHPacker requires Symfony 7 and the CLI uses Symfony 8.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.5",
+        "phpacker/phpacker": "^0.6.4"
+    },
+    "config": {
+        "preferred-install": "dist",
+        "sort-packages": true
+    }
+}

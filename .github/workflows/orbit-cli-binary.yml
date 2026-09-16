@@ -1,0 +1,82 @@
+name: Orbit CLI Binary
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x64:
+    name: Build linux-x64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: curl, openssl, mbstring, tokenizer, ctype, filter, fileinfo, phar, zlib
+          tools: composer:v2
+
+      - name: Read canonical version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION="$(bin/orbit-version)"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install CLI dependencies
+        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install isolated PHPacker
+        run: composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
+
+      - name: Build Ubuntu x86_64 binary
+        run: bin/orbit-build-cli-binary linux x64 "${{ steps.version.outputs.value }}"
+
+      - name: Upload Ubuntu x86_64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-linux-x64
+          path: apps/cli/builds/dist/linux/linux-x64
+          if-no-files-found: error
+
+  macos-arm64:
+    name: Build macos-arm64 on mini
+    if: vars.ORBIT_MINI_RUNNER == 'true'
+    runs-on: [self-hosted, macOS, ARM64, mini]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Read canonical version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION="$(bin/orbit-version)"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Install CLI dependencies
+        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install isolated PHPacker
+        run: composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
+
+      - name: Build macOS arm64 binary
+        run: bin/orbit-build-cli-binary mac arm "${{ steps.version.outputs.value }}"
+
+      - name: Upload macOS arm64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-macos-arm64
+          path: apps/cli/builds/dist/mac/mac-arm
+          if-no-files-found: error

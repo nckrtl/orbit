@@ -106,7 +106,8 @@
               "reference/database-role",
               "reference/metrics",
               "reference/herdr-sessions",
-              "reference/local-resolver-overrides"
+              "reference/local-resolver-overrides",
+              "reference/cli-binaries"
             ]
           },
           {
@@ -495,7 +496,8 @@
               "decisions/0075-prune-idle-app-dev-checkout-dependencies",
               "decisions/0076-deliver-features-through-complete-pull-requests",
               "decisions/0077-allow-database-beside-router",
-              "decisions/0078-assign-vite-ports-to-development-appinstances"
+              "decisions/0078-assign-vite-ports-to-development-appinstances",
+              "decisions/0079-publish-orbit-cli-binaries-from-github-actions"
             ]
           }
         ]

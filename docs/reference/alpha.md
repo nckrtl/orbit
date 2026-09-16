@@ -23,11 +23,11 @@ The guides describe the current source contract. A documentation build or an aut
 
 ## Limits
 
-The first trial has a deliberately small environment and workload.
+The first trial has a deliberately small environment and workload. Orbit Ops can also download toolbox binaries from the [CLI binaries](/reference/cli-binaries) contract. That download is outside this trial.
 
 | Area | Trial boundary |
 | --- | --- |
-| Distribution | Full monorepo source at one recorded commit or published release tag; no binary is required. Standalone Composer package publication needs a separate distribution workflow. |
+| Distribution | Full monorepo source at one recorded commit or published release tag; this trial does not require a binary. Standalone Composer package publication needs a separate distribution workflow. |
 | Machines | Ubuntu 26.04 Gateway and managed Nodes; see [requirements](/reference/installation#requirements). |
 | Application | One standalone development Node and one public Git repository with a static page. Application databases and dependency installation need separate application setup. |
 | Network | Private HTTPS through WireGuard and Orbit DNS; no public production launch is implied. |

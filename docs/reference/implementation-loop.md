@@ -9,7 +9,9 @@ The [contributor guide](/contributor-guide) explains architecture, documentation
 
 ## CI and local verification
 
-GitHub CI runs on pull requests, including drafts, and pushes to main. It validates Composer metadata, project quality checks, and affected tests in all five projects. The Docs job also validates the documentation corpus and proposed ADRs. The aggregate `Required checks` job passes only when every project succeeds.
+GitHub CI runs on pull requests, including drafts, and pushes to main. The quality workflow validates Composer metadata, project quality checks, and affected tests in all five projects. The Docs job also validates the documentation corpus and proposed ADRs. The aggregate `Required checks` job passes only when every project succeeds.
+
+When a push or pull request targets `main`, a separate `Orbit CLI Binary` workflow builds the linux-x64 toolbox binary on hosted GitHub Actions. macos-arm64 builds on mini when the runner variable is set. Its artifacts, dest paths, and hosts are the [CLI binaries](/reference/cli-binaries) contract. That workflow is not part of `Required checks`.
 
 Lint establishes document structure, language, links, and generated context consistency. Independent review assesses the architectural proposal and checks that code implements the documented behavior.
 
