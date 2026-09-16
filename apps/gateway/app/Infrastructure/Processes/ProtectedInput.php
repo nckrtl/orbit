@@ -14,6 +14,9 @@ final class ProtectedInput
     /** @var resource|null */
     private mixed $stream;
 
+    /** @var resource|null */
+    private mixed $hold = null;
+
     /** @param resource $stream */
     private function __construct(mixed $stream)
     {
@@ -64,6 +67,20 @@ final class ProtectedInput
         return $input;
     }
 
+    public static function holdOpen(): self
+    {
+        $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+
+        if ($pair === false) {
+            throw new RuntimeException('Unable to create protected process input.');
+        }
+
+        $input = new self($pair[0]);
+        $input->hold = $pair[1];
+
+        return $input;
+    }
+
     /** @return resource */
     public function stream(): mixed
     {
@@ -71,7 +88,9 @@ final class ProtectedInput
             throw new LogicException('Protected process input is closed.');
         }
 
-        if (! rewind($this->stream)) {
+        $metadata = stream_get_meta_data($this->stream);
+
+        if ($metadata['seekable'] && ! rewind($this->stream)) {
             throw new RuntimeException('Unable to read protected process input.');
         }
 
@@ -80,6 +99,11 @@ final class ProtectedInput
 
     public function close(): void
     {
+        if (is_resource($this->hold)) {
+            fclose($this->hold);
+            $this->hold = null;
+        }
+
         if (! is_resource($this->stream)) {
             return;
         }

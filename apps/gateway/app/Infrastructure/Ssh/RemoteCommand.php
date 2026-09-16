@@ -27,6 +27,7 @@ final readonly class RemoteCommand
         public ?Closure $output = null,
         public ?Closure $cancelled = null,
         public ?float $timeout = null,
+        public float $terminateGraceSeconds = 0.1,
     ) {
         if ($arguments === []) {
             throw new InvalidArgumentException('A remote command needs at least one argument.');

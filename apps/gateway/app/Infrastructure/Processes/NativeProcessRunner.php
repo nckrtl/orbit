@@ -91,7 +91,7 @@ final readonly class NativeProcessRunner implements ProcessRunner
                     }
                 } while ($running);
             } catch (Throwable $exception) {
-                $this->terminateProcessGroup($process);
+                $this->terminateProcessGroup($process, $invocation->terminateGraceSeconds);
 
                 throw $exception;
             }
@@ -152,13 +152,16 @@ final readonly class NativeProcessRunner implements ProcessRunner
         $pendingOutput = [];
     }
 
-    private function terminateProcessGroup(SymfonyProcess $process): void
+    private function terminateProcessGroup(SymfonyProcess $process, float $graceSeconds): void
     {
         $pid = $process->getPid();
 
         if (is_int($pid) && $pid > 1 && function_exists('posix_kill')) {
             @posix_kill(-$pid, self::TerminateSignal);
-            usleep(100_000);
+            $deadline = microtime(true) + max(0.0, $graceSeconds);
+            while (microtime(true) < $deadline && @posix_kill(-$pid, 0)) {
+                usleep(10_000);
+            }
             @posix_kill(-$pid, self::KillSignal);
         }
 

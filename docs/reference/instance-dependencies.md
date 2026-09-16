@@ -123,6 +123,8 @@ orbit instance:dependencies:update --app=commander.test
 
 Orbit runs `composer update` for a root Composer project, then `vp update` for a root JavaScript project, as the instance's runtime user. Vite+ selects the project's supported package manager: npm, pnpm, or Bun. Both regular and development dependencies are included. An absent ecosystem is skipped.
 
+The Composer step uses a fixed argv in the recorded project root, including roots that contain spaces. It includes `require-dev` and leaves declared constraints unchanged. It owns the remote Composer process group, enforces a remote deadline, terminates and waits for that owned work on cancellation or timeout, discards process text, and reports cancellation or failure without claiming rollback. Local cancellation still SIGKILLs the complete process group after a bounded grace period, even if the original process has already exited.
+
 An update respects the existing declared version constraints. Changing those constraints is an upgrade and is outside this feature. The command has no `--latest` or `--all` update mode. A successful update can retain a package version when its constraints prevent movement.
 
 Orbit validates target, source layout, and package-manager support before package mutation. Yarn selection rejects the entire update before either Composer or JavaScript package work starts. It serializes managed updates for the same instance, bounds command execution, and reports verified progress. It does not discard existing source changes, commit, push, test, or deploy automatically.

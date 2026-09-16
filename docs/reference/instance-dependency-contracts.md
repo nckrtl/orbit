@@ -128,7 +128,7 @@ Publication reloads and locks the instance inside the transaction. An instance m
 
 These values do not sanitize raw input or authorize publication. Parsers and collectors validate supported formats and layouts, remove credentials before constructing provenance, and reject incomplete graphs. Stable error codes carry failure information; raw process output and source contents do not belong in results.
 
-The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
+The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. The Composer update executor owns bounded development Composer mutation and absent-ecosystem skips. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
 
 ## Managed source collection
 
@@ -153,6 +153,20 @@ The collection identity covers every inspected file and the selected directory. 
 The action selects and parses Composer and JavaScript independently. Each successful ecosystem replaces its graph atomically; a failed ecosystem retains its last observation as stale. Verified absence clears usage only after both source inspections succeed. The action compares the complete collection identity before publication and checks the instance source fields again inside each publication transaction. A changed release, checkout, Node placement, migration state, or removal cannot publish the earlier graph.
 
 An unavailable instance fails before collection. Instance lock contention returns `dependencies.operation_busy` with retained observations and does not append an attempt outside the lock. Other collection and parse failures record their stable codes. Source changes between inspections fail both ecosystems with `dependencies.source_changed`. These checks observe source at a point in time; they do not prevent external edits after the final inspection. Target authorization and HTTP or CLI adapters remain caller responsibilities.
+
+## Composer update executor
+
+`UpdateComposerDependenciesAction` runs a bounded Composer update for one development App instance root. It returns a Composer `DependencyUpdateStepResult`. Shared update preflight, instance locks, JavaScript mutation, and post-update scanning belong to the later coordinator.
+
+The action refuses production before SSH with `dependencies.production_update_forbidden` and `mayHaveMutated=false`. It uses the recorded checkout path and the owning Node user, never the public web root. Invalid environment, source layout, migration-required state, or identity fails with `dependencies.unsafe_source` and does not start Composer.
+
+A fixed Python probe inspects `composer.json` and `composer.lock` as regular, non-symlink root files. Verified absence of both files returns `absent` without Composer. One file without the other returns `dependencies.incomplete_source`. Unreadable or unsafe source uses the same stable collection codes. The probe is limited to 30 seconds and 64 KiB.
+
+When both files are present, the action runs a fixed supervisor: `/usr/bin/setsid --wait /usr/bin/bash` with a code-owned program, the recorded root, and a 600-second deadline. That program starts `/usr/bin/composer --working-dir ROOT update --no-interaction --no-ansi --no-progress --no-audit` and owns Composer plus its child processes. Recorded roots may contain spaces; the supervisor keeps the root as one argument. It does not pass `--no-dev`, `--latest`, package names, or constraint rewrites. Regular and `require-dev` packages therefore update together within the declared ranges.
+
+The supervisor owns Composer and its children and enforces a 600-second remote deadline. It discards process text. Local SSH is limited to 610 seconds and 8 MiB. On cancellation or timeout, the supervisor terminates the owned process group, including when the SSH client disconnects, and waits for those processes to exit. Local SSH then sends SIGTERM to its process group, waits up to two seconds while any member of that group remains, and SIGKILLs the group even if the original process has already exited before the step returns.
+
+A successful Composer exit returns `succeeded` with `mayHaveMutated=true`. That flag allows mutation; it does not prove files changed, and it does not claim rollback. Nonzero exit, truncation, or unexpected transport failure returns `dependencies.update_failed` with `mayHaveMutated=true`. Cancellation and timeout before Composer starts keep `mayHaveMutated=false`; after Composer starts they return `dependencies.update_cancelled` or `dependencies.update_timeout` with `mayHaveMutated=true`. Results never claim that source was restored.
 
 ## Single-instance HTTP API
 
