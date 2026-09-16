@@ -128,7 +128,9 @@ Publication reloads and locks the instance inside the transaction. An instance m
 
 These values do not sanitize raw input or authorize publication. Parsers and collectors validate supported formats and layouts, remove credentials before constructing provenance, and reject incomplete graphs. Stable error codes carry failure information; raw process output and source contents do not belong in results.
 
-The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. The Composer update executor owns bounded development Composer mutation and absent-ecosystem skips. The Vite+ npm update adapter owns bounded development npm mutation through a verified Vite+ installation and its absent-ecosystem skips; other JavaScript managers and Yarn refusal remain outside that adapter. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
+The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. The Composer update executor owns bounded development Composer mutation and absent-ecosystem skips. The Vite+ npm update adapter owns bounded development npm mutation through a verified Vite+ installation and its absent-ecosystem skips.
+
+The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. Bun mutation remains a later adapter. Yarn refusal for a whole update remains with later orchestration. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
 
 ## Managed source collection
 
@@ -199,6 +201,36 @@ The update runs a fixed supervisor with the recorded root, the verified `vp` pat
 The option keeps declared ranges unchanged even when npm project, user, or environment configuration sets `save=true`. It still writes the updated lockfile and installs in-range packages. Process ownership, deadline, termination, output bounds, cancellation, and result codes match the Composer executor.
 
 Vite+ can add `devEngines.packageManager` manager-selection metadata to the manifest; dependency constraints remain unchanged. When both npm locks exist, npm prefers `npm-shrinkwrap.json`.
+
+## Vite+ pnpm update adapter
+
+`UpdatePnpmDependenciesAction` runs a bounded Vite+ update for one development App instance root whose JavaScript manager is pnpm. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It reuses the shared Vite+ supervisor from the npm adapter. Shared update preflight, instance locks, Composer mutation, Bun mutation, Yarn refusal, and post-update scanning belong to the later coordinator.
+
+Production refusal, identity checks, safe source handling, execution bounds, and result semantics match the Composer and npm update executors. Verified absence of a pnpm project returns `absent` without Vite+.
+
+### pnpm project probe
+
+A fixed Python probe inspects root files without executing them or running a package manager. It uses the same manager-family signals as collection, including `packageManager`, `devEngines.packageManager`, lockfiles, `.pnpmfile.cjs`, `pnpmfile.cjs`, `bunfig.toml`, and Yarn configuration files.
+
+A Yarn signal fails with `dependencies.unsupported_format`. `pnpm-workspace.yaml` or a `workspaces` field fails with `dependencies.unsupported_layout`. Conflicting manager families fail with `dependencies.ambiguous_manager`. Duplicate object keys in `package.json`, including escaped-equivalent keys, fail with `dependencies.invalid_manifest` before manager selection.
+
+A pnpm lock without `package.json`, or a pnpm manager declaration or pnpmfile without `pnpm-lock.yaml`, is `dependencies.incomplete_source`. Vite+ 0.3.0 selects pnpm from `packageManager`, `devEngines.packageManager`, or `pnpm-lock.yaml`. Vite+ defaults projects without a manager signal to pnpm, so a `package.json` with no JavaScript family signal and no pnpm lock is incomplete for this adapter.
+
+Other manifests with only npm or Bun locks are absent. An unreadable or malformed manifest fails with `dependencies.invalid_manifest`. The probe is limited to 45 seconds and 64 KiB.
+
+### Verified pnpm Vite+ delegation
+
+For a present pnpm project, the probe resolves a verified Vite+ binary from the same Orbit-managed installation layouts as the npm adapter, in this order: `/opt/orbit/vite-plus/bin/vp` with `VP_HOME=/opt/orbit/vite-plus`, `$HOME/.vite-plus/bin/vp`, then `$HOME/.local/share/vite-plus/bin/vp`. It also accepts each home's `current/bin/vp` fallback. It reads the version through `vp --version`, bounded to 10 seconds. The probe reports the resolved path and parsed version. The action supports only verified Vite+ versions for pnpm delegation; version 0.3.0 is verified, and further versions require their own verification before being added.
+
+A missing, unexecutable, unreadable, or unverified Vite+ installation fails with `dependencies.unsupported_delegation` before package mutation. The action validates the reported path against those managed homes, `/opt/orbit/vite-plus/bin/vp`, and the published launcher `/usr/local/bin/vp`. It rejects malformed receipts with `dependencies.unreadable_source`. The `/opt/orbit/vite-plus` layout exports `VP_HOME=/opt/orbit/vite-plus` for both the version probe and the update. The action never substitutes a raw pnpm invocation for Vite+.
+
+### Constrained pnpm update
+
+The update runs the shared Vite+ supervisor with the recorded root, the verified `vp` path, and a 600-second deadline. The program changes to the root and runs `vp update --no-save` with no package names and no pass-through arguments. It does not pass `--latest`, `-D`, `-P`, `--no-optional`, `--recursive`, `--filter`, `--global`, `--interactive`, or `--workspace`.
+
+`--no-save` is a verified Vite+ 0.3.0 option and a pnpm option: do not update the ranges in `package.json`. Vite+ 0.3.0 then selects pnpm and updates regular and development dependencies within the declared constraints. It still writes the updated lockfile and installs in-range packages. Process ownership, deadline, termination, output bounds, cancellation, and result codes match the Composer and npm executors.
+
+Vite+ can add `devEngines.packageManager` manager-selection metadata to the manifest; dependency constraints remain unchanged.
 
 ## Single-instance HTTP API
 
