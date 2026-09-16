@@ -73,6 +73,14 @@ final readonly class AppDevCaddyConfigRenderer
                 CADDY;
         }
 
+        if ($site->isLocalHttpProxy()) {
+            return <<<CADDY
+                reverse_proxy {$site->localHttpUpstream} {
+                    flush_interval -1
+                }
+                CADDY;
+        }
+
         if ($site->isProxy()) {
             $upstreams = implode(' ', array_map(
                 static fn (string $address): string => str_starts_with($address, 'unix/')

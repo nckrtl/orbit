@@ -16,4 +16,5 @@ enum DoctorFamily: string
     case Firewall = 'firewall';
     case Herdr = 'herdr';
     case DatabaseConnection = 'database_connection';
+    case Route = 'route';
 }

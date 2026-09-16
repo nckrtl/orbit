@@ -28,6 +28,7 @@ final readonly class AppDevSite
         public bool $preserveForwardedIdentity = false,
         public ?string $localUnixUpstream = null,
         public ?int $vitePort = null,
+        public ?string $localHttpUpstream = null,
     ) {}
 
     public function poolName(): string
@@ -50,6 +51,11 @@ final readonly class AppDevSite
         $scope = $this->certificateScope ?? $this->scope;
 
         return "/etc/caddy/orbit-certificates/{$scope}/current";
+    }
+
+    public function isLocalHttpProxy(): bool
+    {
+        return $this->localHttpUpstream !== null && $this->localHttpUpstream !== '';
     }
 
     public function isProxy(): bool

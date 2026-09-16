@@ -6,8 +6,13 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\CustomProxyProcessListener;
+use App\Domain\Routes\CustomProxyRouteProjector;
+use App\Domain\Routes\CustomProxyUpstream;
+use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteDomain;
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -18,22 +23,32 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Route;
+use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class CreateRouteAction
 {
     public function __construct(
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
+        private CustomProxyRouteProjector $customProxies,
+        private CustomProxyProcessListener $listeners = new CustomProxyProcessListener,
     ) {}
 
     /** @return array{route: Route, created: bool} */
     public function execute(CreateRouteData $data): array
     {
         $domain = RouteDomain::validate($data->domain);
+        ReservedPrivateHostname::assertAvailable($domain);
+
+        if ($data->isCustomProxy()) {
+            return $this->persistCustomProxy($data, $domain);
+        }
 
         return $this->persistExplicit($data, $domain);
     }
@@ -110,8 +125,153 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
+    private function persistCustomProxy(CreateRouteData $data, string $domain): array
+    {
+        if ($data->nodeId === null || $data->appId !== null || $data->appInstanceId !== null || $data->clusterId !== null) {
+            throw new ResourceOperationException(
+                errorCode: 'route.scope_required',
+                message: 'A custom proxy Route requires a serving Node and no App target.',
+            );
+        }
+
+        if (($data->upstream === null) === ($data->processId === null)) {
+            throw new ResourceOperationException(
+                errorCode: 'route.upstream_invalid',
+                message: 'Supply exactly one custom proxy upstream or Process.',
+            );
+        }
+
+        $node = Node::query()->findOrFail($data->nodeId);
+
+        if ($node->status !== LifecycleStatus::Active) {
+            throw new ResourceOperationException('route.node_inactive', 'The Route Node must be active.', 409);
+        }
+
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+            throw new ResourceOperationException(
+                errorCode: 'route.node_inactive',
+                message: 'The Route Node must have a managed WireGuard address.',
+                status: 409,
+            );
+        }
+
+        $process = null;
+        $upstream = $data->upstream === null
+            ? null
+            : CustomProxyUpstream::parse($data->upstream);
+
+        if ($data->processId !== null) {
+            $process = Process::query()->findOrFail($data->processId);
+
+            if ($process->owner_type !== Node::class || $process->owner_id !== $node->id) {
+                throw new ResourceOperationException(
+                    errorCode: 'route.process_conflict',
+                    message: "Process [{$process->name}] is not a Node Process on the serving Node.",
+                    status: 409,
+                );
+            }
+
+            $upstream = $this->listeners->resolve($process);
+        }
+
+        assert($upstream instanceof CustomProxyUpstream);
+
+        $existing = Route::query()->where('domain', $domain)->first();
+
+        if ($existing instanceof Route) {
+            if (! $existing->isCustomProxy()) {
+                throw new ResourceOperationException(
+                    errorCode: 'route.domain_conflict',
+                    message: "Route domain [{$domain}] is already owned.",
+                    status: 409,
+                );
+            }
+
+            $this->assertIdenticalCustomProxyRetry($existing, $node->id, $process?->id, $upstream);
+
+            return ['route' => $existing->load(['targets', 'customProxy']), 'created' => false];
+        }
+
+        try {
+            /** @var Route $route */
+            $route = DB::transaction(function () use ($domain, $node, $process, $upstream): Route {
+                $route = Route::query()->create([
+                    'kind' => RouteKind::CustomProxy,
+                    'app_id' => null,
+                    'node_id' => $node->id,
+                    'cluster_id' => null,
+                    'generation_basis_node_id' => null,
+                    'domain' => $domain,
+                    'provenance' => RouteProvenance::Explicit,
+                    'publication' => RoutePublication::Private,
+                    'status' => RouteStatus::Pending,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+                $route->customProxy()->create([
+                    'node_id' => $node->id,
+                    'process_id' => $process?->id,
+                    'upstream' => $upstream->url(),
+                ]);
+
+                return $route->load(['targets', 'customProxy']);
+            });
+        } catch (QueryException $exception) {
+            throw $this->conflictFromCreateFailure($domain, null, $exception);
+        }
+
+        try {
+            $this->customProxies->converge($route);
+            $route->update(['status' => RouteStatus::Active]);
+        } catch (Throwable $exception) {
+            $route->update([
+                'status' => RouteStatus::Failed,
+                'failed_step' => 'projection',
+                'error_code' => property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+                    ? $exception->errorCode
+                    : 'route.projection_failed',
+            ]);
+
+            throw $exception;
+        }
+
+        return ['route' => $route->refresh()->load(['targets', 'customProxy']), 'created' => true];
+    }
+
+    private function assertIdenticalCustomProxyRetry(
+        Route $existing,
+        int $nodeId,
+        ?int $processId,
+        CustomProxyUpstream $upstream,
+    ): void {
+        $existing->load('customProxy');
+        $proxy = $existing->customProxy;
+
+        if (
+            ! $existing->isCustomProxy()
+            || ! $proxy instanceof RouteCustomProxy
+            || $existing->node_id !== $nodeId
+            || $proxy->process_id !== $processId
+            || $proxy->upstream !== $upstream->url()
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'route.retry_conflict',
+                message: 'The Route domain already exists with conflicting intent.',
+                status: 409,
+            );
+        }
+    }
+
+    /** @return array{route: Route, created: bool} */
     private function persistExplicit(CreateRouteData $data, string $domain): array
     {
+        if ($data->appId === null) {
+            throw new ResourceOperationException(
+                errorCode: 'route.scope_required',
+                message: 'An App Route requires an App.',
+            );
+        }
+
         OrbitApp::query()->findOrFail($data->appId);
         $target = $data->appInstanceId === null
             ? null
@@ -137,7 +297,7 @@ final readonly class CreateRouteAction
         if ($existing instanceof Route) {
             $this->assertIdenticalRetry($existing, $data, $nodeId, $clusterId, $target);
 
-            return ['route' => $existing->load('targets'), 'created' => false];
+            return ['route' => $existing->load(['targets', 'customProxy']), 'created' => false];
         }
 
         return [
@@ -182,6 +342,7 @@ final readonly class CreateRouteAction
                 }
 
                 $route = Route::query()->create([
+                    'kind' => RouteKind::App,
                     'app_id' => $appId,
                     'node_id' => $nodeId,
                     'cluster_id' => $clusterId,
@@ -203,7 +364,7 @@ final readonly class CreateRouteAction
                         ]);
                 }
 
-                return $route->load('targets');
+                return $route->load(['targets', 'customProxy']);
             });
 
             return $route;
@@ -266,6 +427,14 @@ final readonly class CreateRouteAction
     ): void {
         $existing->load('targets');
         $existingTargetId = $existing->targets->first()?->app_instance_id;
+
+        if ($existing->isCustomProxy()) {
+            throw new ResourceOperationException(
+                errorCode: 'route.domain_conflict',
+                message: "Route domain [{$existing->domain}] is already owned.",
+                status: 409,
+            );
+        }
 
         if (
             $existing->app_id !== $data->appId

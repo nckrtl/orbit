@@ -21,7 +21,7 @@ final readonly class ListRoutesAction
         $accessible = $this->access->accessibleNodeIds($consumer);
 
         return Route::query()
-            ->with('targets')
+            ->with(['targets', 'customProxy'])
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->where(

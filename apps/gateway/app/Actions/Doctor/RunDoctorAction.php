@@ -33,6 +33,7 @@ final readonly class RunDoctorAction
         private FirewallDoctorProbe $firewallProbe,
         private HerdrSessionDoctorProbe $herdrProbe,
         private DatabaseConnectionDoctorProbe $databaseConnectionProbe,
+        private RouteDoctorProbe $routeProbe,
     ) {}
 
     /** @param list<DoctorFamily> $families */
@@ -130,6 +131,7 @@ final readonly class RunDoctorAction
             DoctorFamily::Firewall => $this->firewallProbe,
             DoctorFamily::Herdr => $this->herdrProbe,
             DoctorFamily::DatabaseConnection => $this->databaseConnectionProbe,
+            DoctorFamily::Route => $this->routeProbe,
         };
     }
 }
