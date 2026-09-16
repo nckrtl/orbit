@@ -332,6 +332,7 @@ function clone_cli_payload(): array
         'status' => 'active',
         'route' => [
             'id' => 41,
+            'kind' => 'app',
             'app_id' => 3,
             'node_id' => 7,
             'cluster_id' => null,
@@ -344,6 +345,8 @@ function clone_cli_payload(): array
             'failed_step' => null,
             'error_code' => null,
             'target' => ['id' => 51, 'app_instance_id' => 29, 'position' => 1],
+            'process_id' => null,
+            'upstream' => null,
         ],
         'domain' => 'shop.com.prod.orbit',
         'url' => 'https://shop.com.prod.orbit',

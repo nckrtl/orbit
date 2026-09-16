@@ -58,12 +58,23 @@ abstract class RouteCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Route: {$route->domain}", [
+        $details = [
             'ID' => $route->id,
+            'Kind' => $route->kind,
             'App' => $route->appId,
             'Provenance' => $route->provenance,
             'Scope' => $route->clusterId === null ? "Node {$route->nodeId}" : "Cluster {$route->clusterId}",
-            'Targets' => $this->targetList($route),
+        ];
+
+        if ($route->kind === 'custom_proxy') {
+            $details['Upstream'] = $route->upstream;
+            $details['Process'] = $route->processId;
+        } else {
+            $details['Targets'] = $this->targetList($route);
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Route: {$route->domain}", [
+            ...$details,
             'Publication' => $route->publication,
             'Public publication' => $route->publicPublication,
             'Status' => $route->status,
@@ -82,6 +93,12 @@ abstract class RouteCommand extends GatewayCommand
 
     protected function targetList(RouteResponse $route): string
     {
+        if ($route->kind === 'custom_proxy') {
+            $upstream = is_string($route->upstream) && $route->upstream !== '' ? $route->upstream : '—';
+
+            return $route->processId === null ? $upstream : "{$upstream} (process {$route->processId})";
+        }
+
         $targets = $route->targets !== [] ? $route->targets : array_filter([$route->target]);
 
         return $targets === [] ? '—' : implode(', ', array_map(

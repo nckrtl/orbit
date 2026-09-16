@@ -19,12 +19,14 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        private readonly int $appId,
+        private readonly ?int $appId,
         private readonly string $domain,
         private readonly string $publication,
         private readonly ?int $appInstanceId = null,
         private readonly ?int $nodeId = null,
         private readonly ?int $clusterId = null,
+        private readonly ?string $upstream = null,
+        private readonly ?int $processId = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -48,6 +50,8 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
                 'app_instance_id' => $this->appInstanceId,
                 'node_id' => $this->nodeId,
                 'cluster_id' => $this->clusterId,
+                'upstream' => $this->upstream,
+                'process_id' => $this->processId,
             ],
             static fn (int|string|null $value): bool => $value !== null,
         );

@@ -75,6 +75,7 @@ it('accepts every family and all statuses', function (): void {
         'firewall',
         'herdr',
         'database_connection',
+        'route',
     ]);
 
     $data = doctor_report_data();

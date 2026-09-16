@@ -156,6 +156,7 @@ function clone_instance_envelope(): array
             'status' => 'active',
             'route' => [
                 'id' => 41,
+                'kind' => 'app',
                 'app_id' => 3,
                 'node_id' => 7,
                 'cluster_id' => null,
@@ -175,6 +176,8 @@ function clone_instance_envelope(): array
                     'app_instance_id' => 29,
                     'position' => 1,
                 ],
+                'process_id' => null,
+                'upstream' => null,
             ],
             'domain' => 'shop.com.prod.orbit',
             'url' => 'https://shop.com.prod.orbit',

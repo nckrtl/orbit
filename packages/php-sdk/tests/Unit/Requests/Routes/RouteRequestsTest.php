@@ -41,6 +41,35 @@ it('preserves targetless Node and Cluster scope transport', function (): void {
         ->not->toHaveKey('node_id');
 });
 
+it('omits null App and optional custom proxy fields from create transport', function (): void {
+    expect(new CreateRouteRequest(
+        appId: null,
+        domain: 'executor.orbit',
+        publication: 'private',
+        nodeId: 4,
+        upstream: 'http://127.0.0.1:4788',
+    )->body()->all())
+        ->toBe([
+            'domain' => 'executor.orbit',
+            'publication' => 'private',
+            'node_id' => 4,
+            'upstream' => 'http://127.0.0.1:4788',
+        ])
+        ->and(new CreateRouteRequest(
+            appId: null,
+            domain: 'executor.orbit',
+            publication: 'private',
+            nodeId: 4,
+            processId: 12,
+        )->body()->all())
+        ->toBe([
+            'domain' => 'executor.orbit',
+            'publication' => 'private',
+            'node_id' => 4,
+            'process_id' => 12,
+        ]);
+});
+
 it('maps bounded Route responses and list responses', function (): void {
     $mock = new MockClient([
         ShowRouteRequest::class => MockResponse::make(route_envelope()),
@@ -198,6 +227,7 @@ function route_data(): array
 {
     return [
         'id' => 11,
+        'kind' => 'app',
         'app_id' => 3,
         'node_id' => 4,
         'cluster_id' => null,
@@ -215,6 +245,8 @@ function route_data(): array
         'target_set_step' => null,
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
         'targets' => [['id' => 12, 'app_instance_id' => 7, 'position' => 0]],
+        'process_id' => null,
+        'upstream' => null,
     ];
 }
 

@@ -9,6 +9,8 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
 use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\ListRoutesRequest;
@@ -61,6 +63,185 @@ it('creates target and targetless Routes while transporting policy values', func
     ])->assertExitCode(0);
 
     expect($mock->getLastRequest()?->body()->all())->toHaveKey('node_id', 4);
+});
+
+it('creates a custom proxy Route from a node name and upstream', function (): void {
+    $mock = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [route_cli_node_payload()],
+            'meta' => ['request_id' => route_request_id()],
+        ]),
+        CreateRouteRequest::class => MockResponse::make([
+            'data' => custom_proxy_route_payload(),
+            'meta' => ['request_id' => route_request_id()],
+        ], 201),
+    ]);
+
+    $this->artisan('route:create', [
+        'app' => 'executor.orbit',
+        '--node' => 'beast',
+        '--upstream' => 'http://127.0.0.1:4788',
+        '--json' => true,
+    ])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'domain' => 'executor.orbit',
+        'publication' => 'private',
+        'node_id' => 4,
+        'upstream' => 'http://127.0.0.1:4788',
+    ]);
+});
+
+it('creates a custom proxy Route from a numeric node and Process name', function (): void {
+    $mock = MockClient::global([
+        ListProcessesRequest::class => MockResponse::make([
+            'data' => [route_cli_process_payload()],
+            'meta' => ['request_id' => route_request_id()],
+        ]),
+        CreateRouteRequest::class => MockResponse::make([
+            'data' => [...custom_proxy_route_payload(), 'process_id' => 12, 'upstream' => 'http://127.0.0.1:4788'],
+            'meta' => ['request_id' => route_request_id()],
+        ], 201),
+    ]);
+
+    $this->artisan('route:create', [
+        'app' => 'executor.orbit',
+        '--node' => '4',
+        '--process' => 'executor',
+        '--json' => true,
+    ])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'domain' => 'executor.orbit',
+        'publication' => 'private',
+        'node_id' => 4,
+        'process_id' => 12,
+    ]);
+});
+
+it('resolves a numeric Process ID without listing Processes', function (): void {
+    $mock = MockClient::global([
+        CreateRouteRequest::class => MockResponse::make([
+            'data' => [...custom_proxy_route_payload(), 'process_id' => 12],
+            'meta' => ['request_id' => route_request_id()],
+        ], 201),
+    ]);
+
+    $this->artisan('route:create', [
+        'app' => 'executor.orbit',
+        '--node' => '4',
+        '--process' => '12',
+    ])->assertExitCode(0);
+
+    expect($mock->getLastRequest())
+        ->toBeInstanceOf(CreateRouteRequest::class)
+        ->and($mock->getLastRequest()?->body()->all())
+        ->toBe([
+            'domain' => 'executor.orbit',
+            'publication' => 'private',
+            'node_id' => 4,
+            'process_id' => 12,
+        ]);
+});
+
+it('rejects custom proxy create shapes before transport', function (array $arguments, string $code): void {
+    $mock = MockClient::global();
+
+    $this
+        ->artisan('route:create', $arguments)
+        ->expectsOutputToContain($code)
+        ->assertExitCode(1);
+
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'second positional' => [
+        [
+            'app' => 'executor.orbit',
+            'domain' => 'other.orbit',
+            '--node' => 'beast',
+            '--upstream' => 'http://127.0.0.1:4788',
+            '--json' => true,
+        ],
+        'route.scope_required',
+    ],
+    'missing node' => [
+        [
+            'app' => 'executor.orbit',
+            '--upstream' => 'http://127.0.0.1:4788',
+            '--json' => true,
+        ],
+        'route.scope_required',
+    ],
+    'target mix' => [
+        [
+            'app' => 'executor.orbit',
+            '--node' => '4',
+            '--upstream' => 'http://127.0.0.1:4788',
+            '--target' => '7',
+            '--json' => true,
+        ],
+        'route.scope_required',
+    ],
+    'cluster mix' => [
+        [
+            'app' => 'executor.orbit',
+            '--node' => '4',
+            '--upstream' => 'http://127.0.0.1:4788',
+            '--cluster' => '5',
+            '--json' => true,
+        ],
+        'route.scope_required',
+    ],
+    'public publication' => [
+        [
+            'app' => 'executor.orbit',
+            '--node' => '4',
+            '--upstream' => 'http://127.0.0.1:4788',
+            '--publication' => 'public',
+            '--json' => true,
+        ],
+        'route.publication_invalid',
+    ],
+    'both selectors' => [
+        [
+            'app' => 'executor.orbit',
+            '--node' => '4',
+            '--upstream' => 'http://127.0.0.1:4788',
+            '--process' => 'executor',
+            '--json' => true,
+        ],
+        'route.upstream_invalid',
+    ],
+]);
+
+it('renders custom proxy kind and upstream instead of App targets', function (): void {
+    $original = getenv('COLUMNS');
+    putenv('COLUMNS=200');
+    $payload = custom_proxy_route_payload();
+    MockClient::global([
+        ListRoutesRequest::class => MockResponse::make([
+            'data' => [$payload],
+            'meta' => ['request_id' => route_request_id()],
+        ]),
+        ShowRouteRequest::class => MockResponse::make([
+            'data' => $payload,
+            'meta' => ['request_id' => route_request_id()],
+        ]),
+    ]);
+
+    try {
+        expect(Artisan::call('route:list'))->toBe(0);
+        expect(Artisan::output())
+            ->toContain('KIND', 'custom_proxy', 'http://127.0.0.1:4788')
+            ->not->toContain('712');
+
+        expect(Artisan::call('route:show', ['route' => '11']))->toBe(0);
+        expect(Artisan::output())
+            ->toContain('Kind', 'custom_proxy', 'Upstream', 'http://127.0.0.1:4788')
+            ->not->toContain('Targets');
+    } finally {
+        putenv($original === false ? 'COLUMNS' : 'COLUMNS='.$original);
+    }
 });
 
 it('transports explicit private and public publication intents unchanged', function (string $publication): void {
@@ -366,6 +547,7 @@ function route_payload(): array
 {
     return [
         'id' => 11,
+        'kind' => 'app',
         'app_id' => 3,
         'node_id' => 4,
         'cluster_id' => null,
@@ -383,12 +565,80 @@ function route_payload(): array
         'target_set_step' => null,
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
         'targets' => [['id' => 12, 'app_instance_id' => 7, 'position' => 0]],
+        'process_id' => null,
+        'upstream' => null,
     ];
 }
 
 function route_request_id(): string
 {
     return '0198e15d-16c4-7855-8eb2-182b53ad28ba';
+}
+
+/** @return array<string, mixed> */
+function custom_proxy_route_payload(): array
+{
+    return [
+        ...route_payload(),
+        'kind' => 'custom_proxy',
+        'app_id' => null,
+        'target' => null,
+        'targets' => [],
+        'process_id' => null,
+        'upstream' => 'http://127.0.0.1:4788',
+        'domain' => 'executor.orbit',
+    ];
+}
+
+/** @return array<string, mixed> */
+function route_cli_node_payload(): array
+{
+    return [
+        'id' => 4,
+        'name' => 'beast',
+        'status' => 'active',
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '203.0.113.7',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.7',
+        'wireguard_public_key' => 'key',
+        'wireguard_endpoint_override' => null,
+        'dns_server_override' => null,
+        'ssh_host_fingerprint' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'roles' => [],
+    ];
+}
+
+/** @return array<string, mixed> */
+function route_cli_process_payload(): array
+{
+    return [
+        'id' => 12,
+        'target_type' => 'node',
+        'target_id' => 4,
+        'name' => 'executor',
+        'runtime' => 'docker',
+        'working_directory' => '/app',
+        'runtime_config' => [
+            'image' => 'executor:latest',
+            'command' => ['executor'],
+            'environment' => [],
+            'ports' => ['127.0.0.1:4788:80/tcp'],
+            'volumes' => [],
+        ],
+        'restart_policy' => 'unless-stopped',
+        'keep_alive' => false,
+        'desired_state' => 'running',
+        'status' => 'active',
+        'runtime_status' => 'running',
+        'failed_step' => null,
+        'error_code' => null,
+    ];
 }
 
 it('resolves destructive subjects but refuses automation without independent consent', function (
