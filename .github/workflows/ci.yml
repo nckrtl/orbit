@@ -86,8 +86,31 @@ jobs:
       - name: Validate Composer metadata
         run: composer validate --strict
 
+      - name: Compute PHPStan result cache prefix
+        id: orbit-phpstan-key
+        working-directory: .
+        run: |
+          printf 'prefix=%s\n' "orbit-phpstan-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/phpstan.neon', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore PHPStan result cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
+          key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
+            orbit-phpstan-php8.5-${{ matrix.directory }}-
+
       - name: Run project quality checks
         run: composer check
+
+      - name: Save PHPStan result cache
+        if: success()
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
+          key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Compute Pest TIA cache prefix
         id: orbit-tia-key
