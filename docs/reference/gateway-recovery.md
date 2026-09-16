@@ -5,7 +5,7 @@ description: "Preserve source, state, and keys through an update or recovery."
 
 # Update and recover a Gateway
 
-This guide helps an operator preserve Gateway state during a source update and recover when an update fails. It covers the installation layout in [Install from source](/reference/installation). Test the procedure on a disposable copy before relying on it for important data.
+This guide helps an operator preserve Gateway state during a source update and recover when an update fails. It covers the installation layout from the [Quickstart](/quickstart#install-orbit). Test the procedure on a disposable copy before relying on it for important data.
 
 ## Preserve a complete state set
 
@@ -82,7 +82,7 @@ apps/cli/orbit node:list
 apps/cli/orbit doctor --json
 ```
 
-Repeat the first application's DNS and HTTPS check from [your first app](/reference/first-app#verify-the-page). Check the actual body, certificate verification, expected records, and stable identities. A migration exit code alone does not prove a working update. Restart `orbit-runtime-hibernator.timer` and other paused automation only after verification. Retain the backup until these checks and a disposable restore succeed.
+Repeat the first application's DNS and HTTPS check from the [Quickstart](/quickstart#open-the-page). Check the actual body, certificate verification, expected records, and stable identities. A migration exit code alone does not prove a working update. Restart `orbit-runtime-hibernator.timer` and other paused automation only after verification. Retain the backup until these checks and a disposable restore succeed.
 
 ## Recover a failed update
 

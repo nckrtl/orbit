@@ -1,104 +1,277 @@
 ---
 title: "Quickstart"
-description: "Bootstrap a Gateway, connect an operator machine, add an app-dev Node, and serve your first App on its own hostname."
+description: "Hand this page to your coding agent and follow along. It installs a Gateway, adds a development Node, and opens your first App at its own private HTTPS address."
 ---
 
-This page walks through the commands that bring an App online at `https://<app>.test`. Start with [Install from source](/reference/installation) for the complete fresh-machine prerequisites and account setup. You or your coding agent can follow the same workflow.
+Orbit is built to be run by your coding agent. This page is written for both of you. Your agent reads it and does the work. You read it to know what happens, what your agent needs from you, and how to check the result. At the end you have a Gateway, one development Node, and an App at `https://hello.test`.
 
-You need two Ubuntu 26.04 machines that you can reach over SSH as `root`: one becomes the Gateway, and one becomes your first app-dev Node. PHP 8.5 and Composer 2 are required where Orbit's own code runs. The first CLI can run on the Gateway; a separate operator Node is optional.
+## Hand this page to your agent
+
+Open this page in your agent from the menu at the top, or paste its link into the agent you already use with a prompt like this:
+
+```markdown
+Read https://orbit.nckrtl.com/docs/quickstart and guide me through it. I have two fresh Ubuntu 26.04 machines. You can reach them as root@<GATEWAY_IP> and root@<NODE_IP>. Ask me when you need something only I can do.
+```
+
+Your agent needs a shell that can reach both machines over SSH. Your own laptop is fine. Every command below names the machine and the account it runs on.
+
+## Your part
+
+- Two fresh Ubuntu 26.04 machines that you reach over SSH as `root`. One becomes the Gateway, the other a development Node. Both need outbound access to package sources and GitHub.
+- Open UDP port 51820 to the Gateway machine in the provider firewall. WireGuard uses it.
+- Keep the provider console open for both machines. Orbit closes public SSH on a Node once its role is active, and one host fingerprint has to come from the console, not from the network.
+- The WireGuard range `10.44.0.0/24` must be free on your network. If it is in use, tell your agent which range to use instead.
+
+Each step marks the moments that need you with **You:**.
+
+## Your agent's part
+
+Everything else. Before you run anything:
+
+- Confirm with the user which machine becomes the Gateway and which becomes the Node. The machine that runs you is usually neither.
+- Check for an existing installation on the Gateway machine with `id orbit` and `systemctl is-active wg-quick@orbit`. If either succeeds, reuse that installation. Do not bootstrap over it.
+- Run every command on the machine and account named in its title.
+- If a command fails, read the error code, fix the cause, and run the same command again. Do not rename records or add a machine under a new name to get past a failure.
+- Never skip certificate verification. No `--insecure`, no disabled TLS checks.
+- Keep keys, tokens, and `.env` values out of the chat and out of every repository.
+
+Check each checkpoint before you continue to the next step.
 
 <Steps>
-  <Step title="Bootstrap the Gateway">
-    The Gateway runs directly on Linux behind Caddy and PHP-FPM. Follow [the installation guide](/reference/installation#prepare-the-gateway-machine) to prepare the `orbit` account, install dependencies, configure the checkout and state paths, and initialize the database. Then, as `orbit`, bootstrap it with your machine's reachable address:
+  <Step title="Prepare the Gateway machine" titleSize="h2">
+    Install the packages Orbit needs and create the `orbit` account that owns the Gateway:
 
-    ```bash
-    cd /home/orbit/orbit/apps/gateway
-    php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>'
+    ```bash Gateway machine · root
+    apt-get update
+    apt-get install --yes git curl unzip openssl sqlite3 composer sudo \
+      openssh-server ca-certificates iproute2 ufw wireguard-tools dnsmasq caddy \
+      php8.5-cli php8.5-fpm php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml
+    adduser --disabled-password --gecos '' orbit
+    printf 'orbit ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/orbit
+    chmod 0440 /etc/sudoers.d/orbit
     ```
 
-    The bootstrap creates the Gateway SSH key, WireGuard key, and root certificate authority, registers the Gateway as the first Node with the `gateway` and `vpn` roles, and publishes `gateway.orbit` on the Gateway WireGuard address. The defaults use WireGuard subnet `10.44.0.0/24`, Gateway address `10.44.0.1`, and UDP port `51820`; pass `--wireguard-subnet`, `--wireguard-ip`, `--wireguard-port`, `--wireguard-endpoint`, or `--private-interface` to change them.
+    The `orbit` account has passwordless sudo because bootstrap configures Caddy, WireGuard, dnsmasq, and the firewall. The rest of the Gateway steps run as `orbit`, for example through `sudo -iu orbit` or `ssh orbit@<GATEWAY_IP>` after you add a key for it.
+
+    **Checkpoint:** `sudo -iu orbit whoami` prints `orbit`.
   </Step>
 
-  <Step title="Connect your operator machine">
-    Run the first CLI on the Gateway as `orbit`. Its active Node identity has fleet authority:
+  <Step title="Install Orbit" titleSize="h2">
+    Clone the repository under `/home/orbit/orbit` and install the CLI and the Gateway:
 
-    ```bash
+    ```bash Gateway machine · orbit
+    git clone https://github.com/nckrtl/orbit.git /home/orbit/orbit
+    cd /home/orbit/orbit
+    composer --working-dir=apps/cli install --prefer-dist --no-interaction
+    composer --working-dir=apps/cli check-platform-reqs
+    composer --working-dir=apps/gateway install --prefer-dist --no-interaction
+    composer --working-dir=apps/gateway check-platform-reqs
+    echo 'export PATH="/home/orbit/orbit/apps/cli:$PATH"' >> ~/.profile
     export PATH="/home/orbit/orbit/apps/cli:$PATH"
-    orbit gateway:add 10.44.0.1 --name=alpha --use \
-      --ca=/home/orbit/.orbit/ca/root.pem
+    orbit --version
+    git rev-parse HEAD
+    ```
+
+    This installs the current `main`. When a release tag exists, check it out with `git checkout --detach <TAG>` before you run Composer. Record the commit from `git rev-parse HEAD` and report it to the user at the end; it belongs in every [bug report](/reference/alpha#feedback).
+
+    If a platform check fails, for example because the package source has no PHP 8.5, stop and report the error. Do not install with `--ignore-platform-reqs`.
+
+    Configure the Gateway:
+
+    ```bash Gateway machine · orbit
+    cd /home/orbit/orbit/apps/gateway
+    cp .env.example .env
+    ```
+
+    Set these values in `.env` and keep the rest as they are:
+
+    ```dotenv apps/gateway/.env
+    APP_ENV=production
+    APP_DEBUG=false
+    APP_URL=https://10.44.0.1
+    ORBIT_HOME=/home/orbit/.orbit
+    ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway
+    ```
+
+    `APP_URL` is the Gateway's WireGuard address; change it if the user chose another range. `ORBIT_GATEWAY_CHECKOUT` points at `apps/gateway`, not at the repository root.
+
+    Create the state directory and the database:
+
+    ```bash Gateway machine · orbit
+    cd /home/orbit/orbit/apps/gateway
+    umask 077
+    mkdir -p /home/orbit/.orbit
+    touch /home/orbit/.orbit/gateway.sqlite
+    chmod 0700 /home/orbit/.orbit
+    chmod 0600 .env /home/orbit/.orbit/gateway.sqlite
+    php artisan key:generate --no-interaction
+    php artisan migrate --force
+    ```
+
+    The application key encrypts stored secrets. It belongs in every backup together with the database; [Update and recover a Gateway](/reference/gateway-recovery) lists what a backup needs.
+
+    **Checkpoint:** `orbit --version` prints a version and `php artisan migrate --force` reports its migrations without an error.
+  </Step>
+
+  <Step title="Bootstrap the Gateway" titleSize="h2">
+    **You:** confirm that UDP port 51820 is open to the Gateway machine.
+
+    Bootstrap with the public address that the Node will use to reach the Gateway:
+
+    ```bash Gateway machine · orbit
+    cd /home/orbit/orbit/apps/gateway
+    php artisan orbit:bootstrap '<GATEWAY_PUBLIC_HOST>' --no-interaction
+    ```
+
+    Bootstrap creates the Gateway's SSH key, WireGuard key, and root certificate authority. It registers the Gateway as the first Node with the `gateway` and `vpn` roles and starts the private HTTPS endpoint and DNS. `php artisan orbit:bootstrap --help` lists the range, address, port, and DNS options. A failure names its step and an error code; fix the cause and run the same command again.
+
+    **Checkpoint:** every service reports `active`:
+
+    ```bash Gateway machine · orbit
+    sudo systemctl is-active php8.5-fpm caddy wg-quick@orbit dnsmasq
+    ```
+  </Step>
+
+  <Step title="Use Orbit DNS on the Gateway" titleSize="h2">
+    Nodes receive Orbit DNS automatically. The Gateway itself does not, so point its resolver at the Gateway's WireGuard address. This lets the Gateway resolve `hello.test` later.
+
+    ```bash Gateway machine · orbit
+    sudo install -d /etc/systemd/resolved.conf.d
+    printf '[Resolve]\nDNS=10.44.0.1\nDomains=~.\n' | \
+      sudo tee /etc/systemd/resolved.conf.d/orbit-gateway.conf >/dev/null
+    sudo ln -sfn /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+    sudo systemctl restart systemd-resolved
+    ```
+
+    Orbit DNS forwards public names to upstream resolvers, so the machine keeps normal internet name resolution. See [Private DNS](/reference/private-dns).
+
+    **Checkpoint:** both lookups return an address:
+
+    ```bash Gateway machine · orbit
+    getent ahostsv4 gateway.orbit
+    getent ahostsv4 github.com
+    ```
+  </Step>
+
+  <Step title="Connect the CLI" titleSize="h2">
+    Register the Gateway as a CLI profile. The CLI fetches the root certificate, checks it against the file bootstrap wrote, and installs it in the trust store, so it can ask for sudo.
+
+    ```bash Gateway machine · orbit
+    orbit gateway:add 10.44.0.1 --use --ca=/home/orbit/.orbit/ca/root.pem
     orbit gateway:status
     orbit node:list
     ```
 
-    To use a separate Linux operator machine, follow [Connect the CLI](/reference/installation#connect-the-cli). Provision its WireGuard peer from the Gateway, using its verified SSH fingerprint and the Gateway public key. Grant the operator access from the Gateway CLI with `orbit node:access:add <operator-id> <gateway-id>` before running fleet commands there. Access to the Gateway grants fleet-wide authority.
+    The Gateway identifies callers by their WireGuard address, not by a token, and its own Node has authority over the whole fleet. Profiles live in `~/.orbit/config.json`; the [gateway family](/cli/gateway) explains profiles and trust recovery.
 
-    `gateway:add` fetches the Gateway root certificate, pins it, and installs it in the operating-system trust store, so it can ask for administrator privileges. Profiles live in `$HOME/.orbit/config.json`. The [gateway family](/cli/gateway) explains profiles and trust recovery.
+    **Checkpoint:** `gateway:status` succeeds over HTTPS and `node:list` shows one Node, the Gateway.
   </Step>
 
-  <Step title="Add an app-dev Node">
-    Authorize the Gateway public SSH key on the fresh machine and verify its host fingerprint through the provider console, as [Your first app](/reference/first-app#add-the-development-node) describes. Give the machine the `app-dev` role and a development TLD; generated hostnames use that TLD.
+  <Step title="Add a development Node" titleSize="h2">
+    **You:** open the Node in the provider console, run `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`, and give the `SHA256:` fingerprint to your agent. A fingerprint read over the network cannot prove which machine answered; the console can.
 
-    ```bash
-    orbit node:add beast 203.0.113.30 \
+    Before the first connection to the Node, confirm that the machine on the network shows the same fingerprint:
+
+    ```bash Agent machine
+    ssh-keyscan -t ed25519 '<NODE_PUBLIC_HOST>' 2>/dev/null | ssh-keygen -lf -
+    ```
+
+    The Gateway needs SSH access to the Node. Print the Gateway public key, then authorize it on the Node:
+
+    ```bash Gateway machine · orbit
+    cat /home/orbit/.orbit/ssh/id_ed25519.pub
+    ```
+
+    ```bash Node machine · root
+    install -d -m 0700 /root/.ssh
+    echo '<GATEWAY_PUBLIC_KEY>' >> /root/.ssh/authorized_keys
+    chmod 0600 /root/.ssh/authorized_keys
+    ```
+
+    Add the Node with the `app-dev` role and a development TLD. Generated hostnames use that TLD.
+
+    ```bash Gateway machine · orbit
+    orbit node:add dev '<NODE_PUBLIC_HOST>' \
       --role=app-dev \
       --tld=test \
-      --host-key-fingerprint='SHA256:<fingerprint>'
+      --host-key-fingerprint='SHA256:<FINGERPRINT>'
+    orbit node:list
     ```
 
-    The Gateway connects as `root`, creates the managed `orbit` user, installs its SSH key, joins the machine to WireGuard, and converges the role. Once a role converges, public SSH closes and the Gateway reaches the Node over WireGuard only. Run `orbit node:list` to see its ID and status. The [node family](/cli/node) and [Node provisioning](/reference/node-provisioning) cover every option and failure code.
+    The Gateway connects as `root`, creates the managed `orbit` user, joins the machine to WireGuard, and installs the role. Pass `--user` if the provider uses another bootstrap account. Once the role is active, public SSH on the Node closes and the Gateway reaches it over WireGuard only. That is expected; tell the user. [Node provisioning](/reference/node-provisioning) lists the error codes.
+
+    **Checkpoint:** `node:list` shows `dev` with an active `app-dev` role. Record its numeric ID.
   </Step>
 
-  <Step title="Create an App and an App instance">
-    An App records one repository. An App instance is a checkout of that App on one Node with its own hostname.
+  <Step title="Create the App and its App instance" titleSize="h2">
+    An App records one repository. An App instance is a checkout of that App on one Node, with its own hostname. This guide uses MDN's public learning repository because its static page needs no dependencies, application key, or database. The user's own application comes after this page. For a private repository, keep credentials out of the URL and set up Git access on the Gateway and the Node first.
 
-    ```bash
-    orbit app:create acme https://github.com/acme/site.git
-    orbit instance:create <app-id> <node-id> default
+    ```bash Gateway machine · orbit
+    orbit app:create hello https://github.com/mdn/learning-area.git \
+      --default-branch=main --root=html/introduction-to-html/getting-started
+    orbit instance:create <APP_ID> <NODE_ID> default
     ```
 
-    The Gateway resolves the default branch, clones the repository under the Node apps root, selects a PHP runtime when the source needs one, sets a Laravel `APP_URL`, and publishes the Route. The response prints the URL, `https://acme.test` for this example. The reserved name `default` gives the App its `<app>.test` hostname; another name gives `<name>.<app>.test`.
-
-    Open the URL from a WireGuard peer. Orbit VPN DNS resolves it, and the Orbit root certificate that `gateway:add` installed makes the connection trusted. A DNS override alone does not provide network access or trust. A Mac must also have a route to the private Node and trust the Gateway root certificate; [`orbit dns:resolve`](/cli/dns) configures only its resolver override.
+    `app:create` returns the App ID; use it with the Node ID from the previous step. Orbit clones the repository on the Node, publishes the Route, and prints the URL. The name `default` gives the App its `<app>.test` hostname; any other name gives `<name>.<app>.test`.
 
     <Note>
-    Active means Orbit prepared the source, runtime, and Route. Application setup such as `composer install`, an application key, or a database is yours or your agent's next step; the [Applications guide](/domains/applications) explains the boundary.
+    Active means Orbit prepared the source, runtime, and Route. For a real application, `composer install`, an application key, and a database are the next step. The [Applications guide](/domains/applications) explains that boundary.
     </Note>
+
+    **Checkpoint:** `instance:create` returns `https://hello.test` and the App instance is active. Record the instance ID.
   </Step>
 
-  <Step title="Run a Process and keep an eye on the fleet">
-    Long-running services belong to the App instance. Record a Vite development server as a systemd Process and start it:
+  <Step title="Open the page" titleSize="h2">
+    Resolve the hostname and fetch the page with the Orbit root certificate:
 
-    ```bash
-    orbit process:create vite \
-      --instance=<instance-id> \
-      --runtime=systemd \
-      --command=/usr/local/bin/vp --command=run --command=dev --command=--host=0.0.0.0 \
-      --restart=always \
-      --start
+    ```bash Gateway machine · orbit
+    getent ahostsv4 hello.test
+    curl --fail --cacert /home/orbit/.orbit/ca/root.pem https://hello.test
     ```
 
-    Idle development Processes hibernate after an hour without HTTP traffic and wake on the next request; add `--keep-alive` to a queue worker that must keep running. Verify the whole fleet at any time without changing anything:
+    The first request can fail with HTTP 401 while Orbit wakes the App instance. Run the `curl` command again after a moment. See [runtime wake](/reference/app-dev-runtime-hibernation#wake).
 
-    ```bash
+    Then check the fleet:
+
+    ```bash Gateway machine · orbit
     orbit doctor
     orbit activity:list
     ```
 
-    Doctor exits `1` when a Node drifts from what the Gateway expects. Activity shows who ran what, including your agent.
+    Doctor compares each Node with what the Gateway expects and exits `1` on drift, without changing anything. Activity shows who ran what, including you.
+
+    If DNS fails, check the WireGuard link and [Private DNS](/reference/private-dns). If HTTPS fails, check the hostname, the certificate, Caddy, and `orbit node:show <NODE_ID>`. If the page is wrong, check the branch and the web root.
+
+    **Checkpoint:** the response contains `This is my page` and `orbit doctor` exits `0`.
   </Step>
 </Steps>
+
+## Report back
+
+Tell the user:
+
+- The URL, `https://hello.test`, and the App, Node, and App instance IDs.
+- The source commit from `git rev-parse HEAD`.
+- What their own machine needs to open the URL in a browser: a route to the private network, Orbit DNS, and the Gateway root certificate in its trust store. `orbit gateway:add` installs the certificate on any machine that runs the CLI. A Mac also needs a route to the Node; [`orbit dns:resolve`](/cli/dns) configures only its resolver.
+- That `orbit instance:destroy <INSTANCE_ID>` removes the example when they are done. The Node stays.
 
 ## Next steps
 
 <CardGroup cols={2}>
-  <Card title="Register an existing checkout" icon="git-branch" href="/cli/instance#orbit-instanceregister">
-    Adopt a repository that already lives on the Node instead of cloning it again.
+  <Card title="Bring your own application" icon="boxes" href="/domains/applications">
+    Create an App instance from your repository, register an existing checkout, and finish the application setup.
+  </Card>
+  <Card title="Run a development server" icon="play" href="/cli/process">
+    Record Vite or a queue worker as a Process. Idle Processes hibernate and wake on the next request.
+  </Card>
+  <Card title="Attach a database" icon="database" href="/cli/database">
+    Register a connection once and write its keys into any App instance.
   </Card>
   <Card title="Ship to production" icon="rocket" href="/reference/deployments">
     Clone a candidate into a production App instance, configure deploy steps, and deploy.
   </Card>
-  <Card title="Attach a database" icon="database" href="/cli/database">
-    Register a connection once and write its keys into any App instance.
+  <Card title="Work from another machine" icon="laptop" href="/reference/node-provisioning">
+    Provision a Linux operator Node from the Gateway and grant it access with `node:access:add`.
   </Card>
   <Card title="Every command" icon="terminal" href="/cli/overview">
     The conventions shared by all families, and the family pages.
