@@ -70,7 +70,9 @@ for project in "${projects[@]}"; do
             cp .env.example .env
         fi
 
-        composer install --no-interaction --prefer-dist
+        cache_dir="$(mktemp -d)"
+        trap 'rm -rf "$cache_dir"' EXIT
+        COMPOSER_CACHE_DIR="$cache_dir" composer install --no-interaction --prefer-dist
     ) >"$log_directory/${project//\//-}.log" 2>&1 &
     pids+=("$!")
 done

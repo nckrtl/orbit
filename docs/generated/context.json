@@ -2082,6 +2082,22 @@
             ]
         },
         {
+            "path": "docs/decisions/0079-publish-orbit-cli-binaries-from-github-actions.md",
+            "title": "ADR 0079: Publish Orbit CLI binaries from GitHub Actions",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0079"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2187,7 +2203,8 @@
                 "0074",
                 "0076",
                 "0077",
-                "0078"
+                "0078",
+                "0079"
             ]
         },
         {
@@ -2453,6 +2470,23 @@
             ],
             "governing_adrs": [
                 "0078"
+            ]
+        },
+        {
+            "path": "docs/reference/cli-binaries.md",
+            "title": "CLI binaries",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0079"
             ]
         },
         {

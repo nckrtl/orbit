@@ -80,25 +80,25 @@ return [
      |
      */
 
-    'hidden' => [
+    'hidden' => array_values(array_filter([
         SummaryCommand::class,
         DumpCompletionCommand::class,
         HelpCommand::class,
         VendorPublishCommand::class,
         StubPublishCommand::class,
-        AddSkillCommand::class,
-        BoostInstallCommand::class,
-        ListSkillCommand::class,
-        BoostStartCommand::class,
-        UpdateCommand::class,
-        InspectorCommand::class,
-        MakeAppResourceCommand::class,
-        MakePromptCommand::class,
-        MakeResourceCommand::class,
-        MakeServerCommand::class,
-        MakeToolCommand::class,
-        McpStartCommand::class,
-    ],
+        class_exists(AddSkillCommand::class) ? AddSkillCommand::class : null,
+        class_exists(BoostInstallCommand::class) ? BoostInstallCommand::class : null,
+        class_exists(ListSkillCommand::class) ? ListSkillCommand::class : null,
+        class_exists(BoostStartCommand::class) ? BoostStartCommand::class : null,
+        class_exists(UpdateCommand::class) ? UpdateCommand::class : null,
+        class_exists(InspectorCommand::class) ? InspectorCommand::class : null,
+        class_exists(MakeAppResourceCommand::class) ? MakeAppResourceCommand::class : null,
+        class_exists(MakePromptCommand::class) ? MakePromptCommand::class : null,
+        class_exists(MakeResourceCommand::class) ? MakeResourceCommand::class : null,
+        class_exists(MakeServerCommand::class) ? MakeServerCommand::class : null,
+        class_exists(MakeToolCommand::class) ? MakeToolCommand::class : null,
+        class_exists(McpStartCommand::class) ? McpStartCommand::class : null,
+    ])),
 
     /*
      |--------------------------------------------------------------------------

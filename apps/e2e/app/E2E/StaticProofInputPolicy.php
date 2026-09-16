@@ -11,7 +11,7 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 5;
+    public const int VERSION = 6;
 
     /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
     private const array OBSERVABLE_PHP_DIRECTORIES = [
@@ -170,10 +170,13 @@ final readonly class StaticProofInputPolicy
         if (preg_match('~(?:\A|/)storage/(?:.+/)?\.gitignore\z~D', $path) === 1) {
             return true;
         }
+        if (str_starts_with($path, 'apps/cli/phpacker/')) {
+            return true;
+        }
 
         return
             preg_match(
-                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit(?:\.[^/]+)?\.xml(?:\.dist)?|rector\.php)\z~D',
+                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|box\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit(?:\.[^/]+)?\.xml(?:\.dist)?|rector\.php)\z~D',
                 $path,
             ) === 1
             || $path === 'apps/e2e/.env.example';
