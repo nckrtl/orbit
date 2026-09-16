@@ -185,7 +185,8 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('app:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('app:frobnicate'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('cluster:attach'))->toBeFalse();
-        expect(CommandVocabulary::allowsCommand('internal:database-query-local'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('internal:database-local'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('internal:database-query-local'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('internal:frobnicate'))->toBeFalse();
     });
 
@@ -265,6 +266,18 @@ it('rejects each replaced App Cluster and Route lifecycle name as an unknown com
     'route:target:clear',
 ]);
 
+it('rejects the retired internal database query local command name', function (): void {
+    $output = new BufferedOutput;
+    $status = app(Kernel::class)->handle(new StringInput('internal:database-query-local'), $output);
+
+    expect(collect(app(Kernel::class)->all())->keys()->all())
+        ->not->toContain('internal:database-query-local')
+        ->and($status)
+        ->toBe(Command::FAILURE)
+        ->and(trim($output->fetch()))
+        ->toContain('Command "internal:database-query-local" is not defined.');
+});
+
 it('only hides Orbit commands that belong to disabled extensions', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
@@ -283,7 +296,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
             'herdr:session:list',
             'herdr:session:restart',
             'herdr:session:show',
-            'internal:database-query-local',
+            'internal:database-local',
         ]);
 });
 

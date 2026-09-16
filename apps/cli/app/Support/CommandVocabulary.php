@@ -54,7 +54,7 @@ final readonly class CommandVocabulary
 
     /** @var list<string> */
     public const array INTERNAL_COMMANDS = [
-        'internal:database-query-local',
+        'internal:database-local',
     ];
 
     public static function lastSegment(string $name): string

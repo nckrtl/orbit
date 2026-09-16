@@ -29,7 +29,7 @@ The CLI project does not add Eloquent, migrations, or a persisted database conne
 - Public inspection stays on the current Gateway API and CLI verbs. The operator never names a host, path, username, or password on the query request.
 - MySQL and PostgreSQL inspection must run in-process on the Gateway through `PdoDatabaseInspector`.
 - SQLite inspection must run on the associated active Node. The Gateway answers `database.sqlite_node_required` when that connection has no Node.
-- The Gateway's remote argv for SQLite must be the fixed command `orbit internal:database-query-local`. It must not invoke `sqlite3`.
+- The Gateway's remote argv for SQLite must be the fixed command `orbit internal:database-local`. It must not invoke `sqlite3`.
 - The hidden command must read a JSON envelope from protected stdin. The envelope carries a lane token, the stored absolute path, the SQL, and the write flag. Those values must not enter argv.
 - The hidden command must open the SQLite file with PDO. A read-only request must open the file read-only. The command must return the same column, row, row-count, and truncated JSON the Gateway inspector already uses.
 - The lane token is a 64-character hex value the Gateway generates per invocation. When `ORBIT_INTERNAL_DATABASE_TOKEN` is set on the Node process, the stdin token must match it. SSH from the Gateway remains the authorization boundary.
@@ -57,4 +57,4 @@ The CLI project does not add Eloquent, migrations, or a persisted database conne
 - Components: apps/cli, apps/gateway, apps/docs
 - ADRs: amends [ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions); preserves [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk)
 - Detail: [Database connections](/reference/database-connections)
-- Verify: Gateway inspection tests that SQLite remote argv is `orbit internal:database-query-local` and never `sqlite3`; PDO inspector tests for mysql, pgsql, and local sqlite; CLI tests for the hidden token-gated PDO lane
+- Verify: Gateway inspection tests that SQLite remote argv is `orbit internal:database-local` and never `sqlite3`; PDO inspector tests for mysql, pgsql, and local sqlite; CLI tests for the hidden token-gated PDO lane

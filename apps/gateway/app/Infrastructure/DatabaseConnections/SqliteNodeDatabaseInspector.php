@@ -24,7 +24,7 @@ final readonly class SqliteNodeDatabaseInspector
 {
     public const int ROW_LIMIT = 500;
 
-    public const string REMOTE_COMMAND = 'internal:database-query-local';
+    public const string REMOTE_COMMAND = 'internal:database-local';
 
     public function __construct(
         private SshExecutor $ssh,

@@ -233,7 +233,7 @@ it('runs sqlite queries on the owning node through the Orbit CLI PDO lane and ke
     expect($ssh->connection?->host)
         ->toBe('10.44.0.8')
         ->and($ssh->command?->arguments)
-        ->toBe(['orbit', 'internal:database-query-local'])
+        ->toBe(['orbit', 'internal:database-local'])
         ->and(implode("\0", $ssh->command?->arguments ?? []))
         ->not->toContain('SELECT')
         ->not->toContain('sqlite3')
