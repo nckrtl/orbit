@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
@@ -72,6 +74,8 @@ final readonly class AppDevSiteRepository
                 'targets.appInstance.node',
                 'cluster.routerAssignment.node',
                 'cluster.ingressAssignment.node',
+                'customProxy',
+                'node',
             ])
             ->where(static function (Builder $query) use ($pendingRoute): void {
                 $query->whereIn('status', [
@@ -111,7 +115,8 @@ final readonly class AppDevSiteRepository
                     $overrideClusterIds,
                 ): void {
                     $query
-                        ->whereHas(
+                        ->where('routes.node_id', $nodeId)
+                        ->orWhereHas(
                             'targets.appInstance',
                             static fn (Builder $query): Builder => $query->where('node_id', $nodeId),
                         )
@@ -150,6 +155,16 @@ final readonly class AppDevSiteRepository
         $routes = $routeQuery->get();
         /** @var Collection<int, Route> $routes */
         foreach ($routes as $route) {
+            if ($route->kind === RouteKind::CustomProxy) {
+                $site = $this->customProxySite($route);
+
+                if ($site instanceof AppDevSite) {
+                    $sites->push($site);
+                }
+
+                continue;
+            }
+
             $targets = $route
                 ->targets
                 ->map(static fn ($targetRow) => $targetRow->appInstance)
@@ -493,6 +508,34 @@ final readonly class AppDevSiteRepository
             certificateScope: "route-{$route->id}-ingress",
             publicListener: true,
             preserveForwardedIdentity: true,
+        );
+    }
+
+    private function customProxySite(Route $route): ?AppDevSite
+    {
+        $route->loadMissing(['node', 'customProxy']);
+        $node = $route->node;
+        $proxy = $route->customProxy;
+
+        if (
+            ! $node instanceof Node
+            || $proxy === null
+            || ! is_string($node->wireguard_ip)
+            || $node->wireguard_ip === ''
+        ) {
+            return null;
+        }
+
+        return new AppDevSite(
+            nodeId: $node->id,
+            nodeAddress: $node->wireguard_ip,
+            scope: "route-{$route->id}",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: $route->domain,
+            certificateScope: "route-{$route->id}",
+            localHttpUpstream: CustomProxyUpstream::parse($proxy->upstream)->authority(),
         );
     }
 

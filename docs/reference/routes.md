@@ -5,7 +5,7 @@ description: "What a Route records, how Orbit projects its private traffic path 
 
 # Routes
 
-A Route gives an App instance a domain and directs private traffic to it. This page explains domain selection, traffic setup, and supported changes. Each active App instance has exactly one authoritative Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires. A domain change creates a replacement Route under [ADR 0065](/decisions/0065-replace-routes-when-domains-change).
+A Route is a domain the Gateway publishes on the private network. An App Route gives an App instance a domain and directs private traffic to it. A custom proxy Route gives a Node-local service a hostname. This page explains both kinds, domain selection, traffic setup, and supported changes. Each active App instance has exactly one authoritative App Route, as [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) requires. A domain change creates a replacement App Route under [ADR 0065](/decisions/0065-replace-routes-when-domains-change). Custom proxy Routes follow [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes).
 
 The CLI renders Route lists as tables and individual Routes as detail trees, including lifecycle and replacement fields. Human requests show progress while waiting. Route removal and target clearing require default-No interactive confirmation or `--yes`; JSON and piped calls never imply consent.
 
@@ -15,8 +15,9 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 
 | Value | Contract |
 | --- | --- |
-| App | The stable owner of the Route and every allowed target. |
-| Routing scope | Exactly one Node or one active Cluster. Active Cluster membership selects Cluster scope even when the Cluster has no TLD. |
+| Kind | `app` or `custom_proxy`. The kind never changes. |
+| App | The stable owner of an App Route and every allowed App instance target. A custom proxy Route stores no App. |
+| Routing scope | An App Route has exactly one Node or one active Cluster. A custom proxy Route stays Node-direct on its serving Node. |
 | Domain | One immutable normalized domain that no other Route owns. |
 | Domain source | Always `generated` or `explicit`. This value never changes, and Orbit does not infer it from the domain. |
 | Replacement | Optional `replaces_route_id`, `replaced_by_route_id`, and `replacement_step` that expose a reserved, activating, retiring, or failed replacement pair. |
@@ -25,9 +26,11 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Public publication | `inactive` until a public Route has a verified Ingress edge, then `active`. A public Route can keep intent while public publication stays inactive. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
-| Configured target | The API, PHP SDK, and CLI accept a single App instance target or an ordered production target set. Generated and development Routes permit at most one target. |
+| Configured target | An App Route accepts a single App instance target or an ordered production target set. A custom proxy Route stores a loopback upstream or a Node Process. |
 
-Creating the same explicit Route again with identical App, domain, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route.
+Active Cluster membership still selects Cluster scope for App Routes, even when the Cluster has no TLD. Generated and development App Routes still permit at most one App instance target. A custom proxy Route stores no App instance targets.
+
+Creating the same explicit App Route again with identical App, domain, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route. Creating the same custom proxy Route again with identical domain, Node, and upstream or Process returns the existing Route.
 
 ## Select a domain and scope
 
@@ -58,9 +61,9 @@ The API, PHP software development kit (SDK), and command-line interface (CLI) ex
 
 | Operation | Result |
 | --- | --- |
-| Create | Store an explicit Route with its App, domain, publication intent, optional single target, and either the target-derived scope or one supplied scope when no target is present. |
-| List | Return the Routes visible to the caller in stable order. |
-| Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, target, and ordered target set. |
+| Create | Store an explicit App Route, or persist a custom proxy Route and converge its private projection. |
+| List | Return the Routes visible to the caller in stable order, including both kinds. |
+| Show | Return one Route with its kind, stored scope, provenance, generation basis, intent, lifecycle, failure metadata, App instance targets or custom proxy upstream, and ordered target set. |
 | Update | Reserve a replacement Route for an explicit domain change, or change publication intent on the same Route ID. |
 | Target set | Add or replace one App instance target, or replace the complete ordered production target set with explicit dispositions for every detached active App instance. |
 | Target unset | Remove the target only when that does not leave an active App instance without a Route, unless the same operation removes that App instance. |
@@ -82,7 +85,7 @@ The Gateway validates the complete proposed Route before it commits a target cha
 | Remove a targeted Route | Return `route.target_conflict` when removal would detach an active App instance from its Route, and preserve the Route, App instance, and association. |
 | Set an App instance from another App or an inactive App instance | Reject the change and retain the complete current Route. |
 | Set a generated target without an effective TLD | Reject the change and retain the complete current Route. |
-| Set a direct Node, backend URL, second generated target, or balancing value | Reject the change and retain the complete current Route. |
+| Set a direct Node, backend URL, second generated target, or balancing value on an App Route | Reject the change and retain the complete current Route. |
 
 A permitted generated target replacement releases the old generation basis only after the replacement commits. Clearing a target from a non-active App instance does not release that basis.
 
@@ -126,6 +129,48 @@ Once the replacement pool is published, new requests are not assigned to removed
 Orbit does not change session, cookie, or encryption environment keys while it creates or replaces a pool. Shared sessions across targets require the application to already use one shared session store and compatible cookie settings. Round-robin is not backend affinity and does not pin a client to one target.
 
 [ADR 0039](/decisions/0039-use-round-robin-for-production-route-pools) owns the balancing decision.
+
+## Custom proxy Routes
+
+A custom proxy Route publishes an exact hostname for a service that already runs on one managed Node. It is not an App instance Route. The Gateway does not create an App, a PHP handle, or a document root.
+
+```bash
+orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
+orbit route:create executor.orbit --node=beast --process=executor
+```
+
+The first form stores the loopback URL. The second form stores the Node-owned Process and resolves its listener to a loopback or Node-local bind. Both forms require an active serving Node. The CLI accepts a Node ID or registered Node name. The Process value is the Process name on that Node or its numeric ID.
+
+| Rule | Result |
+| --- | --- |
+| Domain | Any unique DNS domain. `executor.orbit`, `grafana.internal`, `foo.bar`, and `something.test` are valid. Orbit does not require a Cluster TLD, a Node TLD, or `.orbit`. |
+| Uniqueness | Fleet-global across App Routes, custom proxy Routes, `gateway.orbit`, and `metrics.orbit`. A conflict leaves the existing name in place. |
+| Owner | The serving Node. Cluster membership does not move the Route to Cluster scope. |
+| Publication | Private only. The Gateway refuses public intent. |
+| Upstream | HTTP on loopback (`127.0.0.1`, `localhost`, or `::1`) or the resolved listener of a Node-owned Process on that Node. A remote URL is refused. |
+| Caddy | Callers cannot supply a Caddyfile. The serving Node site terminates Orbit-CA TLS and reverse-proxies HTTP to the local upstream. It preserves `Host` and admits streaming and WebSocket upgrades. |
+| DNS | An exact private `host-record` answers with the serving Node under Node-scoped private Route rules. The Cluster Router is not a hop. |
+| Create | Persist, issue the Orbit CA leaf, publish Caddy, then publish DNS. Success returns an active Route. An identical retry returns the existing Route. |
+| Destroy | Run untargeted private cleanup for that Route only. App instance Routes stay unchanged. |
+| Node removal | Refuse while the Node still owns a custom proxy Route (`node.has_routes` or `route.reconciliation_required`). |
+| Process removal | Refuse while a custom proxy Route still targets that Process (`process.has_routes`). Destroy the Route first. |
+
+A Cluster TLD suffix still answers names that have no exact record. An exact custom proxy record wins for its domain, including a name under that TLD.
+
+The Executor example is a Node-owned Docker Process on Beast with a loopback publish such as `127.0.0.1:4788:4788`. Creating `executor.orbit` against that Node and Process is the supported replacement for an unmanaged `executor.test` Caddy fragment. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) owns that cutover. Orbit does not delete live unmanaged fragments from automation.
+
+Doctor inspects each custom proxy Route on its serving Node.
+
+| Doctor issue code | Difference |
+| --- | --- |
+| `route.dns_mismatch` | Private DNS does not answer the exact domain with the serving Node address. |
+| `route.certificate_mismatch` | The Route-scoped Orbit CA leaf is missing on the serving Node. |
+| `route.caddy_mismatch` | Serving Node Caddy does not contain the custom proxy site. |
+| `route.upstream_unreachable` | The resolved loopback or Process listener does not accept a connection. |
+| `route.inspection_failed` | A required observation is missing, malformed, or unreachable. |
+| `route.node_unreachable` | The serving Node could not be observed. |
+
+Those checks stay verify-only. They change no Route, certificate, Caddy, DNS, Process, or firewall state.
 
 ## Set up private traffic
 

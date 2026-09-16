@@ -36,13 +36,14 @@ final class ListRoutesCommand extends RouteCommand
         $rows = array_map(fn ($route): array => [
             $route->id,
             $route->domain,
+            $route->kind,
             $route->provenance,
             $route->publication,
             $route->clusterId === null ? "node {$route->nodeId}" : "cluster {$route->clusterId}",
             $this->targetList($route),
             $route->status,
         ], $response->routes);
-        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Domain', 'Provenance', 'Publication', 'Scope', 'Target', 'Status'], $rows, 'No Routes found.'));
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Domain', 'Kind', 'Provenance', 'Publication', 'Scope', 'Target', 'Status'], $rows, 'No Routes found.'));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

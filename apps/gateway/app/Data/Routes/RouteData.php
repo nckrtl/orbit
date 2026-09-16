@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Routes;
 
 use App\Models\Route;
+use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -15,7 +16,8 @@ final class RouteData extends Data
 {
     public function __construct(
         public int $id,
-        public int $appId,
+        public string $kind,
+        public ?int $appId,
         public ?int $nodeId,
         public ?int $clusterId,
         public ?int $generationBasisNodeId,
@@ -33,15 +35,19 @@ final class RouteData extends Data
         public ?RouteTargetData $target,
         /** @var list<RouteTargetData> */
         public array $targets,
+        public ?int $processId = null,
+        public ?string $upstream = null,
     ) {}
 
     public static function fromModel(Route $route): self
     {
-        $route->loadMissing('targets');
+        $route->loadMissing(['targets', 'customProxy']);
         $target = $route->targets->first();
+        $proxy = $route->customProxy;
 
         return new self(
             id: $route->id,
+            kind: $route->kind->value,
             appId: $route->app_id,
             nodeId: $route->node_id,
             clusterId: $route->cluster_id,
@@ -62,6 +68,8 @@ final class RouteData extends Data
                 ->map(static fn (RouteTarget $row): RouteTargetData => RouteTargetData::fromModel($row))
                 ->values()
                 ->all(),
+            processId: $proxy instanceof RouteCustomProxy ? $proxy->process_id : null,
+            upstream: $proxy instanceof RouteCustomProxy ? $proxy->upstream : null,
         );
     }
 }

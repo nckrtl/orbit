@@ -101,6 +101,7 @@ function instance_route_payload(): array
 {
     return [
         'id' => 8,
+        'kind' => 'app',
         'app_id' => 3,
         'node_id' => 2,
         'cluster_id' => null,
@@ -118,6 +119,8 @@ function instance_route_payload(): array
         'target_set_step' => null,
         'target' => ['id' => 9, 'app_instance_id' => 5, 'position' => 0],
         'targets' => [['id' => 9, 'app_instance_id' => 5, 'position' => 0]],
+        'process_id' => null,
+        'upstream' => null,
     ];
 }
 

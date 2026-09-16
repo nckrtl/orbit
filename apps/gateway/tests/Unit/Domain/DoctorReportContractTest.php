@@ -18,6 +18,7 @@ use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\RoleDoctorIssueCode;
+use App\Domain\Doctor\RouteDoctorIssueCode;
 use App\Domain\Doctor\ScheduleDoctorIssueCode;
 use App\Domain\Doctor\ToolDoctorIssueCode;
 use Tests\TestCase;
@@ -61,7 +62,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
     $report = DoctorReportData::fromNodes([$node]);
 
     expect(array_map(static fn (DoctorFamily $family): string => $family->value, DoctorFamily::cases()))
-        ->toEqual(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'herdr', 'database_connection'])
+        ->toEqual(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'herdr', 'database_connection', 'route'])
         ->and($family->status->value)
         ->toBe('unverifiable')
         ->and($family->family)
@@ -186,6 +187,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         DoctorFamily::Firewall->value => FirewallDoctorIssueCode::cases(),
         DoctorFamily::Herdr->value => HerdrSessionDoctorIssueCode::cases(),
         DoctorFamily::DatabaseConnection->value => DatabaseConnectionDoctorIssueCode::cases(),
+        DoctorFamily::Route->value => RouteDoctorIssueCode::cases(),
     ];
 
     expect(array_map(
@@ -290,6 +292,14 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'database_connection.unhealthy',
             'database_connection.env_mismatch',
             'database_connection.inspection_failed',
+        ],
+        'route' => [
+            'route.dns_mismatch',
+            'route.certificate_mismatch',
+            'route.caddy_mismatch',
+            'route.upstream_unreachable',
+            'route.node_unreachable',
+            'route.inspection_failed',
         ],
     ]);
 

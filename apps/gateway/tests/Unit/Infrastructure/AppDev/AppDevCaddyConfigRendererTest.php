@@ -269,6 +269,31 @@ function development_server_site(
     );
 }
 
+it('proxies a local HTTP custom proxy site without Host rewrite or an https hop', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 4,
+            nodeAddress: '10.44.0.4',
+            scope: 'route-11',
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: 'executor.orbit',
+            certificateScope: 'route-11',
+            localHttpUpstream: '127.0.0.1:4788',
+        ),
+    ]));
+
+    expect($configuration)
+        ->toContain('https://executor.orbit {')
+        ->toContain('reverse_proxy 127.0.0.1:4788 {')
+        ->toContain('flush_interval -1')
+        ->not->toContain('header_up Host')
+        ->not->toContain('reverse_proxy https://')
+        ->not->toContain('tls_server_name')
+        ->not->toContain('tls_trusted_ca_certs');
+});
+
 it('keeps assigned Vite endpoints separate and preserves their base path', function (): void {
     $sites = collect([
         new AppDevSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-10', checkoutPath: '/apps/first', documentRoot: 'public', phpVersion: null, domain: 'first.test', vitePort: 5174),

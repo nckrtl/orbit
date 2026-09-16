@@ -56,10 +56,11 @@ operations. Keep the public API typed and small.
   synchronization body, and the bounded value-free operation result. The
   Gateway owns lookup, validation, references, storage, and synchronization.
 - Keep Route transport limited to App, domain, publication intent, exclusive
-  Node-or-Cluster scope, a single AppInstance target, or an ordered production
+  Node-or-Cluster scope, a single AppInstance target, an ordered production
   target set with explicit AppInstance and Route identities plus removal
-  authorization. The Gateway owns domain, scope, basis, relationship, pool
-  policy, and lifecycle policy.
+  authorization, or a custom proxy Node, optional Process, and loopback
+  upstream with omitted nulls. The Gateway owns domain, kind, scope, basis,
+  relationship, pool policy, and lifecycle policy.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
 - Keep App runtime definition transport limited to a numeric App ID, a
@@ -93,7 +94,7 @@ operations. Keep the public API typed and small.
   owns validation, encryption, persistence, Process execution, stored-environment writes, and
   inspection execution.
 - Accept only the current Doctor family tokens: node, role, app, instance,
-  schedule, tool, process, firewall, herdr, and database_connection.
+  schedule, tool, process, firewall, herdr, database_connection, and route.
   Keep Doctor verify-only and policy-free.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy
