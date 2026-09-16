@@ -35,6 +35,21 @@ final class InterruptIntent
         }
     }
 
+    /**
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $operation
+     * @return TResult
+     */
+    public static function runIfAbsent(Closure $operation): mixed
+    {
+        if (count(self::$scopes) > 1) {
+            return $operation();
+        }
+
+        return self::run($operation);
+    }
+
     public static function record(int $signal): void
     {
         if ($signal !== SIGINT && $signal !== SIGTERM) {

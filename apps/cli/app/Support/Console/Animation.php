@@ -59,6 +59,17 @@ final class Animation
      */
     public function during(Closure $operation): mixed
     {
+        return InterruptIntent::runIfAbsent(fn (): mixed => $this->duringInScope($operation));
+    }
+
+    /**
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $operation
+     * @return TResult
+     */
+    private function duringInScope(Closure $operation): mixed
+    {
         $previous = self::$active;
         $this->parent = $previous?->output === $this->output ? $previous : null;
         $this->epoch = $this->parent->epoch ?? 0;

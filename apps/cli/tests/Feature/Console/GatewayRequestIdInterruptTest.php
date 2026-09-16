@@ -13,7 +13,6 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Exception\InvalidArgumentException as ConsoleInputException;
 use Symfony\Component\Console\Tester\CommandTester;
-use UnexpectedValueException;
 
 beforeEach(function (): void {
     InterruptIntent::clear();

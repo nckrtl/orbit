@@ -20,6 +20,17 @@ final readonly class SpinnerDisplay
      */
     public function during(string $label, Closure $operation): mixed
     {
+        return InterruptIntent::runIfAbsent(fn (): mixed => $this->duringInScope($label, $operation));
+    }
+
+    /**
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $operation
+     * @return TResult
+     */
+    private function duringInScope(string $label, Closure $operation): mixed
+    {
         $label = TerminalText::safe($label);
         $prefixWidth = $this->mode->columns >= 2 + TerminalText::minimumWidth($label) ? 2 : 0;
         $parts = TerminalText::wrap($label, $this->mode->columns - $prefixWidth);

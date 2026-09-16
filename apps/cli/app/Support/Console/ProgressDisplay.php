@@ -64,30 +64,33 @@ final class ProgressDisplay
 
         $this->started = true;
         $this->steps[$id]['state'] = ProgressState::Running;
-        $animation = new Animation(
-            $this->mode,
-            $this->output,
-            [$this->frame(), $this->frame(alternate: true)],
-            implode("\n", TerminalText::wrap($this->steps[$id]['running'].'...', $this->mode->columns))."\n",
-            $this->region,
-            fn (): string => $this->frame(),
-        );
 
-        try {
-            $result = $animation->during($operation);
-            InterruptIntent::throwIfPending();
+        return InterruptIntent::runIfAbsent(function () use ($id, $operation): mixed {
+            $animation = new Animation(
+                $this->mode,
+                $this->output,
+                [$this->frame(), $this->frame(alternate: true)],
+                implode("\n", TerminalText::wrap($this->steps[$id]['running'].'...', $this->mode->columns))."\n",
+                $this->region,
+                fn (): string => $this->frame(),
+            );
 
-            return $result;
-        } catch (Throwable $exception) {
             try {
-                $this->complete($id, ProgressState::Failure);
-                $this->finish(InterruptIntent::cancellation($exception) ? 'Operation interrupted.' : 'Operation failed.');
-            } catch (Throwable) {
-                // Output failure must not replace the callback's original failure.
-            }
+                $result = $animation->during($operation);
+                InterruptIntent::throwIfPending();
 
-            throw $exception;
-        }
+                return $result;
+            } catch (Throwable $exception) {
+                try {
+                    $this->complete($id, ProgressState::Failure);
+                    $this->finish(InterruptIntent::cancellation($exception) ? 'Operation interrupted.' : 'Operation failed.');
+                } catch (Throwable) {
+                    // Output failure must not replace the callback's original failure.
+                }
+
+                throw $exception;
+            }
+        });
     }
 
     public function complete(string $id, ProgressState $state, string $message = ''): void
