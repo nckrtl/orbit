@@ -47,7 +47,7 @@ final class UpdateEnvironmentCommand extends EnvironmentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new UpdateAppInstanceEnvironmentRequest(
                 appInstance: $selector,
@@ -55,6 +55,7 @@ final class UpdateEnvironmentCommand extends EnvironmentCommand
                 value: $value,
             ),
             EnvironmentOperationResponse::class,
+            ['Update environment', 'Updating environment', 'Updated environment'],
         );
 
         return $response instanceof EnvironmentOperationResponse

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Environment;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 
 abstract class EnvironmentCommand extends GatewayCommand
@@ -39,16 +40,19 @@ abstract class EnvironmentCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->line("AppInstance ID: {$response->appInstanceId}");
-        $this->line("Operation: {$response->operation}");
-        $this->line('Changed: '.($response->changed ? 'true' : 'false'));
-        $this->line("Stored keys: {$response->keyCount}");
+        $fields = [
+            'AppInstance ID' => $response->appInstanceId,
+            'Operation' => $response->operation,
+            'Changed' => $response->changed ? 'true' : 'false',
+            'Stored keys' => $response->keyCount,
+        ];
 
         if (in_array($response->operation, ['import', 'update'], strict: true)) {
-            $this->line('Workload file: unchanged');
+            $fields['Workload file'] = 'unchanged';
         }
 
-        $this->line("Request ID: {$response->requestId}");
+        $fields['Request ID'] = $response->requestId;
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('App instance environment', $fields));
 
         return self::SUCCESS;
     }

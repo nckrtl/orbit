@@ -93,7 +93,7 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
             }
         }
 
-        $connection = $this->send(
+        $connection = $this->sendWithProgress(
             $connector,
             new UpdateDatabaseConnectionRequest(
                 slug: $slug,
@@ -115,6 +115,7 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
                 password: is_string($password) ? $password : null,
             ),
             DatabaseConnectionResponse::class,
+            ['Update Database connection', 'Updating Database connection', 'Updated Database connection'],
         );
 
         if (! $connection instanceof DatabaseConnectionResponse) {

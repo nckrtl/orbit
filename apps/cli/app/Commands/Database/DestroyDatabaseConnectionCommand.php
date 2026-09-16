@@ -34,14 +34,21 @@ final class DestroyDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmed()) {
+        if (! $this->confirmAction(
+            "Destroy Database connection record [{$slug}]? The physical database is not dropped.",
+            'Database connection destruction cancelled.',
+            option: 'force',
+            requiredCode: 'database.confirmation_required',
+            requiredMessage: 'Use --force to confirm Database connection destruction.',
+        )) {
             return self::FAILURE;
         }
 
-        $connection = $this->send(
+        $connection = $this->sendWithProgress(
             $connector,
             new DestroyDatabaseConnectionRequest($slug),
             DatabaseConnectionResponse::class,
+            ['Destroy Database connection', 'Destroying Database connection', 'Destroyed Database connection'],
         );
 
         if (! $connection instanceof DatabaseConnectionResponse) {
@@ -49,23 +56,5 @@ final class DestroyDatabaseConnectionCommand extends DatabaseCommand
         }
 
         return $this->renderConnection($connection, "Database connection [{$connection->slug}] destroyed.");
-    }
-
-    private function confirmed(): bool
-    {
-        if ($this->option('force') === true) {
-            return true;
-        }
-
-        if ($this->option('json') !== true && $this->input->isInteractive()) {
-            return $this->confirm('Confirm Database connection destruction?', false);
-        }
-
-        $this->renderGatewayFailure(
-            'database.confirmation_required',
-            'Use --force to confirm Database connection destruction.',
-        );
-
-        return false;
     }
 }

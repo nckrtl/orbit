@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Database;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 
 abstract class DatabaseCommand extends GatewayCommand
@@ -41,20 +42,19 @@ abstract class DatabaseCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info($message);
-        $this->table(['Field', 'Value'], [
-            ['ID', $connection->id],
-            ['Slug', $connection->slug],
-            ['Driver', $connection->driver],
-            ['Node ID', $connection->nodeId ?? '—'],
-            ['Host', $connection->host ?? '—'],
-            ['Port', $connection->port ?? '—'],
-            ['Database', $connection->database ?? '—'],
-            ['Path', $connection->path ?? '—'],
-            ['Username', $connection->username ?? '—'],
-            ['Password', $connection->hasPassword ? 'stored' : '—'],
-            ['Request ID', $connection->requestId],
-        ]);
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+            'ID' => $connection->id,
+            'Slug' => $connection->slug,
+            'Driver' => $connection->driver,
+            'Node ID' => $connection->nodeId,
+            'Host' => $connection->host,
+            'Port' => $connection->port,
+            'Database' => $connection->database,
+            'Path' => $connection->path,
+            'Username' => $connection->username,
+            'Password' => $connection->hasPassword ? 'stored' : null,
+            'Request ID' => $connection->requestId,
+        ]));
 
         return self::SUCCESS;
     }
@@ -69,15 +69,12 @@ abstract class DatabaseCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->info($message);
-
-        if ($rows === []) {
-            $this->line('No matching records were found.');
-        } else {
-            $this->table($headers, $rows);
-        }
-
-        $this->line("Request ID: {$requestId}");
+        $this->writeHumanMessage($message);
+        ConsoleWriter::write(
+            $this->output,
+            $this->humanRenderer()->table($headers, $rows, 'No matching records found.'),
+        );
+        $this->writeHumanMessage("Request ID: {$requestId}");
 
         return self::SUCCESS;
     }

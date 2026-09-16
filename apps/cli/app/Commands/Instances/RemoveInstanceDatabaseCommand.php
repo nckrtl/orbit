@@ -39,11 +39,19 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmed()) {
+        $effectivePrefix = $prefix ?? 'DB';
+
+        if (! $this->confirmAction(
+            "Remove Database connection [{$slug}] from App instance [{$instance}] and clear stored {$effectivePrefix}_* keys? Workload .env stays unchanged.",
+            'Database connection removal cancelled.',
+            option: 'force',
+            requiredCode: 'database.confirmation_required',
+            requiredMessage: 'Use --force to confirm Database connection removal from the AppInstance.',
+        )) {
             return self::FAILURE;
         }
 
-        $attachment = $this->send(
+        $attachment = $this->sendWithProgress(
             $connector,
             new RemoveInstanceDatabaseRequest(
                 appInstance: $instance,
@@ -51,6 +59,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
                 prefix: $prefix,
             ),
             DatabaseConnectionAttachmentResponse::class,
+            ['Remove Database connection', 'Removing Database connection', 'Removed Database connection'],
         );
 
         if (! $attachment instanceof DatabaseConnectionAttachmentResponse) {
@@ -61,23 +70,5 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
             $attachment,
             "Database connection [{$attachment->slug}] removed from AppInstance [{$attachment->appInstanceId}].",
         );
-    }
-
-    private function confirmed(): bool
-    {
-        if ($this->option('force') === true) {
-            return true;
-        }
-
-        if ($this->option('json') !== true && $this->input->isInteractive()) {
-            return $this->confirm('Confirm Database connection removal from the AppInstance?', false);
-        }
-
-        $this->renderGatewayFailure(
-            'database.confirmation_required',
-            'Use --force to confirm Database connection removal from the AppInstance.',
-        );
-
-        return false;
     }
 }

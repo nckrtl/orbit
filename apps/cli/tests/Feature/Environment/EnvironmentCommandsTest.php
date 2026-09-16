@@ -172,20 +172,24 @@ describe('environment output', function (): void {
             UpdateAppInstanceEnvironmentRequest::class => environment_cli_response('update'),
         ]);
 
-        $this
-            ->artisan('env:update', [
-                '--instance' => 'app.com',
-                '--key' => 'PRIVATE_VALUE',
-                '--value' => 'environment-secret-sentinel',
-            ])
-            ->expectsOutput('AppInstance ID: 17')
-            ->expectsOutput('Operation: update')
-            ->expectsOutput('Changed: true')
-            ->expectsOutput('Stored keys: 3')
-            ->expectsOutput('Workload file: unchanged')
-            ->expectsOutput('Request ID: '.environment_cli_request_id())
-            ->doesntExpectOutputToContain('environment-secret-sentinel')
-            ->assertExitCode(0);
+        expect(Artisan::call('env:update', [
+            '--instance' => 'app.com',
+            '--key' => 'PRIVATE_VALUE',
+            '--value' => 'environment-secret-sentinel',
+        ]))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain('AppInstance ID');
+        expect($output)->toContain('17');
+        expect($output)->toContain('Operation');
+        expect($output)->toContain('update');
+        expect($output)->toContain('Changed');
+        expect($output)->toContain('true');
+        expect($output)->toContain('Stored keys');
+        expect($output)->toContain('3');
+        expect($output)->toContain('Workload file');
+        expect($output)->toContain('unchanged');
+        expect($output)->toContain(environment_cli_request_id());
+        expect($output)->not->toContain('environment-secret-sentinel');
     });
 
     it('renders the exact value-free JSON store result', function (): void {
@@ -204,17 +208,20 @@ describe('environment output', function (): void {
             SynchronizeAppInstanceEnvironmentRequest::class => environment_cli_response('sync', changed: false),
         ]);
 
-        $this
-            ->artisan('env:sync', ['--instance' => 'app.com'])
-            ->expectsOutput('AppInstance ID: 17')
-            ->expectsOutput('Operation: sync')
-            ->expectsOutput('Changed: false')
-            ->expectsOutput('Stored keys: 3')
-            ->expectsOutput('Request ID: '.environment_cli_request_id())
-            ->doesntExpectOutputToContain('cache')
-            ->doesntExpectOutputToContain('restart')
-            ->doesntExpectOutputToContain('refresh')
-            ->assertExitCode(0);
+        expect(Artisan::call('env:sync', ['--instance' => 'app.com']))->toBe(0);
+        $output = Artisan::output();
+        expect($output)->toContain('AppInstance ID');
+        expect($output)->toContain('17');
+        expect($output)->toContain('Operation');
+        expect($output)->toContain('sync');
+        expect($output)->toContain('Changed');
+        expect($output)->toContain('false');
+        expect($output)->toContain('Stored keys');
+        expect($output)->toContain('3');
+        expect($output)->toContain(environment_cli_request_id());
+        expect($output)->not->toContain('cache');
+        expect($output)->not->toContain('restart');
+        expect($output)->not->toContain('refresh');
     });
 });
 
@@ -320,15 +327,13 @@ describe('environment failures', function (): void {
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
-            ->toBe(implode("\n", [
-                'The complete AppInstance environment configuration is invalid.',
-                'key: KEY',
-                'rule: placeholder',
-                'placeholder: {{instance.domain}}',
-                'Request ID: '.environment_cli_request_id(),
-            ]))
-            ->not->toContain('environment-secret-sentinel');
+        $output = trim(Artisan::output());
+        expect($output)->toContain('The complete AppInstance environment configuration is invalid.');
+        expect($output)->toContain('key: KEY');
+        expect($output)->toContain('rule: placeholder');
+        expect($output)->toContain('placeholder: {{instance.domain}}');
+        expect($output)->toContain('Request ID: '.environment_cli_request_id());
+        expect($output)->not->toContain('environment-secret-sentinel');
     });
 
     it('renders the Gateway import-conflict message instead of an HTTP status wrapper', function (): void {

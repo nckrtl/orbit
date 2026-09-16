@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Database;
 
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse;
 
 abstract class DatabaseAttachmentCommand extends DatabaseCommand
@@ -52,20 +53,19 @@ abstract class DatabaseAttachmentCommand extends DatabaseCommand
             return self::SUCCESS;
         }
 
-        $this->info($message);
-        $this->table(['Field', 'Value'], [
-            ['AppInstance ID', $attachment->appInstanceId],
-            ['Slug', $attachment->slug],
-            ['Prefix', $attachment->prefix],
-            ['Keys', implode(', ', $attachment->keys)],
-            ['Host', $attachment->host ?? '—'],
-            ['Port', $attachment->port ?? '—'],
-            ['Operation', $attachment->operation],
-            ['Changed', $attachment->changed ? 'true' : 'false'],
-            ['Stored keys', $attachment->keyCount],
-            ['Workload file', 'unchanged'],
-            ['Request ID', $attachment->requestId],
-        ]);
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+            'AppInstance ID' => $attachment->appInstanceId,
+            'Slug' => $attachment->slug,
+            'Prefix' => $attachment->prefix,
+            'Keys' => $attachment->keys === [] ? null : implode(', ', $attachment->keys),
+            'Host' => $attachment->host,
+            'Port' => $attachment->port,
+            'Operation' => $attachment->operation,
+            'Changed' => $attachment->changed ? 'true' : 'false',
+            'Stored keys' => $attachment->keyCount,
+            'Workload file' => 'unchanged',
+            'Request ID' => $attachment->requestId,
+        ]));
 
         return self::SUCCESS;
     }

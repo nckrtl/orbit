@@ -33,10 +33,11 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new SynchronizeAppInstanceEnvironmentRequest($selector),
             EnvironmentOperationResponse::class,
+            ['Synchronize environment', 'Synchronizing environment', 'Synchronized environment'],
         );
 
         return $response instanceof EnvironmentOperationResponse

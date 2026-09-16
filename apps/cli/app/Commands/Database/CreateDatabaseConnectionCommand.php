@@ -82,7 +82,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
 
         $password = $this->input->getOption('password');
 
-        $connection = $this->send(
+        $connection = $this->sendWithProgress(
             $connector,
             new CreateDatabaseConnectionRequest(
                 slug: $slug,
@@ -97,6 +97,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
                 hasPassword: $hasPassword,
             ),
             DatabaseConnectionResponse::class,
+            ['Create Database connection', 'Creating Database connection', 'Created Database connection'],
         );
 
         if (! $connection instanceof DatabaseConnectionResponse) {

@@ -33,10 +33,11 @@ final class ShowDatabaseSchemaCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        $result = $this->send(
+        $result = $this->sendWithProgress(
             $connector,
             new ShowDatabaseSchemaRequest($slug),
             DatabaseSchemaResponse::class,
+            ['Show Database schema', 'Loading Database schema', 'Loaded Database schema'],
         );
 
         if (! $result instanceof DatabaseSchemaResponse) {

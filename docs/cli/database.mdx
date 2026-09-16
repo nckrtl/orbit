@@ -24,6 +24,8 @@ The [Database connections reference](/reference/database-connections) owns the d
 
 Every command accepts `--json`. No response ever includes the password; `has_password` reports whether one is stored.
 
+Human list and inspection commands use the shared table. Show, create, update, destroy, user-create, add, and remove use the shared detail tree. Gateway calls show progress until the request settles. `database:destroy` and `instance:database:remove` require default-No confirmation or `--force`. JSON and piped calls never imply consent.
+
 ## orbit database:create
 
 Create one connection with a unique slug. The Gateway encrypts the password before it writes the row.
@@ -152,7 +154,7 @@ orbit database:destroy <slug> [--force] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--force` | Skip the confirmation prompt. A non-interactive call without it returns `database.confirmation_required`. |
+| `--force` | Confirm destruction without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `database.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 ```bash
 orbit database:destroy app --force
@@ -179,7 +181,7 @@ orbit database:query <slug> <sql> [--write] [--json]
 | --- | --- |
 | `--write` | Allow a write statement. Omission returns `database.write_required` for write SQL. |
 
-The Gateway answers `database.sql_multiple_statements` when the statement is stacked. SQLite query runs on the associated Node and answers `database.sqlite_node_required` when that Node is missing. Query returns at most 500 rows.
+The Gateway answers `database.sql_multiple_statements` when the statement is stacked. SQLite query runs on the associated Node and answers `database.sqlite_node_required` when that Node is missing. Query returns at most 500 rows and sets `truncated` when more remain. `--write` is write permission, not proof that rows mutated. Human output shows write permission, the reported row count, an empty-read message or Statement completed for a successful no-rowset write-enabled statement, and a truncation warning without inventing omitted totals. JSON keeps `write`, `row_count`, and `truncated`.
 
 ```bash
 orbit database:query app "SELECT id, email FROM users"

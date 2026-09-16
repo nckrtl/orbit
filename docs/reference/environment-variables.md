@@ -31,7 +31,7 @@ The SDK keeps a valid structured Gateway error code, safe message, details, and 
 
 ## Use the CLI
 
-The Orbit command-line interface (CLI) exposes the three environment operations without reading a local file, choosing a target Node, or displaying an environment value. Select an App instance with a positive numeric ID or its exact Route domain.
+The Orbit command-line interface (CLI) exposes the three environment operations without reading a local file, choosing a target Node, or displaying an environment value. Select an App instance with a positive numeric ID or its exact Route domain. Human output is a shared detail tree of operation metadata only. Gateway calls show progress. Values never appear in human or JSON results.
 
 | Command | Required options | Optional options | Effect |
 | --- | --- | --- | --- |
