@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
@@ -21,6 +21,7 @@ use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 const DATABASE_CLI_SECRET = 'db-cli-secret-44c1';
 
@@ -76,15 +77,13 @@ it('creates a mysql connection through the typed request and hides the password'
 it('lists connections with deterministic human output', function (): void {
     database_cli_mock(ListDatabaseConnectionsRequest::class, [database_cli_gateway_data()]);
 
-    expect(Artisan::call('database:list'))->toBe(0);
-    $output = Artisan::output();
-    expect($output)->toContain('SLUG');
-    expect($output)->toContain('DRIVER');
-    expect($output)->toContain('app');
-    expect($output)->toContain('mysql');
-    expect($output)->toContain('db.example.test');
-    expect($output)->toContain('stored');
-    expect($output)->toContain('Request ID: '.database_cli_request_id());
+    [$exit, $output] = database_cli_display('database:list');
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+    expect($exit)->toBe(0);
+    expect($flat)->toContain('SLUG');
+    expect($flat)->toContain('DRIVER');
+    expect($flat)->toContain('│ app │ mysql │ db.example.test │ app │ stored │');
+    expect($flat)->toContain('Request ID: '.database_cli_request_id());
     expect($output)->not->toContain(DATABASE_CLI_SECRET);
 });
 
@@ -193,8 +192,9 @@ it('refuses an invalid add prefix before it contacts the Gateway', function (): 
 it('refuses JSON destruction without --force', function (): void {
     $mock = MockClient::global();
 
-    expect(Artisan::call('database:destroy', ['slug' => 'app', '--json' => true]))->toBe(1);
-    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe([
+    [$exit, $output] = database_cli_display('database:destroy', ['slug' => 'app', '--json' => true]);
+    expect($exit)->toBe(1);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
         'error' => [
             'code' => 'database.confirmation_required',
             'message' => 'Use --force to confirm Database connection destruction.',
@@ -207,12 +207,13 @@ it('refuses JSON destruction without --force', function (): void {
 it('refuses JSON attachment removal without --force', function (): void {
     $mock = MockClient::global();
 
-    expect(Artisan::call('instance:database:remove', [
+    [$exit, $output] = database_cli_display('instance:database:remove', [
         'slug' => 'app',
         '--instance' => '12',
         '--json' => true,
-    ]))->toBe(1);
-    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe([
+    ]);
+    expect($exit)->toBe(1);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
         'error' => [
             'code' => 'database.confirmation_required',
             'message' => 'Use --force to confirm Database connection removal from the AppInstance.',
@@ -318,13 +319,14 @@ it('preserves exact query JSON for a write-enabled statement', function (): void
         'truncated' => false,
     ]);
 
-    expect(Artisan::call('database:query', [
+    [$exit, $output] = database_cli_display('database:query', [
         'slug' => 'app',
         'sql' => 'DELETE FROM users',
         '--write' => true,
         '--json' => true,
-    ]))->toBe(0);
-    expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe([
+    ]);
+    expect($exit)->toBe(0);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
         'slug' => 'app',
         'driver' => 'mysql',
         'write' => true,
@@ -349,16 +351,15 @@ it('renders a successful no-rowset write-enabled statement without an empty-tabl
         'truncated' => false,
     ]);
 
-    expect(Artisan::call('database:query', [
+    [$exit, $output] = database_cli_display('database:query', [
         'slug' => 'app',
         'sql' => 'DELETE FROM users',
         '--write' => true,
-    ]))->toBe(0);
-    $output = Artisan::output();
-    expect($output)->toContain('Write permission');
-    expect($output)->toContain('yes');
-    expect($output)->toContain('Reported row count');
-    expect($output)->toContain('0');
+    ]);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+    expect($exit)->toBe(0);
+    expect($flat)->toContain('Write permission yes');
+    expect($flat)->toContain('Reported row count 0');
     expect($output)->toContain('Statement completed.');
     expect($output)->not->toContain('No matching records found.');
     expect($output)->not->toContain('Wrote');
@@ -376,13 +377,14 @@ it('keeps a SELECT rowset when write permission is admitted', function (): void 
         'truncated' => false,
     ]);
 
-    expect(Artisan::call('database:query', [
+    [$exit, $output] = database_cli_display('database:query', [
         'slug' => 'app',
         'sql' => 'SELECT email FROM users',
         '--write' => true,
-    ]))->toBe(0);
-    $output = Artisan::output();
-    expect($output)->toContain('Write permission');
+    ]);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+    expect($exit)->toBe(0);
+    expect($flat)->toContain('Write permission yes');
     expect($output)->toContain('owner@example.test');
     expect($output)->not->toContain('Statement completed.');
 });
@@ -398,16 +400,15 @@ it('warns when a read is truncated without inventing omitted totals', function (
         'truncated' => true,
     ]);
 
-    expect(Artisan::call('database:query', [
+    [$exit, $output] = database_cli_display('database:query', [
         'slug' => 'app',
         'sql' => 'SELECT email FROM users',
-    ]))->toBe(0);
-    $output = Artisan::output();
-    expect($output)->toContain('Write permission');
-    expect($output)->toContain('no');
+    ]);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+    expect($exit)->toBe(0);
+    expect($flat)->toContain('Write permission no');
+    expect($flat)->toContain('Truncated yes');
     expect($output)->toContain('owner@example.test');
-    expect($output)->toContain('Truncated');
-    expect($output)->toContain('yes');
     expect($output)->toContain('Result truncated at the Gateway row limit.');
     expect($output)->toContain('The omitted total is not known.');
 });
@@ -431,11 +432,11 @@ it('renders query null boolean float and formatter-tag cells literally', functio
         'truncated' => false,
     ]);
 
-    expect(Artisan::call('database:query', [
+    [$exit, $output] = database_cli_display('database:query', [
         'slug' => 'app',
         'sql' => 'SELECT flag, amount, note FROM users',
-    ]))->toBe(0);
-    $output = Artisan::output();
+    ]);
+    expect($exit)->toBe(0);
     expect($output)->toContain('<info>id</info>');
     expect($output)->toContain('1.5');
     expect($output)->toContain('plain');
@@ -517,6 +518,17 @@ it('refuses mysql create without a password before it contacts the Gateway', fun
 /**
  * @param  array<string, mixed>|list<array<string, mixed>>  $data
  */
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{0: int, 1: string}
+ */
+function database_cli_display(string $command, array $arguments = []): array
+{
+    $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+    return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
+
 function database_cli_mock(string $request, array $data, int $status = 200): MockClient
 {
     return MockClient::global([

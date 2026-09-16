@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
@@ -14,6 +14,7 @@ use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -147,14 +148,14 @@ describe('environment value preservation', function (): void {
     ): void {
         $mock = MockClient::global();
 
-        $exitCode = Artisan::call($command, [
+        [$exitCode, $output] = environment_cli_display($command, [
             ...$arguments,
             '--json' => true,
             '--no-interaction' => true,
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
+        expect(trim($output))
             ->toBe(environment_cli_error_json($code));
         expect($mock->getLastPendingRequest())->toBeNull();
     })->with([
@@ -172,22 +173,18 @@ describe('environment output', function (): void {
             UpdateAppInstanceEnvironmentRequest::class => environment_cli_response('update'),
         ]);
 
-        expect(Artisan::call('env:update', [
+        [$exit, $output] = environment_cli_display('env:update', [
             '--instance' => 'app.com',
             '--key' => 'PRIVATE_VALUE',
             '--value' => 'environment-secret-sentinel',
-        ]))->toBe(0);
-        $output = Artisan::output();
-        expect($output)->toContain('AppInstance ID');
-        expect($output)->toContain('17');
-        expect($output)->toContain('Operation');
-        expect($output)->toContain('update');
-        expect($output)->toContain('Changed');
-        expect($output)->toContain('true');
-        expect($output)->toContain('Stored keys');
-        expect($output)->toContain('3');
-        expect($output)->toContain('Workload file');
-        expect($output)->toContain('unchanged');
+        ]);
+        $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+        expect($exit)->toBe(0);
+        expect($flat)->toContain('AppInstance ID 17');
+        expect($flat)->toContain('Operation update');
+        expect($flat)->toContain('Changed true');
+        expect($flat)->toContain('Stored keys 3');
+        expect($flat)->toContain('Workload file unchanged');
         expect($output)->toContain(environment_cli_request_id());
         expect($output)->not->toContain('environment-secret-sentinel');
     });
@@ -208,16 +205,13 @@ describe('environment output', function (): void {
             SynchronizeAppInstanceEnvironmentRequest::class => environment_cli_response('sync', changed: false),
         ]);
 
-        expect(Artisan::call('env:sync', ['--instance' => 'app.com']))->toBe(0);
-        $output = Artisan::output();
-        expect($output)->toContain('AppInstance ID');
-        expect($output)->toContain('17');
-        expect($output)->toContain('Operation');
-        expect($output)->toContain('sync');
-        expect($output)->toContain('Changed');
-        expect($output)->toContain('false');
-        expect($output)->toContain('Stored keys');
-        expect($output)->toContain('3');
+        [$exit, $output] = environment_cli_display('env:sync', ['--instance' => 'app.com']);
+        $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+        expect($exit)->toBe(0);
+        expect($flat)->toContain('AppInstance ID 17');
+        expect($flat)->toContain('Operation sync');
+        expect($flat)->toContain('Changed false');
+        expect($flat)->toContain('Stored keys 3');
         expect($output)->toContain(environment_cli_request_id());
         expect($output)->not->toContain('cache');
         expect($output)->not->toContain('restart');
@@ -241,7 +235,7 @@ describe('environment failures', function (): void {
             ),
         ]);
 
-        $exitCode = Artisan::call('env:update', [
+        [$exitCode, $output] = environment_cli_display('env:update', [
             '--instance' => 'app.com',
             '--key' => 'PRIVATE_VALUE',
             '--value' => 'environment-secret-sentinel',
@@ -250,7 +244,7 @@ describe('environment failures', function (): void {
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
+        expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'env.configuration_invalid',
                 message: 'The complete AppInstance environment configuration is invalid.',
@@ -280,7 +274,7 @@ describe('environment failures', function (): void {
             ),
         ]);
 
-        $exitCode = Artisan::call('env:update', [
+        [$exitCode, $output] = environment_cli_display('env:update', [
             '--instance' => 'app.com',
             '--key' => 'BAD KEY',
             '--value' => 'environment-secret-sentinel',
@@ -289,7 +283,7 @@ describe('environment failures', function (): void {
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
+        expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'env.configuration_invalid',
                 message: 'The complete AppInstance environment configuration is invalid.',
@@ -319,7 +313,7 @@ describe('environment failures', function (): void {
             ),
         ]);
 
-        $exitCode = Artisan::call('env:update', [
+        [$exitCode, $output] = environment_cli_display('env:update', [
             '--instance' => 'app.com',
             '--key' => 'KEY',
             '--value' => 'environment-secret-sentinel',
@@ -327,7 +321,7 @@ describe('environment failures', function (): void {
         ]);
 
         expect($exitCode)->toBe(1);
-        $output = trim(Artisan::output());
+        $output = trim($output);
         expect($output)->toContain('The complete AppInstance environment configuration is invalid.');
         expect($output)->toContain('key: KEY');
         expect($output)->toContain('rule: placeholder');
@@ -351,14 +345,14 @@ describe('environment failures', function (): void {
             ),
         ]);
 
-        $exitCode = Artisan::call('env:import', [
+        [$exitCode, $output] = environment_cli_display('env:import', [
             '--instance' => '17',
             '--json' => true,
             '--no-interaction' => true,
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
+        expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'env.import_conflict',
                 message: 'The import contains keys that are already stored.',
@@ -382,14 +376,14 @@ describe('environment failures', function (): void {
             ),
         ]);
 
-        $exitCode = Artisan::call('env:import', [
+        [$exitCode, $output] = environment_cli_display('env:import', [
             '--instance' => '999999',
             '--json' => true,
             '--no-interaction' => true,
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
+        expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'http.404',
                 message: 'Resource not found.',
@@ -408,7 +402,7 @@ describe('environment failures', function (): void {
             },
         ]);
 
-        $exitCode = Artisan::call('env:update', [
+        [$exitCode, $output] = environment_cli_display('env:update', [
             '--instance' => 'app.com',
             '--key' => 'PRIVATE_VALUE',
             '--value' => 'environment-secret-sentinel',
@@ -418,7 +412,7 @@ describe('environment failures', function (): void {
         ]);
 
         expect($exitCode)->toBe(1);
-        expect(trim(Artisan::output()))
+        expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'gateway.request_failed',
                 message: 'Gateway environment operation failed before receiving a response.',
@@ -428,6 +422,17 @@ describe('environment failures', function (): void {
             ->not->toContain('RuntimeException');
     });
 });
+
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{0: int, 1: string}
+ */
+function environment_cli_display(string $command, array $arguments = []): array
+{
+    $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+    return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
 
 function environment_cli_response(string $operation, bool $changed = true): MockResponse
 {
