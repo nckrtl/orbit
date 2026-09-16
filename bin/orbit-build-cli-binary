@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+cli_dir="$repo_root/apps/cli"
+sdk_dir="$repo_root/packages/php-sdk"
+dist_root="$cli_dir/builds/dist"
+phpacker_bin="$cli_dir/phpacker/vendor/bin/phpacker"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-build-cli-binary <platform> <architecture> [build-version]
+
+Builds the Orbit CLI native binary from a temporary no-dev PHAR staging
+directory, then packages it with the checkout's dev PHPacker install.
+
+Supported targets and GitHub Actions artifact contract:
+
+  mac arm      dest apps/cli/builds/dist/mac/mac-arm      artifact orbit-macos-arm64
+  linux x64    dest apps/cli/builds/dist/linux/linux-x64  artifact orbit-linux-x64
+EOF
+}
+
+fail() {
+    printf 'orbit-build-cli-binary: %s\n' "$*" >&2
+    exit 1
+}
+
+platform="${1:-}"
+architecture="${2:-}"
+version="${3:-$("$repo_root/bin/orbit-version")}"
+
+if [ "$platform" = "-h" ] || [ "$platform" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+[ -n "$platform" ] && [ -n "$architecture" ] || {
+    usage >&2
+    exit 2
+}
+
+case "$platform:$architecture" in
+    mac:arm|linux:x64)
+        ;;
+    *)
+        fail "unsupported target: ${platform} ${architecture}"
+        ;;
+esac
+
+command -v composer >/dev/null 2>&1 || fail 'composer is required to build the CLI binary.'
+command -v php >/dev/null 2>&1 || fail 'php is required to build the CLI binary.'
+command -v rsync >/dev/null 2>&1 || fail 'rsync is required to stage the CLI source.'
+php -r 'exit(extension_loaded("zlib") ? 0 : 1);' || fail 'Host PHP must have the zlib extension to compress the PHAR.'
+
+[ -x "$phpacker_bin" ] || fail 'PHPacker is not installed. Run `composer install --working-dir=apps/cli/phpacker` first.'
+[ -f "$cli_dir/composer.lock" ] || fail 'apps/cli/composer.lock is required.'
+[ -f "$sdk_dir/composer.json" ] || fail 'packages/php-sdk/composer.json is required.'
+
+stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/orbit-cli-build.XXXXXX")"
+stage_root="$stage_dir/repo"
+stage_cli_dir="$stage_root/apps/cli"
+stage_sdk_dir="$stage_root/packages/php-sdk"
+
+cleanup() {
+    rm -rf "$stage_dir"
+}
+
+trap cleanup EXIT
+
+mkdir -p "$stage_root/apps" "$stage_root/packages"
+
+rsync -a --delete \
+    --exclude vendor \
+    --exclude build \
+    --exclude builds \
+    --exclude node_modules \
+    "$cli_dir/" \
+    "$stage_cli_dir/"
+
+rsync -a --delete \
+    --exclude vendor \
+    --exclude build \
+    --exclude builds \
+    --exclude node_modules \
+    "$sdk_dir/" \
+    "$stage_sdk_dir/"
+
+# Laravel Zero registers app:build. The committed CLI removes that command
+# from the operator surface. Staging puts it back so the PHAR can be built.
+php -r '
+$path = $argv[1];
+$contents = file_get_contents($path);
+if ($contents === false) {
+    fwrite(STDERR, "unable to read {$path}\n");
+    exit(1);
+}
+$needle = "        BuildCommand::class,\n";
+if (!str_contains($contents, $needle)) {
+    fwrite(STDERR, "BuildCommand removal not found in {$path}\n");
+    exit(1);
+}
+file_put_contents($path, preg_replace("/".preg_quote($needle, "/")."/", "", $contents, 1));
+' "$stage_cli_dir/config/commands.php"
+
+COMPOSER_MIRROR_PATH_REPOS=1 composer --working-dir="$stage_cli_dir" install \
+    --no-dev \
+    --optimize-autoloader \
+    --no-interaction \
+    --no-progress \
+    --prefer-dist
+
+orbit_sdk_vendor_dir="$stage_cli_dir/vendor/nckrtl/orbit-php-sdk"
+rm -rf "$orbit_sdk_vendor_dir"
+mkdir -p "$orbit_sdk_vendor_dir"
+cp -R "$stage_sdk_dir/src" "$stage_sdk_dir/composer.json" "$orbit_sdk_vendor_dir/"
+
+(
+    cd "$stage_cli_dir"
+    COMPOSER_MIRROR_PATH_REPOS=1 php orbit app:build orbit.phar \
+        --build-version="$version" \
+        --no-interaction \
+        --timeout=0
+)
+
+stage_phar="$stage_cli_dir/builds/orbit.phar"
+
+[ -f "$stage_phar" ] || fail "expected PHAR was not built at $stage_phar"
+
+mkdir -p "$cli_dir/builds"
+cp "$stage_phar" "$cli_dir/builds/orbit.phar"
+
+(
+    cd "$cli_dir"
+    "$phpacker_bin" build "$platform" "$architecture" \
+        --src=./builds/orbit.phar \
+        --dest=./builds/dist \
+        --php=8.5 \
+        --no-interaction
+)
+
+binary_path="$dist_root/${platform}/${platform}-${architecture}"
+
+[ -f "$binary_path" ] || fail "expected binary was not built at $binary_path"
+printf 'orbit-build-cli-binary: wrote %s\n' "$binary_path"
