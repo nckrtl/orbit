@@ -6,7 +6,7 @@ description: "Proposed. Build linux-x64 on hosted GitHub Actions and macos-arm64
 
 # ADR 0079: Publish Orbit CLI binaries from GitHub Actions
 
-Hosted GitHub Actions builds the linux-x64 Orbit CLI binary on every push and pull request to `main`. mini, the Mac ARM node on the Orbit mesh, builds macos-arm64. Orbit Ops downloads those artifacts and owns fleet distribution. The source checkout remains the supported operator install for the source alpha.
+Hosted GitHub Actions builds the Orbit CLI binary for linux-x64 on every push and pull request to `main`. mini, the Mac ARM node on the Orbit mesh, builds macos-arm64. Orbit Ops downloads those artifacts and owns fleet distribution. The source checkout remains the supported operator install for the source alpha.
 
 ## Status
 
@@ -40,10 +40,10 @@ macos-arm64 must be a native Apple silicon build. mini is the intended ARM build
 - A PHAR without PHPacker: a Node would still need a host PHP install to run the toolbox.
 - Extra platforms in this change: Ops asked for linux-x64 and macos-arm64. More targets wait for an Ops request.
 - PHPacker as an `apps/cli` require-dev package: Composer would downgrade the CLI from Symfony 8 to Symfony 7.
-- Release-tag-only builds: a merge to `main` must produce a fresh downloadable linux-x64 binary without waiting for a GitHub release.
+- Release-tag-only builds: a merge to `main` must produce a fresh linux-x64 binary that operators can download without waiting for a GitHub release.
 - Hosted GitHub `macos-*` runners as the macos-arm64 builder: mini is the intended ARM builder.
 - Cross-compiling macos-arm64 on `ubuntu-latest`: PHPacker can emit a Mach-O file from Linux, but that path is not the native mini build.
-- An ungated self-hosted macos job: a missing runner would queue forever. The `ORBIT_MINI_RUNNER` variable keeps the job skipped until Ops registers mini.
+- A self-hosted macos job without a gate: a missing runner would queue forever. The `ORBIT_MINI_RUNNER` variable keeps the job skipped until Ops registers mini.
 - SSH from a hosted GitHub Actions job into `10.44.0.9`: that invents mesh jump hosts and secrets this change does not own.
 
 ## Consequences

@@ -32,7 +32,7 @@ mini is the Mac ARM node on the Orbit mesh.
 | WireGuard address | `10.44.0.9` |
 | SSH user | `nckrtl` |
 
-The macos-arm64 GitHub Actions job uses `runs-on: [self-hosted, macOS, ARM64, mini]` and runs only when the repository variable `ORBIT_MINI_RUNNER` equals `true`. This repository does not register that runner or change the fleet.
+The GitHub Actions job that builds macos-arm64 uses `runs-on: [self-hosted, macOS, ARM64, mini]`. That job runs only when the repository variable `ORBIT_MINI_RUNNER` equals `true`. This repository does not register that runner or change the fleet.
 
 To enable the job, install a GitHub Actions runner on mini, add the labels `self-hosted`, `macOS`, `ARM64`, and `mini`, and set `ORBIT_MINI_RUNNER` to `true`. Host PHP 8.5, Composer 2, rsync, and zlib must already be on that machine. The job does not install them.
 
