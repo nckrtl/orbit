@@ -86,11 +86,11 @@ describe('ProfileHumanRenderer', function (): void {
         expect($lines[0])
             ->toBe('GET https://docs.test/admin 200 in 115.42ms')
             ->and($lines)
-            ->toContain('DNS ................................... 2.15ms')
+            ->toContain('DNS ..................................... 2.15ms')
             ->and($lines)
-            ->toContain('Total ............................... 115.42ms')
+            ->toContain('Total ................................. 115.42ms')
             ->and($lines)
-            ->toContain('Download response .................... 5.12ms - 44.1KB');
+            ->toContain('Download response ....................... 5.12ms - 44.1KB');
     });
 });
 

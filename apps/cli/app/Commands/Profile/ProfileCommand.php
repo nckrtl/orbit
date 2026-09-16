@@ -12,8 +12,6 @@ use App\Services\Profile\ProfileInputResolver;
 use App\Services\Profile\ProfileRequestProfiler;
 use Illuminate\Support\Str;
 
-use function Laravel\Prompts\text;
-
 final class ProfileCommand extends GatewayCommand
 {
     #[\Override]
@@ -47,12 +45,7 @@ final class ProfileCommand extends GatewayCommand
             && $this->option('json') !== true
         ) {
             $input = $inputResolver->resolve(
-                url: text(
-                    label: 'URL to profile',
-                    required: true,
-                    transform: trim(...),
-                    validate: $inputResolver->urlValidationMessage(...),
-                ),
+                url: $this->promptUrl($inputResolver),
                 asFirstUser: (bool) $this->option('as-first-user'),
                 user: $user,
             );
@@ -75,9 +68,9 @@ final class ProfileCommand extends GatewayCommand
             $input->url,
             $this->profileHeaders($input->authMode, $requestId, $input->user),
         );
-        $request = is_array($probe['request'] ?? null) ? $probe['request'] : [];
+        $request = $probe['request'];
 
-        if (($request['completed'] ?? false) !== true) {
+        if ($request['completed'] !== true) {
             return $this->renderProfileFailure(
                 'profile.request_failed',
                 'Failed to complete profile request.',
@@ -87,10 +80,8 @@ final class ProfileCommand extends GatewayCommand
                 ],
                 [
                     'request' => $request,
-                    'timings' => is_array($probe['timings'] ?? null) ? $probe['timings'] : [],
-                    'profile_error' => is_array($probe['error'] ?? null)
-                        ? $probe['error']
-                        : ['message' => 'Profile request failed.'],
+                    'timings' => $probe['timings'],
+                    'profile_error' => $probe['error'] ?? ['message' => 'Profile request failed.'],
                 ],
             );
         }
@@ -104,8 +95,7 @@ final class ProfileCommand extends GatewayCommand
             'origin' => 'caller',
         ];
 
-        $headers = is_array($probe['response_headers'] ?? null) ? $probe['response_headers'] : [];
-        $summary = $this->extractToolbarSummary($headers);
+        $summary = $this->extractToolbarSummary($probe['response_headers']);
 
         if ($summary !== null) {
             $data['source'] = 'baseline+toolbar';
@@ -132,6 +122,26 @@ final class ProfileCommand extends GatewayCommand
         }
 
         return self::SUCCESS;
+    }
+
+    private function promptUrl(ProfileInputResolver $inputResolver): ?string
+    {
+        while (true) {
+            $prompted = $this->ask('URL to profile');
+            $url = is_string($prompted) && trim($prompted) !== '' ? trim($prompted) : null;
+
+            if ($url === null) {
+                return null;
+            }
+
+            $message = $inputResolver->urlValidationMessage($url);
+
+            if ($message === null) {
+                return $url;
+            }
+
+            $this->line($message);
+        }
     }
 
     private function urlArgument(): ?string

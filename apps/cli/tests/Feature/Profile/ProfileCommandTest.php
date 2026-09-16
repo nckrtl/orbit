@@ -424,8 +424,8 @@ describe('profile', function (): void {
         $this
             ->artisan('profile', ['url' => 'https://docs.test/admin'])
             ->expectsOutput('GET https://docs.test/admin 200 in 115.42ms')
-            ->expectsOutput('DNS ................................... 2.15ms')
-            ->expectsOutput('Total ............................... 115.42ms')
+            ->expectsOutput('DNS ..................................... 2.15ms')
+            ->expectsOutput('Total ................................. 115.42ms')
             ->assertSuccessful();
     });
 });
