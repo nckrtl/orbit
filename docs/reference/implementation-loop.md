@@ -9,7 +9,9 @@ The [contributor guide](/contributor-guide) explains architecture, documentation
 
 ## CI and local verification
 
-GitHub CI runs on pull requests, including drafts, and pushes to main. The quality workflow validates Composer metadata, project quality checks, and affected tests in all five projects. The Docs job also validates the documentation corpus and proposed ADRs. The aggregate `Required checks` job passes only when every project succeeds.
+GitHub CI runs on pull requests, including drafts, and pushes to main. The quality workflow validates Composer metadata, project quality checks, and impacted tests in all five projects. The Docs job also validates the documentation corpus and proposed ADRs. The aggregate `Required checks` job passes only when every project succeeds.
+
+Each project job checks out the triggering branch by name with full history so Pest can write its TIA graph. Detached HEAD and shallow clones skip that write. The job restores that project's `.orbit-tia` directory from GitHub Actions cache, runs impacted tests with `ORBIT_TIA_DIRECTORY=.orbit-tia`, and saves the graph only after Pest succeeds. Guidance checks still record into `vendor/.orbit-guidance-tia` and are not cached. Hosted CI does not call `bin/tia-cache`. Incus acceptance remains the independent review proof.
 
 When a push or pull request targets `main`, a separate `Orbit CLI Binary` workflow builds the linux-x64 toolbox binary on hosted GitHub Actions. macos-arm64 builds on mini when the runner variable is set. Its artifacts, dest paths, and hosts are the [CLI binaries](/reference/cli-binaries) contract. That workflow is not part of `Required checks`.
 
@@ -52,7 +54,7 @@ After merge, preserve the review evidence and clean up resources allocated to th
 
 Run `composer test:affected` for the affected behavior and failure modes, then run the changed project's `composer check`. The check runs the project's dedicated guidance configuration with fresh TIA so its contracts execute deterministically. `guidance:check` sets `ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia`, so that fresh run records into the project's `vendor/.orbit-guidance-tia` directory and leaves the affected-test graph that `test:affected` reads in place. The check then runs Rector, Pint formatting and syntax checks, and static analysis; it does not run the full project test configuration. Run `composer docs-lint` when documentation changes.
 
-CI checks all five projects with test impact analysis (TIA). Root `composer check` is an optional local check across projects on a clean commit. Root `bin/test` and project `composer test` also use TIA.
+CI checks all five projects with impacted TIA. A later run on the same branch restores a compatible graph when one exists. Root `composer check` is an optional local check across projects on a clean commit. Root `bin/test` and project `composer test` also use TIA. Incus acceptance remains required for independent review.
 
 Use the Composer test commands to select affected tests. Pest disables test impact analysis when given a path, filter, group, or suite, even with `--tia`. Confirm that the feature tests ran.
 
