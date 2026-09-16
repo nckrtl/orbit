@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances\Dependencies;
 
 use App\Data\AppInstances\Dependencies\InstanceDependencyInventoryData;
+use App\Data\AppInstances\Dependencies\InstanceDependencyUpdateData;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
@@ -21,6 +22,7 @@ final readonly class AccessInstanceDependenciesAction
         private NodeAccessAuthorizer $authorizer,
         private ScanInstanceDependenciesAction $scan,
         private ReadInstanceDependencyScanAction $read,
+        private UpdateInstanceDependenciesAction $updates,
     ) {}
 
     public function execute(AppInstance $instance, Node $consumer, bool $scan): InstanceDependencyInventoryData
@@ -38,6 +40,28 @@ final readonly class AccessInstanceDependenciesAction
                         $result === null ? $this->read->execute($instance->id, DependencyEcosystem::Composer) : $result->composer,
                         $result === null ? $this->read->execute($instance->id, DependencyEcosystem::Npm) : $result->javascript,
                     );
+                });
+            });
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode === 'env.operation_busy') {
+                throw new ResourceOperationException('dependencies.operation_busy', 'The instance has another operation in progress.', 409);
+            }
+
+            throw $exception;
+        }
+    }
+
+    public function update(AppInstance $instance, Node $consumer): InstanceDependencyUpdateData
+    {
+        try {
+            return $this->operations->run([$instance->id], function () use ($instance, $consumer): InstanceDependencyUpdateData {
+                $current = $this->target($instance->id, $consumer);
+                $result = $this->updates->execute($current);
+
+                return DB::transaction(function () use ($instance, $consumer, $result): InstanceDependencyUpdateData {
+                    $this->target($instance->id, $consumer);
+
+                    return InstanceDependencyUpdateData::fromResult($result);
                 });
             });
         } catch (ResourceOperationException $exception) {

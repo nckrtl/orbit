@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances\Dependencies;
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
+use App\Domain\AppInstances\Dependencies\DependencyUpdateInspection;
 use App\Domain\AppInstances\Dependencies\DependencyUpdateStepResult;
 use App\Infrastructure\AppInstances\NpmDependencyUpdatePresenceProgram;
 use App\Infrastructure\AppInstances\NpmDependencyUpdateProgram;
@@ -54,73 +55,87 @@ final readonly class UpdateNpmDependenciesAction
     ) {}
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    public function inspect(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
     {
         if ($instance->environment === 'production') {
-            return $this->failed('dependencies.production_update_forbidden', false);
+            return DependencyUpdateInspection::failed('dependencies.production_update_forbidden');
         }
 
-        $node = $instance->node;
-        $path = $instance->checkout_path;
-        $user = $node->user;
-        if ($instance->environment !== 'development'
-            || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
-            || $instance->migration_required
-            || ! str_starts_with($path, '/') || str_contains($path, "\0")
-            || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
-            || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
-            return $this->failed('dependencies.unsafe_source', false);
+        $connection = $this->connection($instance);
+        if ($connection === null) {
+            return DependencyUpdateInspection::failed('dependencies.unsafe_source');
         }
-
-        $connection = new SshConnection(
-            host: $node->wireguard_ip,
-            user: $user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-        );
 
         try {
             $probe = $this->ssh->execute($connection, new RemoteCommand(
-                arguments: ['/usr/bin/python3', '-I', '-', $path],
+                arguments: ['/usr/bin/python3', '-I', '-', $instance->checkout_path],
                 input: NpmDependencyUpdatePresenceProgram::render(),
                 maxOutputBytes: 65_536,
                 cancelled: $cancelled,
                 timeout: 45.0,
             ));
         } catch (ProcessCancelledException) {
-            return $this->failed('dependencies.update_cancelled', false);
+            return DependencyUpdateInspection::failed('dependencies.update_cancelled');
         } catch (ProcessTimedOutException) {
-            return $this->failed('dependencies.update_timeout', false);
+            return DependencyUpdateInspection::failed('dependencies.update_timeout');
         } catch (Throwable) {
-            return $this->failed('dependencies.unreadable_source', false);
+            return DependencyUpdateInspection::failed('dependencies.unreadable_source');
         }
 
         $probeResult = $this->probeResult($probe->succeeded() && ! $probe->truncated && $probe->stderr === '' ? $probe->stdout : null);
         if ($probeResult['error'] !== null) {
-            return $this->failed($probeResult['error'], false);
+            return DependencyUpdateInspection::failed($probeResult['error']);
         }
 
         $status = $probeResult['status'];
         if ($status !== 'present') {
             return match ($status) {
-                'absent' => DependencyUpdateStepResult::absent(DependencyEcosystem::Npm),
-                default => $this->failed('dependencies.incomplete_source', false),
+                'absent' => DependencyUpdateInspection::absent(),
+                default => DependencyUpdateInspection::failed('dependencies.incomplete_source'),
             };
         }
 
         $vitePlus = $probeResult['vp'];
         if ($vitePlus === null) {
-            return $this->failed('dependencies.unsupported_delegation', false);
+            return DependencyUpdateInspection::failed('dependencies.unsupported_delegation');
         }
 
         [$vpPath, $vpVersion] = $vitePlus;
         if (! in_array($vpVersion, self::SUPPORTED_VITE_PLUS_VERSIONS, true)) {
+            return DependencyUpdateInspection::failed('dependencies.unsupported_delegation');
+        }
+
+        return DependencyUpdateInspection::ready($vpPath);
+    }
+
+    /** @param  (Closure(): bool)|null  $cancelled */
+    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    {
+        $inspection = $this->inspect($instance, $cancelled);
+        if ($inspection->errorCode !== null) {
+            return $this->failed($inspection->errorCode, false);
+        }
+        if (! $inspection->present) {
+            return DependencyUpdateStepResult::absent(DependencyEcosystem::Npm);
+        }
+        if ($inspection->toolPath === null) {
             return $this->failed('dependencies.unsupported_delegation', false);
+        }
+
+        return $this->apply($instance, $inspection->toolPath, $cancelled);
+    }
+
+    /** @param  (Closure(): bool)|null  $cancelled */
+    public function apply(AppInstance $instance, string $vpPath, ?Closure $cancelled = null): DependencyUpdateStepResult
+    {
+        $connection = $this->connection($instance);
+        if ($connection === null) {
+            return $this->failed('dependencies.unsafe_source', false);
         }
 
         try {
             $result = $this->ssh->execute($connection, new RemoteCommand(
+
                 arguments: [
                     '/usr/bin/setsid',
                     '--wait',
@@ -129,7 +144,7 @@ final readonly class UpdateNpmDependenciesAction
                     '-c',
                     NpmDependencyUpdateProgram::render(),
                     'npm-update',
-                    $path,
+                    $instance->checkout_path,
                     $vpPath,
                     (string) NpmDependencyUpdateProgram::DeadlineSeconds,
                 ],
@@ -164,6 +179,29 @@ final readonly class UpdateNpmDependenciesAction
         }
 
         return DependencyUpdateStepResult::succeeded(DependencyEcosystem::Npm);
+    }
+
+    private function connection(AppInstance $instance): ?SshConnection
+    {
+        $node = $instance->node;
+        $path = $instance->checkout_path;
+        $user = $node->user;
+        if ($instance->environment !== 'development'
+            || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
+            || $instance->migration_required
+            || ! str_starts_with($path, '/') || str_contains($path, "\0")
+            || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
+            || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
+            return null;
+        }
+
+        return new SshConnection(
+            host: $node->wireguard_ip,
+            user: $user,
+            port: 22,
+            identityFile: $this->keys->privateKeyPath(),
+            knownHostsFile: $this->knownHosts->path(),
+        );
     }
 
     /** @return array{error: ?string, status: ?string, vp: ?array{0: string, 1: string}} */

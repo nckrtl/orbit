@@ -130,7 +130,7 @@ These values do not sanitize raw input or authorize publication. Parsers and col
 
 The publisher owns atomic replacement, database removal checks, and retention of previous snapshots. Scan orchestration owns source validation and operation locking. The Composer update executor owns bounded development Composer mutation and absent-ecosystem skips. The Vite+ npm update adapter owns bounded development npm mutation through a verified Vite+ installation and its absent-ecosystem skips.
 
-The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. The Vite+ bun update adapter owns bounded development Bun mutation through that supervisor with a verified Bun pass-through. The Vite+ Yarn refusal adapter owns Classic and modern Yarn detection and rejects those roots before any Vite+ or Yarn command. Whole-update Yarn refusal before Composer remains with later orchestration. Update orchestration owns preflight checks and Composer-then-Vite+ ordering. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
+The Vite+ pnpm update adapter owns bounded development pnpm mutation through that same verified Vite+ supervisor. The Vite+ bun update adapter owns bounded development Bun mutation through that supervisor with a verified Bun pass-through. The Vite+ Yarn refusal adapter owns Classic and modern Yarn detection and rejects those roots before any Vite+ or Yarn command. `UpdateInstanceDependenciesAction` owns whole-target preflight, instance and development source locks, Composer-then-Vite+ ordering, and post-update scanning. Focused value and database tests cover the contracts and publication. Parser, transport, and execution tasks must verify their own behavior, including the feature's required Incus checks.
 
 ## Managed source collection
 
@@ -282,16 +282,27 @@ The action maps a present Classic or modern receipt to `dependencies.unsupported
 
 The action performs one probe SSH invocation. Probe cancellation or timeout keeps `mayHaveMutated=false`. Malformed receipts, including a present result that names Vite+, fail with `dependencies.unreadable_source`. There is no Yarn update supervisor and no delegated Vite+ command for either family.
 
+## Development update coordinator
+
+`UpdateInstanceDependenciesAction` updates one authorized development instance and refreshes its inventory. It reloads the instance under the existing instance operation lock. Development updates also hold the Node development source lock, after the instance lock, matching scan and removal. Both locks reenter, so the post-update scan can run inside the same owners.
+
+Production targets return `dependencies.production_update_forbidden` before SSH. Both package steps are `not_run`, `mayHaveMutated` is false, and post-update inventory is omitted. Invalid identity or layout fails with `dependencies.unsafe_source` without package commands. Unavailable, removing, or deleted instances fail with `dependencies.instance_unavailable`. Lock contention returns `dependencies.operation_busy` without a scan attempt outside the owner.
+
+The coordinator inspects Composer, Yarn, and the supported JavaScript family before mutation. If Yarn is present, or if JavaScript inspection fails because the project is Yarn, the coordinator refuses the whole operation with `dependencies.unsupported_format` before Composer. Incomplete, unsupported, invalid, workspace, ambiguous, or unverified-delegation results for a present ecosystem also refuse the whole operation. Absent ecosystems are skips, not refusals. Cancellation during inspection keeps both steps `not_run` and omits inventory.
+
+When preflight succeeds, Composer mutates first if present. A failed Composer step leaves JavaScript `not_run`. JavaScript mutation uses the npm, pnpm, or Bun adapter for a present supported family. After any started package work, including a failed or cancelled step, the coordinator scans readable resulting files through `ScanInstanceDependenciesAction`. A preflight refusal does not scan. Update success requires completed package steps and a successful inventory refresh. Partial mutation plus a successful scan is still a failed update.
+
 ## Single-instance HTTP API
 
-Both endpoints under `/api/v1` require an active WireGuard peer with access to the instance's owning Node. Gateway authority remains fleet-wide. Targets use numeric instance IDs; neither endpoint accepts a source path, package manager, command, or fleet selector.
+The inventory endpoints under `/api/v1` require an active WireGuard peer with access to the instance's owning Node. Gateway authority remains fleet-wide. Targets use numeric instance IDs; these endpoints do not accept a source path, package manager, command, or fleet selector.
 
 | Method and path | Route name | Result |
 | --- | --- | --- |
 | `GET /instances/{instance}/dependencies` | `instance:dependencies:show` | Read stored inventory without SSH or a new attempt. |
 | `POST /instances/{instance}/dependencies/scan` | `instance:dependencies:scan` | Scan both ecosystems synchronously and return their outcomes. |
+| `POST /instances/{instance}/dependencies/update` | `instance:dependencies:update` | Update development packages and return step outcomes plus post-update inventory. |
 
-POST requires an empty JSON object. GET accepts no body, and neither endpoint accepts query parameters. Invalid input returns `422 validation.failed`. Missing targets return `404 http.404`; unknown peers and denied access return the existing `403` errors. Inactive, removing, migration-required, or retained-removal targets return `409 dependencies.instance_unavailable` without inventory. Lock contention returns `409 dependencies.operation_busy`. The boundary reloads and checks authorization and availability under the instance operation lock, including after collection.
+POST requires an empty JSON object. GET accepts no body, and no endpoint accepts query parameters. Invalid input returns `422 validation.failed`. Missing targets return `404 http.404`; unknown peers and denied access return the existing `403` errors. Inactive, removing, migration-required, or retained-removal targets return `409 dependencies.instance_unavailable` without inventory or package work. Lock contention returns `409 dependencies.operation_busy`. The boundary reloads and checks authorization and availability under the instance operation lock, including after collection or package work.
 
 ### Inventory response
 
@@ -301,7 +312,15 @@ Each ecosystem contains `ecosystem`, `state`, nullable `succeeded`, `attempted_a
 
 Snapshots contain `observed_at`, source provenance, and nullable graph. Source contains `project_root`, `reference`, `file_hashes`, and nullable `format`. Graphs contain `resolutions` and `requirements`. Resolutions expose graph-local `id`, package `ecosystem` and `name`, opaque `version`, independent `regular` and `development` flags, `source_reference`, and `integrity`. Requirements expose nullable `from` and `to`, declared `name`, `constraint`, `kind`, `scope`, and `optional`. Root and unresolved endpoints remain null. Timestamps use UTC RFC 3339.
 
-Only one instance's latest observations and attempts are returned, with no attempt history or installed-file audit. Input collection retains its documented byte and time bounds. Raw source contents, configuration values, download URLs, credentials, and process output are excluded. API access does not update packages, select another instance, or deploy source.
+Only one instance's latest observations and attempts are returned, with no attempt history or installed-file audit. Input collection retains its documented byte and time bounds. Raw source contents, configuration values, download URLs, credentials, and process output are excluded. The scan and show endpoints do not update packages, select another instance, or deploy source.
+
+### Update response
+
+A completed update returns HTTP 200 with `data` and `meta.request_id`. HTTP 200 does not mean packages changed or that inventory refreshed. `data` contains `instance_id`, nullable overall `succeeded`, nullable `error_code`, `may_have_mutated`, named `composer` and `javascript` steps, and nullable `inventory`.
+
+Each step contains `ecosystem`, `status`, `may_have_mutated`, and `error_code`. Status values are `succeeded`, `absent`, `failed`, and `not_run`. Production and other preflight refusals use `not_run` steps, omit `inventory`, and set `error_code`. After package work, `inventory` uses the same typed scan object as `POST .../scan`. Callers must inspect step statuses and inventory `succeeded` fields.
+
+Raw source contents, configuration values, download URLs, credentials, and process output are excluded. The update endpoint does not select another instance or deploy source.
 
 ## PHP SDK transport
 

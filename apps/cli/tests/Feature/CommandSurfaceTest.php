@@ -211,6 +211,7 @@ describe('command vocabulary', function (): void {
         expect($commands)->not->toContain('metrics:list');
         expect(CommandVocabulary::routeRequiresMatchingCommand('schedule:complete', $commands))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:show', ['instance:dependencies:scan']))->toBeFalse();
+        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:scan']))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:scan', ['instance:dependencies:scan']))->toBeTrue();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:deployment-config:show', $commands))->toBeFalse();
     });

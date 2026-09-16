@@ -10,8 +10,13 @@ use App\Domain\AppInstances\Dependencies\DependencyScanResult;
 use App\Domain\AppInstances\Dependencies\DependencySnapshot;
 use App\Domain\AppInstances\Dependencies\DependencySource;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Infrastructure\AppInstances\BunDependencyUpdatePresenceProgram;
+use App\Infrastructure\AppInstances\ComposerDependencyUpdatePresenceProgram;
 use App\Infrastructure\AppInstances\DependencyFilesProgram;
 use App\Infrastructure\AppInstances\NativeAppInstanceEnvironmentOperationLock;
+use App\Infrastructure\AppInstances\NpmDependencyUpdatePresenceProgram;
+use App\Infrastructure\AppInstances\PnpmDependencyUpdatePresenceProgram;
+use App\Infrastructure\AppInstances\YarnDependencyUpdatePresenceProgram;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -306,4 +311,91 @@ describe('single-instance dependency API', function (): void {
         }
     });
 
+});
+
+describe('single-instance dependency update API', function (): void {
+    it('updates development packages and returns step outcomes with refreshed inventory', function (): void {
+        [$caller, $instance] = dependency_api_fixture();
+        $kinds = [];
+        $receipt = dependency_api_receipt();
+        $composerManifest = file_get_contents(base_path('tests/Fixtures/Dependencies/Composer/composer2-manifest.json'));
+        $composerLock = file_get_contents(base_path('tests/Fixtures/Dependencies/Composer/composer2-lock.json'));
+        $receipt['files']['composer.json'] = ['content' => base64_encode($composerManifest), 'hash' => hash('sha256', $composerManifest), 'error' => null];
+        $receipt['files']['composer.lock'] = ['content' => base64_encode($composerLock), 'hash' => hash('sha256', $composerLock), 'error' => null];
+        mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+        mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+        mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, $command) use (&$kinds, $receipt): CommandResult {
+            $input = $command->input;
+            $kind = match (true) {
+                $input === YarnDependencyUpdatePresenceProgram::render() => 'yarn',
+                $input === ComposerDependencyUpdatePresenceProgram::render() => 'composer-inspect',
+                $input === NpmDependencyUpdatePresenceProgram::render() => 'npm-inspect',
+                $input === PnpmDependencyUpdatePresenceProgram::render() => 'pnpm',
+                $input === BunDependencyUpdatePresenceProgram::render() => 'bun',
+                $input === DependencyFilesProgram::render() => 'collect',
+                in_array('composer-update', $command->arguments, true) => 'composer-apply',
+                in_array('npm-update', $command->arguments, true) => 'npm-apply',
+                default => 'unknown',
+            };
+            $kinds[] = $kind;
+
+            return match ($kind) {
+                'yarn', 'pnpm', 'bun' => new CommandResult(0, '{"status":"absent"}', '', 1, false),
+                'composer-inspect' => new CommandResult(0, '{"status":"present"}', '', 1, false),
+                'npm-inspect' => new CommandResult(0, '{"status":"present","vp":{"path":"/home/orbit/.local/share/vite-plus/bin/vp","version":"0.3.0"}}', '', 1, false),
+                'composer-apply', 'npm-apply' => new CommandResult(0, '', '', 12, false),
+                'collect' => new CommandResult(0, json_encode($receipt, JSON_THROW_ON_ERROR), '', 1, false),
+                default => throw new RuntimeException($kind),
+            };
+        });
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+
+        $response->assertOk()->assertJsonPath('data.succeeded', true)
+            ->assertJsonPath('data.composer.status', 'succeeded')
+            ->assertJsonPath('data.javascript.status', 'succeeded')
+            ->assertJsonPath('data.inventory.succeeded', true)
+            ->assertJsonPath('data.error_code', null);
+        expect($kinds)->toContain('composer-apply');
+        expect($kinds)->toContain('npm-apply');
+        expect(array_search('composer-apply', $kinds, true))->toBeLessThan(array_search('npm-apply', $kinds, true));
+    });
+
+    it('returns a typed production refusal without package invocation', function (): void {
+        [$caller, $instance] = dependency_api_fixture();
+        $instance->update(['environment' => 'production', 'production_user' => 'app_sample', 'production_home' => '/home/app_sample']);
+        mock(SshExecutor::class)->shouldNotReceive('execute');
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}');
+
+        $response->assertOk()->assertJsonPath('data.succeeded', false)
+            ->assertJsonPath('data.error_code', 'dependencies.production_update_forbidden')
+            ->assertJsonPath('data.inventory', null)
+            ->assertJsonPath('data.composer.status', 'not_run')
+            ->assertJsonPath('data.javascript.status', 'not_run')
+            ->assertJsonPath('data.may_have_mutated', false);
+        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+    });
+
+    it('rejects unauthorized update callers without mutation', function (): void {
+        [$caller, $instance] = dependency_api_fixture();
+        $caller->accessibleNodes()->detach();
+        mock(SshExecutor::class)->shouldNotReceive('execute');
+
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+            ->assertForbidden()->assertJsonPath('error.code', 'node_access.required')->assertJsonMissingPath('data');
+        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+    });
+
+    it('rejects unsupported update input before mutation', function (string $body): void {
+        [$caller, $instance] = dependency_api_fixture();
+        mock(SshExecutor::class)->shouldNotReceive('execute');
+
+        $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+            ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body)
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonMissingPath('data');
+    })->with(['', '[]', '{"command":"fixture-secret"}']);
 });

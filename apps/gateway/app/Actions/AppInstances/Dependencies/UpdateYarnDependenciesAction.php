@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances\Dependencies;
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
+use App\Domain\AppInstances\Dependencies\DependencyUpdateInspection;
 use App\Domain\AppInstances\Dependencies\DependencyUpdateStepResult;
 use App\Infrastructure\AppInstances\YarnDependencyUpdatePresenceProgram;
 use App\Infrastructure\Processes\ProcessCancelledException;
@@ -37,12 +38,58 @@ final readonly class UpdateYarnDependenciesAction
     ) {}
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    public function inspect(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
     {
         if ($instance->environment === 'production') {
-            return $this->failed('dependencies.production_update_forbidden', false);
+            return DependencyUpdateInspection::failed('dependencies.production_update_forbidden');
         }
 
+        $connection = $this->connection($instance);
+        if ($connection === null) {
+            return DependencyUpdateInspection::failed('dependencies.unsafe_source');
+        }
+
+        try {
+            $probe = $this->ssh->execute($connection, new RemoteCommand(
+                arguments: ['/usr/bin/python3', '-I', '-', $instance->checkout_path],
+                input: YarnDependencyUpdatePresenceProgram::render(),
+                maxOutputBytes: 65_536,
+                cancelled: $cancelled,
+                timeout: 45.0,
+            ));
+        } catch (ProcessCancelledException) {
+            return DependencyUpdateInspection::failed('dependencies.update_cancelled');
+        } catch (ProcessTimedOutException) {
+            return DependencyUpdateInspection::failed('dependencies.update_timeout');
+        } catch (Throwable) {
+            return DependencyUpdateInspection::failed('dependencies.unreadable_source');
+        }
+
+        $probeResult = $this->probeResult($probe->succeeded() && ! $probe->truncated && $probe->stderr === '' ? $probe->stdout : null);
+        if ($probeResult['error'] !== null) {
+            return DependencyUpdateInspection::failed($probeResult['error']);
+        }
+
+        if ($probeResult['status'] !== 'present') {
+            return DependencyUpdateInspection::absent();
+        }
+
+        return DependencyUpdateInspection::failed('dependencies.unsupported_format');
+    }
+
+    /** @param  (Closure(): bool)|null  $cancelled */
+    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    {
+        $inspection = $this->inspect($instance, $cancelled);
+        if ($inspection->errorCode !== null) {
+            return $this->failed($inspection->errorCode, false);
+        }
+
+        return DependencyUpdateStepResult::absent(DependencyEcosystem::Npm);
+    }
+
+    private function connection(AppInstance $instance): ?SshConnection
+    {
         $node = $instance->node;
         $path = $instance->checkout_path;
         $user = $node->user;
@@ -52,43 +99,16 @@ final readonly class UpdateYarnDependenciesAction
             || ! str_starts_with($path, '/') || str_contains($path, "\0")
             || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
             || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
-            return $this->failed('dependencies.unsafe_source', false);
+            return null;
         }
 
-        $connection = new SshConnection(
+        return new SshConnection(
             host: $node->wireguard_ip,
             user: $user,
             port: 22,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
         );
-
-        try {
-            $probe = $this->ssh->execute($connection, new RemoteCommand(
-                arguments: ['/usr/bin/python3', '-I', '-', $path],
-                input: YarnDependencyUpdatePresenceProgram::render(),
-                maxOutputBytes: 65_536,
-                cancelled: $cancelled,
-                timeout: 45.0,
-            ));
-        } catch (ProcessCancelledException) {
-            return $this->failed('dependencies.update_cancelled', false);
-        } catch (ProcessTimedOutException) {
-            return $this->failed('dependencies.update_timeout', false);
-        } catch (Throwable) {
-            return $this->failed('dependencies.unreadable_source', false);
-        }
-
-        $probeResult = $this->probeResult($probe->succeeded() && ! $probe->truncated && $probe->stderr === '' ? $probe->stdout : null);
-        if ($probeResult['error'] !== null) {
-            return $this->failed($probeResult['error'], false);
-        }
-
-        if ($probeResult['status'] !== 'present') {
-            return DependencyUpdateStepResult::absent(DependencyEcosystem::Npm);
-        }
-
-        return $this->failed('dependencies.unsupported_format', false);
     }
 
     /** @return array{error: ?string, status: ?string} */

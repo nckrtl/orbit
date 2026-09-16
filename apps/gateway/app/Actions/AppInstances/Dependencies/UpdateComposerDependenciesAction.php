@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances\Dependencies;
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
+use App\Domain\AppInstances\Dependencies\DependencyUpdateInspection;
 use App\Domain\AppInstances\Dependencies\DependencyUpdateStepResult;
 use App\Infrastructure\AppInstances\ComposerDependencyUpdatePresenceProgram;
 use App\Infrastructure\AppInstances\ComposerDependencyUpdateProgram;
@@ -33,55 +34,63 @@ final readonly class UpdateComposerDependenciesAction
     ) {}
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    public function inspect(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
     {
         if ($instance->environment === 'production') {
-            return $this->failed('dependencies.production_update_forbidden', false);
+            return DependencyUpdateInspection::failed('dependencies.production_update_forbidden');
         }
 
-        $node = $instance->node;
-        $path = $instance->checkout_path;
-        $user = $node->user;
-        if ($instance->environment !== 'development'
-            || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
-            || $instance->migration_required
-            || ! str_starts_with($path, '/') || str_contains($path, "\0")
-            || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
-            || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
-            return $this->failed('dependencies.unsafe_source', false);
+        $connection = $this->connection($instance);
+        if ($connection === null) {
+            return DependencyUpdateInspection::failed('dependencies.unsafe_source');
         }
-
-        $connection = new SshConnection(
-            host: $node->wireguard_ip,
-            user: $user,
-            port: 22,
-            identityFile: $this->keys->privateKeyPath(),
-            knownHostsFile: $this->knownHosts->path(),
-        );
 
         try {
             $probe = $this->ssh->execute($connection, new RemoteCommand(
-                arguments: ['/usr/bin/python3', '-I', '-', $path],
+                arguments: ['/usr/bin/python3', '-I', '-', $instance->checkout_path],
                 input: ComposerDependencyUpdatePresenceProgram::render(),
                 maxOutputBytes: 65_536,
                 cancelled: $cancelled,
                 timeout: 30.0,
             ));
         } catch (ProcessCancelledException) {
-            return $this->failed('dependencies.update_cancelled', false);
+            return DependencyUpdateInspection::failed('dependencies.update_cancelled');
         } catch (ProcessTimedOutException) {
-            return $this->failed('dependencies.update_timeout', false);
+            return DependencyUpdateInspection::failed('dependencies.update_timeout');
         } catch (Throwable) {
-            return $this->failed('dependencies.unreadable_source', false);
+            return DependencyUpdateInspection::failed('dependencies.unreadable_source');
         }
 
         $status = $this->probeStatus($probe);
-        if ($status !== 'present') {
-            return match ($status) {
-                'absent' => DependencyUpdateStepResult::absent(DependencyEcosystem::Composer),
-                'incomplete' => $this->failed('dependencies.incomplete_source', false),
-                default => $this->failed($status, false),
-            };
+
+        return match ($status) {
+            'present' => DependencyUpdateInspection::ready(),
+            'absent' => DependencyUpdateInspection::absent(),
+            'incomplete' => DependencyUpdateInspection::failed('dependencies.incomplete_source'),
+            default => DependencyUpdateInspection::failed($status),
+        };
+    }
+
+    /** @param  (Closure(): bool)|null  $cancelled */
+    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    {
+        $inspection = $this->inspect($instance, $cancelled);
+        if ($inspection->errorCode !== null) {
+            return $this->failed($inspection->errorCode, false);
+        }
+        if (! $inspection->present) {
+            return DependencyUpdateStepResult::absent(DependencyEcosystem::Composer);
+        }
+
+        return $this->apply($instance, $cancelled);
+    }
+
+    /** @param  (Closure(): bool)|null  $cancelled */
+    public function apply(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    {
+        $connection = $this->connection($instance);
+        if ($connection === null) {
+            return $this->failed('dependencies.unsafe_source', false);
         }
 
         try {
@@ -94,7 +103,7 @@ final readonly class UpdateComposerDependenciesAction
                     '-c',
                     ComposerDependencyUpdateProgram::render(),
                     'composer-update',
-                    $path,
+                    $instance->checkout_path,
                     (string) ComposerDependencyUpdateProgram::DeadlineSeconds,
                 ],
                 protectedInput: ProtectedInput::holdOpen(),
@@ -128,6 +137,29 @@ final readonly class UpdateComposerDependenciesAction
         }
 
         return DependencyUpdateStepResult::succeeded(DependencyEcosystem::Composer);
+    }
+
+    private function connection(AppInstance $instance): ?SshConnection
+    {
+        $node = $instance->node;
+        $path = $instance->checkout_path;
+        $user = $node->user;
+        if ($instance->environment !== 'development'
+            || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
+            || $instance->migration_required
+            || ! str_starts_with($path, '/') || str_contains($path, "\0")
+            || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
+            || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {
+            return null;
+        }
+
+        return new SshConnection(
+            host: $node->wireguard_ip,
+            user: $user,
+            port: 22,
+            identityFile: $this->keys->privateKeyPath(),
+            knownHostsFile: $this->knownHosts->path(),
+        );
     }
 
     private function probeStatus(CommandResult $result): string

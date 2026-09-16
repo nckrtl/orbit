@@ -201,6 +201,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances/resolve', [ResolveDependencyInstanceController::class, '__invoke'])->name('instance:resolve');
         Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
         Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
+        Route::post('instances/{instance}/dependencies/update', [AppInstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
         Route::patch('instances/{instance}', [AppInstancesController::class, 'update'])->name('instance:update');

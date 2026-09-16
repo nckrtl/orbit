@@ -26,6 +26,18 @@ final class AppInstanceDependenciesController extends Controller
         return $this->respond($request, $instance, $action, true);
     }
 
+    public function update(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action): JsonResponse
+    {
+        /** @var Node $consumer */
+        $consumer = $request->user();
+        $data = $action->update($instance, $consumer);
+
+        return response()->json([
+            'data' => $data->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
+    }
+
     private function respond(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action, bool $scan): JsonResponse
     {
         /** @var Node $consumer */
