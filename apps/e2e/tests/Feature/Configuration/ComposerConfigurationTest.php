@@ -195,6 +195,32 @@ describe('Composer configuration', function (): void {
         expect($ignored->getExitCode())->toBe(0, 'The hosted TIA graph must stay out of the candidate tree.');
     });
 
+    it('persists per-project portable PHPStan result caches after install', function (): void {
+        $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
+
+        expect($workflow)
+            ->toBeString()
+            ->toContain('path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php')
+            ->toContain("format('{0}/composer.lock', matrix.directory)")
+            ->toContain("format('{0}/phpstan.neon', matrix.directory)")
+            ->toContain('orbit-phpstan-php8.5-${{ matrix.directory }}-')
+            ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
+            ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
+            ->not->toContain('vendor/pint.cache')
+            ->not->toContain('vendor/rector/cache')
+            ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
+            ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\s*$/m');
+
+        expect(strpos($workflow, 'Install dependencies'))
+            ->toBeLessThan(strpos($workflow, 'Restore PHPStan result cache'));
+        expect(strpos($workflow, 'Restore PHPStan result cache'))
+            ->toBeLessThan(strpos($workflow, 'Run project quality checks'));
+        expect(strpos($workflow, 'Run project quality checks'))
+            ->toBeLessThan(strpos($workflow, 'Save PHPStan result cache'));
+        expect(strpos($workflow, 'Save PHPStan result cache'))
+            ->toBeLessThan(strpos($workflow, 'Restore Pest TIA graph'));
+    });
+
     it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
         $source = base_path('../../apps/docs');
         $project = temporaryPath('orbit-guidance-check-', 6);
