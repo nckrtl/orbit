@@ -366,6 +366,32 @@ it('renders a successful no-rowset write-enabled statement without an empty-tabl
     expect($output)->not->toContain('Rows affected');
 });
 
+it('does not treat a sqlite write-enabled row_count of zero as a failed mutation', function (): void {
+    database_cli_mock(QueryDatabaseConnectionRequest::class, [
+        'slug' => 'local',
+        'driver' => 'sqlite',
+        'write' => true,
+        'columns' => [],
+        'rows' => [],
+        'row_count' => 0,
+        'truncated' => false,
+    ]);
+
+    [$exit, $output] = database_cli_display('database:query', [
+        'slug' => 'local',
+        'sql' => 'INSERT INTO items (name) VALUES (\'ok\')',
+        '--write' => true,
+    ]);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+    expect($exit)->toBe(0);
+    expect($flat)->toContain('Write permission yes');
+    expect($flat)->toContain('Reported row count 0');
+    expect($output)->toContain('Statement completed.');
+    expect($output)->not->toContain('No matching records found.');
+    expect($output)->not->toContain('Wrote 0');
+    expect($output)->not->toContain('Rows affected');
+});
+
 it('keeps a SELECT rowset when write permission is admitted', function (): void {
     database_cli_mock(QueryDatabaseConnectionRequest::class, [
         'slug' => 'app',
