@@ -8,7 +8,6 @@ use App\Services\Database\LocalDatabaseQueryAction;
 use App\Services\Database\LocalDatabaseQueryRequest;
 use App\Support\Console\StandardInputReader;
 use Illuminate\Contracts\Console\Kernel;
-use PDO;
 use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {

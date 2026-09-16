@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Database;
 
 use PDO;
+use Pdo\Sqlite;
 use PDOException;
 
 final readonly class DynamicPdoConnection
@@ -69,7 +70,7 @@ final readonly class DynamicPdoConnection
         ];
 
         if ($driver === 'sqlite' && ! $write) {
-            $options[PDO::SQLITE_ATTR_OPEN_FLAGS] = PDO::SQLITE_OPEN_READONLY;
+            $options[Sqlite::ATTR_OPEN_FLAGS] = Sqlite::OPEN_READONLY;
         }
 
         return $options;

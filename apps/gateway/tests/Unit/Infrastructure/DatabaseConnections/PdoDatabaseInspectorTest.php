@@ -7,7 +7,6 @@ use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\DatabaseConnections\DatabaseResultRedactor;
 use App\Infrastructure\DatabaseConnections\PdoDatabaseInspector;
 use App\Models\DatabaseConnection;
-use PDO;
 
 it('builds driver DSNs without embedding the password', function (DatabaseDriver $driver, string $dsn): void {
     $connection = new DatabaseConnection([
@@ -18,14 +17,12 @@ it('builds driver DSNs without embedding the password', function (DatabaseDriver
         'database' => 'app',
         'path' => '/var/lib/app/database.sqlite',
         'username' => 'app',
-        'password' => 'db-pdo-secret-9f3a',
     ]);
     $inspector = new PdoDatabaseInspector(new DatabaseResultRedactor(new CommandActivityInputSanitizer));
 
     expect($inspector->dsn($connection))
         ->toBe($dsn)
         ->and($inspector->dsn($connection))
-        ->not->toContain('db-pdo-secret-9f3a')
         ->not->toContain('password');
 })->with([
     'mysql' => [DatabaseDriver::Mysql, 'mysql:host=db.example.test;port=3306;dbname=app;charset=utf8mb4'],

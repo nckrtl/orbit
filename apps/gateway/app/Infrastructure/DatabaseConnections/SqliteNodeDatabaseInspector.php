@@ -171,7 +171,7 @@ final readonly class SqliteNodeDatabaseInspector
         $token = bin2hex(random_bytes(32));
         $input = ProtectedInput::fromString(json_encode(
             $this->payload($connection, $sql, $write, $token),
-            JSON_THROW_ON_ERROR,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
         ));
 
         try {
