@@ -17,6 +17,26 @@ it('documents automatic gateway trust during first use', function (): void {
         ->not->toContain('gateway:add local https://gateway.orbit --ca=');
 });
 
+it('documents the local HTTP profile command', function (): void {
+    $readme = file_get_contents(base_path('README.md'));
+    $profileSection = <<<'MARKDOWN'
+        ## Profile
+
+        Profile one HTTP request from this machine. The command does not use the
+        Gateway or a Gateway profile.
+
+        ```bash
+        ./orbit profile https://docs.test/admin
+        ./orbit profile --as-first-user
+        ./orbit profile https://docs.test --user=42 --json
+        ```
+        MARKDOWN;
+
+    expect($readme)
+        ->toBeString()
+        ->toContain($profileSection);
+});
+
 it('documents the doctor verification boundary', function (): void {
     $readme = file_get_contents(base_path('README.md'));
     $doctorSection = <<<'MARKDOWN'

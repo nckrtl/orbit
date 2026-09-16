@@ -347,6 +347,20 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/profile.mdx",
+            "title": "profile",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/route.mdx",
             "title": "route",
             "kind": "product",

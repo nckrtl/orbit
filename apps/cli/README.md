@@ -52,6 +52,21 @@ The command uses Homebrew dnsmasq and `/etc/resolver/<name>`. An exact-name
 override takes precedence over a wildcard TLD override. Restart open browsers
 after a change so they do not reuse an existing connection.
 
+## Profile
+
+Profile one HTTP request from this machine. The command does not use the
+Gateway or a Gateway profile.
+
+```bash
+./orbit profile https://docs.test/admin
+./orbit profile --as-first-user
+./orbit profile https://docs.test --user=42 --json
+```
+
+Supply an absolute HTTP or HTTPS URL, or omit it to use `APP_URL` from the
+nearest ancestor `.env`. Interactive terminals prompt for a URL when neither
+is available.
+
 ## Doctor
 
 ```bash

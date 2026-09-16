@@ -168,6 +168,7 @@
             "group": "Operations",
             "pages": [
               "cli/doctor",
+              "cli/profile",
               "cli/activity",
               "cli/extension",
               "cli/herdr",

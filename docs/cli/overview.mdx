@@ -4,7 +4,7 @@ sidebarTitle: "Overview"
 description: "How the orbit command line talks to the Gateway, selects records, confirms destructive changes, and returns machine-readable output."
 ---
 
-Use `orbit` to manage fleet records and local client settings. Operational commands use the Gateway API; local profile, extension, trust, and DNS commands follow their own documented behavior. The CLI does not open an SSH session to a managed Node.
+Use `orbit` to manage fleet records and local client settings. Operational commands use the Gateway API; local Gateway profile, extension, trust, DNS, and HTTP `profile` commands follow their own documented behavior. The CLI does not open an SSH session to a managed Node.
 
 Humans and coding agents use the same commands. Human output is readable in a terminal. A command's machine mode preserves its documented JSON document or event stream.
 
@@ -46,6 +46,7 @@ Commands are grouped by the record they manage. Each family has its own page wit
 | [`process`](/cli/process) | systemd services and Docker containers owned by an App instance, a Node, or an App definition. |
 | [`schedule`](/cli/schedule) | Recurring commands run by native systemd timers. |
 | [`doctor`](/cli/doctor) | Verify-only drift checks across the fleet. |
+| [`profile`](/cli/profile) | One local HTTP request profiler on the operator machine. |
 | [`activity`](/cli/activity) | The Gateway's log of who ran what. |
 | [`extension`](/cli/extension) | Optional local command extensions. |
 | [`herdr`](/cli/herdr) | Named Herdr terminal sessions and observation grants. |

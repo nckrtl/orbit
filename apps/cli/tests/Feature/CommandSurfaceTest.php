@@ -145,6 +145,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'process:start',
         'process:stop',
         'process:update',
+        'profile',
         'route:create',
         'route:destroy',
         'route:list',
@@ -176,6 +177,7 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('instance:transfer'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('profile'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('workspace:php'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('instance:deployment-config'))->toBeFalse();
@@ -265,7 +267,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(113);
+    expect($orbitCommands)->toHaveCount(114);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -734,6 +736,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'profile' => [['url'], ['as-first-user' => false, 'user' => null, 'json' => false]],
         'route:list' => [[], ['json' => false]],
         'route:create' => [
             ['app', 'domain'],
@@ -813,6 +816,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         $optionalArguments = match ($name) {
             'dns:resolve' => ['target'],
             'node:add' => ['host'],
+            'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],
             default => [],
@@ -1029,6 +1033,11 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ], ...$profileMissing],
+        'profile' => [
+            ['url' => 'ftp://docs.test/archive'],
+            'code' => 'profile.validation_failed',
+            'message' => 'URL to profile must be an absolute HTTP or HTTPS URL.',
+        ],
         'route:list' => [[], ...$profileMissing],
         'route:create' => [['app' => '1', 'domain' => 'app.test', '--node' => '1'], ...$profileMissing],
         'route:destroy' => [['route' => '1'], ...$profileMissing],

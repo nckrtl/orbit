@@ -10,6 +10,8 @@ use App\Services\Dns\ResolvesLocalDns;
 use App\Services\Extensions\LocalExtensionState;
 use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\NativeGitRegistrationDiscovery;
+use App\Services\Profile\CurlProfileRequestProfiler;
+use App\Services\Profile\ProfileRequestProfiler;
 use Illuminate\Support\ServiceProvider;
 
 final class AppServiceProvider extends ServiceProvider
@@ -24,6 +26,7 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);
         $this->app->singleton(

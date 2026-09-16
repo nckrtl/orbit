@@ -60,9 +60,10 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `instance` | `clone`, `deploy`, `register`, `rollback`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
+| `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 
-`doctor` is a one-segment command. Its family name is the command.
+`doctor` and `profile` are one-segment commands. Each family name is the command.
 
 ## Noun-ending commands
 
