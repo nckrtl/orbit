@@ -22,6 +22,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
     protected $signature = 'process:destroy
         {process : Process ID or definition name}
         {--app= : Numeric App ID}
+        {--yes : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -39,6 +40,23 @@ final class DestroyProcessCommand extends ProcessActionCommand
         }
 
         if ($appId === null) {
+            $processId = $this->positiveId('process', 'Process', 'process.id_invalid');
+
+            if ($processId === null) {
+                return self::FAILURE;
+            }
+
+            if ($this->gatewayConnector($repository, $connectors) === null) {
+                return self::FAILURE;
+            }
+
+            if (! $this->confirmAction(
+                "Destroy Process [{$processId}] and remove its runtime artifacts?",
+                'Process destruction cancelled.',
+            )) {
+                return self::FAILURE;
+            }
+
             return parent::handle($repository, $connectors);
         }
 
@@ -54,10 +72,18 @@ final class DestroyProcessCommand extends ProcessActionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        if (! $this->confirmAction(
+            "Destroy Process definition [{$name}]?",
+            'Process destruction cancelled.',
+        )) {
+            return self::FAILURE;
+        }
+
+        $response = $this->sendWithProgress(
             $connector,
             new DestroyProcessDefinitionRequest($appId, $name),
             AppRuntimeDefinitionResponse::class,
+            $this->progressLabels(),
         );
 
         return $response instanceof AppRuntimeDefinitionResponse
@@ -73,5 +99,10 @@ final class DestroyProcessCommand extends ProcessActionCommand
     protected function pastTense(): string
     {
         return 'removed';
+    }
+
+    protected function progressLabels(): array
+    {
+        return ['Destroy Process', 'Destroying Process', 'Destroyed Process'];
     }
 }

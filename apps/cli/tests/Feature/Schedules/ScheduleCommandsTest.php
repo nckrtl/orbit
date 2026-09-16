@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -25,9 +26,12 @@ use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
+    $this->previousColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-schedule-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
@@ -40,6 +44,11 @@ beforeEach(function (): void {
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    if ($this->previousColumns === false) {
+        putenv('COLUMNS');
+    } else {
+        putenv('COLUMNS='.$this->previousColumns);
+    }
 });
 
 it('adds one Node Schedule through exactly one typed request and renders human output', function (): void {
@@ -51,14 +60,10 @@ it('adds one Node Schedule through exactly one typed request and renders human o
         ], 201),
     ]);
 
-    $this
-        ->artisan('schedule:create', schedule_cli_add_arguments(['--node' => '3']))
-        ->expectsTable(['Field', 'Value'], schedule_cli_item_rows([
-            'target_type' => 'node',
-            'target_id' => 3,
-            'desired_timer_state' => 'enabled',
-        ]))
-        ->assertExitCode(Command::SUCCESS);
+    [$exit, $output] = schedule_cli_display('schedule:create', schedule_cli_add_arguments(['--node' => '3']));
+    expect($exit)->toBe(Command::SUCCESS);
+    expect($output)->toContain('daily-report');
+    expect($output)->toContain(schedule_cli_uuid());
 
     $mock->assertSentCount(1, CreateScheduleRequest::class);
     expect($mock->getLastPendingRequest()?->getUrl())
@@ -194,7 +199,7 @@ it('lists shows updates and destroys App Schedule definitions by name', function
     ],
     'destroy' => [
         'schedule:destroy',
-        ['schedule' => 'hourly-report', '--app' => '7'],
+        ['schedule' => 'hourly-report', '--app' => '7', '--yes' => true],
         DestroyScheduleDefinitionRequest::class,
         '/api/v1/apps/7/schedule-definitions/hourly-report',
     ],
@@ -209,23 +214,13 @@ it('lists the unfiltered collection without command text in human output', funct
         ]),
     ]);
 
-    $this
-        ->artisan('schedule:list')
-        ->expectsTable(
-            ['UUID', 'Target', 'Name', 'Calendar', 'Desired timer', 'Lifecycle', 'Last run'],
-            [[
-                schedule_cli_uuid(),
-                'instance:7',
-                'daily-report',
-                'daily',
-                'disabled',
-                'active',
-                'never',
-            ]],
-        )
-        ->expectsOutput('Request ID: '.schedule_cli_request_id())
-        ->doesntExpectOutputToContain('php artisan report:send')
-        ->assertExitCode(Command::SUCCESS);
+    [$exit, $output] = schedule_cli_display('schedule:list');
+    expect($exit)->toBe(Command::SUCCESS);
+    expect($output)->toContain('daily-report');
+    expect($output)->toContain('disabled');
+    expect($output)->toContain('active');
+    expect($output)->toContain('Request ID: '.schedule_cli_request_id());
+    expect($output)->not->toContain('php artisan report:send');
 
     $mock->assertSentCount(1, ListSchedulesRequest::class);
     expect($mock->getLastRequest()?->query()->all())->toBe([]);
@@ -258,10 +253,17 @@ it('sends one UUID request and renders separate timer and lifecycle states', fun
         $requestClass => schedule_cli_response(),
     ]);
 
-    $this
-        ->artisan($command, ['schedule' => schedule_cli_uuid()])
-        ->expectsTable(['Field', 'Value'], schedule_cli_item_rows())
-        ->assertExitCode(Command::SUCCESS);
+    $arguments = ['schedule' => schedule_cli_uuid()];
+    if ($command === 'schedule:destroy') {
+        $arguments['--yes'] = true;
+    }
+
+    [$exit, $output] = schedule_cli_display($command, $arguments);
+    expect($exit)->toBe(Command::SUCCESS);
+    expect($output)->toContain('daily-report');
+    expect($output)->toContain(schedule_cli_uuid());
+    expect($output)->toContain('disabled');
+    expect($output)->toContain('active');
 
     $mock->assertSentCount(1, $requestClass);
     expect($mock->getLastPendingRequest()?->getUrl())->toBe(
@@ -274,6 +276,43 @@ it('sends one UUID request and renders separate timer and lifecycle states', fun
     'activate' => ['schedule:enable', EnableScheduleRequest::class],
 ]);
 
+it('refuses JSON schedule definition destruction without --yes', function (): void {
+    $mock = MockClient::global();
+
+    [$exit, $output] = schedule_cli_display('schedule:destroy', [
+        'schedule' => 'hourly-report',
+        '--app' => '7',
+        '--json' => true,
+    ]);
+    expect($exit)->toBe(Command::FAILURE);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'input.confirmation_required',
+            'message' => 'Supply --yes to confirm this operation.',
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+});
+
+it('refuses JSON schedule destruction without --yes', function (): void {
+    $mock = MockClient::global();
+
+    [$exit, $output] = schedule_cli_display('schedule:destroy', [
+        'schedule' => schedule_cli_uuid(),
+        '--json' => true,
+    ]);
+    expect($exit)->toBe(Command::FAILURE);
+    expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => 'input.confirmation_required',
+            'message' => 'Supply --yes to confirm this operation.',
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+});
+
 it('renders one UUID operation response in exact json', function (string $command, string $requestClass): void {
     $payload = schedule_cli_payload();
     $response = ScheduleResponse::fromGatewayData($payload, schedule_cli_request_id());
@@ -282,7 +321,11 @@ it('renders one UUID operation response in exact json', function (string $comman
     ]);
 
     $this
-        ->artisan($command, ['schedule' => schedule_cli_uuid(), '--json' => true])
+        ->artisan($command, array_filter([
+            'schedule' => schedule_cli_uuid(),
+            '--json' => true,
+            '--yes' => $command === 'schedule:destroy' ? true : null,
+        ]))
         ->expectsOutput(json_encode($response->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(Command::SUCCESS);
 
@@ -564,9 +607,20 @@ it('renders shared safe Gateway failures for every Schedule operation', function
     'show' => ['schedule:show', ShowScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
     'run' => ['schedule:run', RunScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
     'logs' => ['schedule:logs', ScheduleLogsRequest::class, ['schedule' => schedule_cli_uuid()]],
-    'remove' => ['schedule:destroy', DestroyScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
+    'remove' => ['schedule:destroy', DestroyScheduleRequest::class, ['schedule' => schedule_cli_uuid(), '--yes' => true]],
     'activate' => ['schedule:enable', EnableScheduleRequest::class, ['schedule' => schedule_cli_uuid()]],
 ]);
+
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{0: int, 1: string}
+ */
+function schedule_cli_display(string $command, array $arguments = []): array
+{
+    $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+    return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
 
 /** @param array<string, mixed> $overrides
  * @return array<string, mixed>

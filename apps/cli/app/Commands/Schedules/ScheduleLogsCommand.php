@@ -48,10 +48,11 @@ final class ScheduleLogsCommand extends ScheduleUuidCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ScheduleLogsRequest($scheduleId, $lines),
             ScheduleLogsResponse::class,
+            ['Read Schedule logs', 'Reading Schedule logs', 'Read Schedule logs'],
         );
 
         if (! $response instanceof ScheduleLogsResponse) {
@@ -70,7 +71,7 @@ final class ScheduleLogsCommand extends ScheduleUuidCommand
             $this->line($output);
         }
 
-        $this->line("Request ID: {$response->requestId}");
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

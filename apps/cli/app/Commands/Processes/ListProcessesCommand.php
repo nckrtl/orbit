@@ -7,6 +7,7 @@ namespace App\Commands\Processes;
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Apps\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
@@ -49,10 +50,11 @@ final class ListProcessesCommand extends TargetedProcessCommand
                 return self::FAILURE;
             }
 
-            $response = $this->send(
+            $response = $this->sendWithProgress(
                 $connector,
                 new ListProcessDefinitionsRequest($appId),
                 AppRuntimeDefinitionsResponse::class,
+                ['List Process definitions', 'Loading Process definitions', 'Loaded Process definitions'],
             );
 
             return $response instanceof AppRuntimeDefinitionsResponse
@@ -66,10 +68,11 @@ final class ListProcessesCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ListProcessesRequest($target),
             ProcessesResponse::class,
+            ['List Processes', 'Loading Processes', 'Loaded Processes'],
         );
 
         if (! $response instanceof ProcessesResponse) {
@@ -94,13 +97,25 @@ final class ListProcessesCommand extends TargetedProcessCommand
                 $process->runtime,
                 $process->desiredState,
                 $process->runtimeStatus,
+                $process->status,
+                $process->failedStep,
                 $process->restartPolicy,
                 $process->keepAlive ? 'yes' : 'no',
             ];
         }
 
-        $this->table(['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Restart', 'Keep-alive'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        if ($rows === []) {
+            $this->writeHumanMessage('No matching records found.');
+            $this->writeHumanMessage("Request ID: {$response->requestId}");
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Lifecycle', 'Failed step', 'Restart', 'Keep-alive'],
+            $rows,
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

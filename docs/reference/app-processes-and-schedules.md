@@ -52,12 +52,12 @@ The process and schedule families select App-owned definitions with `--app`. `AP
 | `orbit process:list --app=APP` | List the App's process definitions. |
 | `orbit process:show NAME --app=APP` | Show one process definition by name. |
 | `orbit process:update NAME --app=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
-| `orbit process:destroy NAME --app=APP` | Destroy one process definition by name. |
+| `orbit process:destroy NAME --app=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
 | `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the App. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:list --app=APP` | List the App's Schedule definitions. |
 | `orbit schedule:show NAME --app=APP` | Show one Schedule definition by name. |
 | `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
-| `orbit schedule:destroy NAME --app=APP` | Destroy one Schedule definition by name. |
+| `orbit schedule:destroy NAME --app=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
 
 `--for` is required with `--app` on create and update. The CLI refuses `--app` together with `--instance` or `--node`, and it refuses `--for` on an App instance or Node target, before it sends an HTTP request. Create refuses a name that another definition of that App and kind already uses. `process:start`, `process:stop`, `process:restart`, and `process:logs` do not accept `--app`. `schedule:run`, `schedule:logs`, and `schedule:enable` do not accept `--app`. Every command also accepts `--json`. Human and JSON results include the Gateway request ID, and safe errors include that ID when the Gateway supplies it.
 
@@ -149,8 +149,8 @@ The CLI exposes these Process operations through the Gateway.
 | `orbit process:stop PROCESS` | Stop an installed Process and record the stopped desired state. |
 | `orbit process:restart PROCESS` | Restart an installed Process and record the running desired state. |
 | `orbit process:logs PROCESS --lines=COUNT` | Return a non-streaming tail from 1 through 1,000 lines. |
-| `orbit process:destroy PROCESS` | Stop and remove the exact owned runtime artifacts, then delete the Process record. |
-| `orbit process:destroy NAME --app=APP` | Destroy one process definition by name. |
+| `orbit process:destroy PROCESS [--yes]` | Stop and remove the exact owned runtime artifacts, then delete the Process record. Interactive confirmation defaults to No. |
+| `orbit process:destroy NAME --app=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
 
 Creating or starting an App instance Process requires an active, available App instance and reachable active Node. Creating or starting a Node Process requires a reachable active managed Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing App instance while its Node remains reachable, and Node-owned cleanup can use an active Node.
 

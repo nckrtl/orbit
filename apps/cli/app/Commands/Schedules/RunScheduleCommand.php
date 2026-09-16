@@ -21,4 +21,9 @@ final class RunScheduleCommand extends ScheduleItemCommand
     {
         return new RunScheduleRequest($scheduleId);
     }
+
+    protected function progressLabels(): array
+    {
+        return ['Run Schedule', 'Running Schedule', 'Ran Schedule'];
+    }
 }

@@ -33,7 +33,7 @@ The [App process and Schedule definitions](/reference/app-processes-and-schedule
 | [`process:logs`](#orbit-processlogs) | Return a bounded log tail. |
 | [`process:destroy`](#orbit-processdestroy) | Remove one Process and its artifacts, or one definition. |
 
-Every command accepts `--json`. Human and JSON output include the Gateway request ID.
+Every command accepts `--json`. Human and JSON output include the Gateway request ID. Human output uses the shared table, detail tree, and progress helpers. Process list and detail include lifecycle state, failed step, and error code. Human definition show, create, update, and destroy include the complete specification, including `command`. Process lists still omit `spec.command`. Process environment values stay redacted. `process:destroy` requires default-No confirmation or `--yes`.
 
 ## orbit process:create
 
@@ -245,7 +245,7 @@ orbit process:logs 41 --lines=250
 Stop and remove the exact owned runtime artifacts of one Process, then delete its record. With `--app`, destroy one App process definition by name.
 
 ```bash
-orbit process:destroy <process> [--app=APP] [--json]
+orbit process:destroy <process> [--app=APP] [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -255,14 +255,15 @@ orbit process:destroy <process> [--app=APP] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--app=APP` | Numeric App ID. Selects a definition instead of an installed Process. |
+| `--yes` | Confirm destruction without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 ```bash
-orbit process:destroy 41
-orbit process:destroy queue --app=1
+orbit process:destroy 41 --yes
+orbit process:destroy queue --app=1 --yes
 ```
 
 <Warning>
-The command sends the request without a confirmation prompt. Systemd units are named `orbit-process-{id}-{name}.service` and containers `orbit-process-{id}-{name}`; the Gateway checks that exact owner marker before it stops or removes anything and never adopts or deletes a colliding unit or container.
+Systemd units are named `orbit-process-{id}-{name}.service` and containers `orbit-process-{id}-{name}`; the Gateway checks that exact owner marker before it stops or removes anything and never adopts or deletes a colliding unit or container.
 </Warning>
 
 Destroying a definition leaves every existing App instance copy in place.

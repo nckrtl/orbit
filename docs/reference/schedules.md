@@ -73,8 +73,8 @@ An operator uses Schedule commands from a machine with an active Gateway profile
 | `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
 | `orbit schedule:run UUID` | Start one manual invocation without changing the desired timer state. |
 | `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
-| `orbit schedule:destroy UUID` | Destroy one Schedule through the Gateway. |
-| `orbit schedule:destroy NAME --app=APP` | Destroy one Schedule definition by name. |
+| `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
+| `orbit schedule:destroy NAME --app=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
 | `orbit schedule:enable UUID` | Enable and start an installed App instance timer without replacing the Schedule. |
 
 `schedule:create` requires exactly one of `--node`, `--instance`, or `--app`. Combined selectors, no selector, a malformed or non-positive ID, `--node` with the App instance-only `--no-start` option, and `--for` without `--app` fail before the CLI sends an HTTP request. `--for` is required with `--app` on create and update. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target. The [App process and Schedule definitions](/reference/app-processes-and-schedules) page owns the App target.

@@ -26,4 +26,9 @@ final class RestartProcessCommand extends ProcessActionCommand
     {
         return 'restarted';
     }
+
+    protected function progressLabels(): array
+    {
+        return ['Restart Process', 'Restarting Process', 'Restarted Process'];
+    }
 }

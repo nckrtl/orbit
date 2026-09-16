@@ -731,7 +731,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'process:list' => [[], ['instance' => null, 'node' => null, 'app' => null, 'json' => false]],
         'process:logs' => [['process'], ['lines' => '100', 'json' => false]],
-        'process:destroy' => [['process'], ['app' => null, 'json' => false]],
+        'process:destroy' => [['process'], ['app' => null, 'yes' => false, 'json' => false]],
         'process:restart' => [['process'], ['json' => false]],
         'process:show' => [['name'], ['app' => null, 'json' => false]],
         'process:start' => [['process'], ['json' => false]],
@@ -788,7 +788,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ]],
         'schedule:list' => [[], ['app' => null, 'json' => false]],
         'schedule:logs' => [['schedule'], ['lines' => '100', 'json' => false]],
-        'schedule:destroy' => [['schedule'], ['app' => null, 'json' => false]],
+        'schedule:destroy' => [['schedule'], ['app' => null, 'yes' => false, 'json' => false]],
         'schedule:run' => [['schedule'], ['json' => false]],
         'schedule:show' => [['schedule'], ['app' => null, 'json' => false]],
         'schedule:update' => [[

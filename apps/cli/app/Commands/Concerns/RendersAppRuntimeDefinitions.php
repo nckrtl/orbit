@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Concerns;
 
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
 
@@ -17,11 +18,13 @@ trait RendersAppRuntimeDefinitions
             return self::SUCCESS;
         }
 
-        $this->info("{$label} definition [{$definition->name}] ({$definition->id})");
-        $this->line("App ID: {$definition->appId}");
-        $this->line('Environments: '.implode(', ', $definition->environments));
-        $this->line('Specification: '.json_encode($definition->spec, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-        $this->line("Request ID: {$definition->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("{$label} definition [{$definition->name}].", [
+            'ID' => $definition->id,
+            'App ID' => $definition->appId,
+            'Environments' => implode(', ', $definition->environments),
+            'Specification' => json_encode($definition->spec, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            'Request ID' => $definition->requestId,
+        ]));
 
         return self::SUCCESS;
     }
@@ -49,8 +52,18 @@ trait RendersAppRuntimeDefinitions
             $definitions,
         );
 
-        $this->table(['ID', 'Name', 'Environments', 'Specification'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        if ($rows === []) {
+            $this->writeHumanMessage('No matching records found.');
+            $this->writeHumanMessage("Request ID: {$response->requestId}");
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['ID', 'Name', 'Environments', 'Specification'],
+            $rows,
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

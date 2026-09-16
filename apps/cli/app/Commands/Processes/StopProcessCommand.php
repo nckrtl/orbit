@@ -26,4 +26,9 @@ final class StopProcessCommand extends ProcessActionCommand
     {
         return 'stopped';
     }
+
+    protected function progressLabels(): array
+    {
+        return ['Stop Process', 'Stopping Process', 'Stopped Process'];
+    }
 }

@@ -22,6 +22,7 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
     protected $signature = 'schedule:destroy
         {schedule : Schedule UUID or definition name}
         {--app= : Numeric App ID}
+        {--yes : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -39,6 +40,23 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
         }
 
         if ($appId === null) {
+            $scheduleId = $this->scheduleId();
+
+            if ($scheduleId === null) {
+                return self::FAILURE;
+            }
+
+            if ($this->gatewayConnector($repository, $connectors) === null) {
+                return self::FAILURE;
+            }
+
+            if (! $this->confirmAction(
+                "Destroy Schedule [{$scheduleId}] and remove its timer artifacts?",
+                'Schedule destruction cancelled.',
+            )) {
+                return self::FAILURE;
+            }
+
             return parent::handle($repository, $connectors);
         }
 
@@ -54,10 +72,18 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        if (! $this->confirmAction(
+            "Destroy Schedule definition [{$name}]?",
+            'Schedule destruction cancelled.',
+        )) {
+            return self::FAILURE;
+        }
+
+        $response = $this->sendWithProgress(
             $connector,
             new DestroyScheduleDefinitionRequest($appId, $name),
             AppRuntimeDefinitionResponse::class,
+            $this->progressLabels(),
         );
 
         return $response instanceof AppRuntimeDefinitionResponse
@@ -68,5 +94,10 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
     protected function request(string $scheduleId): GatewayRequest
     {
         return new DestroyScheduleRequest($scheduleId);
+    }
+
+    protected function progressLabels(): array
+    {
+        return ['Destroy Schedule', 'Destroying Schedule', 'Destroyed Schedule'];
     }
 }

@@ -21,4 +21,9 @@ final class EnableScheduleCommand extends ScheduleItemCommand
     {
         return new EnableScheduleRequest($scheduleId);
     }
+
+    protected function progressLabels(): array
+    {
+        return ['Enable Schedule', 'Enabling Schedule', 'Enabled Schedule'];
+    }
 }
