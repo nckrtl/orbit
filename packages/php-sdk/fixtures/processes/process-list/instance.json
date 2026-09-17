@@ -1,0 +1,59 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Processes\\ListProcessesRequest",
+    "route": "GET /api/v1/processes",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 1,
+                "target_type": "instance",
+                "target_id": 1,
+                "name": "queue",
+                "runtime": "systemd",
+                "working_directory": "/home/orbit/apps/docs",
+                "runtime_config": {
+                    "command": [
+                        "/usr/bin/php",
+                        "artisan",
+                        "queue:work"
+                    ],
+                    "environment_file": "/home/orbit/apps/docs/.env"
+                },
+                "restart_policy": "on-failure",
+                "keep_alive": false,
+                "desired_state": "running",
+                "status": "active",
+                "runtime_status": "running",
+                "failed_step": null,
+                "error_code": null
+            },
+            {
+                "id": 2,
+                "target_type": "instance",
+                "target_id": 1,
+                "name": "scheduler",
+                "runtime": "systemd",
+                "working_directory": "/home/orbit/apps/docs",
+                "runtime_config": {
+                    "command": [
+                        "/usr/bin/php",
+                        "artisan",
+                        "schedule:work"
+                    ],
+                    "environment_file": "/home/orbit/apps/docs/.env"
+                },
+                "restart_policy": "always",
+                "keep_alive": false,
+                "desired_state": "running",
+                "status": "active",
+                "runtime_status": "running",
+                "failed_step": null,
+                "error_code": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

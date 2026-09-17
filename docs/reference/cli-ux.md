@@ -72,6 +72,8 @@ Select the display from the task the user is performing.
 | Short wait without meaningful substeps | Spinner |
 | Line-oriented logs or another continuous text output | The stream itself |
 
+Human output names a related record by its name or slug, such as the App `charlie-shop` or the Node `beast`, never by its numeric id alone. JSON output carries the id and, where the Gateway provides it, the name and slug beside it.
+
 A list does not become interactive unless its command contract defines a selection and follow-up action. Tables use short uppercase headers. Data lists retain the exact documented column names. Empty lists state that no matching records were found. Missing display values use an em dash; JSON keeps its documented null or omission behavior. A property list uses a group heading, a primary item label, and indented labeled values.
 
 When a human field represents a user and host together, display `user@host`; retain separate machine fields. Display a top-level domain with its leading dot. These formatting rules do not change accepted selectors or serialized values.

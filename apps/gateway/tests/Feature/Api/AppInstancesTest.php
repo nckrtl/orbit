@@ -859,6 +859,7 @@ it('records the instances of one App among several', function (): void {
     $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
 
     record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(4, 'data'), 'instances/instance-list/charlie-shop', ListAppInstancesRequest::class, 'GET /api/v1/instances');
+    record_fixture($this->getJson('/api/v1/instances/1')->assertOk()->assertJsonPath('data.name', 'dev'), 'instances/instance-show/charlie-shop-dev', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
 });
 
 it('records the list and show responses of an active checkout AppInstance', function (): void {

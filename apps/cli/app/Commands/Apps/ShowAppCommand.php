@@ -71,7 +71,7 @@ final class ShowAppCommand extends GatewayCommand
             if ($instance->appId !== $app->id) {
                 continue;
             }
-            $rows[$instance->id] = [(string) $instance->id, $instance->name, $instance->environment, (string) $instance->nodeId, $instance->domain ?? '—', $instance->status];
+            $rows[$instance->id] = [(string) $instance->id, $instance->name, $instance->environment, $instance->node->name ?? (string) $instance->nodeId, $instance->domain ?? '—', $instance->status];
         }
 
         if ($this->consoleMode()->mayPrompt && $rows !== []) {

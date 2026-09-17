@@ -5,7 +5,7 @@ Fetching Processes...
 │
 ├  ID                   1
 │
-├  App                  acme
+├  App                  charlie-shop
 │
 ├  Node                 app-dev
 │
@@ -15,13 +15,13 @@ Fetching Processes...
 │
 ├  Source layout        checkout
 │
-├  Checkout             /srv/orbit/apps/acme/dev
+├  Checkout             /srv/orbit/apps/charlie-shop/dev
 │
 ├  Vite port            5173
 │
 ├  Root override        —
 │
-├  Effective root       public
+├  Effective root       web/public
 │
 ├  Selected branch      dev
 │
@@ -29,9 +29,9 @@ Fetching Processes...
 │
 ├  Migration required   no
 │
-├  Domain               dev.acme.test
+├  Domain               dev.charlie-shop.test
 │
-└  URL                  https://dev.acme.test
+└  URL                  https://dev.charlie-shop.test
 
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
  │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │

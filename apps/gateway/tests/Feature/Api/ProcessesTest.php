@@ -20,6 +20,7 @@ use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Monolog\LogRecord;
+use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Psr\Log\LoggerInterface;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -97,6 +98,27 @@ it('adds and lists a systemd process through the minimal API contract', function
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.name', 'queue')
         ->assertJsonPath('data.0.runtime_status', 'running');
+});
+
+it('records the processes of one App instance', function (): void {
+    foreach ([['queue', ['/usr/bin/php', 'artisan', 'queue:work'], 'on-failure'], ['scheduler', ['/usr/bin/php', 'artisan', 'schedule:work'], 'always']] as [$name, $command, $policy]) {
+        $this->postJson('/api/v1/processes', [
+            'target_type' => 'instance',
+            'target_id' => $this->instance->id,
+            'name' => $name,
+            'runtime' => 'systemd',
+            'command' => $command,
+            'restart_policy' => $policy,
+            'start' => true,
+        ])->assertCreated();
+    }
+
+    record_fixture(
+        $this->withHeader('X-Orbit-Request-Id', fixture_request_id())->getJson('/api/v1/processes?target_type=instance&target_id='.$this->instance->id)->assertOk()->assertJsonCount(2, 'data'),
+        'processes/process-list/instance',
+        ListProcessesRequest::class,
+        'GET /api/v1/processes',
+    );
 });
 
 it('stores keep-alive independently of restart policy', function (): void {

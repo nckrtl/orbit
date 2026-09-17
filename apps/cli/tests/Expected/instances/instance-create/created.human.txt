@@ -11,9 +11,9 @@ Creating App instance...
 │
 ├  ID                   1
 │
-├  App                  1
+├  App                  acme
 │
-├  Node                 1
+├  Node                 app-dev
 │
 ├  Status               active
 │
@@ -35,13 +35,7 @@ Creating App instance...
 │
 ├  Migration required   no
 │
-├  Starting commit      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+├  Domain               dev.acme.test
 │
-├  Git state            dev
-│
-├  Route domain         dev.acme.test
-│
-├  URL                  https://dev.acme.test
-│
-└  Request ID           0198e15c-bf97-7c23-8f1f-61b8fe67a844
+└  URL                  https://dev.acme.test
 

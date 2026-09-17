@@ -9,6 +9,15 @@
                 "id": 1,
                 "app_id": 3,
                 "node_id": 1,
+                "app": {
+                    "id": 3,
+                    "name": "Charlie shop",
+                    "slug": "charlie-shop"
+                },
+                "node": {
+                    "id": 1,
+                    "name": "app-dev"
+                },
                 "name": "dev",
                 "environment": "development",
                 "source_layout": "checkout",
@@ -67,6 +76,15 @@
                 "id": 4,
                 "app_id": 1,
                 "node_id": 1,
+                "app": {
+                    "id": 1,
+                    "name": "Acme",
+                    "slug": "acme"
+                },
+                "node": {
+                    "id": 1,
+                    "name": "app-dev"
+                },
                 "name": "dev",
                 "environment": "development",
                 "source_layout": "checkout",
@@ -125,6 +143,15 @@
                 "id": 3,
                 "app_id": 3,
                 "node_id": 1,
+                "app": {
+                    "id": 3,
+                    "name": "Charlie shop",
+                    "slug": "charlie-shop"
+                },
+                "node": {
+                    "id": 1,
+                    "name": "app-dev"
+                },
                 "name": "feature-checkout",
                 "environment": "development",
                 "source_layout": "checkout",
@@ -183,6 +210,15 @@
                 "id": 2,
                 "app_id": 3,
                 "node_id": 1,
+                "app": {
+                    "id": 3,
+                    "name": "Charlie shop",
+                    "slug": "charlie-shop"
+                },
+                "node": {
+                    "id": 1,
+                    "name": "app-dev"
+                },
                 "name": "staging",
                 "environment": "development",
                 "source_layout": "checkout",

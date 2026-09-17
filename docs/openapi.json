@@ -13464,6 +13464,12 @@
           "node_id": {
             "type": "integer"
           },
+          "app": {
+            "$ref": "#/components/schemas/AppIdentity"
+          },
+          "node": {
+            "$ref": "#/components/schemas/NodeIdentity"
+          },
           "name": {
             "type": "string"
           },
@@ -13580,6 +13586,31 @@
               "integer",
               "null"
             ]
+          }
+        }
+      },
+      "AppIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "NodeIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },

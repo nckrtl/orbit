@@ -53,7 +53,8 @@ describe('instance contract', function (): void {
     });
 
     it('renders instance:show from the recorded response', function (): void {
-        run_instance_contract('instances/instance-show/default', 'instance:show', ['instance' => '1'], 'instances/instance-show/default.human.txt', 0);
+        run_instance_contract(['instances/instance-show/default', 'processes/process-list/instance'], 'instance:show', ['instance' => '1'], 'instances/instance-show/default.human.txt', 0);
+        run_instance_contract(['instances/instance-show/charlie-shop-dev', 'processes/process-list/instance'], 'instance:show', ['instance' => '1'], 'instances/instance-show/charlie-shop-dev.human.txt', 0);
         run_instance_contract('instances/instance-show/default', 'instance:show', ['instance' => '1', '--json' => true], 'instances/instance-show/default.json', 0);
     });
 

@@ -1,17 +1,17 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest",
-    "route": "POST /api/v1/instances",
-    "status": 201,
+    "request": "Orbit\\Sdk\\Requests\\AppInstances\\ShowAppInstanceRequest",
+    "route": "GET /api/v1/instances/{instance}",
+    "status": 200,
     "body": {
         "data": {
             "id": 1,
-            "app_id": 1,
+            "app_id": 3,
             "node_id": 1,
             "app": {
-                "id": 1,
-                "name": "Acme",
-                "slug": "acme"
+                "id": 3,
+                "name": "Charlie shop",
+                "slug": "charlie-shop"
             },
             "node": {
                 "id": 1,
@@ -20,11 +20,11 @@
             "name": "dev",
             "environment": "development",
             "source_layout": "checkout",
-            "checkout_path": "/srv/orbit/apps/acme/dev",
+            "checkout_path": "/srv/orbit/apps/charlie-shop/dev",
             "production_user": null,
             "production_home": null,
             "root": null,
-            "effective_root": "public",
+            "effective_root": "web/public",
             "selected_branch": "dev",
             "branch_override": null,
             "migration_required": false,
@@ -34,11 +34,11 @@
             "route": {
                 "id": 1,
                 "kind": "app",
-                "app_id": 1,
+                "app_id": 3,
                 "node_id": 1,
                 "cluster_id": null,
                 "generation_basis_node_id": 1,
-                "domain": "dev.acme.test",
+                "domain": "dev.charlie-shop.test",
                 "provenance": "generated",
                 "publication": "private",
                 "public_publication": "inactive",
@@ -64,8 +64,8 @@
                 "process_id": null,
                 "upstream": null
             },
-            "domain": "dev.acme.test",
-            "url": "https://dev.acme.test",
+            "domain": "dev.charlie-shop.test",
+            "url": "https://dev.charlie-shop.test",
             "removal": null,
             "transfer": null,
             "deploy_steps": [],

@@ -8,6 +8,15 @@
             "id": 1,
             "app_id": 1,
             "node_id": 1,
+            "app": {
+                "id": 1,
+                "name": "Acme",
+                "slug": "acme"
+            },
+            "node": {
+                "id": 1,
+                "name": "app-dev"
+            },
             "name": "dev",
             "environment": "development",
             "source_layout": "checkout",

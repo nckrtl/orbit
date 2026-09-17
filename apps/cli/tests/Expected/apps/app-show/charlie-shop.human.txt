@@ -13,10 +13,10 @@ Fetching App instances...
 │
 └  Web root         web/public
 
- ┌────┬──────────────────┬─────────────┬──────┬────────────────────────────────────┬────────┐
- │ ID │ NAME             │ ENVIRONMENT │ NODE │ DOMAIN                             │ STATUS │
- ├────┼──────────────────┼─────────────┼──────┼────────────────────────────────────┼────────┤
- │ 1  │ dev              │ development │ 1    │ dev.charlie-shop.test              │ active │
- │ 3  │ feature-checkout │ development │ 1    │ feature-checkout.charlie-shop.test │ active │
- │ 2  │ staging          │ development │ 1    │ staging.charlie-shop.test          │ active │
- └────┴──────────────────┴─────────────┴──────┴────────────────────────────────────┴────────┘
+ ┌────┬──────────────────┬─────────────┬─────────┬────────────────────────────────────┬────────┐
+ │ ID │ NAME             │ ENVIRONMENT │ NODE    │ DOMAIN                             │ STATUS │
+ ├────┼──────────────────┼─────────────┼─────────┼────────────────────────────────────┼────────┤
+ │ 1  │ dev              │ development │ app-dev │ dev.charlie-shop.test              │ active │
+ │ 3  │ feature-checkout │ development │ app-dev │ feature-checkout.charlie-shop.test │ active │
+ │ 2  │ staging          │ development │ app-dev │ staging.charlie-shop.test          │ active │
+ └────┴──────────────────┴─────────────┴─────────┴────────────────────────────────────┴────────┘
