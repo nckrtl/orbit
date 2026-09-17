@@ -847,7 +847,8 @@ final class TopFlowCommand extends GatewayCommand
         $next = $p['step'] + 1;
         if ($next === 1) {
             $this->provisioning['stage'] = 'fingerprint';
-            $this->provisioning['confirm'] = PanelConfirmPrompt::make(label: "{$p['host']} presents host key {$p['fingerprint']}. Trust it?", default: true, yes: 'Trust', no: 'Abort');
+            $short = substr($p['fingerprint'], 0, 15).'…'.substr($p['fingerprint'], -6);
+            $this->provisioning['confirm'] = PanelConfirmPrompt::make(label: "Trust {$p['host']} with host key {$short}?", default: true, yes: 'Trust', no: 'Abort');
 
             return;
         }
