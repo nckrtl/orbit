@@ -135,7 +135,7 @@ describe('shared progress', function (): void {
 
     it('inserts a revealed step at its real position on a decorated terminal', function (): void {
         $output = new BufferedOutput;
-        $display = new ProgressDisplay(new ConsoleMode(false, false, true, false, 80), $output, 'Deploy AppInstance [17]');
+        $display = new ProgressDisplay(new ConsoleMode(false, false, true, true, 80), $output, 'Deploy AppInstance [17]');
         $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
         $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
         $display->during('source_preparation', fn (): int => 0);
@@ -147,10 +147,12 @@ describe('shared progress', function (): void {
         $display->complete('activation', ProgressState::Success);
         $display->finish('Deployment succeeded.');
         $text = $output->fetch();
+        $finalFrame = substr($text, strrpos($text, '┌'));
 
-        expect($text)->toContain("\e[", 'Resolved release', 'Ran migrate', 'Activated release')
-            ->and(strpos($text, 'Resolved release'))->toBeLessThan(strpos($text, 'Ran migrate'))
-            ->and(strpos($text, 'Ran migrate'))->toBeLessThan(strpos($text, 'Activated release'));
+        expect($text)->toContain("\e[")
+            ->and($finalFrame)->toContain('Resolved release', 'Ran migrate', 'Activated release')
+            ->and(strpos($finalFrame, 'Resolved release'))->toBeLessThan(strpos($finalFrame, 'Ran migrate'))
+            ->and(strpos($finalFrame, 'Ran migrate'))->toBeLessThan(strpos($finalFrame, 'Activated release'));
     });
 
     it('inserts a revealed step at its real position on plain output', function (): void {
@@ -167,10 +169,11 @@ describe('shared progress', function (): void {
         $display->complete('activation', ProgressState::Success);
         $display->finish('Deployment succeeded.');
         $text = $output->fetch();
+        $finalFrame = substr($text, strrpos($text, '┌'));
 
         expect($text)->not->toContain("\e[")
-            ->and(strpos($text, 'Resolved release'))->toBeLessThan(strpos($text, 'Ran migrate'))
-            ->and(strpos($text, 'Ran migrate'))->toBeLessThan(strpos($text, 'Activated release'));
+            ->and(strpos($finalFrame, 'Resolved release'))->toBeLessThan(strpos($finalFrame, 'Ran migrate'))
+            ->and(strpos($finalFrame, 'Ran migrate'))->toBeLessThan(strpos($finalFrame, 'Activated release'));
     });
 
     it('fails loudly when the anchor step for admitBefore does not exist', function (): void {
