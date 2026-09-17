@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\AddNodeRequest",
+    "route": "POST /api/v1/nodes",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "node.ssh_host_fingerprint_required",
+            "message": "An expected SSH host fingerprint is required for node [app-dev].",
+            "details": {}
+        }
+    }
+}

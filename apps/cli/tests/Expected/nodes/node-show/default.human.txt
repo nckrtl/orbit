@@ -1,0 +1,42 @@
+Loading Node...
+
+┌  Show Node
+│
+├  ● Loaded Node
+│
+└  Loaded Node.
+
+
+┌  Node: app-dev
+│
+├  ID                            2
+│
+├  Status                        active
+│
+├  Roles                         app-dev
+│
+├  SSH                           orbit@94.237.40.75:22
+│
+├  Cluster                       1
+│
+├  WireGuard                     10.44.0.3
+│
+├  LAN                           10.0.0.3
+│
+├  WireGuard public key          app-dev-public-key
+│
+├  WireGuard endpoint override   10.0.0.2:51820
+│
+├  DNS server override           10.0.0.2
+│
+├  TLD                           .app-dev.orbit
+│
+├  Platform                      linux (x86_64)
+│
+├  Apps path                     —
+│
+├  Access to                     —
+│
+└  Accessible by                 —
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

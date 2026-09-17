@@ -2768,6 +2768,23 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/gateway-response-fixtures.md",
+            "title": "Gateway response fixtures",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/gateway-trust.md",
             "title": "Gateway trust",
             "kind": "reference",

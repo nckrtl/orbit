@@ -1,0 +1,9 @@
+Adding Node...
+
+┌  Add Node
+│
+├  ● Adding Node
+│
+└  Operation failed.
+
+An app-dev TLD is required for node [app-dev].

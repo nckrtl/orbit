@@ -110,6 +110,7 @@
               "reference/implementation-loop",
               "reference/incus-topologies",
               "reference/proof-plans",
+              "reference/gateway-response-fixtures",
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
               "reference/cli-ux",

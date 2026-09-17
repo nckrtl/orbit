@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Run the CLI tests that replay the given Gateway response fixtures.
+
+Run from any directory:
+
+    bin/cli-contract nodes/node-list/default nodes/node-add/created
+    bin/cli-contract --changed            fixtures changed against origin/main
+    bin/cli-contract --changed HEAD~1     fixtures changed against another base
+
+Fixtures live under packages/php-sdk/fixtures. A CLI test names the fixtures it replays, so this script finds
+the test files that mention each name and runs only those, which answers "which commands does this response
+change reach" in seconds.
+"""
+
+import pathlib
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+FIXTURES = ROOT / 'packages/php-sdk/fixtures'
+TESTS = ROOT / 'apps/cli/tests'
+
+
+def changed_fixtures(base):
+    """Fixtures that differ from base, plus untracked ones that are not committed yet."""
+    git = ['git', '-C', str(ROOT)]
+    output = subprocess.check_output([*git, 'diff', '--name-only', base, '--', 'packages/php-sdk/fixtures'], text=True)
+    output += subprocess.check_output([*git, 'ls-files', '--others', '--exclude-standard', '--', 'packages/php-sdk/fixtures'], text=True)
+    names = [pathlib.Path(line).relative_to('packages/php-sdk/fixtures').with_suffix('').as_posix() for line in output.split() if line]
+    return sorted(set(names))
+
+
+def main():
+    arguments = sys.argv[1:]
+    if arguments[:1] == ['--changed']:
+        names = changed_fixtures(arguments[1] if len(arguments) > 1 else 'origin/main')
+    else:
+        names = [name.removeprefix('packages/php-sdk/fixtures/').removesuffix('.json') for name in arguments]
+    if not names:
+        print('No fixtures selected.')
+        return
+    files = {}
+    for name in names:
+        if not (FIXTURES / f'{name}.json').is_file():
+            print(f'{name}: no fixture file (removed or misspelled); its tests must fail until they change.')
+        users = sorted(path for path in TESTS.rglob('*.php') if f"'{name}'" in path.read_text(encoding='utf-8'))
+        if not users:
+            print(f'{name}: no CLI test replays this fixture.')
+        for path in users:
+            files.setdefault(path, []).append(name)
+    if not files:
+        sys.exit(1)
+    for path, used in files.items():
+        print(f'{path.relative_to(ROOT)} replays {", ".join(used)}')
+    sys.exit(subprocess.call(['vendor/bin/pest', *[str(path.relative_to(ROOT / "apps/cli")) for path in files]], cwd=ROOT / 'apps/cli'))
+
+
+if __name__ == '__main__':
+    main()
