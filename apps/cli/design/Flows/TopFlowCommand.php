@@ -675,7 +675,7 @@ final class TopFlowCommand extends GatewayCommand
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
                     ->widget(ParagraphWidget::fromString($this->stats())),
-                $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode),
+                $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $area->width),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(24), Constraint::min(40))
@@ -688,40 +688,42 @@ final class TopFlowCommand extends GatewayCommand
     private function metricsHeight(string $node): int
     {
         $m = $this->metrics[$node];
-        $left = intdiv(count($m['cores']) + 1, 2) + 2;
-        $right = 2 + 3 + count($m['disks']);
 
-        return max($left, $right) + 2;
+        // Core rows, then the taller of Mem+Swp and Disk+Load+Uptime+Pressure, inside the border.
+        return intdiv(count($m['cores']) + 3, 4) + 4 + 2;
     }
 
-    /** An htop-like block for the selected node: cores, memory, and swap left; load, pressure, and disks right. */
-    private function metricsPanel(string $node): Widget
+    /** An htop-like block for the selected node: cores in four columns, then memory beside disk, load, and uptime. */
+    private function metricsPanel(string $node, int $width): Widget
     {
         $m = $this->metrics[$node];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $age = max(0, (int) round(microtime(true) - $this->lastMetrics));
+        $inner = $width - 2;
+        $column = intdiv($inner, 4);
+        $half = intdiv($inner, 2);
 
-        $left = [];
-        foreach (array_chunk($m['cores'], 2, true) as $pair) {
+        $coreLines = [];
+        foreach (array_chunk($m['cores'], 4, true) as $group) {
             $spans = [];
-            foreach ($pair as $core => $load) {
-                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), 22), Span::fromString('  ')];
+            foreach ($group as $core => $load) {
+                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $column - 2), Span::fromString('  ')];
             }
-            $left[] = Line::fromSpans(...$spans);
+            $coreLines[] = Line::fromSpans(...$spans);
         }
-        $left[] = Line::fromSpans(...$this->bar('Mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), 48));
-        $left[] = Line::fromSpans(...$this->bar('Swp', $m['swap'][1] > 0 ? $m['swap'][0] / $m['swap'][1] : 0, sprintf('%.1fG/%.0fG', $m['swap'][0], $m['swap'][1]), 48));
 
+        $left = [
+            Line::fromSpans(...$this->bar('Mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), $half - 2)),
+            Line::fromSpans(...$this->bar('Swp', $m['swap'][1] > 0 ? $m['swap'][0] / $m['swap'][1] : 0, sprintf('%.1fG/%.0fG', $m['swap'][0], $m['swap'][1]), $half - 2)),
+        ];
+
+        [$mount, $used, $total] = $m['disks'][0];
         $right = [
+            Line::fromSpans(...$this->bar(str_pad($mount, 3), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), $half - 2, [80, 90])),
             Line::fromSpans(Span::styled('Load    ', $dim), Span::fromString(sprintf('%.2f  %.2f  %.2f', ...$m['load']))),
             Line::fromSpans(Span::styled('Uptime  ', $dim), Span::fromString($m['uptime'])),
+            Line::fromSpans(Span::styled('Pressure', $dim), Span::fromString(sprintf('  cpu %.0f%%  mem %.0f%%  io %.0f%%', $m['psi']['cpu'], $m['psi']['mem'], $m['psi']['io'])), Span::styled('  some, 10 s', $dim)),
         ];
-        foreach (['cpu' => 'Pressure cpu', 'mem' => 'Pressure mem', 'io' => 'Pressure io '] as $key => $label) {
-            $right[] = Line::fromSpans(...$this->bar($label, min(1, $m['psi'][$key] / 100), sprintf('%4.1f%% some/10s', $m['psi'][$key]), 44, [25, 50]));
-        }
-        foreach ($m['disks'] as [$mount, $used, $total]) {
-            $right[] = Line::fromSpans(...$this->bar(str_pad($mount, 12), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), 44, [80, 90]));
-        }
 
         return BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
@@ -729,11 +731,17 @@ final class TopFlowCommand extends GatewayCommand
             ->borderStyle($dim)
             ->widget(
                 GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::length(52), Constraint::min(30))
+                    ->direction(Direction::Vertical)
+                    ->constraints(Constraint::length(count($coreLines)), Constraint::min(4))
                     ->widgets(
-                        ParagraphWidget::fromText(Text::fromLines(...$left)),
-                        ParagraphWidget::fromText(Text::fromLines(...$right)),
+                        ParagraphWidget::fromText(Text::fromLines(...$coreLines)),
+                        GridWidget::default()
+                            ->direction(Direction::Horizontal)
+                            ->constraints(Constraint::percentage(50), Constraint::percentage(50))
+                            ->widgets(
+                                ParagraphWidget::fromText(Text::fromLines(...$left)),
+                                ParagraphWidget::fromText(Text::fromLines(...$right)),
+                            ),
                     ),
             );
     }
