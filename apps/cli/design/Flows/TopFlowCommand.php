@@ -9,6 +9,8 @@ use App\Support\Console\Renderers\TableTheme;
 use Design\Support\AnsiLine;
 use Design\Support\PanelConfirmPrompt;
 use Design\Support\PanelConfirmPromptRenderer;
+use Design\Support\PanelMultiSelectPrompt;
+use Design\Support\PanelMultiSelectPromptRenderer;
 use Design\Support\PanelSelectPrompt;
 use Design\Support\PanelSelectPromptRenderer;
 use Design\Support\PanelTextPrompt;
@@ -152,7 +154,7 @@ final class TopFlowCommand extends GatewayCommand
      * The node create form: the Laravel Prompts asked so far (the last one active), the answers,
      * and how far the creation got.
      *
-     * @var array{prompts: list<array{string, PanelTextPrompt|PanelSelectPrompt}>, active: int}|null
+     * @var array{prompts: list<array{string, PanelTextPrompt|PanelMultiSelectPrompt}>, active: int}|null
      */
     private ?array $form = null;
 
@@ -368,8 +370,20 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         if ($this->form !== null) {
-            if ($event->kind === MouseEventKind::Down && $event->button === MouseButton::Left && $this->hitRow('back', $x, $y) !== null) {
+            if ($event->kind !== MouseEventKind::Down || $event->button !== MouseButton::Left) {
+                return;
+            }
+            if ($this->hitRow('back', $x, $y) !== null) {
                 $this->form = null;
+            } elseif ($this->hitPoint('form:submit', $x, $y)) {
+                $this->focusField(count($this->form['prompts']));
+                $this->submitForm();
+            } else {
+                foreach (array_keys($this->form['prompts']) as $index) {
+                    if ($this->hitPoint("field:{$index}", $x, $y)) {
+                        $this->focusField($index);
+                    }
+                }
             }
 
             return;
@@ -732,7 +746,7 @@ final class TopFlowCommand extends GatewayCommand
     private function openForm(): void
     {
         // The theme finds a renderer by concrete class, so the panel subclasses reuse the CLI's renderers.
-        TableTheme::extend([PanelTextPrompt::class => PanelTextPromptRenderer::class, PanelSelectPrompt::class => PanelSelectPromptRenderer::class, PanelConfirmPrompt::class => PanelConfirmPromptRenderer::class]);
+        TableTheme::extend([PanelTextPrompt::class => PanelTextPromptRenderer::class, PanelSelectPrompt::class => PanelSelectPromptRenderer::class, PanelMultiSelectPrompt::class => PanelMultiSelectPromptRenderer::class, PanelConfirmPrompt::class => PanelConfirmPromptRenderer::class]);
         Prompt::addTheme('orbit-cli', TableTheme::renderers());
         Prompt::theme('orbit-cli');
         $this->form = ['prompts' => array_map(fn (string $key): array => [$key, $this->formPrompt($key)], self::FORM_PROMPTS), 'active' => 0];
@@ -740,14 +754,14 @@ final class TopFlowCommand extends GatewayCommand
     }
 
     /** One of the node:add prompts, with the same label, default, and validation the command uses. */
-    private function formPrompt(string $key): PanelTextPrompt|PanelSelectPrompt
+    private function formPrompt(string $key): PanelTextPrompt|PanelMultiSelectPrompt
     {
         return match ($key) {
             'name' => PanelTextPrompt::make(label: 'Node name', placeholder: 'beast', required: true, validate: fn (string $v): ?string => preg_match('/^[a-z0-9-]+$/', $v) === 1 ? null : 'Use lowercase letters, digits, and dashes.'),
             'host' => PanelTextPrompt::make(label: 'SSH host', placeholder: '10.0.0.12 or beast.example.test', required: true, validate: fn (string $v): ?string => filter_var($v, FILTER_VALIDATE_IP) !== false || preg_match('/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i', $v) === 1 ? null : 'Enter an IP address or a host name such as beast.example.test.'),
             'port' => PanelTextPrompt::make(label: 'SSH port', default: '22', required: true, validate: fn (string $v): ?string => ctype_digit($v) && (int) $v > 0 && (int) $v < 65536 ? null : 'A port is a number from 1 to 65535.'),
             'user' => PanelTextPrompt::make(label: 'SSH user', default: 'root', required: true),
-            'roles' => PanelSelectPrompt::make(label: 'Role', options: ['app-dev' => 'app-dev · runs App instances', 'gateway' => 'gateway · runs the Gateway and the VPN hub', 'app-prod' => 'app-prod · runs production App instances'], default: 'app-dev'),
+            'roles' => PanelMultiSelectPrompt::make(label: 'Roles', options: ['app-dev' => 'app-dev · runs App instances', 'app-prod' => 'app-prod · runs production App instances', 'gateway' => 'gateway · runs the Gateway and the VPN hub'], default: ['app-dev'], required: 'Pick at least one role.', hint: 'Space toggles a role.'),
             'tld' => PanelTextPrompt::make(label: 'TLD for its domains', default: 'test', required: true),
             default => throw new RuntimeException("No prompt for {$key}."),
         };
@@ -768,9 +782,19 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-        // Tab and Shift+Tab move between fields; so do the arrows, except inside the role select,
-        // where they pick an option.
-        $select = $this->form['prompts'][$this->form['active']][1] instanceof PanelSelectPrompt;
+        // Tab and Shift+Tab move between fields and the button; so do the arrows, except inside
+        // the roles list, where they pick an option.
+        $onButton = $this->form['active'] === count($this->form['prompts']);
+        if ($onButton) {
+            match ($code) {
+                KeyCode::Enter => $this->submitForm(),
+                KeyCode::Up, KeyCode::BackTab => $this->focusField($this->form['active'] - 1),
+                default => null,
+            };
+
+            return;
+        }
+        $select = $this->form['prompts'][$this->form['active']][1] instanceof PanelMultiSelectPrompt;
         $step = match ($code) {
             KeyCode::Tab => 1,
             KeyCode::BackTab => -1,
@@ -800,24 +824,24 @@ final class TopFlowCommand extends GatewayCommand
         }
     }
 
-    /**
-     * Keys go to the active field. Enter confirms it (the prompt validates itself) and moves on;
-     * Enter on the last field confirms every field, and the first invalid one takes the focus.
-     */
+    /** Keys go to the active field. Enter confirms it (the prompt validates itself) and moves on. */
     private function pressInForm(string $key): void
     {
-        if ($this->form === null) {
+        if ($this->form === null || $this->form['active'] >= count($this->form['prompts'])) {
             return;
         }
         $active = $this->form['active'];
         $prompt = $this->form['prompts'][$active][1];
         $prompt->press($key);
-        if ($key !== Key::ENTER || ! $prompt->done()) {
-            return;
-        }
-        if ($active < count($this->form['prompts']) - 1) {
+        if ($key === Key::ENTER && $prompt->done()) {
             $this->focusField($active + 1);
+        }
+    }
 
+    /** The button confirms every field; the first invalid one takes the focus, else the add starts. */
+    private function submitForm(): void
+    {
+        if ($this->form === null) {
             return;
         }
         foreach ($this->form['prompts'] as $index => [$name, $field]) {
@@ -833,23 +857,25 @@ final class TopFlowCommand extends GatewayCommand
         $this->startProvisioning();
     }
 
-    /** A field takes the focus in its editable state; a field left behind keeps whatever it holds. */
+    /** A field takes the focus in its editable state; past the last field sits the button. */
     private function focusField(int $index): void
     {
         if ($this->form === null) {
             return;
         }
-        $index = max(0, min(count($this->form['prompts']) - 1, $index));
+        $index = max(0, min(count($this->form['prompts']), $index));
         $this->form['active'] = $index;
-        $this->form['prompts'][$index][1]->state = 'active';
+        if (isset($this->form['prompts'][$index])) {
+            $this->form['prompts'][$index][1]->state = 'active';
+        }
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     private function formValues(): array
     {
         $values = [];
         foreach ($this->form['prompts'] ?? [] as [$name, $prompt]) {
-            $values[$name] = (string) $prompt->value();
+            $values[$name] = $prompt->value();
         }
 
         return $values;
@@ -866,7 +892,7 @@ final class TopFlowCommand extends GatewayCommand
             'id' => count($this->nodes) + 1,
             'name' => $values['name'],
             'status' => 'provisioning',
-            'roles' => [$values['roles']],
+            'roles' => array_values((array) $values['roles']),
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'tld' => $values['tld'],
@@ -1159,7 +1185,7 @@ final class TopFlowCommand extends GatewayCommand
 
         $footer = ParagraphWidget::fromString(match (true) {
             $this->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
-            $this->form !== null => '  ↑↓ or Tab move between fields · Enter confirms a field, on the last one the node · Esc cancels',
+            $this->form !== null => '  ↑↓ or Tab move between fields · Space toggles a role · Enter confirms a field · Esc cancels',
             $this->provisioning !== null && $this->provisioning['stage'] === 'fingerprint' => '  ←→ or y/n · Enter confirms · Esc aborts the add',
             $this->page() !== null && $this->focus === null => '  ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions · q leave',
             $this->focus === null => '  ↑↓ sections · → into the page · 1-7 jump · '.($this->section === 'nodes' ? 'c or + create · ' : '').($this->hasFilters() ? 'n/p filters · ' : '').'q leave',
@@ -1772,19 +1798,29 @@ final class TopFlowCommand extends GatewayCommand
         $form = $this->form ?? throw new RuntimeException('No form is open.');
         $this->drawn['back'] = ['area' => Area::fromScalars($area->left(), $area->top(), 10, 1), 'header' => false];
 
-        // Boxes fill the panel; only the focused field shows its cursor.
-        PanelTextPromptRenderer::$width = $area->width - 9;
-        PanelSelectPromptRenderer::$width = $area->width - 9;
+        // Boxes fill the panel with two cells of air on each side; only the focused field shows its cursor.
+        PanelTextPromptRenderer::$width = $area->width - 10;
+        PanelSelectPromptRenderer::$width = $area->width - 10;
+        PanelMultiSelectPromptRenderer::$width = $area->width - 10;
         $lines = [];
         foreach ($form['prompts'] as $index => [$key, $prompt]) {
             $frame = rtrim($prompt->frame(), "\n");
             if ($index !== $form['active']) {
                 $frame = preg_replace('/\e\[7m(.*?)\e\[27m/', '$1', $frame) ?? $frame;
             }
+            $top = $area->top() + 2 + count($lines);
             foreach (explode("\n", $frame) as $text) {
                 $lines[] = AnsiLine::parse($text);
             }
+            $this->drawn["field:{$index}"] = ['area' => Area::fromScalars($area->left() + 1, $top, $area->width - 2, count($lines) - ($top - $area->top() - 2)), 'header' => false];
         }
+        $lines[] = Line::fromString('');
+        $onButton = $form['active'] === count($form['prompts']);
+        $this->drawn['form:submit'] = ['area' => Area::fromScalars($area->left() + 3, $area->top() + 2 + count($lines), 15, 1), 'header' => false];
+        $lines[] = Line::fromSpans(
+            Span::styled('  [ Create node ]', $onButton ? Style::default()->addModifier(Modifier::REVERSED)->addModifier(Modifier::BOLD) : Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD)),
+            Span::styled($onButton ? '   Enter creates the node' : '   ↓ to reach it, or click', Style::default()->fg(AnsiColor::DarkGray)),
+        );
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
