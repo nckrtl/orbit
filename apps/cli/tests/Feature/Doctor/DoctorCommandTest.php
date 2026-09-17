@@ -17,6 +17,8 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
 
 beforeEach(function (): void {
+    $this->originalColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-doctor-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
@@ -28,6 +30,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    putenv($this->originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$this->originalColumns);
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
@@ -104,17 +107,17 @@ it('accepts the schedule filter and renders its received canonical position', fu
         summary: ['nodes' => 1, 'families' => 3, 'checks' => 6, 'drift' => 0, 'unverifiable' => 0],
     ));
 
-    $this
-        ->artisan('doctor', ['--node' => '7', '--family' => ['schedule']])
-        ->expectsTable(
-            ['Node', 'Family', 'Status', 'Checked', 'Finding'],
-            [
-                ['alpha', 'instance', 'healthy', 1, '—'],
-                ['alpha', 'schedule', 'healthy', 2, '—'],
-                ['alpha', 'tool', 'healthy', 3, '—'],
-            ],
-        )
-        ->assertExitCode(Command::SUCCESS);
+    $exitCode = Artisan::call('doctor', ['--node' => '7', '--family' => ['schedule']]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(Command::SUCCESS)
+        ->and($output)
+        ->toContain(
+            '│ NODE  │ FAMILY   │ STATUS  │ CHECKED │ FINDING │',
+            '│ alpha │ instance │ healthy │ 1       │ —       │',
+            '│ alpha │ schedule │ healthy │ 2       │ —       │',
+            '│ alpha │ tool     │ healthy │ 3       │ —       │',
+        );
 
     expect($mock->getLastPendingRequest()?->body()->all())
         ->toBe('{"node_id":7,"families":["schedule"]}');
@@ -151,20 +154,20 @@ it('renders rich unhealthy reports in received order', function (): void {
     );
     doctor_cli_mock($data, $requestId);
 
-    $this
-        ->artisan('doctor')
-        ->expectsTable(
-            ['Node', 'Family', 'Status', 'Checked', 'Finding'],
-            [
-                ['alpha', 'node', 'healthy', 2, '—'],
-                ['alpha', 'instance', 'drift', 3, 'instance.origin_mismatch: Origin differs.'],
-                ['alpha', 'instance', 'drift', 3, 'instance.checkout_missing: Checkout is missing.'],
-                ['beta', 'firewall', 'unverifiable', 1, 'firewall.status_unavailable: Firewall status is unavailable.'],
-            ],
-        )
-        ->expectsOutput('Healthy: no')
-        ->expectsOutput("Request ID: {$requestId}")
-        ->assertExitCode(Command::FAILURE);
+    $exitCode = Artisan::call('doctor');
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(Command::FAILURE)
+        ->and($output)
+        ->toContain(
+            '│ NODE  │ FAMILY   │ STATUS       │ CHECKED │ FINDING                                                      │',
+            '│ alpha │ node     │ healthy      │ 2       │ —                                                            │',
+            '│ alpha │ instance │ drift        │ 3       │ instance.origin_mismatch: Origin differs.                    │',
+            '│ alpha │ instance │ drift        │ 3       │ instance.checkout_missing: Checkout is missing.              │',
+            '│ beta  │ firewall │ unverifiable │ 1       │ firewall.status_unavailable: Firewall status is unavailable. │',
+            'Healthy: no',
+            "Request ID: {$requestId}",
+        );
 });
 
 it('renders a completed unverifiable report instead of a gateway failure', function (): void {
@@ -185,22 +188,18 @@ it('renders a completed unverifiable report instead of a gateway failure', funct
     );
     doctor_cli_mock($data, $requestId);
 
-    $this
-        ->artisan('doctor')
-        ->expectsTable(
-            ['Node', 'Family', 'Status', 'Checked', 'Finding'],
-            [[
-                'gamma',
-                'process',
-                'unverifiable',
-                1,
-                'process.state_unavailable: Process state could not be verified.',
-            ]],
+    $exitCode = Artisan::call('doctor');
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(Command::FAILURE)
+        ->and($output)
+        ->toContain(
+            '│ NODE  │ FAMILY  │ STATUS       │ CHECKED │ FINDING                                                         │',
+            '│ gamma │ process │ unverifiable │ 1       │ process.state_unavailable: Process state could not be verified. │',
+            'Healthy: no',
+            "Request ID: {$requestId}",
         )
-        ->expectsOutput('Healthy: no')
-        ->expectsOutput("Request ID: {$requestId}")
-        ->doesntExpectOutputToContain('"error"')
-        ->assertExitCode(Command::FAILURE);
+        ->not->toContain('"error"');
 });
 
 it('writes the exact one-line report json and follows its healthy state', function (string $scenario): void {

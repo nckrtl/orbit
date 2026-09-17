@@ -71,14 +71,17 @@ describe('retained releases', function (): void {
 });
 
 describe('deployment streams', function (): void {
-    it('renders phases and incremental application bytes safely for a human', function (): void {
+    it('renders a progress tree with incremental application bytes safely for a human', function (): void {
         $bytes = "first\x1b[31m\xff\n";
         $mock = MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'before_activation', 'migrate'),
-                deployment_cli_output(2, 'stdout', $bytes),
-                deployment_cli_output(3, 'stderr', "warning\r\n"),
-                deployment_cli_result(4, 'succeeded', selectedRelease: 'release-b'),
+                deployment_cli_phase(1, 'source_preparation'),
+                deployment_cli_phase(2, 'environment_sync'),
+                deployment_cli_phase(3, 'before_activation', 'migrate'),
+                deployment_cli_output(4, 'stdout', $bytes),
+                deployment_cli_output(5, 'stderr', "warning\r\n"),
+                deployment_cli_phase(6, 'activation'),
+                deployment_cli_result(7, 'succeeded', selectedRelease: 'release-b'),
             ]),
         ]);
 
@@ -91,10 +94,14 @@ describe('deployment streams', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)
             ->toContain(
-                'Phase: Before activation [migrate]',
+                'Deploy AppInstance [17]',
+                '● Resolved release',
+                '● Synced environment',
+                '● Ran migrate',
                 'stdout: "first\\u001b[31m\\ufffd\\n"',
                 'stderr: "warning\\r\\n"',
-                'Result: succeeded',
+                '● Activated release',
+                'Deployment succeeded.',
                 'Selected release: release-b',
                 'Request ID: '.deployment_cli_request_id(),
             )
@@ -129,6 +136,34 @@ describe('deployment streams', function (): void {
                 $lines,
             ))->toBe($events)
             ->and(Artisan::output())->not->toContain('Phase:', 'Result:', 'Request ID:', '?');
+    });
+
+    it('renders a rollback progress tree for a human', function (): void {
+        $mock = MockClient::global([
+            RollbackAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'rollback'),
+                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:rollback', [
+            'instance' => '17',
+            '--release' => 'release-a',
+            '--no-interaction' => true,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)
+            ->toContain(
+                'Roll back AppInstance [17]',
+                '● Selected release',
+                'Rollback succeeded.',
+                'Selected release: release-a',
+                'Request ID: '.deployment_cli_request_id(),
+            );
+
+        expect($mock->getRecordedResponses())->toHaveCount(1);
     });
 
     it('uses one typed rollback request with only the selected release', function (): void {
@@ -197,11 +232,15 @@ describe('deployment streams', function (): void {
             ->and($payload)->not->toHaveKey('error');
     });
 
-    it('returns failure and identifies the selected release from a failed terminal result', function (): void {
+    it('shows a failed named deploy step with its name and error in the progress tree', function (): void {
         $mock = MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'source_preparation'),
+                deployment_cli_phase(2, 'environment_sync'),
+                deployment_cli_phase(3, 'activation'),
+                deployment_cli_phase(4, 'after_activation', 'notify'),
                 deployment_cli_result(
-                    1,
+                    5,
                     'failed',
                     failedStep: 'after_activation',
                     errorCode: 'deployment.step_failed',
@@ -210,14 +249,46 @@ describe('deployment streams', function (): void {
             ]),
         ]);
 
-        $this
-            ->artisan('instance:deploy', ['instance' => '17'])
-            ->expectsOutput('Result: failed')
-            ->expectsOutput('Failed boundary: after_activation')
-            ->expectsOutput('Error code: deployment.step_failed')
-            ->expectsOutput('Selected release: release-b')
-            ->expectsOutput('Request ID: '.deployment_cli_request_id())
-            ->assertExitCode(1);
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)
+            ->toContain(
+                '● Resolved release',
+                '● Synced environment',
+                '● Activated release',
+                '● Running notify',
+                'deployment.step_failed',
+                'Deployment failed.',
+                'Error code: deployment.step_failed',
+                'Selected release: release-b',
+                'Request ID: '.deployment_cli_request_id(),
+            );
+
+        expect($mock->getRecordedResponses())->toHaveCount(1);
+    });
+
+    it('shows an operation-level failure before any deploy phase starts', function (): void {
+        $mock = MockClient::global([
+            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_result(1, 'failed', failedStep: 'operation', errorCode: 'deployment_config.unavailable'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)
+            ->toContain(
+                'Deploy AppInstance [17]',
+                'Deployment failed.',
+                'deployment_config.unavailable',
+                'Error code: deployment_config.unavailable',
+                'Request ID: '.deployment_cli_request_id(),
+            )
+            ->not->toContain('Selected release:');
 
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });

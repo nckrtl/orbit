@@ -7,6 +7,8 @@ namespace App\Commands\Doctor;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 
@@ -41,7 +43,15 @@ final class DoctorCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $report = $this->send($connector, new RunDoctorRequest($nodeId, $families), DoctorReportResponse::class);
+        $report = $this->sendWithProgress(
+            $connector,
+            new RunDoctorRequest($nodeId, $families),
+            DoctorReportResponse::class,
+            ['Verify registered state', 'Verifying registered state', 'Verified registered state'],
+            static fn (DoctorReportResponse $response): ProgressState => $response->healthy
+                ? ProgressState::Success
+                : ProgressState::Warning,
+        );
         if (! $report instanceof DoctorReportResponse) {
             return self::FAILURE;
         }
@@ -72,9 +82,12 @@ final class DoctorCommand extends GatewayCommand
                 }
             }
         }
-        $this->table(['Node', 'Family', 'Status', 'Checked', 'Finding'], $rows);
-        $this->line('Healthy: '.($report->healthy ? 'yes' : 'no'));
-        $this->line("Request ID: {$report->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Node', 'Family', 'Status', 'Checked', 'Finding'],
+            $rows,
+        ));
+        $this->writeHumanMessage('Healthy: '.($report->healthy ? 'yes' : 'no'));
+        $this->writeHumanMessage("Request ID: {$report->requestId}");
 
         return $report->healthy ? self::SUCCESS : self::FAILURE;
     }

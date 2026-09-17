@@ -297,7 +297,7 @@ orbit instance:deploy <instance> [--json]
 | --- | --- | --- |
 | `instance` | yes | Numeric App instance ID. |
 
-Human output names each phase and step and labels standard output and standard error while a step is still running. `--json` writes the same events as NDJSON, one event per line, without prompts or prose.
+Human output shows a progress tree with each deploy phase as a step, revealing named deploy steps as their phase starts. Glyphs and color show waiting, running, success, and failure states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped while their step runs. On failure, the tree shows the failed step's name and error, and the final lines add the error code, the selected release when available, and the request ID. `--json` writes the same events as NDJSON, one event per line, without prompts or prose.
 
 | Event type | Fields |
 | --- | --- |
@@ -310,7 +310,7 @@ Every event carries `type`, a monotonically increasing `sequence`, and the `requ
 | Stream outcome | Exit status |
 | --- | --- |
 | The final event is a succeeded result. | `0` |
-| The final event is a failed result. | Nonzero. The command names the failed boundary and the selected release. |
+| The final event is a failed result. | Nonzero. The command names the failed step and its error. |
 | The stream is malformed, truncated, or ends without a result. | Nonzero. The CLI never infers success from earlier events. |
 | You press Ctrl-C. | Nonzero. The CLI closes its connection and submits no second request. |
 

@@ -32,7 +32,7 @@ orbit doctor --node=7 --family=instance --family=workspace
 orbit doctor --family=firewall --json
 ```
 
-Human output is one table with a row per Node and family, and one extra row per finding. The last lines state whether the fleet is healthy and the Gateway request ID. JSON output returns the same report as one document.
+Human output shows a progress indicator while the request is in flight, then a table with one row per Node and family, and one additional row per finding. The table lists Node name, family, status, checked count, and any findings. Empty results state that no matching records were found. The last lines state whether the fleet is healthy and the request ID. JSON output returns the same report as one document.
 
 The exit status follows the report.
 
