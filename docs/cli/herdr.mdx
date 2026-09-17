@@ -28,6 +28,7 @@ Without that Tool record the Gateway returns `herdr.tool_not_installed` before a
 | Command | Result |
 | --- | --- |
 | [`herdr:session:create`](#orbit-herdrsessioncreate) | Create or ensure one named Herdr session on a managed Node. |
+| [`herdr:session:adopt`](#orbit-herdrsessionadopt) | Register an existing session for observation without taking over its service. |
 | [`herdr:session:list`](#orbit-herdrsessionlist) | List named Herdr sessions on one Node. |
 | [`herdr:session:show`](#orbit-herdrsessionshow) | Show one named Herdr session. |
 | [`herdr:session:restart`](#orbit-herdrsessionrestart) | Restart one named Herdr session. |
@@ -61,6 +62,30 @@ orbit herdr:session:create commander-tasks --node=beast --user=orbit --publish-o
 The Gateway composes one Node-targeted systemd Process for the headless server and stores the session identity. Observer publication requires a successful session snapshot with Herdr observe protocol 22; a different protocol fails with `herdr.observer_unsupported`, and a publication failure records listener health as `herdr.observer_failed` while the session keeps running.
 
 Repeating an identical create returns the same session without restarting it. A changed user, Process specification, or observer listen address for the same Node and name fails with `herdr.session_conflict` and leaves the running server in place.
+
+## orbit herdr:session:adopt
+
+Register an existing Herdr session for observation without Orbit taking over its service lifecycle.
+
+```bash
+orbit herdr:session:adopt <session> --node=NODE --user=USER [--publish-observer] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `session` | yes | Existing named Herdr session. |
+
+| Option | Meaning |
+| --- | --- |
+| `--node=NODE` | Node ID or registered name. |
+| `--user=USER` | Unix user that owns the Herdr session and socket. |
+| `--publish-observer` | Publish the private receive-only observer so grants can be issued. |
+
+```bash
+orbit herdr:session:adopt commander-tasks --node=beast --user=orbit --publish-observer
+```
+
+Adoption inspects the live socket and records external lifecycle ownership. It never creates a Process or starts, stops, or restarts the existing service. A managed session and an externally managed session with the same Node and name conflict with `herdr.session_conflict`. Removing an adopted session retracts only Orbit's observer and record; the external service and its panes keep running. `herdr:session:restart` refuses an adopted session with `herdr.session_external`.
 
 ## orbit herdr:session:list
 
@@ -114,20 +139,25 @@ Installing or updating the `herdr` Tool changes package files only. It does not 
 Destroy one named session, its Node Process, and its private observer.
 
 ```bash
-orbit herdr:session:destroy <session> --node=NODE [--accept-termination] [--json]
+orbit herdr:session:destroy <session> --node=NODE [--accept-termination] [--yes] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--node=NODE` | Node ID or registered name. |
 | `--accept-termination` | Accept termination of live panes. |
+| `--yes` | Confirm destruction without prompting. Interactive confirmation defaults to No and names the session, the Node, and the effect. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 ```bash
-orbit herdr:session:destroy commander-tasks --node=beast --accept-termination
+orbit herdr:session:destroy commander-tasks --node=beast --accept-termination --yes
 ```
 
 <Warning>
 The Gateway inspects live panes first and refuses with `herdr.session_in_use` while any pane is live, unless you pass `--accept-termination`. Terminated panes and their terminal output are gone; Orbit persists no terminal output.
+</Warning>
+
+<Warning>
+The confirmation prompt states the effect by management: a managed session's Process is destroyed, an adopted session loses only its Orbit record. `--yes` is CLI-only consent; the Gateway `DELETE` route and its SDK request keep their current `accept_termination` parameter only.
 </Warning>
 
 ## orbit herdr:observe

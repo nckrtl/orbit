@@ -86,10 +86,11 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new IssueObservationGrantRequest($listed->id, $pane, $terminal, $cols, $rows, $origin),
             ObservationGrantResponse::class,
+            ['Issue observation grant', 'Issuing observation grant', 'Issued observation grant'],
         );
 
         if (! $response instanceof ObservationGrantResponse) {

@@ -16,6 +16,7 @@ final class DestroyHerdrSessionCommand extends HerdrSessionCommand
         {session : Named Herdr session}
         {--node= : Node ID or registered name}
         {--accept-termination : Accept termination of live panes}
+        {--yes : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -53,25 +54,28 @@ final class DestroyHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $effect = $listed->management === 'managed'
+            ? 'This destroys its Process and removes its Orbit record and observer.'
+            : 'This removes only its Orbit record and observer; its external service keeps running.';
+
+        if (! $this->confirmAction(
+            "Destroy Herdr session [{$name}] on [{$listed->node}]? {$effect}",
+            'Herdr session destruction cancelled.',
+        )) {
+            return self::FAILURE;
+        }
+
+        $response = $this->sendWithProgress(
             $connector,
             new DestroyHerdrSessionRequest($listed->id, $this->option('accept-termination') === true),
             HerdrSessionResponse::class,
+            ['Destroy Herdr session', 'Destroying Herdr session', 'Destroyed Herdr session'],
         );
 
         if (! $response instanceof HerdrSessionResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedSessionPayload($response));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Herdr session [{$response->session}] on [{$response->node}] was removed from Orbit.");
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderSession($response, "Herdr session [{$response->session}] on [{$response->node}] was removed from Orbit.");
     }
 }

@@ -7,6 +7,7 @@ namespace App\Commands\Herdr;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayConfigException;
 use App\Services\Extensions\LocalExtensionState;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
 use Orbit\Sdk\Responses\Herdr\HerdrSessionResponse;
@@ -106,5 +107,35 @@ abstract class HerdrSessionCommand extends GatewayCommand
         $payload['request_id'] = $session->requestId;
 
         return $payload;
+    }
+
+    protected function renderSession(HerdrSessionResponse $session, string $message): int
+    {
+        if ($this->option('json') === true) {
+            $this->writeJson($this->sanitizedSessionPayload($session));
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+            'ID' => $session->id,
+            'Node' => $session->node,
+            'Session' => $session->session,
+            'User' => $session->user,
+            'Process ID' => $session->processId,
+            'Management' => $session->management,
+            'Observer URL' => $session->observerUrl,
+            'Status' => $session->status,
+            'Herdr version' => $session->herdrVersion,
+            'Protocol' => $session->protocol,
+            'Process health' => $session->health['process'],
+            'Listener health' => $session->health['listener'],
+            'Session health' => $session->health['session'],
+            'Failed step' => $session->failedStep,
+            'Error code' => $session->errorCode,
+            'Request ID' => $session->requestId,
+        ]));
+
+        return self::SUCCESS;
     }
 }
