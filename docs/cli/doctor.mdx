@@ -32,7 +32,7 @@ orbit doctor --node=7 --family=instance --family=workspace
 orbit doctor --family=firewall --json
 ```
 
-Human output shows a progress indicator while the request is in flight, then a table with one row per Node and family, and one additional row per finding. The table lists Node name, family, status, checked count, the finding's resource type and name, and the finding itself with its expected and observed values, so findings with the same code stay distinguishable by which resource they name. A family with no findings shows "—" in both columns. The last lines state whether the fleet is healthy and the request ID. JSON output returns the same report as one document.
+Human output shows a progress indicator while the request is in flight, then a table with one row per Node and family, and one additional row per finding. The table lists Node name, family, status, checked count, the finding's resource type and name, and the finding itself with its expected and observed values, so findings with the same code stay distinguishable by which resource they name. A family with no findings shows "—" in both columns. The last lines give the report's summary counts (Nodes, families, checks, drift, and unverifiable), whether the fleet is healthy, and the request ID. JSON output returns the same report, including the same `summary` counts, as one document.
 
 The exit status follows the report.
 

@@ -166,6 +166,7 @@ it('renders rich unhealthy reports in received order', function (): void {
             '│ alpha │ instance │ drift        │ 3       │ instance primary │ instance.origin_mismatch: Origin differs. (expected: yes, observed: no)                    │',
             '│ alpha │ instance │ drift        │ 3       │ instance primary │ instance.checkout_missing: Checkout is missing. (expected: yes, observed: no)              │',
             '│ beta  │ firewall │ unverifiable │ 1       │ firewall primary │ firewall.status_unavailable: Firewall status is unavailable. (expected: yes, observed: no) │',
+            'Nodes: 2, families: 3, checks: 6, drift: 2, unverifiable: 1',
             'Healthy: no',
             "Request ID: {$requestId}",
         );
@@ -173,6 +174,25 @@ it('renders rich unhealthy reports in received order', function (): void {
     // itself (title, running row, settled footer) renders above the table.
     expect($output)
         ->toContain('┌  Verify registered state', '●', 'Verified registered state.');
+});
+
+it('shows the report summary counts in human output, matching the JSON field (F3)', function (): void {
+    // JSON already returns summary (nodes/families/checks/drift/unverifiable); human output
+    // must not drop that field (the flow rule from ORB-358 F2).
+    $data = doctor_cli_report(
+        healthy: true,
+        nodes: [doctor_cli_node('alpha', [
+            doctor_cli_family(family: 'node', status: 'healthy', checked: 4, issues: []),
+        ])],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 4, 'drift' => 0, 'unverifiable' => 0],
+    );
+    doctor_cli_mock($data);
+
+    $exitCode = Artisan::call('doctor');
+
+    expect($exitCode)->toBe(Command::SUCCESS)
+        ->and(Artisan::output())
+        ->toContain('Nodes: 1, families: 1, checks: 4, drift: 0, unverifiable: 0', 'Healthy: yes');
 });
 
 it('renders a completed unverifiable report instead of a gateway failure', function (): void {

@@ -87,6 +87,11 @@ final class DoctorCommand extends GatewayCommand
             ['Node', 'Family', 'Status', 'Checked', 'Resource', 'Finding'],
             $rows,
         ));
+        $this->writeHumanMessage(sprintf(
+            'Nodes: %d, families: %d, checks: %d, drift: %d, unverifiable: %d',
+            $report->summary['nodes'], $report->summary['families'], $report->summary['checks'],
+            $report->summary['drift'], $report->summary['unverifiable'],
+        ));
         $this->writeHumanMessage('Healthy: '.($report->healthy ? 'yes' : 'no'));
         $this->writeHumanMessage("Request ID: {$report->requestId}");
 

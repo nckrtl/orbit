@@ -297,9 +297,11 @@ orbit instance:deploy <instance> [--json]
 | --- | --- | --- |
 | `instance` | yes | Numeric App instance ID. |
 
-Human output shows a progress tree. The deploy phases the Gateway always sends appear up front; named deploy steps and the PHP cache refresh phase reveal only when their phase starts. Glyphs and color show waiting, running, success, and failure states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped while their step runs.
+Human output shows a progress tree. The deploy phases the Gateway always sends appear up front; named deploy steps and the PHP cache refresh phase reveal only when their phase starts. Glyphs and color show waiting, running, success, failure, and not-reached states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped, and print above the tree without redrawing it, while their step runs.
 
-On failure the tree marks the last reached step as failed, with the error code shown under it, even when the Gateway's failed boundary has no step of its own (an activation or cache-refresh failure during a rollback, for example). Every later step shows as not reached, and the footer turns red. The final lines add the failed boundary, the error code, the selected release when available, and the request ID. `--json` writes the same events as NDJSON, one event per line, without prompts or prose.
+On failure the tree marks the last reached step as failed, with the error code shown under it, even when the Gateway's failed boundary has no step of its own (an activation or cache-refresh failure during a rollback, for example). Every later step shows orange with a dim "Not reached." label under it, and the footer turns red. The final lines add the failed boundary, the error code, the selected release when available, and the request ID. `--json` writes the same events as NDJSON, one event per line, without prompts or prose.
+
+Pressing Ctrl-C closes the connection at once, including during a step with no output yet: the CLI does not wait for the Gateway to finish that step first. The tree marks the current step failed and shows a red "Operation interrupted." footer; JSON mode ends the stream with no result line. Either way the CLI submits no second request.
 
 | Event type | Fields |
 | --- | --- |
