@@ -19,20 +19,14 @@ export const TerminalDemo = ({ demo }) => {
     if (terminal.current || !screen.current || typeof window === 'undefined' || !window.Terminal) {
       return Boolean(terminal.current);
     }
-    // Pick the largest font size whose columns fit the content column, so the canvas maps 1:1 to pixels.
-    // Scaling the canvas with a CSS transform resamples it and opens hairline gaps between box-drawing rows.
+    // Show only the columns the recording used, at the page's code size. A wider recording never wrapped
+    // inside those columns, so a terminal this wide replays it exactly; a very wide output scrolls sideways.
     const rows = Math.min(demo.rows, (demo.rows_used || demo.rows) + 4);
+    const cols = Math.min(demo.columns, Math.max(demo.columns_used || demo.columns, demo.command.length + 3, 40));
     const font = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
-    const probe = document.createElement('span');
-    probe.textContent = 'M'.repeat(50);
-    probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-family:${font};font-size:100px;line-height:1`;
-    screen.current.appendChild(probe);
-    const ratio = probe.getBoundingClientRect().width / 50 / 100 || 0.6;
-    probe.remove();
-    const available = screen.current.clientWidth || 720;
-    const fontSize = Math.max(9, Math.min(14, Math.floor(available / demo.columns / ratio)));
+    const fontSize = 13;
     const instance = new window.Terminal({
-      cols: demo.columns, rows, fontFamily: font,
+      cols, rows, fontFamily: font,
       fontSize, lineHeight: 1, theme, cursorBlink: true, cursorStyle: 'bar', disableStdin: true, scrollback: 0, convertEol: false,
     });
     instance.open(screen.current);

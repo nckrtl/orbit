@@ -74,6 +74,9 @@ def main():
 
     columns = metadata['columns']
     # The rows the recording used, so the page shows the screen area the command needed rather than the whole terminal.
+    # The longest line the recording drew. No line reached the recorded width beyond it, so a terminal this wide
+    # replays the bytes without any wrap that the original did not have.
+    columns_used = max((len(line.rstrip()) for frame in frames for line in frame['lines']), default=1)
     rows_used = max((len(frame['lines']) - next((i for i, line in enumerate(reversed(frame['lines'])) if line.strip()), len(frame['lines']))
                      for frame in frames), default=1)
     transcript = '\n'.join(line.rstrip() for line in frames[-1]['lines']).strip('\n')
@@ -82,6 +85,7 @@ def main():
         'command': args.command,
         'columns': columns,
         'rows': metadata['rows'],
+        'columns_used': columns_used,
         'rows_used': rows_used,
         'recorded': {'candidate': metadata['candidate'], 'date': args.date, 'exit_code': summary['child_exit_code'],
                      'duration_seconds': round(summary['duration_seconds'], 3)},

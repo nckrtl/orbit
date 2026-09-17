@@ -141,7 +141,7 @@ table th {
 .orbit-demo__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9a9890; }
 .orbit-demo__replay { padding: 0.125rem 0.625rem; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 0.375rem; background: transparent; color: #e8e6e0; font: inherit; cursor: pointer; }
 .orbit-demo__replay:disabled { opacity: 0.5; cursor: default; }
-.orbit-demo__terminal { padding: 0.75rem 0.5rem 0.75rem 1rem; }
+.orbit-demo__terminal { padding: 0.75rem 0.5rem 0.75rem 1rem; overflow-x: auto; }
 .orbit-demo__terminal .xterm { line-height: 1; }
 .orbit-demo__terminal .xterm-viewport { overflow: hidden !important; }
 .orbit-demo__caption { padding: 0.375rem 0.875rem; border-top: 1px solid rgba(127, 127, 127, 0.2); color: #6f6d66; font-size: 0.75rem; }
