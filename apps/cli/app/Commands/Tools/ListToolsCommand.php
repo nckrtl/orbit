@@ -6,6 +6,7 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Responses\Tools\ToolsResponse;
 
@@ -27,7 +28,12 @@ final class ListToolsCommand extends ToolCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $response = $this->send($connector, new ListToolsRequest($node), ToolsResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new ListToolsRequest($node),
+            ToolsResponse::class,
+            ['List Tools', 'Loading Tools', 'Loaded Tools'],
+        );
         if (! $response instanceof ToolsResponse) {
             return self::FAILURE;
         }
@@ -40,14 +46,17 @@ final class ListToolsCommand extends ToolCommand
             $t->id,
             $t->manager,
             $t->package,
-            $this->value($t->versionConstraint),
+            $t->versionConstraint,
             $t->status,
-            $this->value($t->installedVersion),
+            $t->installedVersion,
             $t->protected ? 'yes' : 'no',
-            $this->value($t->errorCode),
+            $t->errorCode,
         ], $response->tools);
-        $this->table(['ID', 'Manager', 'Package', 'Constraint', 'Status', 'Version', 'Protected', 'Error'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write(
+            $this->output,
+            $this->humanRenderer()->table(['ID', 'Manager', 'Package', 'Constraint', 'Status', 'Version', 'Protected', 'Error'], $rows),
+        );
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

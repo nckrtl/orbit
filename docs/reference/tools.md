@@ -78,10 +78,12 @@ An update uses the verified bottle and keeps the installed Tool callable when no
 Run the removal command with the Tool ID from a successful install or from a failed install that retained the Tool.
 
 ```bash
-orbit tool:remove <tool-id>
+orbit tool:remove <tool-id> [--yes]
 ```
 
-The Gateway probes the package before removal unless the Tool is a failed row that never recorded a version, including `tool.version_probe_failed` after install, update, or remove. In that case the Gateway deletes the Tool row without probing a never-proven package. When the package is installed, removal proceeds when accepted under [ADR 0001](/decisions/0001-tool-management)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
+An interactive call prompts for confirmation (defaulting to No); a non-interactive or `--json` call without `--yes` fails with `input.confirmation_required`. Interactive decline, Ctrl-C, or EOF before the removal exits with `input.cancelled` and makes no mutation.
+
+After consent, the Gateway probes the package before removal unless the Tool is a failed row that never recorded a version, including `tool.version_probe_failed` after install, update, or remove. In that case the Gateway deletes the Tool row without probing a never-proven package. When the package is installed, removal proceeds when accepted under [ADR 0001](/decisions/0001-tool-management)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
 
 APT removes the package without purging its configuration files. Dpkg can therefore retain the package record, configuration files, and last package version after the executable files are gone. The Gateway treats that removed package state as absence and deletes the Tool row. [ADR 0001](/decisions/0001-tool-management) defines the package-ownership and exact-removal boundary.
 

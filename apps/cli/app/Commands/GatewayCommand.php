@@ -15,6 +15,7 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Console\HumanRenderer;
 use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
@@ -265,7 +266,12 @@ abstract class GatewayCommand extends Command
 
     /**
      * @param  array{string, string, string}  $labels  Waiting, running and completed labels.
-     * @param  null|Closure(object): ProgressState  $resultState  Validate the product result before settling progress.
+     * @param  null|Closure(object): (ProgressState|ProgressOutcome)  $resultState  Validate the product result before settling
+     *                                                                              progress. Return a bare ProgressState to keep
+     *                                                                              the completed label as the footer; return a
+     *                                                                              ProgressOutcome to replace it for a non-success
+     *                                                                              state whose completed label would misstate the
+     *                                                                              result.
      */
     protected function sendWithProgress(
         GatewayConnector $connector,
@@ -279,10 +285,11 @@ abstract class GatewayCommand extends Command
         $progress->admit('request', $waiting, $running, $completed);
 
         try {
-            [$response, $state] = $progress->during('request', function () use ($connector, $request, $responseClass, $resultState): array {
+            [$response, $outcome] = $progress->during('request', function () use ($connector, $request, $responseClass, $resultState, $completed): array {
                 $response = $this->sendOrThrow($connector, $request, $responseClass);
+                $result = $resultState !== null ? $resultState($response) : ProgressState::Success;
 
-                return [$response, $resultState !== null ? $resultState($response) : ProgressState::Success];
+                return [$response, $result instanceof ProgressOutcome ? $result : new ProgressOutcome($result, $completed)];
             });
         } catch (GatewayApiException $exception) {
             $code = $exception->errorCode() ?? 'gateway.request_failed';
@@ -296,8 +303,8 @@ abstract class GatewayCommand extends Command
             return null;
         }
 
-        $progress->complete('request', $state);
-        $progress->finish($completed.'.');
+        $progress->complete('request', $outcome->state);
+        $progress->finish($outcome->footer.'.');
 
         return $response;
     }

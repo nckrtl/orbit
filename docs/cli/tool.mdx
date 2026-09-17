@@ -129,16 +129,24 @@ Updating the `herdr` formula changes package files only; it does not restart a m
 Remove one Tool and delete its record.
 
 ```bash
-orbit tool:remove <tool> [--json]
+orbit tool:remove <tool> [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `tool` | yes | Numeric Tool ID from a successful install or from a failed install that retained the Tool. |
 
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Skip the destructive confirmation prompt. Required for a non-interactive or `--json` call. |
+
+Without `--yes`, the command reads the Tool first, in every mode, so the confirmation prompt and the refusal both know what they are about. An unknown or already-removed Tool ID fails with `tool.not_found` at that read, before any prompt. The read happens even when `--yes` is not the reason for refusal, so a non-interactive or `--json` call without `--yes` still resolves the Tool before it fails with `input.confirmation_required`.
+
 <Warning>
-The command sends the request without a confirmation prompt. `apt` removes the package without purging its configuration files, and the Gateway treats that state as absence. Removal never runs a dependency autoremove and keeps the manager active after the last Tool is gone; Orbit exposes no manager-removal command.
+An interactive call prompts for confirmation (defaulting to No): `Remove Tool [package] (manager on Node #ID) by uninstalling it and deleting its record?`, naming the package, the manager, and the Node. A non-interactive or `--json` call without `--yes` fails with `input.confirmation_required`. `apt` removes the package without purging its configuration files, and the Gateway treats that state as absence. Removal never runs a dependency autoremove and keeps the manager active after the last Tool is gone; Orbit exposes no manager-removal command.
 </Warning>
+
+Interactive decline, Ctrl-C, or EOF before the removal exits with `input.cancelled` and makes no mutation.
 
 | Condition | Result | Tool row |
 | --- | --- | --- |
