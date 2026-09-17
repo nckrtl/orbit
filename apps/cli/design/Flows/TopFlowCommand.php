@@ -65,6 +65,9 @@ final class TopFlowCommand extends GatewayCommand
 
     private const int MENU_WIDTH = 36;
 
+    /** Seconds between polls of a node's metrics; the lists refresh on their own tick. */
+    private const int METRICS_TICK = 5;
+
     #[\Override]
     protected $signature = 'design:top
         {--tick=2 : Seconds between refreshes}';
@@ -92,6 +95,15 @@ final class TopFlowCommand extends GatewayCommand
 
     /** @var list<string> */
     private array $logs = [];
+
+    /**
+     * Made-up node_exporter-like readings per node, random-walked on the metrics tick.
+     *
+     * @var array<string, array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, load: array{float, float, float}, uptime: string, psi: array{cpu: float, mem: float, io: float}, disks: list<array{string, float, float}>}>
+     */
+    private array $metrics = [];
+
+    private float $lastMetrics = 0;
 
     /** The pane the arrows point at while hovering, and the one Enter focused. */
     private string $hover = 'nodes';
@@ -143,9 +155,15 @@ final class TopFlowCommand extends GatewayCommand
 
         $refreshes = 0;
         $lastRefresh = microtime(true);
+        $this->lastMetrics = microtime(true);
 
         try {
             while (true) {
+                if (microtime(true) - $this->lastMetrics >= self::METRICS_TICK) {
+                    // The real screen would poll the node's metrics endpoint here.
+                    $this->lastMetrics = microtime(true);
+                    $this->walkMetrics();
+                }
                 if (microtime(true) - $lastRefresh >= $tick) {
                     // The real screen would send the list requests here.
                     $refreshes++;
@@ -594,15 +612,20 @@ final class TopFlowCommand extends GatewayCommand
 
     private function dashboard(Area $area): Widget
     {
+        $appScope = $this->scope === 'apps';
         $instances = $this->scopedInstances();
         $instance = $this->currentInstance();
-        $scopeName = $this->scope === 'apps' ? $this->apps[$this->selected['apps']]['slug'] : $this->nodes[$this->selected['nodes']]['name'];
+        $scopeName = $appScope ? $this->apps[$this->selected['apps']]['slug'] : $this->nodes[$this->selected['nodes']]['name'];
+        $instancesTitle = $appScope ? " Instances of {$scopeName} " : " Instances on {$scopeName} ";
         $instanceName = isset($instance['app']) ? "{$instance['app']['slug']}/{$instance['name']}" : '—';
-        $nodeName = $this->scope === 'nodes' ? $scopeName : ($instance['node']['name'] ?? '—');
+        $nodeName = ! $appScope ? $scopeName : ($instance['node']['name'] ?? '—');
+
+        $metricsNode = ! $appScope ? $this->nodes[$this->selected['nodes']]['name'] : null;
+        $metricsHeight = $metricsNode === null ? 0 : $this->metricsHeight($metricsNode);
 
         // The same splits the grid makes, kept so the mouse can find a pane and a row.
-        $outer = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::min(10)])->split($area);
-        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($outer->get(1));
+        $outer = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($metricsHeight), Constraint::min(10)])->split($area);
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($outer->get(2));
         $left = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(count($this->nodes) + 2), Constraint::min(5)])->split($columns->get(0));
         $right = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::percentage(40), Constraint::percentage(35), Constraint::min(5)])->split($columns->get(1));
         $middle = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($right->get(1));
@@ -635,7 +658,7 @@ final class TopFlowCommand extends GatewayCommand
             ->direction(Direction::Vertical)
             ->constraints(Constraint::percentage(40), Constraint::percentage(35), Constraint::min(5))
             ->widgets(
-                $this->pane('instances', $this->scope === 'apps' ? " Instances of {$scopeName} " : " Instances on {$scopeName} ", ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
+                $this->pane('instances', $instancesTitle, ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(55), Constraint::percentage(45))
@@ -648,15 +671,112 @@ final class TopFlowCommand extends GatewayCommand
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(3), Constraint::min(10))
+            ->constraints(Constraint::length(3), Constraint::length($metricsHeight), Constraint::min(10))
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
                     ->widget(ParagraphWidget::fromString($this->stats())),
+                $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(24), Constraint::min(40))
                     ->widgets($leftColumn, $rightColumn),
             );
+    }
+
+    // ---- metrics ---------------------------------------------------------------------------
+
+    private function metricsHeight(string $node): int
+    {
+        $m = $this->metrics[$node];
+        $left = intdiv(count($m['cores']) + 1, 2) + 2;
+        $right = 2 + 3 + count($m['disks']);
+
+        return max($left, $right) + 2;
+    }
+
+    /** An htop-like block for the selected node: cores, memory, and swap left; load, pressure, and disks right. */
+    private function metricsPanel(string $node): Widget
+    {
+        $m = $this->metrics[$node];
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $age = max(0, (int) round(microtime(true) - $this->lastMetrics));
+
+        $left = [];
+        foreach (array_chunk($m['cores'], 2, true) as $pair) {
+            $spans = [];
+            foreach ($pair as $core => $load) {
+                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), 22), Span::fromString('  ')];
+            }
+            $left[] = Line::fromSpans(...$spans);
+        }
+        $left[] = Line::fromSpans(...$this->bar('Mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), 48));
+        $left[] = Line::fromSpans(...$this->bar('Swp', $m['swap'][1] > 0 ? $m['swap'][0] / $m['swap'][1] : 0, sprintf('%.1fG/%.0fG', $m['swap'][0], $m['swap'][1]), 48));
+
+        $right = [
+            Line::fromSpans(Span::styled('Load    ', $dim), Span::fromString(sprintf('%.2f  %.2f  %.2f', ...$m['load']))),
+            Line::fromSpans(Span::styled('Uptime  ', $dim), Span::fromString($m['uptime'])),
+        ];
+        foreach (['cpu' => 'Pressure cpu', 'mem' => 'Pressure mem', 'io' => 'Pressure io '] as $key => $label) {
+            $right[] = Line::fromSpans(...$this->bar($label, min(1, $m['psi'][$key] / 100), sprintf('%4.1f%% some/10s', $m['psi'][$key]), 44, [25, 50]));
+        }
+        foreach ($m['disks'] as [$mount, $used, $total]) {
+            $right[] = Line::fromSpans(...$this->bar(str_pad($mount, 12), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), 44, [80, 90]));
+        }
+
+        return BlockWidget::default()
+            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->titles(Title::fromString(" {$node} · metrics · polled {$age}s ago · every ".self::METRICS_TICK.'s '))
+            ->borderStyle($dim)
+            ->widget(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::length(52), Constraint::min(30))
+                    ->widgets(
+                        ParagraphWidget::fromText(Text::fromLines(...$left)),
+                        ParagraphWidget::fromText(Text::fromLines(...$right)),
+                    ),
+            );
+    }
+
+    /**
+     * One htop-style bar: label, [|||||    ], and a reading; green, then yellow, then red past the thresholds.
+     *
+     * @param  array{int, int}  $thresholds  percentages where the bar turns yellow, then red
+     * @return list<Span>
+     */
+    private function bar(string $label, float $ratio, string $reading, int $width, array $thresholds = [60, 85]): array
+    {
+        $ratio = max(0, min(1, $ratio));
+        $inner = max(4, $width - strlen($label) - strlen($reading) - 3);
+        $filled = (int) round($ratio * $inner);
+        $colour = match (true) {
+            $ratio * 100 >= $thresholds[1] => AnsiColor::Red,
+            $ratio * 100 >= $thresholds[0] => AnsiColor::Yellow,
+            default => AnsiColor::Green,
+        };
+
+        return [
+            Span::styled($label.'[', Style::default()->fg(AnsiColor::DarkGray)),
+            Span::styled(str_repeat('|', $filled), Style::default()->fg($colour)),
+            Span::fromString(str_repeat(' ', $inner - $filled)),
+            Span::styled('] ', Style::default()->fg(AnsiColor::DarkGray)),
+            Span::styled($reading, Style::default()->fg(AnsiColor::DarkGray)),
+        ];
+    }
+
+    /** Nudges every reading a little so the panel visibly moves between polls. */
+    private function walkMetrics(): void
+    {
+        $nudge = fn (float $value, float $step, float $min, float $max): float => max($min, min($max, $value + (mt_rand(-100, 100) / 100) * $step));
+        foreach ($this->metrics as $node => $m) {
+            $this->metrics[$node]['cores'] = array_map(fn (float $c): float => $nudge($c, 0.12, 0.01, 0.99), $m['cores']);
+            $this->metrics[$node]['mem'][0] = $nudge($m['mem'][0], 0.3, 0.5, $m['mem'][1] - 0.2);
+            $this->metrics[$node]['load'] = [$nudge($m['load'][0], 0.3, 0.05, 12), $nudge($m['load'][1], 0.15, 0.05, 12), $nudge($m['load'][2], 0.05, 0.05, 12)];
+            foreach (['cpu', 'mem', 'io'] as $key) {
+                $this->metrics[$node]['psi'][$key] = $nudge($m['psi'][$key], 3, 0, 100);
+            }
+            $this->metrics[$node]['disks'] = array_map(fn (array $d): array => [$d[0], $nudge($d[1], 0.4, 1, $d[2]), $d[2]], $m['disks']);
+        }
     }
 
     /** One record: its properties on the left, and for a Process its recent log lines on the right. */
@@ -868,6 +988,19 @@ final class TopFlowCommand extends GatewayCommand
             if (in_array('gateway', $node['roles'], true)) {
                 $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '51820/udp', 'action' => 'allow', 'source' => 'any', 'status' => 'applied'];
             }
+        }
+
+        foreach ($this->nodes as $node) {
+            $gateway = in_array('gateway', $node['roles'], true);
+            $this->metrics[$node['name']] = [
+                'cores' => $gateway ? [0.08, 0.05, 0.11, 0.04] : [0.42, 0.37, 0.55, 0.28, 0.61, 0.33, 0.47, 0.39],
+                'mem' => $gateway ? [1.4, 4] : [9.8, 16],
+                'swap' => $gateway ? [0.0, 2] : [0.3, 4],
+                'load' => $gateway ? [0.12, 0.10, 0.08] : [2.31, 1.98, 1.75],
+                'uptime' => $gateway ? '41 days, 3:12' : '12 days, 17:40',
+                'psi' => $gateway ? ['cpu' => 0.4, 'mem' => 0.0, 'io' => 0.9] : ['cpu' => 6.2, 'mem' => 0.3, 'io' => 12.8],
+                'disks' => $gateway ? [['/', 9, 40]] : [['/', 31, 80], ['/srv/orbit', 188, 480]],
+            ];
         }
 
         $this->logs = [
