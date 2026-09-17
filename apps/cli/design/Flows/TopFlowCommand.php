@@ -1773,8 +1773,8 @@ final class TopFlowCommand extends GatewayCommand
         $this->drawn['back'] = ['area' => Area::fromScalars($area->left(), $area->top(), 10, 1), 'header' => false];
 
         // Boxes fill the panel; only the focused field shows its cursor.
-        PanelTextPromptRenderer::$width = $area->width - 8;
-        PanelSelectPromptRenderer::$width = $area->width - 8;
+        PanelTextPromptRenderer::$width = $area->width - 9;
+        PanelSelectPromptRenderer::$width = $area->width - 9;
         $lines = [];
         foreach ($form['prompts'] as $index => [$key, $prompt]) {
             $frame = rtrim($prompt->frame(), "\n");
