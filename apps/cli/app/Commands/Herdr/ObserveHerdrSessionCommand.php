@@ -104,6 +104,11 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
             return self::SUCCESS;
         }
 
+        // The observer URL carries a bearer token and can run well past a
+        // detail tree's value column at any realistic terminal width. Wrapped
+        // across `│`-prefixed continuation lines it stops being one copyable
+        // string, so it prints on its own full-width, unprefixed line below
+        // the tree instead of as one more tree value.
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
             "Observation grant for [{$response->pane}] expires at {$response->expiresAt}.",
             [
@@ -114,10 +119,10 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
                 'Rows' => $response->rows,
                 'Expires' => $response->expiresAt,
                 'Nonce' => $response->nonce,
-                'Observer URL' => $response->observerUrl,
                 'Request ID' => $response->requestId,
             ],
         ));
+        $this->line($response->observerUrl);
 
         return self::SUCCESS;
     }

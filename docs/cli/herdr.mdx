@@ -195,7 +195,7 @@ orbit herdr:observe commander-tasks \
 
 The Gateway returns a private `wss://` URL that carries the grant and its expiry. The grant is a signed token that expires after 60 seconds, permits only `terminal.observe` for the named pane and terminal within the bounded viewport, is tied to the one HTTPS origin, and can be used once. The Node adapter refuses input, control, arbitrary pane selection, an expired grant, a wrong Node or session, an origin mismatch, a pane-to-terminal mismatch, and a reused grant. Reconnecting means asking for a new grant.
 
-Human output shows a detail tree with every field the JSON returns: pane, terminal, scope, columns, rows, expiry, nonce, and request ID, alongside the observer URL. The observer URL stays on its own value line so it stays easy to copy. It is a short-lived credential; do not share it outside the browser that will use it.
+Human output shows a detail tree with every field the JSON returns except the observer URL: pane, terminal, scope, columns, rows, expiry, nonce, and request ID. The observer URL prints on its own full-width line below the tree, not as a tree value, because it carries a bearer token and can run past the value column at any terminal width; wrapped inside the tree it would stop being one copyable string. It is a short-lived credential; do not share it outside the browser that will use it.
 
 A request that lacks a pane, terminal, viewport bound, or HTTPS origin fails with `herdr.grant_invalid` before the CLI sends it.
 

@@ -463,6 +463,8 @@ it('renders every observation grant field in human output without redacting the 
         '--origin' => 'https://tasks.commander.test',
     ]);
 
+    $observerUrl = 'wss://commander-tasks.herdr.beast.orbit?access_token=orbit-grant-token';
+
     expect($exit)->toBe(0)
         ->and($output)->toContain('w1:p1')
         ->and($output)->toContain('term-abc')
@@ -471,9 +473,14 @@ it('renders every observation grant field in human output without redacting the 
         ->and($output)->toContain('40')
         ->and($output)->toContain('2026-09-13T21:00:00+00:00')
         ->and($output)->toContain('aabbccddeeff00112233445566778899')
-        ->and($output)->toContain('wss://commander-tasks.herdr.beast.orbit?access_token=orbit-grant-token')
         ->and($output)->toContain(herdr_cli_request_id())
         ->and($output)->not->toContain('[redacted]');
+
+    // The observer URL carries a bearer token and can run past a detail
+    // tree's value column, so it must print on its own unprefixed line
+    // instead of as a tree value that could wrap across `│`-prefixed
+    // continuation lines and stop being one copyable string.
+    expect(explode("\n", $output))->toContain($observerUrl);
 });
 
 it('rejects an unsafe observation origin without sending a request', function (): void {
