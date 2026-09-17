@@ -623,19 +623,20 @@ final class TopFlowCommand extends GatewayCommand
         $metricsNode = ! $appScope ? $this->nodes[$this->selected['nodes']]['name'] : null;
         $metricsHeight = $metricsNode === null ? 0 : $this->metricsHeight($metricsNode);
 
-        // The same splits the grid makes, kept so the mouse can find a pane and a row.
-        $outer = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($metricsHeight), Constraint::min(10)])->split($area);
-        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($outer->get(2));
+        // The same splits the grid makes, kept so the mouse can find a pane and a row. The sidebar
+        // (Nodes, Apps) runs the full height; stats, metrics, and the record panes fill the right.
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($area);
         $left = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(count($this->nodes) + 2), Constraint::min(5)])->split($columns->get(0));
-        $right = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::percentage(40), Constraint::percentage(35), Constraint::min(5)])->split($columns->get(1));
-        $middle = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($right->get(1));
+        $rightConstraints = [Constraint::length(3), Constraint::length($metricsHeight), Constraint::percentage(38), Constraint::percentage(32), Constraint::min(5)];
+        $right = Layout::default()->direction(Direction::Vertical)->constraints($rightConstraints)->split($columns->get(1));
+        $middle = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($right->get(3));
         $this->drawn = [
             'nodes' => ['area' => $left->get(0), 'header' => false],
             'apps' => ['area' => $left->get(1), 'header' => false],
-            'instances' => ['area' => $right->get(0), 'header' => true],
+            'instances' => ['area' => $right->get(2), 'header' => true],
             'processes' => ['area' => $middle->get(0), 'header' => true],
             'schedules' => ['area' => $middle->get(1), 'header' => true],
-            'firewall' => ['area' => $right->get(2), 'header' => true],
+            'firewall' => ['area' => $right->get(4), 'header' => true],
         ];
 
         $instanceRows = array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances);
@@ -656,8 +657,11 @@ final class TopFlowCommand extends GatewayCommand
 
         $rightColumn = GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::percentage(40), Constraint::percentage(35), Constraint::min(5))
+            ->constraints(...$rightConstraints)
             ->widgets(
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
+                    ->widget(ParagraphWidget::fromString($this->stats())),
+                $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $columns->get(1)->width),
                 $this->pane('instances', $instancesTitle, ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
@@ -670,17 +674,9 @@ final class TopFlowCommand extends GatewayCommand
             );
 
         return GridWidget::default()
-            ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(3), Constraint::length($metricsHeight), Constraint::min(10))
-            ->widgets(
-                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
-                    ->widget(ParagraphWidget::fromString($this->stats())),
-                $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $area->width),
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::length(24), Constraint::min(40))
-                    ->widgets($leftColumn, $rightColumn),
-            );
+            ->direction(Direction::Horizontal)
+            ->constraints(Constraint::length(24), Constraint::min(40))
+            ->widgets($leftColumn, $rightColumn);
     }
 
     // ---- metrics ---------------------------------------------------------------------------
