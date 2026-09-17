@@ -12,6 +12,16 @@ ORBIT_DESIGN=1 apps/cli/orbit design:node-add --outcome=package-failure --pace=0
 
 Each sketch takes `--outcome` to select where it fails and `--pace` to set the seconds each step takes. Drive a sketch from a terminal one key at a time; Laravel Prompts reads one key per read and ignores keys that arrive together.
 
+## Replaying recorded responses
+
+A real command can run in a real terminal against a recorded Gateway response, so the rendering the contract tests hold can be watched live. Name the fixtures under `packages/php-sdk/fixtures` in `ORBIT_GATEWAY_FIXTURES` and point `ORBIT_HOME` at an empty replay home; the replay seeds a Gateway profile there.
+
+```bash
+export ORBIT_DESIGN=1 ORBIT_HOME=/tmp/orbit-replay
+ORBIT_GATEWAY_FIXTURES=apps/app-list/default apps/cli/orbit app:list
+ORBIT_GATEWAY_FIXTURES=instances/instance-create/candidate-required apps/cli/orbit instance:create 1 3 release-name
+```
+
 ## Flows
 
 A flow file under `flows/` is the agreed way through a sketch: the sketch, its arguments, the keys to send at each prompt, and the text each step must show. It is the file to look up before a demo, the script a cheaper model replays, and the record of what was agreed.
