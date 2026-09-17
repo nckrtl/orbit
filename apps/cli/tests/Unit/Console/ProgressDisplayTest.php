@@ -56,6 +56,27 @@ describe('shared progress', function (): void {
             ->not->toContain('private callback detail', 'Completed first', 'conditional');
     });
 
+    it('colors the failure footer red and leaves a healthy footer uncolored (F2c)', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, true, false, 80), $output, 'Operation');
+        $display->admit('first', 'First', 'Running first', 'Completed first');
+        $display->during('first', fn (): bool => true);
+        $display->complete('first', ProgressState::Failure, 'boom');
+        $display->finish('Operation failed.');
+        $text = $output->fetch();
+
+        expect($text)->toContain("\e[31mOperation failed.\e[0m");
+
+        $healthy = new BufferedOutput;
+        $ok = new ProgressDisplay(new ConsoleMode(false, false, true, false, 80), $healthy, 'Operation');
+        $ok->admit('first', 'First', 'Running first', 'Completed first');
+        $ok->during('first', fn (): bool => true);
+        $ok->complete('first', ProgressState::Success);
+        $ok->finish('Operation succeeded.');
+
+        expect($healthy->fetch())->not->toContain("\e[31m");
+    });
+
     it('does not emit human output in machine mode and preserves spinner values and exceptions', function (): void {
         $output = new BufferedOutput;
         $mode = new ConsoleMode(true, false, false, false, 80);

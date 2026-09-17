@@ -113,10 +113,10 @@ it('accepts the schedule filter and renders its received canonical position', fu
     expect($exitCode)->toBe(Command::SUCCESS)
         ->and($output)
         ->toContain(
-            '│ NODE  │ FAMILY   │ STATUS  │ CHECKED │ FINDING │',
-            '│ alpha │ instance │ healthy │ 1       │ —       │',
-            '│ alpha │ schedule │ healthy │ 2       │ —       │',
-            '│ alpha │ tool     │ healthy │ 3       │ —       │',
+            '│ NODE  │ FAMILY   │ STATUS  │ CHECKED │ RESOURCE │ FINDING │',
+            '│ alpha │ instance │ healthy │ 1       │ —        │ —       │',
+            '│ alpha │ schedule │ healthy │ 2       │ —        │ —       │',
+            '│ alpha │ tool     │ healthy │ 3       │ —        │ —       │',
         );
 
     expect($mock->getLastPendingRequest()?->body()->all())
@@ -160,11 +160,11 @@ it('renders rich unhealthy reports in received order', function (): void {
     expect($exitCode)->toBe(Command::FAILURE)
         ->and($output)
         ->toContain(
-            '│ NODE  │ FAMILY   │ STATUS       │ CHECKED │ FINDING                                                      │',
-            '│ alpha │ node     │ healthy      │ 2       │ —                                                            │',
-            '│ alpha │ instance │ drift        │ 3       │ instance.origin_mismatch: Origin differs.                    │',
-            '│ alpha │ instance │ drift        │ 3       │ instance.checkout_missing: Checkout is missing.              │',
-            '│ beta  │ firewall │ unverifiable │ 1       │ firewall.status_unavailable: Firewall status is unavailable. │',
+            '│ NODE  │ FAMILY   │ STATUS       │ CHECKED │ RESOURCE         │ FINDING                                                                                    │',
+            '│ alpha │ node     │ healthy      │ 2       │ —                │ —                                                                                          │',
+            '│ alpha │ instance │ drift        │ 3       │ instance primary │ instance.origin_mismatch: Origin differs. (expected: yes, observed: no)                    │',
+            '│ alpha │ instance │ drift        │ 3       │ instance primary │ instance.checkout_missing: Checkout is missing. (expected: yes, observed: no)              │',
+            '│ beta  │ firewall │ unverifiable │ 1       │ firewall primary │ firewall.status_unavailable: Firewall status is unavailable. (expected: yes, observed: no) │',
             'Healthy: no',
             "Request ID: {$requestId}",
         );
@@ -194,12 +194,59 @@ it('renders a completed unverifiable report instead of a gateway failure', funct
     expect($exitCode)->toBe(Command::FAILURE)
         ->and($output)
         ->toContain(
-            '│ NODE  │ FAMILY  │ STATUS       │ CHECKED │ FINDING                                                         │',
-            '│ gamma │ process │ unverifiable │ 1       │ process.state_unavailable: Process state could not be verified. │',
+            '│ NODE  │ FAMILY  │ STATUS       │ CHECKED │ RESOURCE        │ FINDING                                                                                       │',
+            '│ gamma │ process │ unverifiable │ 1       │ process primary │ process.state_unavailable: Process state could not be verified. (expected: yes, observed: no) │',
             'Healthy: no',
             "Request ID: {$requestId}",
         )
         ->not->toContain('"error"');
+});
+
+it('distinguishes same-code findings across different resources by identity (F3)', function (): void {
+    // Two AppInstances failing with the identical code must not render as identical rows;
+    // resource type and name are what tells them apart in human output.
+    $data = doctor_cli_report(
+        healthy: false,
+        nodes: [doctor_cli_node('alpha', [
+            doctor_cli_family(family: 'instance', status: 'unverifiable', checked: 2, issues: [
+                doctor_cli_issue(
+                    code: 'instance.inspection_failed',
+                    summary: 'Inspection failed.',
+                    kind: 'unverifiable',
+                    resourceType: 'instance',
+                    resourceId: 1,
+                    resourceName: 'e2e-dev',
+                    expected: null,
+                    observed: null,
+                ),
+                doctor_cli_issue(
+                    code: 'instance.inspection_failed',
+                    summary: 'Inspection failed.',
+                    kind: 'unverifiable',
+                    resourceType: 'instance',
+                    resourceId: 2,
+                    resourceName: 'e2e-prod',
+                    expected: null,
+                    observed: null,
+                ),
+            ]),
+        ])],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 2, 'drift' => 0, 'unverifiable' => 1],
+    );
+    doctor_cli_mock($data);
+
+    Artisan::call('doctor');
+    $output = Artisan::output();
+
+    expect($output)
+        ->toContain('│ alpha │ instance │ unverifiable │ 2       │ instance e2e-dev  │ instance.inspection_failed: Inspection failed. │')
+        ->toContain('│ alpha │ instance │ unverifiable │ 2       │ instance e2e-prod │ instance.inspection_failed: Inspection failed. │');
+
+    $rows = array_filter(
+        explode("\n", $output),
+        static fn (string $line): bool => str_contains($line, 'instance.inspection_failed'),
+    );
+    expect(array_unique($rows))->toHaveCount(2);
 });
 
 it('writes the exact one-line report json and follows its healthy state', function (string $scenario): void {

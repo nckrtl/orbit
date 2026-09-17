@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
 use Generator;
@@ -25,25 +26,54 @@ abstract class DeploymentCommand extends GatewayCommand
     protected function renderDeploymentStream(DeploymentStream $stream, string $title, string $openingPhase, string $verb): int
     {
         $this->requestId = null;
+        // A signal delivered while the SDK's read_timeout poll is blocked in fread() can
+        // record its interrupt intent without its own throw reliably unwinding out of that
+        // call (a real PHP limitation, not hypothetical). Re-check between polls instead of
+        // relying on that throw alone; a no-op when nothing is pending, e.g. --json, which
+        // installs no signal handler at all.
+        $stream->onIdle(InterruptIntent::throwIfPending(...));
 
         return $this->option('json') === true
-            ? $this->renderDeploymentStreamMachine($stream)
+            ? $this->renderDeploymentStreamMachine($stream, $openingPhase)
             : $this->renderDeploymentStreamHuman($stream, $title, $openingPhase, $verb);
     }
 
-    private function renderDeploymentStreamMachine(DeploymentStream $stream): int
+    private function renderDeploymentStreamMachine(DeploymentStream $stream, string $openingPhase): int
     {
+        $currentOrder = null;
+        $seenStepIds = [];
+
         try {
             foreach ($stream as $event) {
                 $this->requestId = $event->requestId;
 
                 if ($event instanceof DeploymentPhaseEvent) {
+                    $stepId = $event->stepName !== null ? "{$event->phase}:{$event->stepName}" : $event->phase;
+                    $order = $this->deploymentPhaseOrder($event->phase);
+
+                    // Human and JSON must agree on what a valid stream looks like: a wrong
+                    // opening phase, an out-of-order phase, or a duplicate phase (F6).
+                    if (($currentOrder === null && $event->phase !== $openingPhase)
+                        || ($currentOrder !== null && ($order < $currentOrder || isset($seenStepIds[$stepId])))) {
+                        throw new GatewayApiException(
+                            'Gateway deployment stream is invalid.', 'deployment.stream_invalid', requestId: $event->requestId,
+                        );
+                    }
+
+                    $seenStepIds[$stepId] = true;
+                    $currentOrder = $order;
                     $this->renderPhaseJson($event);
 
                     continue;
                 }
 
                 if ($event instanceof DeploymentOutputEvent) {
+                    if ($currentOrder === null) {
+                        throw new GatewayApiException(
+                            'Gateway deployment stream is invalid.', 'deployment.stream_invalid', requestId: $event->requestId,
+                        );
+                    }
+
                     $this->renderOutputJson($event);
 
                     continue;
@@ -95,6 +125,8 @@ abstract class DeploymentCommand extends GatewayCommand
             : null;
         $currentStepId = $this->deploymentPhaseLabels($openingPhase, null)[0];
         $currentPhase = $openingPhase;
+        $seenStepIds = [$currentStepId => true];
+        $currentOrder = $this->deploymentPhaseOrder($openingPhase);
         $event = null;
 
         try {
@@ -106,13 +138,16 @@ abstract class DeploymentCommand extends GatewayCommand
                 }
 
                 $first = $iterator->current();
+                $this->requestId = $first->requestId;
 
                 if ($first instanceof DeploymentResultEvent) {
                     return $first;
                 }
 
                 if (! $first instanceof DeploymentPhaseEvent || $first->phase !== $openingPhase) {
-                    throw new GatewayApiException('Gateway deployment stream is invalid.', 'deployment.stream_invalid');
+                    throw new GatewayApiException(
+                        'Gateway deployment stream is invalid.', 'deployment.stream_invalid', requestId: $first->requestId,
+                    );
                 }
 
                 $iterator->next();
@@ -124,7 +159,25 @@ abstract class DeploymentCommand extends GatewayCommand
             while ($event instanceof DeploymentPhaseEvent) {
                 $this->requestId = $event->requestId;
                 $nextPhase = $event->phase;
+                $nextOrder = $this->deploymentPhaseOrder($nextPhase);
                 [$nextStepId, $waiting, $running, $completed] = $this->deploymentPhaseLabels($nextPhase, $event->stepName);
+
+                // An out-of-order or duplicate phase is SDK-valid but not something the
+                // Gateway can send today; the row that was current takes the blame, the same
+                // way an unmapped failed_step boundary does in settleDeploymentTree(). Settle
+                // the tree explicitly here: this throw happens outside any during() scope, so
+                // there is no automatic settle-on-exception to rely on this time.
+                if ($nextOrder < $currentOrder || isset($seenStepIds[$nextStepId])) {
+                    $progress->complete($currentStepId, ProgressState::Failure, 'Gateway deployment stream is invalid.');
+                    $progress->finish("{$verb} failed.");
+
+                    return $this->renderStreamFailure(
+                        'deployment.stream_invalid', 'Gateway deployment stream is invalid.', $event->requestId,
+                    );
+                }
+
+                $seenStepIds[$nextStepId] = true;
+                $currentOrder = $nextOrder;
                 $progress->complete($currentStepId, ProgressState::Success);
 
                 if (in_array($nextPhase, $alwaysEmitted, true)) {
@@ -145,13 +198,22 @@ abstract class DeploymentCommand extends GatewayCommand
                     return $iterator->valid() ? $iterator->current() : null;
                 });
             }
-        } catch (GatewayApiException $exception) {
-            return $this->renderStreamFailure(
-                $exception->errorCode() ?? 'deployment.stream_invalid',
-                $exception->getMessage(),
-                $exception->requestId() ?? $this->requestId,
-            );
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            // The progress tree already settled with its own "Operation interrupted."
+            // footer (ProgressDisplay::during()'s own exception handling). Printing a
+            // second, generic failure on top of that would be misleading.
+            if (InterruptIntent::cancellation($exception)) {
+                return self::FAILURE;
+            }
+
+            if ($exception instanceof GatewayApiException) {
+                return $this->renderStreamFailure(
+                    $exception->errorCode() ?? 'deployment.stream_invalid',
+                    $exception->getMessage(),
+                    $exception->requestId() ?? $this->requestId,
+                );
+            }
+
             return $this->renderStreamFailure(
                 'deployment.stream_failed',
                 'Deployment stream failed.',
@@ -188,21 +250,31 @@ abstract class DeploymentCommand extends GatewayCommand
         string $currentPhase,
         DeploymentResultEvent $event,
     ): void {
+        $currentOrder = $this->deploymentPhaseOrder($currentPhase);
+
         if ($event->succeeded()) {
             $progress->complete($currentStepId, ProgressState::Success);
+
+            // An SDK-valid but currently Gateway-impossible stream (a succeeded result before
+            // every always-emitted phase fired) would otherwise leave those rows Waiting, and
+            // finish() cannot settle with unresolved work still admitted (F6). complete() only
+            // allows a Waiting row to become Skipped, never Success, so this reuses the same
+            // "not reached" treatment as the failure path below, regardless of the outcome.
+            foreach ($alwaysEmitted as $phase) {
+                if ($this->deploymentPhaseOrder($phase) > $currentOrder) {
+                    $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
+                }
+            }
 
             return;
         }
 
-        $failurePhase = $event->failedStep !== null ? $this->deploymentPhaseForFailedStep($event->failedStep) : null;
-
-        $progress->complete(
-            $currentStepId,
-            $failurePhase === $currentPhase ? ProgressState::Failure : ProgressState::Skipped,
-            $failurePhase === $currentPhase ? ($event->errorCode ?? '') : 'Not reached.',
-        );
-
-        $currentOrder = $this->deploymentPhaseOrder($currentPhase);
+        // The row that was current when the stream ended is always the one to blame, whether
+        // or not the Gateway's failed_step boundary has a row of its own: rollback's
+        // activation/cache_refresh boundaries and a bare "operation" failure never get their
+        // own row, and the tree must still show where things broke rather than leaving every
+        // reached row looking merely skipped.
+        $progress->complete($currentStepId, ProgressState::Failure, $event->errorCode ?? '');
 
         foreach ($alwaysEmitted as $phase) {
             if ($this->deploymentPhaseOrder($phase) > $currentOrder) {
@@ -332,21 +404,6 @@ abstract class DeploymentCommand extends GatewayCommand
             'source_preparation' => ['source_preparation', 'environment_sync', 'activation'],
             'rollback' => ['rollback'],
             default => throw new LogicException("Unsupported opening phase [{$openingPhase}]."),
-        };
-    }
-
-    /** Maps a result's failed_step boundary back to the phase vocabulary, or null for a boundary with no phase. */
-    private function deploymentPhaseForFailedStep(string $failedStep): ?string
-    {
-        return match ($failedStep) {
-            'preparation' => 'source_preparation',
-            'environment' => 'environment_sync',
-            'before_activation' => 'before_activation',
-            'activation' => 'activation',
-            'cache_refresh' => 'php_refresh',
-            'after_activation' => 'after_activation',
-            'rollback_selection' => 'rollback',
-            default => null,
         };
     }
 

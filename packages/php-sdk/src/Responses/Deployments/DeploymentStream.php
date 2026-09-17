@@ -12,6 +12,7 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use Orbit\Sdk\Support\GatewayRequestId;
 use Psr\Http\Message\StreamInterface;
+use RuntimeException;
 use SensitiveParameter;
 use Traversable;
 
@@ -26,6 +27,9 @@ final class DeploymentStream implements IteratorAggregate
 
     private bool $consumed = false;
 
+    /** @var Closure(): void|null */
+    private ?Closure $onIdle = null;
+
     /** @param Closure(): void $close */
     public function __construct(
         #[SensitiveParameter]
@@ -34,6 +38,19 @@ final class DeploymentStream implements IteratorAggregate
         private readonly Closure $close,
         private readonly string $requestId,
     ) {}
+
+    /**
+     * Called once per empty read_timeout poll (see DeploymentStreamRequest), between reads,
+     * never from inside one. A caller that wants to abort a silent wait — for example on a
+     * terminal interrupt — can throw from here; the SDK itself never inspects or depends on
+     * why the callback throws.
+     *
+     * @param  Closure(): void  $callback
+     */
+    public function onIdle(Closure $callback): void
+    {
+        $this->onIdle = $callback;
+    }
 
     /** @return Traversable<int, DeploymentEvent> */
     public function getIterator(): Traversable
@@ -76,14 +93,16 @@ final class DeploymentStream implements IteratorAggregate
                     throw $this->invalid();
                 }
 
-                if ($this->body->eof()) {
-                    throw $this->invalid();
-                }
-
+                // Checking eof() up front is unsafe here: PHP's SSL stream wrapper can report
+                // eof() as true right after a read_timeout even though the connection is still
+                // open (a longstanding PHP quirk). Let the read itself, below, be the only
+                // source of truth: a genuinely closed stream still reads empty with no timeout.
                 $chunk = $this->readIncrementalChunk(strlen($buffer));
 
                 if ($chunk === '') {
-                    throw $this->invalid();
+                    // A configured read_timeout (see DeploymentStreamRequest) bounds the read
+                    // above, not the whole operation; this is an empty poll, not end of stream.
+                    continue;
                 }
 
                 $buffer .= $chunk;
@@ -280,7 +299,13 @@ final class DeploymentStream implements IteratorAggregate
         }
 
         while (! $this->bodyAtEof()) {
-            if ($this->body->read(8 * 1024) !== '' || ! $this->bodyAtEof()) {
+            $trailing = $this->readWithTimeoutTolerance(8 * 1024);
+
+            if ($trailing === null) {
+                continue;
+            }
+
+            if ($trailing !== '' || ! $this->bodyAtEof()) {
                 throw $this->invalid();
             }
         }
@@ -290,10 +315,14 @@ final class DeploymentStream implements IteratorAggregate
     {
         // PHP's HTTP dechunk filter can wait for the requested length. Block for
         // one byte, then drain only bytes that the stream reports as buffered.
-        $chunk = $this->body->read(1);
+        $chunk = $this->readWithTimeoutTolerance(1);
+
+        if ($chunk === null) {
+            return '';
+        }
 
         if ($chunk === '') {
-            return '';
+            throw $this->invalid();
         }
 
         $availableBytes = $this->body->getMetadata('unread_bytes');
@@ -304,7 +333,48 @@ final class DeploymentStream implements IteratorAggregate
 
         $remainingBytes = self::MAXIMUM_LINE_BYTES - $bufferBytes - 1;
 
-        return $chunk.$this->body->read(min($availableBytes, $remainingBytes));
+        return $chunk.($this->readWithTimeoutTolerance(min($availableBytes, $remainingBytes)) ?? '');
+    }
+
+    /**
+     * A plain TCP socket reads '' on a read_timeout, no exception; PHP's SSL stream wrapper
+     * throws instead. Either way, decide once, immediately, whether an empty result is a
+     * timeout (null: the caller should retry, after running onIdle()) or a real empty read; a
+     * second, later getMetadata('timed_out') check would race against the flag resetting.
+     *
+     * Matching the exact RuntimeException class, not instanceof, matters: a caller's own
+     * signal handler (installed around this call, e.g. for Ctrl-C) can throw its own
+     * RuntimeException subclass from inside this read. That must always propagate, never be
+     * swallowed as a timeout retry, or an interrupt silently turns into an endless poll.
+     *
+     * A signal delivered while fread() is blocked can still record its own intent (a
+     * caller's handler may do that as a constructor side effect) without its throw reliably
+     * unwinding out of that internal call on every PHP build — a real, observed limitation,
+     * not a hypothetical one. onIdle() is the reliable half of that: it always runs from
+     * plain userland code between polls, so a callback that raises based on recorded intent
+     * is never at risk of being silently lost the way the async-dispatched throw itself is.
+     */
+    private function readWithTimeoutTolerance(int $length): ?string
+    {
+        try {
+            $chunk = $this->body->read($length);
+        } catch (RuntimeException $exception) {
+            if ($exception::class !== RuntimeException::class || $this->body->getMetadata('timed_out') !== true) {
+                throw $exception;
+            }
+
+            $chunk = '';
+        }
+
+        if ($chunk !== '' || $this->body->getMetadata('timed_out') !== true) {
+            return $chunk;
+        }
+
+        if ($this->onIdle !== null) {
+            ($this->onIdle)();
+        }
+
+        return null;
     }
 
     /** @phpstan-impure */
