@@ -998,7 +998,7 @@ final class TopFlowCommand extends GatewayCommand
             $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
             $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
             if ($link) {
-                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, min(54, intdiv($body->width * 40, 100)) - 2), 1), 'header' => false];
+                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, ($pane === 'instances' ? intdiv($body->width * 40, 100) : $body->width) - 2), 1), 'header' => false];
             }
             $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
             $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
@@ -1017,12 +1017,20 @@ final class TopFlowCommand extends GatewayCommand
             return $this->instancePage($crumbs, $properties, count($propertyRows) + 2, $body);
         }
 
-        $side = match ($pane) {
+        // Properties across the top, then what the record produces (logs, runs) over the full width.
+        $topHeight = count($propertyRows) + 2;
+        $tail = max(1, $body->height - $topHeight - 2);
+        $below = match ($pane) {
             'processes' => BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                ->titles(Title::fromString(' Recent logs '))
+                ->titles(Title::fromString(' Logs '))
                 ->borderStyle($dim)
-                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->logs, -max(1, $rows->get(1)->height - 2))))),
+                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->logs, -$tail)))),
+            'schedules' => BlockWidget::default()
+                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                ->titles(Title::fromString(' Runs '))
+                ->borderStyle($dim)
+                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->scheduleRuns($row), -$tail)))),
             default => BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
                 ->borderStyle($dim)
@@ -1031,14 +1039,27 @@ final class TopFlowCommand extends GatewayCommand
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(1), Constraint::min(5))
-            ->widgets(
-                ParagraphWidget::fromText(Text::fromLines($crumbs)),
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::length(56), Constraint::min(30))
-                    ->widgets($properties, $side),
-            );
+            ->constraints(Constraint::length(1), Constraint::length($topHeight), Constraint::min(4))
+            ->widgets(ParagraphWidget::fromText(Text::fromLines($crumbs)), $properties, $below);
+    }
+
+    /**
+     * Made-up run history for a schedule page, one line per past run.
+     *
+     * @param  array<string, mixed>  $row
+     * @return list<string>
+     */
+    private function scheduleRuns(array $row): array
+    {
+        $runs = [];
+        $step = str_starts_with((string) $row['expression'], '*/5') ? 300 : 86400;
+        for ($i = 6; $i >= 1; $i--) {
+            $at = time() - $i * $step;
+            $failed = $i === 3 && $row['status'] === 'enabled';
+            $runs[] = sprintf('[%s]  %-8s  %s', date('Y-m-d H:i:s', $at), $failed ? 'FAILED' : 'ok', $failed ? 'exit 1 after 12.4 s' : sprintf('exit 0 after %.1f s', 0.8 + ($i * 7) % 5));
+        }
+
+        return $runs;
     }
 
     /** An instance page: properties, Processes, and Schedules side by side over the full width, the logs below. */
