@@ -7,8 +7,6 @@ namespace Design\Flows;
 use App\Commands\GatewayCommand;
 use App\Support\Console\Renderers\TableTheme;
 use Design\Support\AnsiLine;
-use Design\Support\PanelConfirmPrompt;
-use Design\Support\PanelConfirmPromptRenderer;
 use Design\Support\PanelMultiSelectPrompt;
 use Design\Support\PanelMultiSelectPromptRenderer;
 use Design\Support\PanelSelectPrompt;
@@ -159,9 +157,9 @@ final class TopFlowCommand extends GatewayCommand
     private ?array $form = null;
 
     /**
-     * A node being added: which step runs, and the host key question while it waits for an answer.
+     * A node being added: which step runs. The host key is trusted as node:add records it.
      *
-     * @var array{node: string, stage: string, step: int, stepAt: float, fingerprint: string, host: string, confirm: PanelConfirmPrompt|null}|null
+     * @var array{node: string, step: int, stepAt: float, fingerprint: string, host: string}|null
      */
     private ?array $provisioning = null;
 
@@ -219,8 +217,6 @@ final class TopFlowCommand extends GatewayCommand
                         }
                         if ($this->form !== null) {
                             $this->typeInForm($event->char);
-                        } elseif ($this->pressInProvisioning($event->char)) {
-                            // The host key question took the key.
                         } elseif ($event->char === 'q') {
                             break 2;
                         } else {
@@ -291,21 +287,6 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-        $mapped = match ($code) {
-            KeyCode::Enter => Key::ENTER,
-            KeyCode::Left => Key::LEFT,
-            KeyCode::Right => Key::RIGHT,
-            KeyCode::Esc => 'n',
-            default => null,
-        };
-        if ($mapped !== null && $this->pressInProvisioning($mapped === 'n' ? Key::RIGHT : $mapped)) {
-            if ($mapped === 'n') {
-                $this->pressInProvisioning(Key::ENTER);
-            }
-
-            return;
-        }
-
         if ($this->focus === null) {
             $this->hoverKey($code);
 
@@ -746,7 +727,7 @@ final class TopFlowCommand extends GatewayCommand
     private function openForm(): void
     {
         // The theme finds a renderer by concrete class, so the panel subclasses reuse the CLI's renderers.
-        TableTheme::extend([PanelTextPrompt::class => PanelTextPromptRenderer::class, PanelSelectPrompt::class => PanelSelectPromptRenderer::class, PanelMultiSelectPrompt::class => PanelMultiSelectPromptRenderer::class, PanelConfirmPrompt::class => PanelConfirmPromptRenderer::class]);
+        TableTheme::extend([PanelTextPrompt::class => PanelTextPromptRenderer::class, PanelSelectPrompt::class => PanelSelectPromptRenderer::class, PanelMultiSelectPrompt::class => PanelMultiSelectPromptRenderer::class]);
         Prompt::addTheme('orbit-cli', TableTheme::renderers());
         Prompt::theme('orbit-cli');
         $this->form = ['prompts' => array_map(fn (string $key): array => [$key, $this->formPrompt($key)], self::FORM_PROMPTS), 'active' => 0];
@@ -909,28 +890,20 @@ final class TopFlowCommand extends GatewayCommand
             'lan_ip' => null,
         ];
         $this->nodes[] = $node;
-        $this->provisioning = ['node' => $node['name'], 'stage' => 'steps', 'step' => 0, 'stepAt' => microtime(true), 'fingerprint' => 'SHA256:Qm3fL9xTz1a8YhVw2pR7dKcN4bE6sJ0uGiXo5mHt2Ac', 'host' => $values['host'], 'confirm' => null];
+        $this->provisioning = ['node' => $node['name'], 'step' => 0, 'stepAt' => microtime(true), 'fingerprint' => 'SHA256:Qm3fL9xTz1a8YhVw2pR7dKcN4bE6sJ0uGiXo5mHt2Ac', 'host' => $values['host']];
         $this->ran = "orbit node:add {$node['name']} --host {$values['host']}";
         $this->form = null;
         $this->open('nodes', $node);
     }
 
-    /** Steps advance on their own; the second one stops to ask about the host key, as node:add does. */
+    /** Steps advance on their own; the host key is recorded as trusted on the way. */
     private function advanceForm(): void
     {
         $p = $this->provisioning;
-        if ($p === null || $p['stage'] !== 'steps' || microtime(true) - $p['stepAt'] < 0.9) {
+        if ($p === null || microtime(true) - $p['stepAt'] < 0.9) {
             return;
         }
         $next = $p['step'] + 1;
-        if ($next === 1) {
-            $this->provisioning['stage'] = 'fingerprint';
-            $short = substr($p['fingerprint'], 0, 15).'…'.substr($p['fingerprint'], -6);
-            PanelConfirmPromptRenderer::$width = 60;
-            $this->provisioning['confirm'] = PanelConfirmPrompt::make(label: "Trust {$p['host']} with host key {$short}?", default: true, yes: 'Trust', no: 'Abort');
-
-            return;
-        }
         if ($next >= count(self::CREATE_STEPS)) {
             $this->finishProvisioning();
 
@@ -938,28 +911,6 @@ final class TopFlowCommand extends GatewayCommand
         }
         $this->provisioning['step'] = $next;
         $this->provisioning['stepAt'] = microtime(true);
-    }
-
-    /** Keys while the host key question waits go to its confirm prompt. */
-    private function pressInProvisioning(string $key): bool
-    {
-        $p = $this->provisioning;
-        if ($p === null || $p['stage'] !== 'fingerprint' || $p['confirm'] === null) {
-            return false;
-        }
-        $p['confirm']->press($key);
-        if ($p['confirm']->done()) {
-            if ($p['confirm']->value() === true) {
-                $this->provisioning['stage'] = 'steps';
-                $this->provisioning['step'] = 1;
-                $this->provisioning['stepAt'] = microtime(true);
-            } else {
-                $this->provisioning['stage'] = 'failed';
-                $this->updateNode($p['node'], ['status' => 'failed', 'failed_step' => 'trust-host-key', 'error_code' => 'host-key-rejected']);
-            }
-        }
-
-        return true;
     }
 
     /** The node becomes active, with an address, metrics, and its first firewall rule. */
@@ -1192,7 +1143,6 @@ final class TopFlowCommand extends GatewayCommand
         $footer = ParagraphWidget::fromString(match (true) {
             $this->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
             $this->form !== null => '  ↑↓ or Tab move between fields · Space toggles a role · Enter confirms a field · Esc cancels',
-            $this->provisioning !== null && $this->provisioning['stage'] === 'fingerprint' => '  ←→ or y/n · Enter confirms · Esc aborts the add',
             $this->page() !== null && $this->focus === null => '  ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions · q leave',
             $this->focus === null => '  ↑↓ sections · → into the page · 1-7 jump · '.($this->section === 'nodes' ? 'c or + create · ' : '').($this->hasFilters() ? 'n/p filters · ' : '').'q leave',
             default => '  ↑↓ move · Enter or click again opens · a or right-click actions · Esc back to panes · q leave',
@@ -1736,8 +1686,7 @@ final class TopFlowCommand extends GatewayCommand
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $p = $this->provisioning !== null && $this->provisioning['node'] === $node['name'] ? $this->provisioning : null;
-        $asking = $p !== null && $p['stage'] === 'fingerprint';
-        $current = $p === null ? -1 : ($asking ? 1 : $p['step']);
+        $current = $p === null ? -1 : $p['step'];
         $failed = $node['status'] === 'failed';
 
         $lines = [];
@@ -1745,14 +1694,12 @@ final class TopFlowCommand extends GatewayCommand
             $state = match (true) {
                 $failed && $index === 1 => ['✗ ', AnsiColor::Red],
                 $index < $current => ['✓ ', AnsiColor::Green],
-                $index === $current => [$asking ? '? ' : '◌ ', AnsiColor::Cyan],
+                $index === $current => ['◌ ', AnsiColor::Cyan],
                 default => ['  ', AnsiColor::DarkGray],
             };
             $lines[] = Line::fromSpans(Span::styled($state[0], Style::default()->fg($state[1])), Span::styled($step, $index <= $current || $failed ? Style::default() : $dim));
-            if ($index === 1 && $asking && $p['confirm'] !== null) {
-                foreach (explode("\n", rtrim($p['confirm']->frame(), "\n")) as $text) {
-                    $lines[] = AnsiLine::parse('  '.$text);
-                }
+            if ($index === 1 && $p !== null && $current >= 1) {
+                $lines[] = Line::fromSpans(Span::styled("    {$p['host']} · {$p['fingerprint']}", $dim));
             }
         }
         if ($failed) {
