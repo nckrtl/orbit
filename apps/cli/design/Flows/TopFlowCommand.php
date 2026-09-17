@@ -339,18 +339,20 @@ final class TopFlowCommand extends GatewayCommand
     }
 
     /**
-     * A row whose status cell turns yellow when the record needs a look: yellow means "inspect".
+     * A row that turns yellow when the record needs a look: yellow means "inspect".
      *
      * @param  list<string>  $cells
      */
     private function row(array $cells, string $status, bool $warn): TableRow
     {
-        $statusCell = TableCell::fromString($status);
-        if ($warn) {
-            $statusCell->style = Style::default()->fg(AnsiColor::Yellow);
-        }
+        $style = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
 
-        return TableRow::fromCells(...[...array_map(fn (string $cell): TableCell => TableCell::fromString($cell), $cells), $statusCell]);
+        return TableRow::fromCells(...array_map(function (string $cell) use ($style): TableCell {
+            $tableCell = TableCell::fromString($cell);
+            $tableCell->style = $style;
+
+            return $tableCell;
+        }, [...$cells, $status]));
     }
 
     private function stats(): string
