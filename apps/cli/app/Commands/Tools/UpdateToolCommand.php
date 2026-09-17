@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Commands\Tools;
 
+use App\Support\Console\ProgressOutcome;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
@@ -25,21 +27,13 @@ final class UpdateToolCommand extends ToolActionCommand
     }
 
     #[\Override]
-    protected function renderSuccess(ToolResponse $tool): int
+    protected function message(ToolResponse $tool): string
     {
-        $message = match ($tool->outcome) {
+        return match ($tool->outcome) {
             'applied' => "Tool [{$tool->package}] updated.",
             'unchanged' => "Tool [{$tool->package}] is already current.",
-            'blocked_by_constraint' => $tool->versionConstraint === null || $tool->versionConstraint === ''
-                ? ''
-                : "Tool [{$tool->package}] update blocked by constraint [{$tool->versionConstraint}].",
-            default => '',
+            default => "Tool [{$tool->package}] update blocked by constraint [{$tool->versionConstraint}].",
         };
-
-        $this->info($message);
-        $this->line("Request ID: {$tool->requestId}");
-
-        return self::SUCCESS;
     }
 
     #[\Override]
@@ -50,5 +44,21 @@ final class UpdateToolCommand extends ToolActionCommand
             || $tool->outcome === 'blocked_by_constraint'
             && $tool->versionConstraint !== null
             && $tool->versionConstraint !== '';
+    }
+
+    #[\Override]
+    protected function progressLabels(): array
+    {
+        return ['Update Tool', 'Updating Tool', 'Updated Tool'];
+    }
+
+    #[\Override]
+    protected function resultState(ToolResponse $tool): ProgressState|ProgressOutcome
+    {
+        return match ($tool->outcome) {
+            'applied' => ProgressState::Success,
+            'unchanged' => new ProgressOutcome(ProgressState::Skipped, 'Tool already up to date'),
+            default => new ProgressOutcome(ProgressState::Warning, 'Update blocked by constraint'),
+        };
     }
 }

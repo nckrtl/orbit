@@ -27,7 +27,12 @@ final class DisableMetricsExporterCommand extends MetricsCommand
         if ($nodeId === null) {
             return self::FAILURE;
         }
-        $response = $this->send($connector, new DisableMetricsExporterRequest($nodeId), MetricsMutationResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new DisableMetricsExporterRequest($nodeId),
+            MetricsMutationResponse::class,
+            ['Disable Metrics exporter', 'Disabling Metrics exporter', 'Disabled Metrics exporter'],
+        );
 
         return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
     }

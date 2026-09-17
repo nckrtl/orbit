@@ -6,6 +6,9 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressOutcome;
+use App\Support\Console\ProgressState;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 
@@ -27,32 +30,43 @@ abstract class ToolActionCommand extends ToolCommand
             return self::FAILURE;
         }
 
-        $tool = $this->send($connector, $this->request($toolId), ToolResponse::class);
+        $tool = $this->sendWithProgress(
+            $connector,
+            $this->request($toolId),
+            ToolResponse::class,
+            $this->progressLabels(),
+            function (object $response): ProgressState|ProgressOutcome {
+                if (! $response instanceof ToolResponse || ! $this->accepts($response)) {
+                    throw new GatewayApiException(
+                        'Gateway response is invalid.',
+                        'gateway.invalid_response',
+                        requestId: $response instanceof ToolResponse ? $response->requestId : null,
+                    );
+                }
+
+                return $this->resultState($response);
+            },
+        );
 
         if (! $tool instanceof ToolResponse) {
             return self::FAILURE;
         }
 
-        if (! $this->accepts($tool)) {
-            return $this->renderGatewayFailure(
-                'gateway.invalid_response',
-                'Gateway response is invalid.',
-                $tool->requestId,
-            );
-        }
-
-        if ($this->option('json') === true) {
-            $this->writeToolJson($tool);
-
-            return self::SUCCESS;
-        }
-
-        return $this->renderSuccess($tool);
+        return $this->renderTool($tool, $this->message($tool));
     }
 
     abstract protected function request(int $toolId): GatewayRequest;
 
-    abstract protected function renderSuccess(ToolResponse $tool): int;
+    abstract protected function message(ToolResponse $tool): string;
 
     abstract protected function accepts(ToolResponse $tool): bool;
+
+    /** @return array{0: string, 1: string, 2: string} */
+    abstract protected function progressLabels(): array;
+
+    /** The response already passed accepts(); classify how truthfully the progress settles. */
+    protected function resultState(ToolResponse $tool): ProgressState|ProgressOutcome
+    {
+        return ProgressState::Success;
+    }
 }

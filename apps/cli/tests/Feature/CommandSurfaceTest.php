@@ -807,7 +807,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
-        'tool:remove' => [['tool'], ['json' => false]],
+        'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
     ];

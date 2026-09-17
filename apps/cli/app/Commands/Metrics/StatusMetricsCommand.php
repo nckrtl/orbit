@@ -6,6 +6,7 @@ namespace App\Commands\Metrics;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 
@@ -23,79 +24,51 @@ final class StatusMetricsCommand extends MetricsCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $response = $this->send($connector, new ShowMetricsStatusRequest, MetricsStatusResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new ShowMetricsStatusRequest,
+            MetricsStatusResponse::class,
+            ['Show Metrics status', 'Loading Metrics status', 'Loaded Metrics status'],
+        );
         if (! $response instanceof MetricsStatusResponse) {
             return self::FAILURE;
         }
         if ($this->option('json') === true) {
-            /** @var array<string, mixed> $payload */
-            $payload = $response->toArray();
-            $this->writeJson($payload);
+            $this->writeJson($response->toArray());
 
             return self::SUCCESS;
         }
 
-        $this->table(['Field', 'Value'], $this->statusRows($response));
-        if ($response->exporters !== []) {
-            $this->table(['ID', 'Node', 'Desired', 'Actual', 'Reason', 'Degraded'], array_map(
-                static fn (array $row): array => [
-                    $row['id'],
-                    $row['name'],
-                    $row['desired'] ? 'yes' : 'no',
-                    $row['actual'],
-                    $row['reason'],
-                    $row['degraded_reason'] ?? '-',
-                ],
-                $response->exporters,
-            ));
-        }
-        $this->line("Request ID: {$response->requestId}");
+        $assignment = $response->assignment;
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Metrics status.', [
+            'Enabled' => $response->enabled,
+            'URL' => $response->url,
+            'Assignment ID' => $assignment['id'] ?? null,
+            'Assignment status' => $assignment['status'] ?? null,
+            'Assignment node ID' => $assignment['node_id'] ?? null,
+            'Assignment node' => $assignment['node_name'] ?? null,
+            'Failed step' => $assignment['failed_step'] ?? null,
+            'Error code' => $assignment['error_code'] ?? null,
+            'Prometheus' => $response->prometheus,
+            'Grafana' => $response->grafana,
+        ]));
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['ID', 'Node', 'Desired', 'Actual', 'Reason', 'Degraded'],
+            array_map(static fn (array $row): array => [
+                $row['id'],
+                $row['name'],
+                $row['desired'],
+                $row['actual'],
+                $row['reason'],
+                $row['degraded_reason'],
+            ], $response->exporters),
+            'No Metrics exporters configured.',
+        ));
+
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
-    }
-
-    /** @return list<array{0: string, 1: string}> */
-    private function statusRows(MetricsStatusResponse $response): array
-    {
-        $assignment = $response->assignment;
-        $summary = $assignment === null
-            ? '-'
-            : sprintf(
-                '#%s (%s) on %s',
-                $this->text($assignment, 'id') ?? '-',
-                $this->text($assignment, 'status') ?? '-',
-                $this->text($assignment, 'node_name') ?? '-',
-            );
-
-        $rows = [
-            ['Enabled', $response->enabled ? 'yes' : 'no'],
-            ['URL', $response->url ?? '-'],
-            ['Assignment', $summary],
-        ];
-
-        foreach (['Failed step' => 'failed_step', 'Error code' => 'error_code'] as $label => $key) {
-            $value = $this->text($assignment, $key);
-
-            if ($value !== null) {
-                $rows[] = [$label, $value];
-            }
-        }
-
-        $rows[] = ['Prometheus', $response->prometheus];
-        $rows[] = ['Grafana', $response->grafana];
-
-        return $rows;
-    }
-
-    /**
-     * Reads one printable assignment field; absent, null, and unexpected shapes all read as absent.
-     *
-     * @param  array<string, mixed>|null  $assignment
-     */
-    private function text(?array $assignment, string $key): ?string
-    {
-        $value = $assignment[$key] ?? null;
-
-        return is_string($value) || is_int($value) ? (string) $value : null;
     }
 }
