@@ -48,7 +48,7 @@ final class DisableMetricsCommand extends MetricsCommand
                 'Disable Metrics? Data: preserve. Assignment: '.($status->assignment === null ? 'none' : 'remove').'.',
                 'Metrics disable cancelled.',
                 option: 'force',
-                requiredCode: 'metrics.confirmation_required',
+                requiredCode: 'metrics.force_required',
                 requiredMessage: 'Use --force to confirm Metrics disable.',
             )) {
                 return self::FAILURE;

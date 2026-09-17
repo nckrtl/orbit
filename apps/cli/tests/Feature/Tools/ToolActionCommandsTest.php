@@ -8,6 +8,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -166,8 +167,13 @@ it('removes a tool as one typed request and writes one DTO JSON line', function 
         ->toBeNull();
 });
 
-it('refuses JSON tool removal without --yes', function (): void {
-    $mock = MockClient::global();
+it('resolves the Tool before refusing JSON removal without --yes', function (): void {
+    $mock = MockClient::global([
+        ShowToolRequest::class => MockResponse::make([
+            'data' => tool_action_data(['manager' => 'apt', 'package' => 'curl']),
+            'meta' => ['request_id' => '99999999-9999-4999-8999-999999999999'],
+        ]),
+    ]);
 
     $exitCode = Artisan::call('tool:remove', ['tool' => '41', '--json' => true]);
 
@@ -181,7 +187,35 @@ it('refuses JSON tool removal without --yes', function (): void {
                 'request_id' => null,
             ],
         ]);
-    expect($mock->getLastPendingRequest())->toBeNull();
+
+    $mock->assertSent(ShowToolRequest::class);
+    $mock->assertNotSent(RemoveToolRequest::class);
+});
+
+it('fails with the not-found code before any prompt for an unknown Tool', function (): void {
+    $mock = MockClient::global([
+        ShowToolRequest::class => MockResponse::make(
+            ['error' => ['code' => 'tool.not_found', 'message' => 'The tool was not found.']],
+            404,
+            ['X-Orbit-Request-Id' => '88888888-8888-4888-8888-888888888888'],
+        ),
+    ]);
+
+    $exitCode = Artisan::call('tool:remove', ['tool' => '999', '--json' => true]);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))
+        ->toBe([
+            'error' => [
+                'code' => 'tool.not_found',
+                'message' => 'The tool was not found.',
+                'request_id' => '88888888-8888-4888-8888-888888888888',
+            ],
+        ]);
+
+    $mock->assertSent(ShowToolRequest::class);
+    $mock->assertNotSent(RemoveToolRequest::class);
 });
 
 it('rejects a non-positive tool ID before sending HTTP', function (): void {
@@ -273,13 +307,19 @@ it('renders the exact human remove message and request ID', function (): void {
 });
 
 it('makes no mutation and keeps the retained Tool row when removal is refused', function (): void {
-    $mock = MockClient::global();
+    $mock = MockClient::global([
+        ShowToolRequest::class => MockResponse::make([
+            'data' => tool_action_data(['manager' => 'apt', 'package' => 'curl']),
+            'meta' => ['request_id' => '99999999-9999-4999-8999-999999999999'],
+        ]),
+    ]);
 
     [$exit, $output] = tool_action_cli_display('tool:remove', ['tool' => '41']);
 
     expect($exit)->toBe(1)
         ->and($output)->toContain('Supply --yes to confirm this operation.');
-    expect($mock->getLastPendingRequest())->toBeNull();
+    $mock->assertSent(ShowToolRequest::class);
+    $mock->assertNotSent(RemoveToolRequest::class);
 });
 
 it('rejects nonnumeric IDs for both actions before HTTP', function (): void {

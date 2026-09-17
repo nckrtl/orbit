@@ -124,7 +124,7 @@ orbit metrics:disable
 orbit metrics:disable --force --purge-data
 ```
 
-An interactive call shows a preview and asks for confirmation, defaulting to No. Interactive decline, Ctrl-C, or EOF exits with `input.cancelled` and makes no changes. A non-interactive or `--json` call without `--force` fails with `metrics.confirmation_required`. `--purge-data` without `--force` fails with `metrics.force_required`, in every mode.
+An interactive call shows a preview and asks for confirmation, defaulting to No. Interactive decline, Ctrl-C, or EOF exits with `input.cancelled` and makes no changes. A non-interactive or `--json` call without `--force` fails with `metrics.force_required`, and so does `--purge-data` without `--force`, in every mode.
 
 After a disable, the Metrics Node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, every exporter drop-in and firewall rule on eligible Nodes, and the `metrics.orbit` Route, certificate, and DNS record. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored passwords, Docker, the installed packages, and every exporter preference stay, and a later `metrics:enable` reuses them.
 

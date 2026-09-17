@@ -246,7 +246,7 @@ it('requires explicit force consent for non-interactive disable', function (): v
         ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))
         ->toBe([
             'error' => [
-                'code' => 'metrics.confirmation_required',
+                'code' => 'metrics.force_required',
                 'message' => 'Use --force to confirm Metrics disable.',
                 'request_id' => null,
             ],

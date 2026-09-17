@@ -8,6 +8,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 
 final class RemoveToolCommand extends ToolActionCommand
@@ -38,11 +39,23 @@ final class RemoveToolCommand extends ToolActionCommand
             return self::FAILURE;
         }
 
-        if (! $this->confirmAction(
-            "Remove Tool [{$toolId}] and delete its record?",
-            'Tool removal cancelled.',
-        )) {
-            return self::FAILURE;
+        if ($this->option('yes') !== true) {
+            $existing = $this->sendWithProgress(
+                $connector,
+                new ShowToolRequest($toolId),
+                ToolResponse::class,
+                ['Resolve Tool', 'Loading Tool', 'Loaded Tool'],
+            );
+            if (! $existing instanceof ToolResponse) {
+                return self::FAILURE;
+            }
+
+            if (! $this->confirmAction(
+                "Remove Tool [{$existing->package}] ({$existing->manager} on Node #{$existing->nodeId}) by uninstalling it and deleting its record?",
+                'Tool removal cancelled.',
+            )) {
+                return self::FAILURE;
+            }
         }
 
         return parent::handle($repository, $connectors);
