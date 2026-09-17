@@ -717,12 +717,12 @@ it('bounds AppInstance response relationship queries for one and several visible
         ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->getJson('/api/v1/instances')
         ->assertOk()
-        ->assertJsonPath('data.*.id', [$unrouted->id, $second->id, $first->id])
-        ->assertJsonPath('data.*.app_id', [$unroutedApp->id, $this->orbitApp->id, $this->orbitApp->id])
-        ->assertJsonPath('data.0.effective_root', 'web')
-        ->assertJsonPath('data.0.route', null)
-        ->assertJsonPath('data.1.route.target.app_instance_id', $second->id)
-        ->assertJsonPath('data.2.route.target.app_instance_id', $first->id);
+        ->assertJsonPath('data.*.id', [$first->id, $unrouted->id, $second->id])
+        ->assertJsonPath('data.*.app_id', [$this->orbitApp->id, $unroutedApp->id, $this->orbitApp->id])
+        ->assertJsonPath('data.1.effective_root', 'web')
+        ->assertJsonPath('data.1.route', null)
+        ->assertJsonPath('data.0.route.target.app_instance_id', $first->id)
+        ->assertJsonPath('data.2.route.target.app_instance_id', $second->id);
 
     expect($oneRowQueryCounts)
         ->toBe(['apps' => 1, 'routes' => 1, 'targets' => 1])

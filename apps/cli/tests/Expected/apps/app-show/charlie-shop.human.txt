@@ -16,7 +16,7 @@ Fetching App instances...
  ┌────┬──────────────────┬─────────────┬──────┬────────────────────────────────────┬────────┐
  │ ID │ NAME             │ ENVIRONMENT │ NODE │ DOMAIN                             │ STATUS │
  ├────┼──────────────────┼─────────────┼──────┼────────────────────────────────────┼────────┤
+ │ 1  │ dev              │ development │ 1    │ dev.charlie-shop.test              │ active │
  │ 3  │ feature-checkout │ development │ 1    │ feature-checkout.charlie-shop.test │ active │
  │ 2  │ staging          │ development │ 1    │ staging.charlie-shop.test          │ active │
- │ 1  │ dev              │ development │ 1    │ dev.charlie-shop.test              │ active │
  └────┴──────────────────┴─────────────┴──────┴────────────────────────────────────┴────────┘
