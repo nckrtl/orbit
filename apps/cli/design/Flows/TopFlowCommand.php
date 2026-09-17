@@ -1748,10 +1748,10 @@ final class TopFlowCommand extends GatewayCommand
 
     private function metricsHeight(string $node): int
     {
-        return intdiv(count($this->metrics[$node]['cores']) + 3, 4) + 2 + 2;
+        return intdiv(count($this->metrics[$node]['cores']) + 1, 2) + 2 + 2;
     }
 
-    /** An htop-like block: cores in four columns, then memory and swap beside the root disk and uptime. */
+    /** An htop-like block: cores in two columns, then memory and swap beside the root disk and uptime. */
     private function metricsPanel(string $node, int $width): Widget
     {
         $m = $this->metrics[$node];
@@ -1759,20 +1759,18 @@ final class TopFlowCommand extends GatewayCommand
         $age = max(0, (int) round(microtime(true) - $this->lastMetrics));
         $inner = $width - 4;
         $gap = 2;
-        $column = intdiv($inner - 3 * $gap, 4);
-        $lastColumn = $inner - 3 * ($column + $gap);
         $half = intdiv($inner - $gap, 2);
         $lastHalf = $inner - $half - $gap;
 
         $coreLines = [];
-        foreach (array_chunk($m['cores'], 4, true) as $group) {
+        foreach (array_chunk($m['cores'], 2, true) as $group) {
             $spans = [];
             $position = 0;
             foreach ($group as $core => $load) {
                 if ($position > 0) {
                     $spans[] = Span::fromString(str_repeat(' ', $gap));
                 }
-                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $position === 3 ? $lastColumn : $column)];
+                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $position === 1 ? $lastHalf : $half)];
                 $position++;
             }
             $coreLines[] = Line::fromSpans(...$spans);
