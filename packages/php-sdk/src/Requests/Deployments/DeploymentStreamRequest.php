@@ -52,6 +52,7 @@ abstract class DeploymentStreamRequest extends GatewayRequest implements HasBody
                 $response->close();
             },
             $requestId,
+            silenceLimitSeconds: self::OPERATION_TIMEOUT_SECONDS,
         );
     }
 

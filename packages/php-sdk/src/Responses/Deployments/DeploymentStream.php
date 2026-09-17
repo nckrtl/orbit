@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Deployments;
 
 use Closure;
+use GuzzleHttp\Psr7\Exception\TimeoutException;
 use IteratorAggregate;
 use JsonException;
 use LogicException;
@@ -30,13 +31,24 @@ final class DeploymentStream implements IteratorAggregate
     /** @var Closure(): void|null */
     private ?Closure $onIdle = null;
 
-    /** @param Closure(): void $close */
+    /** Monotonic time (hrtime) the current run of empty, timed-out polls began; null while idle. */
+    private ?int $silentSinceNanoseconds = null;
+
+    /**
+     * @param  Closure(): void  $close
+     * @param  float  $silenceLimitSeconds  read_timeout (see DeploymentStreamRequest) bounds each
+     *                                      poll, not the operation; this bounds the operation, the
+     *                                      same way `main`'s single blocking read was bounded by
+     *                                      the request's overall `timeout`. Injectable so tests can
+     *                                      use a limit shorter than the real 4,500 s default.
+     */
     public function __construct(
         #[SensitiveParameter]
         private readonly StreamInterface $body,
         #[SensitiveParameter]
         private readonly Closure $close,
         private readonly string $requestId,
+        private readonly float $silenceLimitSeconds = 4_500.0,
     ) {}
 
     /**
@@ -337,15 +349,18 @@ final class DeploymentStream implements IteratorAggregate
     }
 
     /**
-     * A plain TCP socket reads '' on a read_timeout, no exception; PHP's SSL stream wrapper
-     * throws instead. Either way, decide once, immediately, whether an empty result is a
-     * timeout (null: the caller should retry, after running onIdle()) or a real empty read; a
+     * A plain TCP socket reads '' on a read_timeout, no exception; Guzzle's PSR-7 Stream wraps a
+     * '' timed-out read (any transport, confirmed with a real plain-TCP socket) in its own
+     * TimeoutException instead. Either way, decide once, immediately, whether an empty result is
+     * a timeout (null: the caller should retry, after running onIdle()) or a real empty read; a
      * second, later getMetadata('timed_out') check would race against the flag resetting.
      *
-     * Matching the exact RuntimeException class, not instanceof, matters: a caller's own
-     * signal handler (installed around this call, e.g. for Ctrl-C) can throw its own
-     * RuntimeException subclass from inside this read. That must always propagate, never be
-     * swallowed as a timeout retry, or an interrupt silently turns into an endless poll.
+     * isTimeoutException() only ever recognizes Guzzle's own TimeoutException, or the exact base
+     * RuntimeException class confirmed by getMetadata('timed_out') — never a subclass by
+     * instanceof alone. A caller's own signal handler (installed around this call, e.g. for
+     * Ctrl-C) can throw its own RuntimeException subclass from inside this read. That must
+     * always propagate, never be swallowed as a timeout retry, or an interrupt silently turns
+     * into an endless poll.
      *
      * A signal delivered while fread() is blocked can still record its own intent (a
      * caller's handler may do that as a constructor side effect) without its throw reliably
@@ -353,21 +368,39 @@ final class DeploymentStream implements IteratorAggregate
      * not a hypothetical one. onIdle() is the reliable half of that: it always runs from
      * plain userland code between polls, so a callback that raises based on recorded intent
      * is never at risk of being silently lost the way the async-dispatched throw itself is.
+     *
+     * A timed-out poll is empty, not absent data: consecutive empty polls accumulate against
+     * $silenceLimitSeconds, reset by any byte actually read (from this call or from
+     * assertTerminal()'s trailing drain, both of which share this method). Exceeding the limit
+     * throws the same invalid()-stream exception `main`'s single, longer-blocking read did once
+     * its own timeout elapsed with nothing received.
      */
     private function readWithTimeoutTolerance(int $length): ?string
     {
         try {
             $chunk = $this->body->read($length);
         } catch (RuntimeException $exception) {
-            if ($exception::class !== RuntimeException::class || $this->body->getMetadata('timed_out') !== true) {
+            if (! $this->isTimeoutException($exception)) {
                 throw $exception;
             }
 
             $chunk = '';
         }
 
-        if ($chunk !== '' || $this->body->getMetadata('timed_out') !== true) {
+        if ($chunk !== '') {
+            $this->silentSinceNanoseconds = null;
+
             return $chunk;
+        }
+
+        if ($this->body->getMetadata('timed_out') !== true) {
+            return $chunk;
+        }
+
+        $this->silentSinceNanoseconds ??= hrtime(true);
+
+        if ((hrtime(true) - $this->silentSinceNanoseconds) / 1_000_000_000 >= $this->silenceLimitSeconds) {
+            throw $this->invalid();
         }
 
         if ($this->onIdle !== null) {
@@ -375,6 +408,12 @@ final class DeploymentStream implements IteratorAggregate
         }
 
         return null;
+    }
+
+    private function isTimeoutException(RuntimeException $exception): bool
+    {
+        return $exception instanceof TimeoutException
+            || ($exception::class === RuntimeException::class && $this->body->getMetadata('timed_out') === true);
     }
 
     /** @phpstan-impure */
