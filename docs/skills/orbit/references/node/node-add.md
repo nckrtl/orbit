@@ -56,7 +56,7 @@ $ orbit node:add demo 10.232.5.20 --role=app-dev --tld=demo --host-key-fingerpri
 └  Added Node.
 
 Node [demo] is active.
-Request ID: f4e105ee-43c6-49df-87cd-4ea6e913d08d
+Request ID: 34c55c80-904f-4cfd-8e8d-7a18fdc8a984
 ```
 
 Converge an existing Node after adding a role:
