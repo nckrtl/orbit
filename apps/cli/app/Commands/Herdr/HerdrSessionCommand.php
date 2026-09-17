@@ -109,6 +109,27 @@ abstract class HerdrSessionCommand extends GatewayCommand
         return $payload;
     }
 
+    protected function renderRemovedSession(HerdrSessionResponse $session, string $message): int
+    {
+        if ($this->option('json') === true) {
+            $this->writeJson($this->sanitizedSessionPayload($session));
+
+            return self::SUCCESS;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+            'ID' => $session->id,
+            'Session' => $session->session,
+            'Node' => $session->node,
+            'Node ID' => $session->nodeId,
+            'User' => $session->user,
+            'Management' => $session->management,
+            'Request ID' => $session->requestId,
+        ]));
+
+        return self::SUCCESS;
+    }
+
     protected function renderSession(HerdrSessionResponse $session, string $message): int
     {
         if ($this->option('json') === true) {

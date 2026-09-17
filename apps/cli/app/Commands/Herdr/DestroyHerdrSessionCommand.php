@@ -76,6 +76,6 @@ final class DestroyHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        return $this->renderSession($response, "Herdr session [{$response->session}] on [{$response->node}] was removed from Orbit.");
+        return $this->renderRemovedSession($response, "Herdr session [{$response->session}] on [{$response->node}] was removed from Orbit.");
     }
 }
