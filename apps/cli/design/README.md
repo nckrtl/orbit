@@ -43,5 +43,6 @@ bin/cli-flow node-add --keep /tmp/node-add-recording
 | --- | --- |
 | `design:node-add` | Prompts for every missing input, host key approval, and the provisioning steps as a progress tree. |
 | `design:instance-show` | One App instance as tabs: Overview detail, Processes list, Schedules list; Tab switches, Enter selects a row. |
+| `design:top` | A live top-like screen on php-tui: Nodes and Processes panes that refresh on a tick, arrow keys, `q` leaves. |
 
 When a sketch is accepted, its scenario becomes the mock Gateway scenario for the real command, and its transcript becomes the expected output of that command's tests.
