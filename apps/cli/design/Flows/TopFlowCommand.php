@@ -1251,7 +1251,7 @@ final class TopFlowCommand extends GatewayCommand
             $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
             $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
             if ($link) {
-                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, $propertiesWidth - 2), 1), 'header' => false];
+                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 2, $body->top() + 1 + $index, max(10, $propertiesWidth - 4), 1), 'header' => false];
             }
             $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
             $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
@@ -1259,7 +1259,7 @@ final class TopFlowCommand extends GatewayCommand
         }
         $table = TableWidget::default()->widths(Constraint::length(18), Constraint::min(10))->rows(...$propertyRows);
         $table->columnSpacing = 1;
-        $properties = BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Properties '))->borderStyle($dim)->widget($table);
+        $properties = BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Properties '))->borderStyle($dim)->padding(Padding::horizontal(1))->widget($table);
         $propertiesHeight = count($propertyRows) + 2;
 
         $content = match ($kind) {
@@ -1360,7 +1360,7 @@ final class TopFlowCommand extends GatewayCommand
                         $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes)),
                         $this->pane('schedules', ' Schedules ', ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $schedules)),
                     ),
-                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)->padding(Padding::horizontal(1))
                     ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(1)->height - 2))))),
             );
     }
@@ -1435,7 +1435,8 @@ final class TopFlowCommand extends GatewayCommand
                 ),
             BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
                 ->titles(Title::fromString(' '.$this->engineName($db['driver']).' '.$db['version'].' · polled 5s ago '))
-                ->widget(ParagraphWidget::fromString(' '.$stats)),
+                ->padding(Padding::horizontal(1))
+                ->widget(ParagraphWidget::fromString($stats)),
             GridWidget::default()->direction(Direction::Horizontal)->constraints(...$sideConstraints)->widgets(...$sideWidgets),
         ];
         if ($extra !== null) {
@@ -1473,7 +1474,7 @@ final class TopFlowCommand extends GatewayCommand
             ->constraints(Constraint::length($propertiesHeight), Constraint::min(4))
             ->widgets(
                 $properties,
-                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString($title))->borderStyle($dim)
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString($title))->borderStyle($dim)->padding(Padding::horizontal(1))
                     ->widget(ParagraphWidget::fromString(implode("\n", array_slice($lines, -$tail)))),
             );
     }
@@ -1732,9 +1733,11 @@ final class TopFlowCommand extends GatewayCommand
         if ($cells === [] || $width <= 0) {
             return $row;
         }
+        // One cell of air stays between the text and the border.
         $last = array_pop($cells);
         $text = implode('', array_map(fn (Line $line): string => implode('', array_map(fn (Span $span): string => $span->content, iterator_to_array($line))), $last->content->lines));
-        $aligned = TableCell::fromString(mb_strlen($text) >= $width ? $text : str_repeat(' ', $width - mb_strlen($text)).$text);
+        $room = $width - 1;
+        $aligned = TableCell::fromString(mb_strlen($text) >= $room ? $text : str_repeat(' ', $room - mb_strlen($text)).$text.' ');
         $aligned->style = $last->style;
 
         return TableRow::fromCells(...[...$cells, $aligned]);
