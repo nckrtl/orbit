@@ -16,6 +16,7 @@ use PhpTui\Tui\DisplayBuilder;
 use PhpTui\Tui\Extension\Core\Widget\BlockWidget;
 use PhpTui\Tui\Extension\Core\Widget\GridWidget;
 use PhpTui\Tui\Extension\Core\Widget\ParagraphWidget;
+use PhpTui\Tui\Extension\Core\Widget\Table\TableCell;
 use PhpTui\Tui\Extension\Core\Widget\Table\TableRow;
 use PhpTui\Tui\Extension\Core\Widget\TableWidget;
 use PhpTui\Tui\Layout\Constraint;
@@ -279,10 +280,11 @@ final class TopFlowCommand extends GatewayCommand
         $instanceName = isset($instance['app']) ? "{$instance['app']['slug']}/{$instance['name']}" : '—';
         $nodeName = $this->scope === 'nodes' ? $scopeName : ($instance['node']['name'] ?? '—');
 
-        $instanceRows = array_map(fn (array $i): TableRow => TableRow::fromStrings($i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain'], $i['status']), $instances);
-        $processRows = array_map(fn (array $p): TableRow => TableRow::fromStrings((string) $p['id'], $p['name'], $p['runtime'], $p['desired_state'], $p['runtime_status'], $p['status']), $this->rowsFor('processes'));
-        $scheduleRows = array_map(fn (array $s): TableRow => TableRow::fromStrings((string) $s['id'], $s['name'], $s['expression'], $s['next_run'], $s['status']), $this->rowsFor('schedules'));
-        $firewallRows = array_map(fn (array $f): TableRow => TableRow::fromStrings((string) $f['id'], $f['port'], $f['action'], $f['source'], $f['status']), $this->rowsFor('firewall'));
+        $instanceRows = array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances);
+        // A Process whose runtime disagrees with its desired state is the thing to inspect.
+        $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
+        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['expression'], $s['next_run']], $s['status'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
+        $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
         $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->nodes);
         $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->apps);
 
@@ -303,10 +305,10 @@ final class TopFlowCommand extends GatewayCommand
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(55), Constraint::percentage(45))
                     ->widgets(
-                        $this->pane('processes', " Processes of {$instanceName} ", ['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Status'], [Constraint::percentage(6), Constraint::percentage(20), Constraint::percentage(14), Constraint::percentage(14), Constraint::percentage(22), Constraint::percentage(14)], $processRows),
-                        $this->pane('schedules', " Schedules of {$instanceName} ", ['ID', 'Name', 'Expression', 'Next run', 'Status'], [Constraint::percentage(8), Constraint::percentage(26), Constraint::percentage(22), Constraint::percentage(22), Constraint::percentage(12)], $scheduleRows),
+                        $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
+                        $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Expression', 'Next run', 'Status'], [Constraint::percentage(32), Constraint::percentage(22), Constraint::percentage(24), Constraint::percentage(18)], $scheduleRows),
                     ),
-                $this->pane('firewall', " Firewall on {$nodeName} ", ['ID', 'Port', 'Action', 'Source', 'Status'], [Constraint::percentage(6), Constraint::percentage(14), Constraint::percentage(10), Constraint::percentage(44), Constraint::percentage(18)], $firewallRows),
+                $this->pane('firewall', " Firewall on {$nodeName} ", ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(50), Constraint::percentage(18)], $firewallRows),
             );
 
         $enter = $this->enterCommand();
@@ -334,6 +336,21 @@ final class TopFlowCommand extends GatewayCommand
                     ->widgets($left, $right),
                 $footer,
             );
+    }
+
+    /**
+     * A row whose status cell turns yellow when the record needs a look: yellow means "inspect".
+     *
+     * @param  list<string>  $cells
+     */
+    private function row(array $cells, string $status, bool $warn): TableRow
+    {
+        $statusCell = TableCell::fromString($status);
+        if ($warn) {
+            $statusCell->style = Style::default()->fg(AnsiColor::Yellow);
+        }
+
+        return TableRow::fromCells(...[...array_map(fn (string $cell): TableCell => TableCell::fromString($cell), $cells), $statusCell]);
     }
 
     private function stats(): string
