@@ -299,6 +299,11 @@ final class TopFlowCommand extends GatewayCommand
 
                 return;
             }
+            if ($event->button === MouseButton::Left && ($link = $this->linkAt($x, $y)) !== null) {
+                $this->follow($link);
+
+                return;
+            }
             // Panes on a detail page (an instance's Processes and Schedules) work like the dashboard's.
             $pane = $this->paneAt($x, $y);
             $row = $pane === null ? null : $this->hitRow($pane, $x, $y);
@@ -359,7 +364,7 @@ final class TopFlowCommand extends GatewayCommand
     private function paneAt(int $x, int $y): ?string
     {
         foreach ($this->drawn as $name => $drawn) {
-            if ($name === 'menu' || $name === 'back') {
+            if ($name === 'menu' || $name === 'back' || str_starts_with($name, 'link:')) {
                 continue;
             }
             $area = $drawn['area'];
@@ -369,6 +374,44 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         return null;
+    }
+
+    /** The property link (node or app) under a point, if any. */
+    private function linkAt(int $x, int $y): ?string
+    {
+        foreach ($this->drawn as $name => $drawn) {
+            $area = $drawn['area'];
+            if (str_starts_with($name, 'link:') && $x >= $area->left() && $x < $area->right() && $y === $area->top()) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    /** A node or app link leaves the detail pages and scopes the dashboard to that record. */
+    private function follow(string $link): void
+    {
+        $row = $this->detail['row'] ?? [];
+        $this->detail = null;
+        $this->detailStack = [];
+        $this->focus = null;
+
+        if ($link === 'link:node') {
+            $name = $row['node']['name'] ?? $row['node'] ?? null;
+            $index = array_search($name, array_column($this->nodes, 'name'), true);
+            $this->selected['nodes'] = $index === false ? 0 : $index + 1;
+            $this->selected['apps'] = 0;
+            $this->hover = 'nodes';
+        }
+        if ($link === 'link:app') {
+            $slug = $row['app']['slug'] ?? null;
+            $this->selected['nodes'] = 0;
+            $index = array_search($slug, array_column($this->apps, 'slug'), true);
+            $this->selected['apps'] = $index === false ? 0 : $index + 1;
+            $this->hover = 'apps';
+        }
+        $this->selected['instances'] = 0;
     }
 
     /** The row index under a point inside a drawn pane: below its border and header, above its bottom border. */
@@ -947,10 +990,19 @@ final class TopFlowCommand extends GatewayCommand
             Span::styled($this->rowTitle($pane, $row), Style::default()->addModifier(Modifier::BOLD)),
         );
 
+        // App and Node values are links back to the dashboard, scoped to that record.
+        $body = $rows->get(1);
         $propertyRows = [];
+        $index = 0;
         foreach ($this->properties($pane, $row) as $name => $value) {
             $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
-            $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $this->cell($value, $warn));
+            $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
+            if ($link) {
+                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, 54, 1), 'header' => false];
+            }
+            $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
+            $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
+            $index++;
         }
         $propertiesTable = TableWidget::default()->widths(Constraint::length(18), Constraint::min(10))->rows(...$propertyRows);
         $propertiesTable->columnSpacing = 1;
@@ -961,8 +1013,14 @@ final class TopFlowCommand extends GatewayCommand
             ->borderStyle($dim)
             ->widget($propertiesTable);
 
+        $left = $pane === 'instances' ? $this->instanceColumn($properties, count($propertyRows) + 2, $body) : $properties;
+
         $side = match ($pane) {
-            'instances' => $this->instanceSide($rows->get(1), $area),
+            'instances' => BlockWidget::default()
+                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                ->titles(Title::fromString(' Logs '))
+                ->borderStyle($dim)
+                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $body->height - 2))))),
             'processes' => BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
                 ->titles(Title::fromString(' Recent logs '))
@@ -982,23 +1040,22 @@ final class TopFlowCommand extends GatewayCommand
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(56), Constraint::min(30))
-                    ->widgets($properties, $side),
+                    ->widgets($left, $side),
             );
     }
 
-    /** The right side of an instance page: its Processes and Schedules as clickable panes, then its log tail. */
-    private function instanceSide(Area $body, Area $area): Widget
+    /** The left column of an instance page: its properties, then its Processes and Schedules as clickable panes. */
+    private function instanceColumn(Widget $properties, int $propertiesHeight, Area $body): Widget
     {
-        $dim = Style::default()->fg(AnsiColor::DarkGray);
         $processes = $this->rowsFor('processes');
         $schedules = $this->rowsFor('schedules');
-        $constraints = [Constraint::length(count($processes) + 3), Constraint::length(count($schedules) + 3), Constraint::min(4)];
+        $constraints = [Constraint::length($propertiesHeight), Constraint::length(count($processes) + 3), Constraint::min(count($schedules) + 3)];
 
-        // The side column starts after the 56-wide properties pane; the mouse needs those areas.
-        $side = Area::fromScalars($body->left() + 56, $body->top(), max(1, $body->width - 56), $body->height);
-        $split = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($side);
-        $this->drawn['processes'] = ['area' => $split->get(0), 'header' => true];
-        $this->drawn['schedules'] = ['area' => $split->get(1), 'header' => true];
+        // The column is the 56-wide strip on the left; the mouse needs the pane areas within it.
+        $column = Area::fromScalars($body->left(), $body->top(), min(56, $body->width), $body->height);
+        $split = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($column);
+        $this->drawn['processes'] = ['area' => $split->get(1), 'header' => true];
+        $this->drawn['schedules'] = ['area' => $split->get(2), 'header' => true];
 
         $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes);
         $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name']], $s['next_run'], $s['status'] !== 'enabled'), $schedules);
@@ -1007,13 +1064,9 @@ final class TopFlowCommand extends GatewayCommand
             ->direction(Direction::Vertical)
             ->constraints(...$constraints)
             ->widgets(
-                $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
+                $properties,
+                $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], $processRows),
                 $this->pane('schedules', ' Schedules ', ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
-                BlockWidget::default()
-                    ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                    ->titles(Title::fromString(' Logs '))
-                    ->borderStyle($dim)
-                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $split->get(2)->height - 2))))),
             );
     }
 
