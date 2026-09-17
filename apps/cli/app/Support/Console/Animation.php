@@ -202,6 +202,32 @@ final class Animation
         }
     }
 
+    /**
+     * Opt-in alternative to withoutRepainting(): the renderer prints the line and reprints
+     * its current frame in one write, without stopping and restarting the renderer process.
+     * Callers that never call this keep withoutRepainting()'s clear-and-restart behaviour
+     * byte-for-byte (ORB-363 names this the shared per-line clear-and-redraw mechanism; this
+     * is a second, additive path alongside it, not a replacement).
+     */
+    public static function printLine(OutputInterface $output, string $text): void
+    {
+        $active = self::$active;
+
+        if ($active === null || $active->output !== $output || ! is_resource($active->process)) {
+            ConsoleWriter::write($output, $text);
+
+            return;
+        }
+
+        $active->sendLine($text);
+    }
+
+    private function sendLine(string $text): void
+    {
+        $this->send(json_encode(['line' => $text], JSON_THROW_ON_ERROR)."\n");
+        $this->awaitPaint();
+    }
+
     public static function renderRegion(TerminalRegion $region, OutputInterface $output, string $frame): bool
     {
         $active = self::$active;
