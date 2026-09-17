@@ -6,10 +6,19 @@
     "body": {
         "data": [
             {
-                "id": 4,
-                "name": "Delta api",
-                "slug": "delta-api",
-                "repository_url": "https://github.com/delta/api.git",
+                "id": 1,
+                "name": "Acme",
+                "slug": "acme",
+                "repository_url": "https://github.com/acme/site.git",
+                "default_branch": "main",
+                "root": "public",
+                "defaults": null
+            },
+            {
+                "id": 2,
+                "name": "Bravo docs",
+                "slug": "bravo-docs",
+                "repository_url": "git@github.com:bravo/docs.git",
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null
@@ -24,19 +33,10 @@
                 "defaults": null
             },
             {
-                "id": 2,
-                "name": "Bravo docs",
-                "slug": "bravo-docs",
-                "repository_url": "git@github.com:bravo/docs.git",
-                "default_branch": "main",
-                "root": "public",
-                "defaults": null
-            },
-            {
-                "id": 1,
-                "name": "Acme",
-                "slug": "acme",
-                "repository_url": "https://github.com/acme/site.git",
+                "id": 4,
+                "name": "Delta api",
+                "slug": "delta-api",
+                "repository_url": "https://github.com/delta/api.git",
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null

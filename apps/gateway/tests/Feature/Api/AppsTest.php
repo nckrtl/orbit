@@ -725,19 +725,19 @@ describe('app list access', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$accessible->id, $inaccessible->id, $multiplyPlaced->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$accessible->id, $inaccessible->id, $multiplyPlaced->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $accessible->id]);
+            ->assertJsonPath('data.*.id', [$accessible->id, $multiplyPlaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
