@@ -96,6 +96,13 @@ final class TopFlowCommand extends GatewayCommand
     /** @var list<array<string, mixed>> */
     private array $firewall = [];
 
+    /**
+     * Database connections as the Gateway records them, plus the users and tables the page would list.
+     *
+     * @var list<array<string, mixed>>
+     */
+    private array $databases = [];
+
     /** @var list<string> */
     private array $logs = [];
 
@@ -501,6 +508,14 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
+        if ($this->focus === 'targets') {
+            $this->open('instances', $row);
+
+            return;
+        }
+        if (in_array($this->focus, ['users', 'tables'], true)) {
+            return;
+        }
         $this->open($this->kindOf($this->focus), $row);
     }
 
@@ -599,7 +614,14 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => ['show' => "node:show {$row['name']}", 'doctor' => "node:doctor {$row['name']}", 'ssh' => "node:ssh {$row['name']}"],
             'apps' => ['show' => "app:show {$row['slug']}", 'deploy' => "app:deploy {$row['slug']}"],
             'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}", 'profile' => "instance:profile {$row['app']['slug']}/{$row['name']}"],
-            'processes', 'databases' => [
+            'databases' => [
+                'show' => "database:show {$row['slug']}",
+                'tables' => "database:tables {$row['slug']}",
+                'query' => "database:query {$row['slug']}",
+                'create user' => "database:user:create {$row['slug']}",
+                'destroy' => "database:destroy {$row['slug']}",
+            ],
+            'processes' => [
                 'logs' => "process:logs {$row['id']}",
                 'restart' => "process:restart {$row['id']}",
                 ...$row['runtime_status'] === 'running' ? ['stop' => "process:stop {$row['id']}"] : ['start' => "process:start {$row['id']}"],
@@ -629,7 +651,7 @@ final class TopFlowCommand extends GatewayCommand
         $command = $this->menu['actions'][$label];
         $row = $this->menu['row'];
 
-        if (in_array($this->menu['kind'], ['processes', 'databases'], true)) {
+        if ($this->menu['kind'] === 'processes') {
             foreach ($this->processes as $index => $process) {
                 if ($process['id'] !== $row['id']) {
                     continue;
@@ -643,7 +665,7 @@ final class TopFlowCommand extends GatewayCommand
                     $this->processes[$index]['desired_state'] = $state;
                     $this->processes[$index]['runtime_status'] = $state;
                     foreach ($this->pages as $i => $page) {
-                        if (in_array($page['kind'], ['processes', 'databases'], true) && $page['row']['id'] === $row['id']) {
+                        if ($page['kind'] === 'processes' && $page['row']['id'] === $row['id']) {
                             $this->pages[$i]['row'] = $this->processes[$index];
                         }
                     }
@@ -814,6 +836,9 @@ final class TopFlowCommand extends GatewayCommand
                 default => [],
             },
             'firewall' => array_values(array_filter($this->firewall, fn (array $f): bool => $f['node'] === ($page['row']['name'] ?? null))),
+            'targets' => ($page['kind'] ?? '') === 'databases' ? array_values(array_filter($this->instances, fn (array $i): bool => in_array($i['id'], $page['row']['targets'], true))) : [],
+            'users' => ($page['kind'] ?? '') === 'databases' ? $page['row']['users'] : [],
+            'tables' => ($page['kind'] ?? '') === 'databases' ? $page['row']['tables'] : [],
             default => [],
         };
     }
@@ -837,7 +862,7 @@ final class TopFlowCommand extends GatewayCommand
                 ? $app === null && ($node === null || $p['node'] === $node)
                 : in_array($p['target_id'], $instanceIds, true))),
             'schedules' => array_values(array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $instanceIds, true))),
-            'databases' => array_values(array_filter($this->processes, fn (array $p): bool => isset($p['engine']))),
+            'databases' => array_values(array_filter($this->databases, fn (array $d): bool => $node === null || $d['node'] === $node)),
             default => [],
         };
     }
@@ -862,7 +887,7 @@ final class TopFlowCommand extends GatewayCommand
         }
         foreach ($this->processes as $process) {
             if ($process['runtime_status'] !== $process['desired_state']) {
-                $rows[] = ['kind' => isset($process['engine']) ? 'databases' : 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->processOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
+                $rows[] = ['kind' => 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->processOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
             }
         }
         foreach ($this->schedules as $schedule) {
@@ -920,7 +945,8 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => $row['name'],
             'apps' => $row['slug'],
             'instances' => "{$row['app']['slug']}/{$row['name']}",
-            'processes', 'schedules', 'databases' => $row['name'],
+            'processes', 'schedules' => $row['name'],
+            'databases' => $row['slug'],
             'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
             default => '',
         };
@@ -944,7 +970,8 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'SSH' => isset($row['public_ssh_host']) ? "{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}" : null],
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
             'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
-            'processes', 'databases' => ['Name' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Owner' => $this->processOwner($row), 'Node' => $this->processNode($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
+            'databases' => ['Slug' => $row['slug'], 'Driver' => $row['driver'], 'Node' => $row['node'], 'Host' => isset($row['host']) ? "{$row['host']}:{$row['port']}" : null, 'Path' => $row['path'] ?? null, 'Database' => $row['database'] ?? null, 'Username' => $row['username'] ?? null, 'Password' => isset($row['username']) ? '••••••••' : null, 'Server process' => $row['process'] ?? null],
+            'processes' => ['Name' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Owner' => $this->processOwner($row), 'Node' => $this->processNode($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
             'schedules' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Node' => $this->instanceNode($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
             default => [],
@@ -1105,9 +1132,9 @@ final class TopFlowCommand extends GatewayCommand
                 array_map(fn (array $s): TableRow => $this->row([$s['name'], $this->instanceName($s['instance_id']), $this->instanceNode($s['instance_id']), $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $rows),
             ],
             'databases' => [
-                ['Name', 'Engine', 'Node', 'Runtime', 'Status'],
-                [Constraint::percentage(20), Constraint::percentage(24), Constraint::percentage(18), Constraint::percentage(16), Constraint::percentage(18)],
-                array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['engine'], $p['node'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $rows),
+                ['Slug', 'Driver', 'Node', 'Host', 'Database', 'Instances', 'Users'],
+                [Constraint::percentage(16), Constraint::percentage(10), Constraint::percentage(12), Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(10), Constraint::percentage(10)],
+                array_map(fn (array $d): TableRow => $this->row([$d['slug'], $d['driver'], $d['node'] ?? '—', $d['host'] ?? $d['path'], $d['database'] ?? '—', (string) count($d['targets'])], (string) count($d['users']), false), $rows),
             ],
             default => [[], [], []],
         };
@@ -1214,7 +1241,7 @@ final class TopFlowCommand extends GatewayCommand
         )));
 
         // Properties first; App and Node values are links to those records' pages.
-        $propertiesWidth = in_array($kind, ['nodes', 'instances'], true) ? intdiv($body->width * 40, 100) : $body->width;
+        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases'], true) ? intdiv($body->width * 40, 100) : $body->width;
         $propertyRows = [];
         $index = 0;
         foreach ($this->properties($kind, $row) as $name => $value) {
@@ -1236,6 +1263,7 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => $this->nodePage($row, $properties, $propertiesHeight, $body),
             'apps' => $this->appPage($properties, $propertiesHeight, $body),
             'instances' => $this->instancePage($properties, $propertiesHeight, $body),
+            'databases' => $this->databasePage($properties, $propertiesHeight, $body),
             'schedules' => $this->stackedPage($properties, $propertiesHeight, ' Runs ', $this->scheduleRuns($row), $body),
             default => $this->stackedPage($properties, $propertiesHeight, ' Logs ', $this->logs, $body),
         };
@@ -1331,6 +1359,43 @@ final class TopFlowCommand extends GatewayCommand
                     ),
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)
                     ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(1)->height - 2))))),
+            );
+    }
+
+    /** Properties beside the attached instances, then the database's users beside its tables. */
+    private function databasePage(Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $targets = $this->rowsFor('targets');
+        $users = $this->rowsFor('users');
+        $tables = $this->rowsFor('tables');
+        $top = max($propertiesHeight, count($targets) + 3);
+        $constraints = [Constraint::length($top), Constraint::min(5)];
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
+        $topColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(0));
+        $bottom = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($rows->get(1));
+        $this->drawn['targets'] = ['area' => $topColumns->get(1), 'header' => true];
+        $this->drawn['users'] = ['area' => $bottom->get(0), 'header' => true];
+        $this->drawn['tables'] = ['area' => $bottom->get(1), 'header' => true];
+        $this->paneOrder = ['targets', 'users', 'tables'];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(...$constraints)
+            ->widgets(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
+                    ->widgets(
+                        $properties,
+                        $this->pane('targets', ' Attached instances ', ['App', 'Name', 'Node', 'Prefix', 'Status'], [Constraint::percentage(24), Constraint::percentage(20), Constraint::percentage(18), Constraint::percentage(20), Constraint::percentage(14)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['node']['name'], $i['name'] === 'dev' ? '' : "{$i['name']}_"], $i['status'], $i['status'] !== 'active'), $targets)),
+                    ),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(55), Constraint::percentage(45))
+                    ->widgets(
+                        $this->pane('users', ' Users ', ['Username', 'Privileges', 'Used by', 'Created'], [Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(28), Constraint::percentage(20)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges'], $u['used_by']], $u['created'], $u['used_by'] === '—'), $users), 'No users recorded. database:user:create records the next one.'),
+                        $this->pane('tables', ' Tables ', ['Table', 'Rows', 'Size'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $t): TableRow => $this->row([$t['name'], $t['rows']], $t['size'], false), $tables)),
+                    ),
             );
     }
 
@@ -1670,6 +1735,31 @@ final class TopFlowCommand extends GatewayCommand
                 'disks' => $gateway ? [['/', 9, 40]] : [['/', 31, 80]],
             ];
         }
+
+        $this->databases = [
+            [
+                'slug' => 'charlie-shop', 'driver' => 'pgsql', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 5432, 'database' => 'charlie_shop', 'username' => 'charlie_shop', 'process' => 'postgres on app-dev',
+                'targets' => [1, 2, 3],
+                'users' => [
+                    ['username' => 'charlie_shop', 'privileges' => 'owner', 'used_by' => 'charlie-shop/dev, staging', 'created' => '2026-08-02'],
+                    ['username' => 'charlie_shop_ro', 'privileges' => 'read-only', 'used_by' => 'metrics exporter', 'created' => '2026-09-01'],
+                    ['username' => 'nick', 'privileges' => 'superuser', 'used_by' => '—', 'created' => '2026-07-14'],
+                ],
+                'tables' => [['name' => 'users', 'rows' => '12 480', 'size' => '9.1 MB'], ['name' => 'orders', 'rows' => '88 102', 'size' => '61 MB'], ['name' => 'order_items', 'rows' => '301 774', 'size' => '140 MB'], ['name' => 'jobs', 'rows' => '14', 'size' => '96 kB']],
+            ],
+            [
+                'slug' => 'acme', 'driver' => 'pgsql', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 5432, 'database' => 'acme', 'username' => 'acme', 'process' => 'postgres on app-dev',
+                'targets' => [4, 5],
+                'users' => [['username' => 'acme', 'privileges' => 'owner', 'used_by' => 'acme/dev, main', 'created' => '2026-08-20']],
+                'tables' => [['name' => 'users', 'rows' => '2 310', 'size' => '1.8 MB'], ['name' => 'invoices', 'rows' => '9 904', 'size' => '12 MB']],
+            ],
+            [
+                'slug' => 'bravo-docs', 'driver' => 'sqlite', 'node' => 'gateway', 'path' => '/srv/orbit/apps/bravo-docs/main/database.sqlite',
+                'targets' => [6],
+                'users' => [],
+                'tables' => [['name' => 'pages', 'rows' => '412', 'size' => '2.2 MB']],
+            ],
+        ];
 
         $this->instanceLogs = [
             '['.date('Y-m-d H:i:s', time() - 8).'] local.INFO: Deployed 4f2c9a1 (main) in 41 s',
