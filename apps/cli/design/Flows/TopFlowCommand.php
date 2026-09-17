@@ -305,15 +305,25 @@ final class TopFlowCommand extends GatewayCommand
             return;
         }
 
-        // A click lands on a pane and, when it hits a row, selects that row.
+        // A click lands on a pane and, when it hits a row, selects that row. A click on the row
+        // that is already selected opens its detail page, as does Enter.
         $this->hover = $pane;
         $this->focusOn($pane);
         $row = $this->hitRow($pane, $x, $y);
-        if ($row !== null && $row < count($this->rowsFor($pane))) {
-            $this->select($pane, $row);
-        }
         if ($event->button === MouseButton::Right) {
+            if ($row !== null && $row < count($this->rowsFor($pane))) {
+                $this->select($pane, $row);
+            }
             $this->openMenu([$x, $y]);
+
+            return;
+        }
+        if ($row !== null && $row < count($this->rowsFor($pane))) {
+            if ($this->selected[$pane] === $row) {
+                $this->openDetail();
+            } else {
+                $this->select($pane, $row);
+            }
         }
     }
 
@@ -645,7 +655,7 @@ final class TopFlowCommand extends GatewayCommand
             $this->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
             $this->detail !== null => '  Esc or ‹ back · a or right-click actions · q leave',
             $this->focus === null => '  ←↑→↓ or click picks a pane · Enter focuses · q leave',
-            default => '  ↑↓ move · Enter opens · a or right-click actions · Esc back to panes · q leave',
+            default => '  ↑↓ move · Enter or click again opens · a or right-click actions · Esc back to panes · q leave',
         }.($this->ran !== '' ? "  │  Ran {$this->ran}" : ''))->style($dim);
 
         $screen = GridWidget::default()
