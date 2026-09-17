@@ -1,0 +1,39 @@
+---
+title: "Agent skill"
+description: "The Orbit Agent Skill gives Codex, Claude Code, and other coding agents the command pages of this tab as files they load on demand."
+---
+
+A coding agent drives Orbit through the `orbit` CLI. The Orbit skill is an [Agent Skill](https://agentskills.io/specification): one folder with a `SKILL.md` index and one file per command. The command files hold the same text as the command sections in this tab, so an agent and its user read one description.
+
+## Install the skill
+
+Copy the `docs/skills/orbit` folder of the [repository](https://github.com/nckrtl/orbit/tree/main/docs/skills/orbit) into an agent skill folder. Codex reads `.agents/skills/orbit` in a project and `~/.agents/skills/orbit` globally. Claude Code reads `.claude/skills/orbit` in a project and `~/.claude/skills/orbit` globally.
+
+```bash
+git clone --depth=1 https://github.com/nckrtl/orbit.git /tmp/orbit
+mkdir -p .agents/skills
+cp -R /tmp/orbit/docs/skills/orbit .agents/skills/orbit
+```
+
+The site also serves the skill as one JSON bundle at `/docs/skills/orbit.json`, with the path, SHA-256 digest, and contents of every file.
+
+## What the agent gets
+
+The skill folder holds an index and one file per command.
+
+```text
+orbit/
+  SKILL.md                       rules for every command, then an index by family
+  references/
+    instance/
+      instance-create.md         the "orbit instance:create" section of the instance page
+      instance-deploy.md
+    node/
+      node-add.md
+```
+
+`SKILL.md` names the rules that apply to every command, such as reading `--json` output and asking before `--yes` or `--force`, and links every command file. An agent loads one command file when a task needs that command, so a large skill costs no context until it is used.
+
+## How the files stay in sync
+
+Every command section in this tab and every skill file come from one source file under `docs/commands/<family>/` in the [repository](https://github.com/nckrtl/orbit/tree/main/docs/commands). `bin/docs-commands` renders the family pages of this tab, the skill folder, and the bundle that `skill:install` downloads. Continuous integration fails when a rendered file is out of date, and the CLI test suite fails when a command has no source file or its source omits an argument or option. [ADR 0084](/decisions/0084-publish-one-orbit-agent-skill-from-the-docs) records the decision.

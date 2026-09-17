@@ -47,7 +47,7 @@ final readonly class DocumentationRepository
             $path = str_replace('\\', '/', $file->getPathname());
             $relativePath = ltrim(substr($path, strlen($this->docsPath)), '/');
 
-            if (str_starts_with($relativePath, 'generated/')) {
+            if (str_starts_with($relativePath, 'generated/') || str_starts_with($relativePath, 'skills/orbit/')) {
                 continue;
             }
 

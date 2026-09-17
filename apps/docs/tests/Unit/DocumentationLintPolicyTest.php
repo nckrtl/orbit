@@ -66,3 +66,47 @@ it('drops legacy prose findings only for decision records below the configured s
         'docs/reference/apps.md librarian.section_opener_prose',
     ]);
 });
+
+it('drops command prose findings only for command sources and CLI pages', function (): void {
+    $policy = new DocumentationLintPolicy([], [], 0, [], ['librarian.section_opener_prose']);
+    $finding = static fn (string $path, string $rule): Finding => new Finding(
+        path: $path,
+        line: 1,
+        severity: FindingSeverity::Warning,
+        rule: $rule,
+        message: 'Opens with a table.',
+    );
+
+    $result = $policy->apply(new LintResult([
+        $finding('docs/commands/instance/instance-create.md', 'librarian.section_opener_prose'),
+        $finding('docs/cli/instance.mdx', 'librarian.section_opener_prose'),
+        $finding('docs/commands/_skill.md', 'librarian.document_complexity'),
+        $finding('docs/reference/apps.md', 'librarian.section_opener_prose'),
+    ]));
+
+    expect(array_map(
+        static fn (Finding $finding): string => $finding->path.' '.$finding->rule,
+        $result->findings,
+    ))->toBe([
+        'docs/commands/_skill.md librarian.document_complexity',
+        'docs/reference/apps.md librarian.section_opener_prose',
+    ]);
+});
+
+it('drops every finding under a generated path', function (): void {
+    $policy = new DocumentationLintPolicy([], [], 0, [], [], ['docs/skills/orbit/']);
+    $finding = static fn (string $path): Finding => new Finding(
+        path: $path,
+        line: 1,
+        severity: FindingSeverity::Error,
+        rule: 'librarian.links',
+        message: 'Broken.',
+    );
+
+    $result = $policy->apply(new LintResult([
+        $finding('docs/skills/orbit/SKILL.md'),
+        $finding('docs/commands/_skill.md'),
+    ]));
+
+    expect(array_column($result->findings, 'path'))->toBe(['docs/commands/_skill.md']);
+});

@@ -1,0 +1,14 @@
+---
+title: "node:access:remove"
+description: "Remove one access edge."
+---
+
+Remove one access edge from the active Gateway.
+
+```bash
+orbit node:access:remove <consumer> <serving> [--force] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Skip the confirmation prompt. |

@@ -1,0 +1,41 @@
+---
+title: "profile"
+description: "Profile one HTTP request from this machine."
+---
+
+# profile
+
+Profile one GET to an absolute HTTP or HTTPS URL from the operator machine.
+
+```bash
+orbit profile [url] [--as-first-user] [--user=ID] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `url` | when no usable `APP_URL` exists | Absolute `http` or `https` URL to profile. An explicit URL wins over a nearest `.env` `APP_URL`. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--as-first-user` | guest | Authenticate the profiled request as the first user. Mutually exclusive with `--user`. |
+| `--user=ID` | guest | Authenticate the profiled request as the given primary key. Mutually exclusive with `--as-first-user`. |
+| `--json` | human output | Return the same result as one JSON document. |
+
+```bash
+orbit profile https://docs.test/admin
+orbit profile --as-first-user
+orbit profile https://docs.test --user=42 --json
+```
+
+When the URL argument is omitted, the command reads `APP_URL` from the nearest ancestor `.env` starting at `ORBIT_HOST_CWD` when that variable is set, otherwise the process working directory. It does not import other values from that file. An interactive terminal prompts for a URL when neither an explicit URL nor a valid `APP_URL` is available. `--json` and `--no-interaction` refuse a missing or invalid URL instead of prompting.
+
+The request is one GET. Redirects are not followed. TLS uses the operator machine's system trust store, not a Gateway CA pin. The command sends `X-REQUEST-ID` and `X-TOOLBAR-AUTH` (`guest`, `first-user`, or `user`), and sends `X-TOOLBAR-USER` only when `--user` is present.
+
+A completed response is success even when the HTTP status is not 2xx. When the response includes a decodable `X-Toolbar-Summary` header, the result marks `source` as `baseline+toolbar` and `instrumented` as true and includes the decoded toolbar summary. Otherwise `source` is `baseline` and `instrumented` is false.
+
+Human output is one request line and a dotted timing list. Toolbar headers add nested stage lines and an optional query summary. JSON returns the request, timings, response headers, auth mode, request ID, origin `caller`, source, and instrumented flag.
+
+| Error code | Meaning |
+| --- | --- |
+| `profile.validation_failed` | The URL is missing or is not an absolute HTTP or HTTPS URL, or `--as-first-user` and `--user` were combined. |
+| `profile.request_failed` | The local GET did not complete. JSON includes `origin`, `url`, and the profiler error message. |

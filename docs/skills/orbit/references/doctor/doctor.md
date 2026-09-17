@@ -1,0 +1,65 @@
+---
+title: "doctor"
+description: "Verify registered Node state without making repairs."
+---
+
+# doctor
+
+Verify one Node or every Node the caller may address, optionally limited to a set of families.
+
+```bash
+orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--node=ID` | every registered Node the caller may address | Numeric Node ID. The CLI rejects a value that is not a positive integer with `doctor.node_id_invalid`. |
+| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, and `route`. |
+
+```bash
+orbit doctor
+orbit doctor --node=7 --family=instance --family=workspace
+orbit doctor --family=firewall --json
+```
+
+Human output is one table with a row per Node and family, and one extra row per finding. The last lines state whether the fleet is healthy and the Gateway request ID. JSON output returns the same report as one document.
+
+The exit status follows the report.
+
+| Exit status | Meaning |
+| --- | --- |
+| `0` | Every selected Node and family is healthy. |
+| `1` | At least one finding is drift or unverifiable, or the Gateway could not be reached. |
+
+> **Note:** Doctor selects only Nodes that the caller may address through Node access. A `--node` value outside that set is refused, so Doctor never inspects a Node the caller could not otherwise reach.
+
+## How the Gateway inspects
+
+The Gateway observes each Node once over its fixed SSH boundary before it runs the selected family probes. That observation contains only reachability, platform, architecture, and whether the managed WireGuard address is present. When a Node is unreachable, database-only checks still run, and every live-state family with managed resources on that Node reports one `*.node_unreachable` issue instead of inspecting resources.
+
+Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, `route`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
+
+Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues, `drift` with drift only, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. The report never contains raw output, commands, paths, URLs, branch names, credentials, environment values, configuration contents, or exception text.
+
+## What each family checks
+
+| Family | Checks | Issue codes |
+| --- | --- | --- |
+| `node` | Lifecycle, SSH reachability, platform, architecture, and WireGuard address against the Node record. | `node.lifecycle_not_active`, `node.ssh_unreachable`, `node.platform_mismatch`, `node.architecture_mismatch`, `node.wireguard_ip_mismatch`, `node.inspection_failed` |
+| `role` | Each role assignment's packages, services, firewall, DNS, VPN, and Cluster projections, plus singleton and assignment conflicts. | `role.lifecycle_not_active`, `role.packages_missing`, `role.services_inactive`, `role.firewall_projection_mismatch`, `role.dns_projection_mismatch`, `role.dns_snippet_conflict`, `role.vpn_inactive`, `role.vpn_projection_mismatch`, `role.singleton_conflict`, `role.assignment_conflict`, `role.cluster_ownership_mismatch`, `role.cluster_cardinality_conflict`, `role.node_unreachable`, `role.inspection_failed` |
+| `app` | The repository origin that App instances on the Node project for the App. | `app.repository_origin_mismatch`, `app.node_unreachable`, `app.inspection_failed` |
+| `instance` | Checkout or production home, source identity and layout, Route and Caddy projection, PHP-FPM association, stored environment projection, release selection, and pending source migration. | `instance.lifecycle_not_active`, `instance.checkout_missing`, `instance.source_identity_mismatch`, `instance.source_layout_mismatch`, `instance.repository_layout_mismatch`, `instance.origin_mismatch`, `instance.caddy_projection_mismatch`, `instance.php_fpm_association_missing`, `instance.php_fpm_association_shared`, `instance.php_fpm_projection_mismatch`, `instance.environment_projection_mismatch`, `instance.production_home_mismatch`, `instance.release_selection_mismatch`, `instance.selected_release_root_mismatch`, `instance.migration_required`, `instance.node_unreachable`, `instance.inspection_failed` |
+| `workspace` | Legacy Workspace checkout, worktree, branch, document root, and Caddy, certificate, DNS, and PHP-FPM projections. | `workspace.lifecycle_not_active`, `workspace.checkout_missing`, `workspace.worktree_missing`, `workspace.branch_mismatch`, `workspace.document_root_missing`, `workspace.caddy_projection_mismatch`, `workspace.certificate_projection_mismatch`, `workspace.dns_projection_mismatch`, `workspace.php_fpm_projection_mismatch`, `workspace.node_unreachable`, `workspace.inspection_failed` |
+| `schedule` | The protected script, oneshot service, and timer of each Schedule against stored intent, including timer state, calendar, execution context, and placement. | `schedule.artifact_missing`, `schedule.artifact_permissions_mismatch`, `schedule.specification_mismatch`, `schedule.timer_state_mismatch`, `schedule.calendar_mismatch`, `schedule.execution_context_mismatch`, `schedule.completion_callback_mismatch`, `schedule.placement_mismatch`, `schedule.orphan_artifact`, `schedule.node_unreachable`, `schedule.inspection_failed` |
+| `tool` | Installed state and, when a constraint is stored, the normalized installed version of each Tool. | `tool.not_installed`, `tool.version_mismatch`, `tool.node_unreachable`, `tool.inspection_failed` |
+| `process` | Desired state against the observed systemd or Docker status of each App instance and Node Process. | `process.runtime_missing`, `process.state_mismatch`, `process.node_unreachable`, `process.inspection_failed` |
+| `firewall` | UFW backend state and each named rule the Gateway owns on the Node. | `firewall.backend_inactive`, `firewall.lifecycle_not_active`, `firewall.rule_missing`, `firewall.rule_mismatch`, `firewall.node_unreachable`, `firewall.inspection_failed` |
+| `herdr` | The Process, private observer, and session identity of each named Herdr session. | `herdr.process_unhealthy`, `herdr.listener_unhealthy`, `herdr.session_unhealthy`, `herdr.node_unreachable`, `herdr.inspection_failed` |
+| `database_connection` | Registry records and App instance attachments against the stored environment keys they project. | `database_connection.missing`, `database_connection.unhealthy`, `database_connection.env_mismatch`, `database_connection.inspection_failed` |
+| `route` | Custom proxy DNS, Orbit CA leaf, Caddy site, and local upstream reachability on the serving Node. | `route.dns_mismatch`, `route.certificate_mismatch`, `route.caddy_mismatch`, `route.upstream_unreachable`, `route.node_unreachable`, `route.inspection_failed` |
+
+A sleeping development App instance is not drift. When the awake marker is absent, Doctor does not report `process.state_mismatch` for a Process that is desired running, not keep-alive, and observed stopped; the [hibernation reference](https://orbit.nckrtl.com/docs/reference/app-dev-runtime-hibernation.md#inspect) owns that rule. A prepared production home without a `current` link is healthy before its first deployment; the [release layout reference](https://orbit.nckrtl.com/docs/reference/deployments.md#inspect-release-placement-with-doctor) owns that rule.
+
+The reference pages describe each family's comparison in more detail: [Schedules](https://orbit.nckrtl.com/docs/reference/schedules.md#inspect-schedule-drift), [Tools](https://orbit.nckrtl.com/docs/reference/tools.md#check-removal-with-doctor), [Database connections](https://orbit.nckrtl.com/docs/reference/database-connections.md#inspect-attachments-with-doctor), [Herdr sessions](https://orbit.nckrtl.com/docs/reference/herdr-sessions.md#doctor), [App instance environment variables](https://orbit.nckrtl.com/docs/reference/environment-variables.md#inspect-the-projection-with-doctor), and [custom proxy Routes](https://orbit.nckrtl.com/docs/reference/routes.md#custom-proxy-routes).
+
+> **Warning:** Doctor keeps no report history. The Gateway writes one ordinary Activity row for the request and stores no findings, so keep the returned report and request ID if you need them later.

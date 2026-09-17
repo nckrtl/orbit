@@ -134,7 +134,8 @@
           {
             "group": "Using the CLI",
             "pages": [
-              "cli/overview"
+              "cli/overview",
+              "cli/agent-skill"
             ]
           },
           {
