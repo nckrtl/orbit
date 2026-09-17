@@ -128,6 +128,16 @@ final class TopFlowCommand extends GatewayCommand
      */
     private ?array $detail = null;
 
+    /**
+     * Detail pages opened from a detail page, so back returns one step.
+     *
+     * @var list<array{pane: string, row: array<string, mixed>}>
+     */
+    private array $detailStack = [];
+
+    /** @var list<string> */
+    private array $instanceLogs = [];
+
     /** The last action that ran, shown in the status bar. */
     private string $ran = '';
 
@@ -170,6 +180,7 @@ final class TopFlowCommand extends GatewayCommand
                     $flip = $refreshes % 2 === 1;
                     $this->processes[1]['runtime_status'] = $flip ? 'stopped' : 'running';
                     $this->logs[] = sprintf('%s  Processed job App\\Jobs\\SyncOrders #%d in %d ms', date('H:i:s'), 4200 + $refreshes, 40 + ($refreshes * 37) % 300);
+                    $this->instanceLogs[] = sprintf('[%s] local.INFO: GET /checkout 200 in %d ms', date('Y-m-d H:i:s'), 60 + ($refreshes * 53) % 400);
                 }
 
                 while (($event = $terminal->events()->next()) !== null) {
@@ -223,7 +234,7 @@ final class TopFlowCommand extends GatewayCommand
 
         if ($this->detail !== null) {
             match ($code) {
-                KeyCode::Esc, KeyCode::Backspace, KeyCode::Left => $this->detail = null,
+                KeyCode::Esc, KeyCode::Backspace, KeyCode::Left => $this->back(),
                 KeyCode::Enter => $this->openMenu(),
                 default => null,
             };
@@ -280,11 +291,29 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         if ($this->detail !== null) {
-            if ($event->kind === MouseEventKind::Down && $event->button === MouseButton::Right) {
-                $this->openMenu([$x, $y]);
+            if ($event->kind !== MouseEventKind::Down) {
+                return;
             }
-            if ($event->kind === MouseEventKind::Down && $event->button === MouseButton::Left && $this->hitRow('back', $x, $y) !== null) {
-                $this->detail = null;
+            if ($event->button === MouseButton::Left && $this->hitRow('back', $x, $y) !== null) {
+                $this->back();
+
+                return;
+            }
+            // Panes on a detail page (an instance's Processes and Schedules) work like the dashboard's.
+            $pane = $this->paneAt($x, $y);
+            $row = $pane === null ? null : $this->hitRow($pane, $x, $y);
+            $hit = $pane !== null && $row !== null && $row < count($this->rowsFor($pane)) ? $this->rowsFor($pane)[$row] : null;
+            if ($event->button === MouseButton::Right) {
+                $hit === null ? $this->openMenu([$x, $y]) : $this->openMenu([$x, $y], $pane, $hit);
+
+                return;
+            }
+            if ($pane !== null && $hit !== null) {
+                if ($this->selected[$pane] === $row) {
+                    $this->open($pane, $hit);
+                } else {
+                    $this->select($pane, $row);
+                }
             }
 
             return;
@@ -404,22 +433,41 @@ final class TopFlowCommand extends GatewayCommand
         }
         $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
         if ($row !== null) {
-            $this->detail = ['pane' => $this->focus, 'row' => $row];
+            $this->open($this->focus, $row);
         }
+    }
+
+    /**
+     * Shows a record's detail page; a page opened from another page returns there on back.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function open(string $pane, array $row): void
+    {
+        if ($this->detail !== null) {
+            $this->detailStack[] = $this->detail;
+        }
+        $this->detail = ['pane' => $pane, 'row' => $row];
+    }
+
+    private function back(): void
+    {
+        $this->detail = array_pop($this->detailStack);
     }
 
     /**
      * Lists the commands that take the current record: the detail's, or the focused row.
      *
      * @param  array{int, int}|null  $at
+     * @param  array<string, mixed>|null  $row
      */
-    private function openMenu(?array $at = null): void
+    private function openMenu(?array $at = null, ?string $pane = null, ?array $row = null): void
     {
-        $pane = $this->detail['pane'] ?? $this->focus;
+        $pane ??= $this->detail['pane'] ?? $this->focus;
         if ($pane === null) {
             return;
         }
-        $row = $this->detail['row'] ?? $this->rowsFor($pane)[$this->selected[$pane]] ?? null;
+        $row ??= $this->detail['row'] ?? $this->rowsFor($pane)[$this->selected[$pane]] ?? null;
         if ($row === null || isset($row['all'])) {
             return;
         }
@@ -427,7 +475,7 @@ final class TopFlowCommand extends GatewayCommand
         $actions = match ($pane) {
             'nodes' => ['show' => "node:show {$row['name']}", 'doctor' => "node:doctor {$row['name']}", 'ssh' => "node:ssh {$row['name']}"],
             'apps' => ['show' => "app:show {$row['slug']}", 'deploy' => "app:deploy {$row['slug']}"],
-            'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}"],
+            'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}", 'profile' => "instance:profile {$row['app']['slug']}/{$row['name']}"],
             'processes' => [
                 'logs' => "process:logs {$row['id']}",
                 'restart' => "process:restart {$row['id']}",
@@ -495,8 +543,8 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => [['all' => true, 'name' => 'All'], ...$this->nodes],
             'apps' => [['all' => true, 'slug' => 'All'], ...$this->appsOnSelectedNode()],
             'instances' => $this->scopedInstances(),
-            'processes' => array_values(array_filter($this->processes, fn (array $process): bool => $process['target_id'] === $this->currentInstance()['id'])),
-            'schedules' => array_values(array_filter($this->schedules, fn (array $schedule): bool => $schedule['instance_id'] === $this->currentInstance()['id'])),
+            'processes' => array_values(array_filter($this->processes, fn (array $process): bool => $process['target_id'] === $this->contextInstance()['id'])),
+            'schedules' => array_values(array_filter($this->schedules, fn (array $schedule): bool => $schedule['instance_id'] === $this->contextInstance()['id'])),
             'firewall' => array_values(array_filter($this->firewall, fn (array $rule): bool => $rule['node'] === $this->currentNode()['name'])),
             default => [],
         };
@@ -549,6 +597,22 @@ final class TopFlowCommand extends GatewayCommand
             fn (array $instance): bool => ($node === null || $instance['node']['name'] === $node['name'])
                 && ($app === null || $instance['app']['slug'] === $app['slug']),
         ));
+    }
+
+    /**
+     * The instance the Processes and Schedules belong to: the open instance page, else the selected row.
+     *
+     * @return array<string, mixed>
+     */
+    private function contextInstance(): array
+    {
+        foreach ([$this->detail, ...array_reverse($this->detailStack)] as $page) {
+            if ($page !== null && $page['pane'] === 'instances') {
+                return $page['row'];
+            }
+        }
+
+        return $this->currentInstance();
     }
 
     /** @return array<string, mixed> */
@@ -898,6 +962,7 @@ final class TopFlowCommand extends GatewayCommand
             ->widget($propertiesTable);
 
         $side = match ($pane) {
+            'instances' => $this->instanceSide($rows->get(1), $area),
             'processes' => BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
                 ->titles(Title::fromString(' Recent logs '))
@@ -918,6 +983,37 @@ final class TopFlowCommand extends GatewayCommand
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(56), Constraint::min(30))
                     ->widgets($properties, $side),
+            );
+    }
+
+    /** The right side of an instance page: its Processes and Schedules as clickable panes, then its log tail. */
+    private function instanceSide(Area $body, Area $area): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $processes = $this->rowsFor('processes');
+        $schedules = $this->rowsFor('schedules');
+        $constraints = [Constraint::length(count($processes) + 3), Constraint::length(count($schedules) + 3), Constraint::min(4)];
+
+        // The side column starts after the 56-wide properties pane; the mouse needs those areas.
+        $side = Area::fromScalars($body->left() + 56, $body->top(), max(1, $body->width - 56), $body->height);
+        $split = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($side);
+        $this->drawn['processes'] = ['area' => $split->get(0), 'header' => true];
+        $this->drawn['schedules'] = ['area' => $split->get(1), 'header' => true];
+
+        $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes);
+        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name']], $s['next_run'], $s['status'] !== 'enabled'), $schedules);
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(...$constraints)
+            ->widgets(
+                $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
+                $this->pane('schedules', ' Schedules ', ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
+                BlockWidget::default()
+                    ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                    ->titles(Title::fromString(' Logs '))
+                    ->borderStyle($dim)
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $split->get(2)->height - 2))))),
             );
     }
 
@@ -1116,6 +1212,11 @@ final class TopFlowCommand extends GatewayCommand
             ];
         }
 
+        $this->instanceLogs = [
+            '['.date('Y-m-d H:i:s', time() - 8).'] local.INFO: Deployed 4f2c9a1 (main) in 41 s',
+            '['.date('Y-m-d H:i:s', time() - 5).'] local.INFO: GET / 200 in 88 ms',
+            '['.date('Y-m-d H:i:s', time() - 2).'] local.WARNING: Queue lag 14 s on default',
+        ];
         $this->logs = [
             date('H:i:s', time() - 9).'  Horizon started on charlie-shop/dev',
             date('H:i:s', time() - 6).'  Processed job App\\Jobs\\SyncOrders #4198 in 212 ms',
