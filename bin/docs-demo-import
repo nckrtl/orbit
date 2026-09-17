@@ -6,11 +6,11 @@ Run from any directory:
     bin/docs-demo-import CAPTURE_DIR DEMO --command "orbit node:add ..."
 
 CAPTURE_DIR is a recording made by .agents/skills/verifying-cli-output/scripts/capture.py. DEMO names the
-output file docs/demos/<DEMO>.json, such as node/node-add. The import keeps the visible screen of every
-frame with its bold, dim, and color attributes, stores each frame as the rows that changed since the frame
-before it, and adds the final screen as a plain transcript. It does not copy raw bytes, arguments, or
-environment values, so the demo is safe to publish. bin/docs-commands renders the demo into the CLI page
-and the skill file of the command that names it.
+output file docs/demos/<DEMO>.json, such as node/node-add. The import keeps the terminal output chunks with
+their timing, so the page replays them through a terminal emulator, and adds the final screen as a plain
+transcript for the skill file. It does not copy arguments or environment values. Keep secrets out of the
+recorded output itself. bin/docs-commands renders the demo into the CLI page and the skill file of the
+command that names it.
 """
 
 import argparse
@@ -24,57 +24,34 @@ DEMOS = ROOT / 'docs/demos'
 FORMAT = 1
 
 
-def style(cell):
-    tokens = []
-    if cell['bold']:
-        tokens.append('b')
-    if cell['dim']:
-        tokens.append('d')
-    if cell['italics']:
-        tokens.append('i')
-    if cell['underscore']:
-        tokens.append('u')
-    if cell['reverse']:
-        tokens.append('r')
-    if cell['fg'] != 'default':
-        tokens.append('fg-' + cell['fg'])
-    if cell['bg'] != 'default':
-        tokens.append('bg-' + cell['bg'])
-    return ' '.join(tokens)
+SPINNER_GLYPHS = str.maketrans({'○': '•', '◉': '•'})
+
+# A wait shows only spinner ticks. Keep this many seconds of them, then cut to the next real change.
+KEEP_WAIT_SECONDS = 4.0
 
 
-def runs(frame, columns):
-    """Return {row: [[text, style], ...]} for every row that has visible content."""
-    styled = {(cell['row'], cell['column']): style(cell) for cell in frame['cells']}
-    rows = {}
-    for row, line in enumerate(frame['lines']):
-        line = line.rstrip()
-        if not line:
-            continue
-        segments = []
-        for column, char in enumerate(line[:columns]):
-            current = styled.get((row, column), '')
-            if segments and segments[-1][1] == current:
-                segments[-1][0] += char
-            else:
-                segments.append([char, current])
-        rows[row] = segments
-    return rows
-
-
-def delta_frames(frames, columns):
-    """Keep only the rows that changed between consecutive frames."""
-    previous = {}
+def cast(chunks):
+    """Return [[seconds since the previous chunk, output text], ...] with long spinner-only waits shortened."""
     output = []
-    for frame in frames:
-        current = runs(frame, columns)
-        changed = {str(row): segments for row, segments in current.items() if previous.get(row) != segments}
-        for row in previous:
-            if row not in current:
-                changed[str(row)] = []
-        if changed or not output:
-            output.append({'t': round(frame['elapsed'], 3), 'rows': changed})
-        previous = current
+    previous = None
+    waited = 0.0
+    carried = 0.0
+    for chunk in chunks:
+        text = chunk['text']
+        if text == '':
+            continue
+        delta = chunk['delta'] + carried
+        carried = 0.0
+        same_frame = previous is not None and text.translate(SPINNER_GLYPHS) == previous.translate(SPINNER_GLYPHS)
+        if same_frame:
+            waited += delta
+            if waited > KEEP_WAIT_SECONDS:
+                carried = 0.0
+                continue
+        else:
+            waited = 0.0
+        output.append([round(delta, 3), text])
+        previous = text
     return output
 
 
@@ -89,27 +66,32 @@ def main():
     metadata = json.loads((args.capture / 'metadata.json').read_text(encoding='utf-8'))
     summary = json.loads((args.capture / 'summary.json').read_text(encoding='utf-8'))
     frames = [json.loads(line) for line in (args.capture / 'frames.jsonl').read_text(encoding='utf-8').splitlines()]
+    chunks = [json.loads(line) for line in (args.capture / 'chunks.jsonl').read_text(encoding='utf-8').splitlines()]
     if not frames or not frames[-1].get('final'):
         sys.exit('The recording has no final frame; import a complete capture.')
     if summary.get('capture_exit_code') not in (0, summary.get('child_exit_code')):
         sys.exit('The recording did not complete; import a complete capture.')
 
     columns = metadata['columns']
+    # The rows the recording used, so the page shows the screen area the command needed rather than the whole terminal.
+    rows_used = max((len(frame['lines']) - next((i for i, line in enumerate(reversed(frame['lines'])) if line.strip()), len(frame['lines']))
+                     for frame in frames), default=1)
     transcript = '\n'.join(line.rstrip() for line in frames[-1]['lines']).strip('\n')
     demo = {
         'format': FORMAT,
         'command': args.command,
         'columns': columns,
         'rows': metadata['rows'],
+        'rows_used': rows_used,
         'recorded': {'candidate': metadata['candidate'], 'date': args.date, 'exit_code': summary['child_exit_code'],
                      'duration_seconds': round(summary['duration_seconds'], 3)},
-        'frames': delta_frames(frames, columns),
+        'cast': cast(chunks),
         'transcript': transcript,
     }
     output = DEMOS / f'{args.demo}.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(demo, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
-    print(f'Wrote {output.relative_to(ROOT)} with {len(demo["frames"])} frames.')
+    print(f'Wrote {output.relative_to(ROOT)} with {len(demo["cast"])} output chunks.')
 
 
 if __name__ == '__main__':
