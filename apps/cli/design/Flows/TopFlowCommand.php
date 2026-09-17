@@ -40,7 +40,15 @@ use RuntimeException;
  */
 final class TopFlowCommand extends GatewayCommand
 {
-    private const array PANES = ['nodes', 'apps', 'instances', 'processes', 'schedules', 'firewall'];
+    /** Where the arrow keys lead from each pane while hovering. */
+    private const array NEIGHBOURS = [
+        'nodes' => ['down' => 'apps', 'right' => 'instances'],
+        'apps' => ['up' => 'nodes', 'right' => 'processes'],
+        'instances' => ['left' => 'nodes', 'down' => 'processes'],
+        'processes' => ['up' => 'instances', 'right' => 'schedules', 'down' => 'firewall', 'left' => 'apps'],
+        'schedules' => ['up' => 'instances', 'left' => 'processes', 'down' => 'firewall'],
+        'firewall' => ['up' => 'processes', 'left' => 'apps'],
+    ];
 
     #[\Override]
     protected $signature = 'design:top
@@ -67,7 +75,10 @@ final class TopFlowCommand extends GatewayCommand
     /** @var list<array<string, mixed>> */
     private array $firewall = [];
 
-    private string $focus = 'nodes';
+    /** The pane the arrows point at while hovering, and the one Enter focused. */
+    private string $hover = 'nodes';
+
+    private ?string $focus = null;
 
     private string $scope = 'nodes';
 
@@ -107,22 +118,12 @@ final class TopFlowCommand extends GatewayCommand
                         if ($event->char === 'q' || ($event->char === 'c' && $event->modifiers === KeyModifiers::CONTROL)) {
                             break 2;
                         }
-                        match ($event->char) {
-                            'r' => $lastRefresh = 0,
-                            'n' => $this->focusOn('nodes'),
-                            'a' => $this->focusOn('apps'),
-                            default => null,
-                        };
+                        if ($event->char === 'r') {
+                            $lastRefresh = 0;
+                        }
                     }
                     if ($event instanceof CodedKeyEvent) {
-                        match ($event->code) {
-                            KeyCode::Tab => $this->focusOn(self::PANES[(array_search($this->focus, self::PANES, true) + 1) % count(self::PANES)]),
-                            KeyCode::BackTab => $this->focusOn(self::PANES[(array_search($this->focus, self::PANES, true) + count(self::PANES) - 1) % count(self::PANES)]),
-                            KeyCode::Down => $this->move(1),
-                            KeyCode::Up => $this->move(-1),
-                            KeyCode::Esc => throw new RuntimeException('leave'),
-                            default => null,
-                        };
+                        $this->handleKey($event->code);
                     }
                 }
 
@@ -143,6 +144,35 @@ final class TopFlowCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
+    private function handleKey(KeyCode $code): void
+    {
+        if ($this->focus === null) {
+            // Hovering: the arrows walk the panes, Enter focuses the hovered one.
+            $direction = match ($code) {
+                KeyCode::Up => 'up',
+                KeyCode::Down => 'down',
+                KeyCode::Left => 'left',
+                KeyCode::Right => 'right',
+                default => null,
+            };
+            if ($direction !== null) {
+                $this->hover = self::NEIGHBOURS[$this->hover][$direction] ?? $this->hover;
+            }
+            if ($code === KeyCode::Enter) {
+                $this->focusOn($this->hover);
+            }
+
+            return;
+        }
+
+        match ($code) {
+            KeyCode::Down => $this->move(1),
+            KeyCode::Up => $this->move(-1),
+            KeyCode::Esc => $this->focus = null,
+            default => null,
+        };
+    }
+
     private function focusOn(string $pane): void
     {
         $this->focus = $pane;
@@ -156,6 +186,9 @@ final class TopFlowCommand extends GatewayCommand
 
     private function move(int $step): void
     {
+        if ($this->focus === null) {
+            return;
+        }
         $rows = count($this->rowsFor($this->focus));
         $before = $this->selected[$this->focus];
         $this->selected[$this->focus] = max(0, min(max(0, $rows - 1), $before + $step));
@@ -218,7 +251,7 @@ final class TopFlowCommand extends GatewayCommand
     /** The command Enter would run for the focused row; the status bar shows it. */
     private function enterCommand(): string
     {
-        $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
+        $row = $this->focus === null ? null : $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
         if ($row === null) {
             return '';
         }
@@ -250,15 +283,15 @@ final class TopFlowCommand extends GatewayCommand
         $processRows = array_map(fn (array $p): TableRow => TableRow::fromStrings((string) $p['id'], $p['name'], $p['runtime'], $p['desired_state'], $p['runtime_status'], $p['status']), $this->rowsFor('processes'));
         $scheduleRows = array_map(fn (array $s): TableRow => TableRow::fromStrings((string) $s['id'], $s['name'], $s['expression'], $s['next_run'], $s['status']), $this->rowsFor('schedules'));
         $firewallRows = array_map(fn (array $f): TableRow => TableRow::fromStrings((string) $f['id'], $f['port'], $f['action'], $f['source'], $f['status']), $this->rowsFor('firewall'));
-        $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name'], $n['status'], implode(', ', $n['roles'])), $this->nodes);
-        $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug'], (string) count(array_filter($this->instances, fn (array $i): bool => $i['app']['slug'] === $a['slug']))), $this->apps);
+        $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->nodes);
+        $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->apps);
 
         $left = GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(count($this->nodes) + 3), Constraint::min(5))
+            ->constraints(Constraint::length(count($this->nodes) + 2), Constraint::min(5))
             ->widgets(
-                $this->pane('nodes', ' Nodes ', ['Name', 'Status', 'Roles'], [Constraint::percentage(42), Constraint::percentage(24), Constraint::percentage(28)], $nodeRows),
-                $this->pane('apps', ' Apps ', ['Slug', 'Instances'], [Constraint::percentage(68), Constraint::percentage(28)], $appRows),
+                $this->pane('nodes', ' Nodes ', [], [Constraint::percentage(96)], $nodeRows),
+                $this->pane('apps', ' Apps ', [], [Constraint::percentage(96)], $appRows),
             );
 
         $right = GridWidget::default()
@@ -277,8 +310,9 @@ final class TopFlowCommand extends GatewayCommand
             );
 
         $enter = $this->enterCommand();
-        $footer = ParagraphWidget::fromString(
-            '  Tab next pane · ↑↓ move · n nodes · a apps · r refresh · q leave'.($enter !== '' ? "  │  Enter → {$enter}" : ''),
+        $footer = ParagraphWidget::fromString($this->focus === null
+            ? '  ←↑→↓ move between panes · Enter focus pane · r refresh · q leave'
+            : '  ↑↓ move · Esc back to panes · q leave'.($enter !== '' ? "  │  Enter → {$enter}" : ''),
         )->style($dim);
 
         return GridWidget::default()
@@ -296,7 +330,7 @@ final class TopFlowCommand extends GatewayCommand
                     ->widget(ParagraphWidget::fromString($this->stats())),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::length(34), Constraint::min(40))
+                    ->constraints(Constraint::length(24), Constraint::min(40))
                     ->widgets($left, $right),
                 $footer,
             );
@@ -324,10 +358,15 @@ final class TopFlowCommand extends GatewayCommand
     private function pane(string $name, string $title, array $headers, array $widths, array $rows): Widget
     {
         $focused = $this->focus === $name;
+        $hovered = $this->focus === null && $this->hover === $name;
         $block = BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
             ->titles(Title::fromString($title))
-            ->borderStyle($focused ? Style::default()->fg(AnsiColor::Cyan) : Style::default()->fg(AnsiColor::DarkGray));
+            ->borderStyle(match (true) {
+                $focused => Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD),
+                $hovered => Style::default()->fg(AnsiColor::White)->addModifier(Modifier::BOLD),
+                default => Style::default()->fg(AnsiColor::DarkGray),
+            });
 
         if ($rows === []) {
             return $block->widget(ParagraphWidget::fromString(' None.')->style(Style::default()->fg(AnsiColor::DarkGray)));
@@ -336,9 +375,12 @@ final class TopFlowCommand extends GatewayCommand
         $table = TableWidget::default();
         $table->columnSpacing = 1;
 
+        if ($headers !== []) {
+            $table->header(TableRow::fromStrings(...$headers));
+        }
+
         return $block->widget(
             $table
-                ->header(TableRow::fromStrings(...$headers))
                 ->widths(...$widths)
                 ->rows(...$rows)
                 ->select($this->selected[$name])
