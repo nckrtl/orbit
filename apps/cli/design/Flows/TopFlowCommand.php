@@ -372,7 +372,11 @@ final class TopFlowCommand extends GatewayCommand
         }
         $this->selected[$pane] = $row;
 
-        // A new scope row or instance narrows the panes that depend on it.
+        // A new scope row or instance narrows the panes that depend on it; a new node also
+        // changes which apps the sidebar lists, so the app choice returns to All.
+        if ($pane === 'nodes') {
+            $this->selected['apps'] = 0;
+        }
         if ($pane === 'nodes' || $pane === 'apps') {
             $this->selected['instances'] = 0;
         }
@@ -479,7 +483,7 @@ final class TopFlowCommand extends GatewayCommand
     {
         return match ($pane) {
             'nodes' => [['all' => true, 'name' => 'All'], ...$this->nodes],
-            'apps' => [['all' => true, 'slug' => 'All'], ...$this->apps],
+            'apps' => [['all' => true, 'slug' => 'All'], ...$this->appsOnSelectedNode()],
             'instances' => $this->scopedInstances(),
             'processes' => array_values(array_filter($this->processes, fn (array $process): bool => $process['target_id'] === $this->currentInstance()['id'])),
             'schedules' => array_values(array_filter($this->schedules, fn (array $schedule): bool => $schedule['instance_id'] === $this->currentInstance()['id'])),
@@ -505,7 +509,23 @@ final class TopFlowCommand extends GatewayCommand
      */
     private function selectedApp(): ?array
     {
-        return $this->apps[$this->selected['apps'] - 1] ?? null;
+        return $this->appsOnSelectedNode()[$this->selected['apps'] - 1] ?? null;
+    }
+
+    /**
+     * The Apps list follows the node: with a node chosen it lists only the apps with an instance there.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function appsOnSelectedNode(): array
+    {
+        $node = $this->selectedNode();
+        if ($node === null) {
+            return $this->apps;
+        }
+        $slugs = array_column(array_column(array_filter($this->instances, fn (array $i): bool => $i['node']['name'] === $node['name']), 'app'), 'slug');
+
+        return array_values(array_filter($this->apps, fn (array $app): bool => in_array($app['slug'], $slugs, true)));
     }
 
     /** @return list<array<string, mixed>> */
