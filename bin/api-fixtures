@@ -37,9 +37,12 @@ def problems(value, schema, spec, path='body'):
     schema = resolve(schema, spec)
     if 'oneOf' in schema or 'anyOf' in schema:
         options = schema.get('oneOf') or schema.get('anyOf')
-        if any(not problems(value, option, spec, path) for option in options):
+        attempts = [problems(value, option, spec, path) for option in options]
+        if any(not attempt for attempt in attempts):
             return []
-        return [f'{path} matches none of the {len(options)} alternatives']
+        # Report the closest alternative so the mismatch is actionable.
+        closest = min(attempts, key=len)
+        return [f'{path} matches none of the {len(options)} alternatives; closest: ' + '; '.join(closest)]
     found = []
     types = schema.get('type')
     if types is not None:

@@ -14,7 +14,8 @@
         "php": "^8.5",
         "laravel-zero/foundation": "^13.0",
         "laravel-zero/framework": "^13.0",
-        "nckrtl/orbit-php-sdk": "dev-main"
+        "nckrtl/orbit-php-sdk": "dev-main",
+        "php-tui/php-tui": "^0.2.1"
     },
     "require-dev": {
         "larastan/larastan": "^3.11",

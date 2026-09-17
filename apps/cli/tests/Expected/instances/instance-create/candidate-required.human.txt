@@ -1,0 +1,9 @@
+Creating App instance...
+
+┌  Create App instance
+│
+├  ● Creating App instance
+│
+└  Operation failed.
+
+New production AppInstances require a candidate. Use instance:clone.

@@ -28,7 +28,7 @@ final class Animation
 
     private float $epoch = 0;
 
-    /** @var array{string, string}|null */
+    /** @var list<string>|null */
     private ?array $rendererFrames = null;
 
     private string $displayedFrame = '';
@@ -39,7 +39,7 @@ final class Animation
     private array $children = [];
 
     /**
-     * @param  array{string, string}  $frames
+     * @param  list<string>  $frames  At least two frames; the renderer cycles them at a fixed cadence.
      * @param  (Closure(): string)|null  $settled
      */
     public function __construct(
@@ -311,13 +311,17 @@ final class Animation
         $owner->rendererFrames = null;
     }
 
-    /** @return array{string, string} */
+    /** @return list<string> */
     private function presentationFrames(): array
     {
         $prefix = $this->parent?->presentationFrames() ?? ['', ''];
         $children = $this->childrenFrame();
+        $count = max(count($this->frames), count($prefix));
 
-        return [$prefix[0].$this->frames[0].$children, $prefix[1].$this->frames[1].$children];
+        return array_map(
+            fn (int $index): string => $prefix[$index % count($prefix)].$this->frames[$index % count($this->frames)].$children,
+            range(0, $count - 1),
+        );
     }
 
     private function childrenFrame(): string
@@ -364,7 +368,7 @@ final class Animation
         $process = $this->process;
         $exitCode = 1;
         $settled = '';
-        $finalFrames = ['', ''];
+        $finalFrames = array_fill(0, count($this->frames), '');
         $presentationFailed = false;
         $previousMask = [];
         $masked = function_exists('pcntl_sigprocmask') && pcntl_sigprocmask(SIG_BLOCK, [SIGINT, SIGTERM], $previousMask);
@@ -374,7 +378,10 @@ final class Animation
                 $settled = ! $clear && $this->settled !== null ? ($this->settled)() : '';
                 $prefix = ! $clear ? ($this->parent?->presentationFrames() ?? ['', '']) : ['', ''];
                 $children = ! $clear ? $this->childrenFrame() : '';
-                $finalFrames = [$prefix[0].$settled.$children, $prefix[1].($settled === $this->frames[0] ? $this->frames[1] : $settled).$children];
+                $finalFrames = array_map(
+                    fn (int $index): string => $prefix[$index % count($prefix)].($settled === $this->frames[0] ? $this->frames[$index % count($this->frames)] : $settled).$children,
+                    range(0, max(count($this->frames), count($prefix)) - 1),
+                );
 
                 if ($handoff && $this->parent !== null) {
                     $this->send(json_encode(['frames' => $finalFrames], JSON_THROW_ON_ERROR)."\n");
@@ -392,7 +399,7 @@ final class Animation
             } catch (Throwable) {
                 $presentationFailed = true;
                 $settled = '';
-                $finalFrames = ['', ''];
+                $finalFrames = array_fill(0, count($this->frames), '');
             }
 
             fclose($this->pipes[0]);

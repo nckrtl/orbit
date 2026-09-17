@@ -32,12 +32,16 @@ function gateway_fixture(string $name): array
     ];
 }
 
-/** @return array<class-string, MockResponse> One Saloon mock entry keyed by the SDK request class. */
-function gateway_fixture_mock(string $name): array
+/** @return array<class-string, MockResponse> Saloon mock entries keyed by the SDK request class, one per fixture. */
+function gateway_fixture_mock(string ...$names): array
 {
-    $fixture = gateway_fixture($name);
+    $mocks = [];
+    foreach ($names as $name) {
+        $fixture = gateway_fixture($name);
+        $mocks[$fixture['request']] = MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json']);
+    }
 
-    return [$fixture['request'] => MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json'])];
+    return $mocks;
 }
 
 /**
@@ -46,6 +50,11 @@ function gateway_fixture_mock(string $name): array
 function expect_output(string $actual, string $name): void
 {
     $path = base_path('tests/Expected/'.$name);
+    $previewDirectory = getenv('ORBIT_EXPECTED_DIR');
+    if (getenv('ORBIT_EXPECTED') === 'update' && is_string($previewDirectory) && $previewDirectory !== '') {
+        // A preview writes the current output next to nothing committed, so bin/cli-contract can diff it.
+        $path = rtrim($previewDirectory, '/').'/'.$name;
+    }
     if (getenv('ORBIT_EXPECTED') === 'update') {
         if (! is_dir(dirname($path))) {
             mkdir(dirname($path), 0755, true);

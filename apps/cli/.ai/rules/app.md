@@ -1,6 +1,7 @@
 ---
 paths:
   - 'app/**'
+  - 'design/**'
 ---
 
 # App

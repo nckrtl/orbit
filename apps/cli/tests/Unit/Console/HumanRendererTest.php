@@ -4,17 +4,11 @@ declare(strict_types=1);
 
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\HumanRenderer;
-use App\Support\Console\PromptAborted;
-use App\Support\Console\PromptContext;
-use App\Support\Console\Renderers\DataTableRenderer;
 use App\Support\Console\Renderers\TableLayout;
 use App\Support\Console\Renderers\TableTheme;
 use App\Support\Console\TerminalText;
-use Laravel\Prompts\DataTablePrompt;
-use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
-use Symfony\Component\Console\Output\BufferedOutput;
 
 describe('safe human display cells', function (): void {
     it('preserves zero and false while displaying missing values separately', function (): void {
@@ -157,63 +151,6 @@ describe('Prompts table layout', function (): void {
         });
 
         expect(Prompt::theme())->toBe($theme);
-    });
-});
-
-describe('Prompts datatable layout', function (): void {
-    it('shows the search cursor where keyboard editing places it', function (): void {
-        $output = new BufferedOutput;
-
-        PromptContext::run(human_layout_mode(40), $output, function () use ($output): void {
-            $prompt = new DataTablePrompt(headers: ['Name'], rows: [17 => ['abc']], label: 'Select');
-            $prompt->emit('key', '/');
-            $prompt->emit('key', 'abc');
-            $prompt->emit('key', Key::LEFT_ARROW);
-            $output->write(new DataTableRenderer($prompt)($prompt));
-        }, new HumanLayoutTerminal(40, 40));
-
-        expect($output->fetch())->toContain('/ ab▏c')->not->toContain('/ abc▏');
-    });
-
-    it('preserves exact column case full wrapped values and stable selected keys', function (): void {
-        $output = new BufferedOutput;
-        $key = PromptContext::run(human_layout_mode(30), $output, function () use ($output): int|string|null {
-            $prompt = new DataTablePrompt(headers: ['ID', 'Display name'], rows: [7 => ['7', 'other'], 'node:42' => ['42', 'long-unbroken-selector-value']], label: 'Choose resource');
-            $prompt->highlighted = 1;
-            $output->write(new DataTableRenderer($prompt)($prompt));
-
-            return $prompt->value();
-        }, new HumanLayoutTerminal(30, 40));
-        $result = $output->fetch();
-
-        expect($key)->toBe('node:42')
-            ->and($result)->toContain('ID', 'Display name', 'Press / to search', '›')->not->toContain('DISPLAY NAME', '…');
-        human_layout_assert_width($result, 30);
-        $cells = human_layout_table_cells($result);
-        expect(implode('', $cells[1]))->toContain('long-unbroken-selector-value');
-    });
-
-    it('rejects below-minimum selection without returning a default key', function (): void {
-        $selected = null;
-
-        expect(function () use (&$selected): void {
-            PromptContext::run(human_layout_mode(9), new BufferedOutput, function () use (&$selected): void {
-                $prompt = new DataTablePrompt(headers: ['Name', 'Owner'], rows: ['stable' => ['界', 'Ada']], label: 'Select');
-                new DataTableRenderer($prompt)($prompt);
-                $selected = $prompt->value();
-            }, new HumanLayoutTerminal(9, 40));
-        })->toThrow(PromptAborted::class, 'Selection requires 11 terminal columns; available width is 9.');
-
-        expect($selected)->toBeNull();
-    });
-
-    it('refuses to clip fields when one selected row is taller than the terminal', function (): void {
-        expect(function (): void {
-            PromptContext::run(human_layout_mode(14), new BufferedOutput, static function (): void {
-                $prompt = new DataTablePrompt(headers: ['Name'], rows: [9 => [str_repeat('x', 100)]], label: 'Select');
-                new DataTableRenderer($prompt)($prompt);
-            }, new HumanLayoutTerminal(14, 12));
-        })->toThrow(PromptAborted::class, 'display every field');
     });
 });
 

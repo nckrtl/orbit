@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Console\Renderers;
 
 use App\Support\Console\ConsoleMode;
+use App\Support\Console\SearchableDataTablePrompt;
 use Closure;
 use Laravel\Prompts\ConfirmPrompt;
 use Laravel\Prompts\DataTablePrompt;
@@ -40,10 +41,20 @@ final class TableTheme
         }
     }
 
+    /** @var array<class-string<Prompt>, class-string> Renderers added at runtime, such as design sketches. */
+    private static array $extensions = [];
+
+    /** @param array<class-string<Prompt>, class-string> $renderers */
+    public static function extend(array $renderers): void
+    {
+        self::$extensions = [...self::$extensions, ...$renderers];
+    }
+
     /** @return array<class-string<Prompt>, class-string> */
     public static function renderers(): array
     {
-        return [Table::class => TableRenderer::class, DataTablePrompt::class => DataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class];
+        // The data list is the stock Laravel Prompts rendering, minus the summary a chosen row would leave behind.
+        return [Table::class => TableRenderer::class, DataTablePrompt::class => EphemeralDataTableRenderer::class, SearchableDataTablePrompt::class => EphemeralDataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class, ...self::$extensions];
     }
 
     public static function mode(): ConsoleMode

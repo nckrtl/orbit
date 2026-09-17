@@ -5,7 +5,7 @@ description: "Recorded Gateway responses are the contract that CLI tests replay,
 
 # Gateway response fixtures
 
-This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it, the [API reference](/api/overview) validates it, and the CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
+This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
 ## Record a fixture
 
@@ -45,11 +45,13 @@ cd apps/cli && ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract
 
 ## Find the commands a change reaches
 
-`bin/cli-contract` runs only the CLI tests that replay the named fixtures. With `--changed`, it takes the fixtures that differ from `origin/main`.
+`bin/cli-contract` runs only the CLI tests that replay the named fixtures. With `--changed`, it takes the fixtures that differ from `origin/main`. With `--preview`, it renders every contract case into a temporary directory and lists the commands whose output differs from `tests/Expected`, with a diff per file. That list is the map of the commands a rendering change reaches. With `--coverage`, it lists the product commands that have no expected output yet.
 
 ```bash
 bin/cli-contract nodes/node-add/created
 bin/cli-contract --changed
+bin/cli-contract --preview
+bin/cli-contract --coverage
 ```
 
 The change cycle is: change the Gateway, re-record the fixtures, review the fixture diff, run `bin/cli-contract --changed`, fix or accept each command's output, and update the expected files.
@@ -61,5 +63,7 @@ These families have recorded fixtures and contract tests.
 | Family | Fixtures |
 | --- | --- |
 | `node` | `node-list/default`, `node-show/default`, `node-add/created`, `node-add/tld-required`, `node-add/fingerprint-required` |
+| `app` | `app-list/default`, `app-show/default`, `app-create/created`, `app-destroy/removed` |
+| `instance` | `instance-list/default`, `instance-show/default`, `instance-create/created`, `instance-create/candidate-required` |
 
-Add a family by writing its Gateway fixture test and its CLI contract test in the same change.
+Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. `bin/cli-contract --coverage` shows what is left.

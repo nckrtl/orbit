@@ -1,0 +1,20 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Apps\\CreateAppRequest",
+    "route": "POST /api/v1/apps",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 1,
+            "name": "acme",
+            "slug": "acme",
+            "repository_url": "git@github.com:acme/site.git",
+            "default_branch": "main",
+            "root": "public",
+            "defaults": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
