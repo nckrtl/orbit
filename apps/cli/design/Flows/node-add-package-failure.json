@@ -1,0 +1,24 @@
+{
+  "sketch": "design:node-add",
+  "title": "Add a node with every input given as options, failing while installing packages",
+  "arguments": [
+    "demo",
+    "203.0.113.10",
+    "--role=app-dev",
+    "--tld=test",
+    "--user=root",
+    "--host-key-fingerprint=SHA256:nYLtpzBW9TaF4bvl9O4oWUtWsMjf5DC3AmnjlOhqCQc",
+    "--outcome=package-failure",
+    "--pace=0.3"
+  ],
+  "columns": 100,
+  "rows": 40,
+  "steps": [],
+  "exit_code": 1,
+  "expect_final": [
+    "Created the managed user orbit",
+    "apt-get install exited with status 100 while installing curl.",
+    "Node demo was not added.",
+    "Fix the machine and run the same command again"
+  ]
+}

@@ -12,6 +12,23 @@ ORBIT_DESIGN=1 apps/cli/orbit design:node-add --outcome=package-failure --pace=0
 
 Each sketch takes `--outcome` to select where it fails and `--pace` to set the seconds each step takes. Drive a sketch from a terminal one key at a time; Laravel Prompts reads one key per read and ignores keys that arrive together.
 
+## Flows
+
+A flow file under `flows/` is the agreed way through a sketch: the sketch, its arguments, the keys to send at each prompt, and the text each step must show. It is the file to look up before a demo, the script a cheaper model replays, and the record of what was agreed.
+
+```bash
+bin/cli-flow --list
+bin/cli-flow node-add
+bin/cli-flow node-add --keep /tmp/node-add-recording
+```
+
+`bin/cli-flow` replays the flow in a recorded terminal and prints one line per step and the final screen. To demo the same flow live, an agent opens a Solo terminal, runs the sketch, and sends each step's keys as separate inputs, reading the screen after each. The `send` tokens are `<enter>`, `<space>`, `<tab>`, `<backspace>`, `<esc>`, `<up>`, `<down>`, `<left>`, and `<right>`; text prompts accept whole strings, selection prompts need one key per step.
+
+| Flow | Shows |
+| --- | --- |
+| `node-add` | Every input prompted, one invalid name, two roles, host key approval, success. |
+| `node-add-package-failure` | Every input given as options, failure while installing packages. |
+
 | Sketch | Shows |
 | --- | --- |
 | `design:node-add` | Prompts for every missing input, host key approval, and the provisioning steps as a progress tree. |

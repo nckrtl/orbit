@@ -9,7 +9,7 @@ Read `docs/reference/cli-ux.md` from the repository root, then the current comma
 
 ## Sketch first
 
-For new interaction, such as prompts or a step sequence that no command has, write a design sketch under `apps/cli/design` before the real command. A sketch uses the CLI's own prompt, progress, and failure primitives with a scripted scenario and an `--outcome` option for each refusal; see `apps/cli/design/README.md`. Run it with `ORBIT_DESIGN=1`, drive it in a terminal one key at a time, and record the agreed flow with `verifying-cli-output`. The agreed scenario becomes the mock Gateway scenario of the real command, and the agreed recording becomes its expected output.
+For new interaction, such as prompts or a step sequence that no command has, write a design sketch under `apps/cli/design` before the real command. A sketch uses the CLI's own prompt, progress, and failure primitives with a scripted scenario and an `--outcome` option for each refusal; see `apps/cli/design/README.md`. Write its flow under `apps/cli/design/flows` and replay it with `bin/cli-flow`, or drive it live in a Solo terminal one key at a time. Record the agreed flow with `verifying-cli-output`. The agreed scenario becomes the mock Gateway scenario of the real command, and the agreed recording becomes its expected output.
 
 ## Design or implement
 
