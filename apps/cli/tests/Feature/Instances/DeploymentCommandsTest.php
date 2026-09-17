@@ -142,6 +142,54 @@ describe('deployment streams', function (): void {
             ->toHaveCount(1);
     });
 
+    it('sends streamed step output through printLine() over a real decorated terminal, never a clear-and-restart cycle (F4/M22)', function (): void {
+        if (! defined('SIGINT') || ! function_exists('posix_kill') || ! function_exists('openssl_csr_new')) {
+            $this->markTestSkipped('POSIX signals are unavailable.');
+        }
+
+        if (! Process::isPtySupported()) {
+            $this->markTestSkipped('PTY is unavailable.');
+        }
+
+        $fixture = deployment_cli_signal_fixture($this->orbitHome, 'streamed-output');
+        $output = '';
+        $command = new Process(
+            [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'instance:deploy', '17', '--ansi', '--no-interaction'],
+            env: ['ORBIT_HOME' => $fixture['home']],
+            timeout: 10,
+        );
+        $command->setPty(true);
+
+        try {
+            $command->run(static function (string $type, string $data) use (&$output): void {
+                $output .= $data;
+            });
+            $serverExitCode = $fixture['server']->wait();
+
+            expect($command->getExitCode())->toBe(0)
+                ->and($serverExitCode)->toBe(0)
+                ->and($output)->toContain('line one', 'line two', 'line three', 'Deployment succeeded.')
+                // Each of the 4 admitted steps (source_preparation, environment_sync, the
+                // before_activation step, activation) starts and stops its own renderer once,
+                // hiding and showing the cursor once each: 4 pairs for the whole command.
+                // Animation::printLine() (F4) reprints the live frame in the same write as each
+                // of the 3 streamed lines inside the before_activation step's own renderer,
+                // without an extra stop/restart per line. A clear-and-restart regression (M22,
+                // using withoutRepainting() here instead) would stop and restart the renderer
+                // once per printed line too, raising the count to 4 + 3 = 7.
+                ->and(substr_count($output, "\e[?25l"))->toBe(4)
+                ->and(substr_count($output, "\e[?25h"))->toBe(4);
+        } finally {
+            if ($command->isRunning()) {
+                $command->stop(0.1, 9);
+            }
+
+            if ($fixture['server']->isRunning()) {
+                $fixture['server']->stop(0.1, 9);
+            }
+        }
+    });
+
     it('emits only exact compact NDJSON events in JSON mode', function (): void {
         $events = [
             deployment_cli_phase(1, 'source_preparation'),
@@ -552,6 +600,58 @@ describe('deployment streams', function (): void {
             ->and($humanExitCode)->toBe($jsonExitCode)
             ->and($output)
             ->toContain('deployment.activation_failed', 'Failed boundary: activation');
+    });
+
+    it('appends a named before_activation step that arrives after activation and matches JSON\'s success (F6/R2)', function (): void {
+        $events = [
+            deployment_cli_phase(1, 'source_preparation'),
+            deployment_cli_phase(2, 'environment_sync'),
+            deployment_cli_phase(3, 'activation'),
+            deployment_cli_phase(4, 'before_activation', 'late-migrate'),
+            deployment_cli_result(5, 'succeeded', selectedRelease: 'release-a'),
+        ];
+
+        // admitBefore() cannot position this row ahead of 'activation' once that row has
+        // already settled: the Gateway never emits this order live, but the stream is still
+        // SDK-valid, and JSON accepts it without complaint. Before R2's fix this threw a
+        // LogicException out of admitBefore(), which human mode reported as the generic
+        // "Deployment stream failed." and exit 1, while JSON kept reading and exited 0 for
+        // the same stream.
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
+
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($jsonExitCode)->toBe(0)
+            ->and($humanExitCode)->toBe($jsonExitCode)
+            ->and($output)
+            ->toContain('● Ran late-migrate', 'Deployment succeeded.', 'Selected release: release-a')
+            ->not->toContain('Deployment stream failed.', 'LogicException');
+    });
+
+    it('appends a named before_activation step after activation and still matches JSON\'s failure (F6/R2)', function (): void {
+        $events = [
+            deployment_cli_phase(1, 'source_preparation'),
+            deployment_cli_phase(2, 'environment_sync'),
+            deployment_cli_phase(3, 'activation'),
+            deployment_cli_phase(4, 'before_activation', 'late-migrate'),
+            deployment_cli_result(5, 'failed', failedStep: 'before_activation', errorCode: 'deployment.step_failed'),
+        ];
+
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
+
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($jsonExitCode)->toBe(1)
+            ->and($humanExitCode)->toBe($jsonExitCode)
+            ->and($output)
+            ->toContain('deployment.step_failed', 'Failed boundary: before_activation')
+            ->not->toContain('Deployment stream failed.', 'LogicException');
     });
 
     it('does not lose the request ID for an output-first stream (F6)', function (): void {
@@ -1025,6 +1125,100 @@ function deployment_cli_signal_fixture(string $root, string $mode): array
                 }
 
                 file_put_contents($argv[5], 'sent');
+            } elseif ($argv[7] === 'streamed-output') {
+                preg_match('/^X-Orbit-Request-Id:\s*([^\r\n]+)\r?$/mi', $request, $matches);
+                $requestId = $matches[1] ?? '';
+                $headers = "HTTP/1.1 200 OK\r\n"
+                    ."Content-Type: application/x-ndjson\r\n"
+                    ."X-Orbit-Request-Id: {$requestId}\r\n"
+                    ."Transfer-Encoding: chunked\r\n"
+                    ."Connection: close\r\n\r\n";
+                fwrite($connection, $headers);
+                $events = [
+                    [
+                        'type' => 'phase',
+                        'sequence' => 1,
+                        'request_id' => $requestId,
+                        'phase' => 'source_preparation',
+                    ],
+                    [
+                        'type' => 'phase',
+                        'sequence' => 2,
+                        'request_id' => $requestId,
+                        'phase' => 'environment_sync',
+                    ],
+                    [
+                        'type' => 'phase',
+                        'sequence' => 3,
+                        'request_id' => $requestId,
+                        'phase' => 'before_activation',
+                        'step_name' => 'print-step',
+                    ],
+                    [
+                        'type' => 'output',
+                        'sequence' => 4,
+                        'request_id' => $requestId,
+                        'stream' => 'stdout',
+                        'data_base64' => base64_encode("line one\n"),
+                    ],
+                    [
+                        'type' => 'output',
+                        'sequence' => 5,
+                        'request_id' => $requestId,
+                        'stream' => 'stdout',
+                        'data_base64' => base64_encode("line two\n"),
+                    ],
+                    [
+                        'type' => 'output',
+                        'sequence' => 6,
+                        'request_id' => $requestId,
+                        'stream' => 'stdout',
+                        'data_base64' => base64_encode("line three\n"),
+                    ],
+                    [
+                        'type' => 'phase',
+                        'sequence' => 7,
+                        'request_id' => $requestId,
+                        'phase' => 'activation',
+                    ],
+                    [
+                        'type' => 'result',
+                        'sequence' => 8,
+                        'request_id' => $requestId,
+                        'status' => 'succeeded',
+                        'failed_step' => null,
+                        'error_code' => null,
+                        'selected_release' => 'release-b',
+                    ],
+                ];
+
+                foreach ($events as $event) {
+                    $line = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+                    fwrite($connection, dechex(strlen($line))."\r\n{$line}\r\n");
+                    fflush($connection);
+                }
+
+                fwrite($connection, "0\r\n\r\n");
+                fflush($connection);
+                file_put_contents($argv[5], 'sent');
+                stream_set_blocking($connection, false);
+                $deadline = microtime(true) + 5;
+
+                while (microtime(true) < $deadline) {
+                    $data = @fread($connection, 8192);
+
+                    if ($data === '' && feof($connection)) {
+                        file_put_contents($argv[6], 'closed');
+
+                        break;
+                    }
+
+                    usleep(10_000);
+                }
+
+                fclose($connection);
+                fclose($server);
+                exit(0);
             }
 
             stream_set_blocking($connection, false);
