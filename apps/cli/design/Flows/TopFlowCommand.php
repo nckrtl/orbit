@@ -728,9 +728,9 @@ final class TopFlowCommand extends GatewayCommand
         $m = $this->metrics[$node];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $age = max(0, (int) round(microtime(true) - $this->lastMetrics));
-        // Bars are spread over the full inner width: four columns for cores, two halves below,
-        // with a two-cell gap between columns and the last column running to the edge.
-        $inner = $width - 2;
+        // Bars are spread over the inner width, one cell in from each border: four columns for
+        // cores, two halves below, a two-cell gap between columns, the last column to the edge.
+        $inner = $width - 4;
         $gap = 2;
         $column = intdiv($inner - 3 * $gap, 4);
         $lastColumn = $inner - 3 * ($column + $gap);
@@ -766,6 +766,7 @@ final class TopFlowCommand extends GatewayCommand
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
             ->titles(Title::fromString(" {$node} · metrics · polled {$age}s ago · every ".self::METRICS_TICK.'s '))
             ->borderStyle($dim)
+            ->padding(Padding::horizontal(1))
             ->widget(
                 GridWidget::default()
                     ->direction(Direction::Vertical)
