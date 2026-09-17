@@ -79,7 +79,7 @@ def load_controllers():
             ctrl[f'{f.stem}@{m.group(1)}'] = {
                 'requests': re.findall(r'(\w+Request) \$', params),
                 'data': sorted({a or b for a, b in re.findall(r'(\w+Data)::fromModel|(\w+Data)::from\w*\(', body)}),
-                'created': bool(re.search(r',\s*201\)', body)),
+                'created': bool(re.search(r'\b201\b', body)),
             }
     return ctrl
 
@@ -104,6 +104,8 @@ def load_data_classes():
             continue
         ctor = re.search(r'function __construct\((.*?)\)\s*\{', s, re.S)
         docs = {n: t for t, n in re.findall(r'@param\s+((?:[^\s<]|<[^>]*>)+)\s+\$(\w+)', s)}
+        # An inline `/** @var list<X> */` on a promoted constructor property documents it as well.
+        docs.update({n: t for t, n in re.findall(r'@var\s+((?:[^\s<]|<[^>]*>)+)\s*\*/\s*public\s+(?:readonly\s+)?[\w|?\\]+\s+\$(\w+)', s)})
         props = []
         if ctor:
             for pm in re.finditer(r'public\s+(?:readonly\s+)?([\w|?\\]+)\s+\$(\w+)(\s*=\s*[^,)]+)?', ctor.group(1)):
@@ -956,8 +958,12 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         data, is_list = data_schema_for(route)
         if is_list:
             data = {'type': 'array', 'items': data}
-        status = '201' if controllers.get(action, {}).get('created') else '200'
-        responses[status] = envelope(data, 'Created.' if status == '201' else 'The request succeeded.')
+        if controllers.get(action, {}).get('created'):
+            responses['201'] = envelope(data, 'Created.')
+            # A creating action answers 200 when an exact retry returns the existing record.
+            responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
+        else:
+            responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
     if route['name'] not in ('gateway:status', 'gateway:trust'):

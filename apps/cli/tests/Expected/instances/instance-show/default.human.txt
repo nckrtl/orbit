@@ -1,0 +1,48 @@
+Loading App instance...
+
+┌  Show App instance
+│
+├  ● Loaded App instance
+│
+└  Loaded App instance.
+
+
+┌  App instance: dev
+│
+├  ID                   1
+│
+├  App                  1
+│
+├  Node                 1
+│
+├  Status               active
+│
+├  Environment          development
+│
+├  Source layout        checkout
+│
+├  Checkout             /srv/orbit/apps/acme/dev
+│
+├  Vite port            5173
+│
+├  Root override        —
+│
+├  Effective root       public
+│
+├  Selected branch      dev
+│
+├  Branch override      —
+│
+├  Migration required   no
+│
+├  Starting commit      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│
+├  Git state            dev
+│
+├  Route domain         dev.acme.test
+│
+├  URL                  https://dev.acme.test
+│
+└  Request ID           0198e15c-bf97-7c23-8f1f-61b8fe67a844
+
+No deploy steps found.

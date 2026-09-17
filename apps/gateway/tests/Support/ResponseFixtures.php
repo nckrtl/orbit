@@ -36,6 +36,10 @@ function record_fixture(TestResponse $response, string $name, string $request, s
         // Decode to objects so an empty JSON object stays `{}` in the file instead of becoming `[]`.
         'body' => json_decode((string) $response->getContent(), flags: JSON_THROW_ON_ERROR),
     ];
+    // A test that generates its own request id still records the fixed one, so the file is stable.
+    if (is_object($recorded['body']) && isset($recorded['body']->meta->request_id)) {
+        $recorded['body']->meta->request_id = fixture_request_id();
+    }
     $path = fixture_path($name);
 
     if (getenv('ORBIT_FIXTURES') === 'record') {

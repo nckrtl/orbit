@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest",
+    "route": "POST /api/v1/instances",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "instance.candidate_required",
+            "message": "New production AppInstances require a candidate. Use instance:clone.",
+            "details": {}
+        }
+    }
+}

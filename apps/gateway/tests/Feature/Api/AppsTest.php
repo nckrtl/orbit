@@ -20,6 +20,10 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
+use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Apps\ShowAppRequest;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -51,6 +55,7 @@ describe('app creation', function (): void {
             ->assertJsonPath('data.slug', 'acme')
             ->assertJsonPath('data.repository_url', 'git@github.com:acme/site.git')
             ->assertJsonStructure(['meta' => ['request_id']]);
+        record_fixture($first, 'apps/app-create/created', CreateAppRequest::class, 'POST /api/v1/apps');
 
         $second = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
@@ -374,22 +379,22 @@ describe('app lifecycle', function (): void {
             'repository_url' => 'https://github.com/acme/site.git',
         ]);
 
-        $this
+        record_fixture($this
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $app->id);
+            ->assertJsonPath('data.0.id', $app->id), 'apps/app-list/default', ListAppsRequest::class, 'GET /api/v1/apps');
 
-        $this
+        record_fixture($this
             ->getJson("/api/v1/apps/{$app->id}")
             ->assertOk()
-            ->assertJsonPath('data.slug', 'acme');
+            ->assertJsonPath('data.slug', 'acme'), 'apps/app-show/default', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
 
         $requestId = (string) Str::uuid();
-        $this
+        record_fixture($this
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/apps/{$app->id}")
             ->assertOk()
-            ->assertJsonPath('data.id', $app->id);
+            ->assertJsonPath('data.id', $app->id), 'apps/app-destroy/removed', DestroyAppRequest::class, 'DELETE /api/v1/apps/{app}');
 
         expect(OrbitApp::query()->count())
             ->toBe(0)

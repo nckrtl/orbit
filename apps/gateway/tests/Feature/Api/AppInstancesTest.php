@@ -56,6 +56,9 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -795,6 +798,7 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->assertJsonMissingPath('data.branch')
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.status', 'active');
+    record_fixture($response, 'instances/instance-create/created', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
 
     expect(AppInstance::query()->count())
         ->toBe(1)
@@ -843,10 +847,22 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe(AppInstance::query()->sole()->id);
 });
 
+it('records the list and show responses of an active checkout AppInstance', function (): void {
+    $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $instance = AppInstance::query()->sole();
+
+    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data'), 'instances/instance-list/default', ListAppInstancesRequest::class, 'GET /api/v1/instances');
+    record_fixture($this->getJson("/api/v1/instances/{$instance->id}")->assertOk(), 'instances/instance-show/default', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
+});
+
 it('refuses new production placement with a candidate-required error before mutation', function (): void {
     $node = create_app_prod_node('app-prod');
 
-    $this
+    $refusal = $this
         ->postJson('/api/v1/instances', [
             'app_id' => $this->orbitApp->id,
             'node_id' => $node->id,
@@ -859,6 +875,7 @@ it('refuses new production placement with a candidate-required error before muta
             'error.message',
             'New production AppInstances require a candidate. Use instance:clone.',
         );
+    record_fixture($refusal, 'instances/instance-create/candidate-required', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
 
     expect(AppInstance::query()->count())
         ->toBe(0)
