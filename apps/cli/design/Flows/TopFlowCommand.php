@@ -893,7 +893,7 @@ final class TopFlowCommand extends GatewayCommand
 
     /**
      * The stats line follows the navigation: the network, one node, one app, or an app on a node.
-     * Each count carries a yellow suffix only when something in it needs a look.
+     * A count is yellow when something in it needs a look.
      *
      * @param  array<string, mixed>|null  $node
      * @param  array<string, mixed>|null  $app
@@ -909,27 +909,25 @@ final class TopFlowCommand extends GatewayCommand
         $segments = [];
         if ($node === null) {
             $nodes = $app === null ? $this->nodes : array_filter($this->nodes, fn (array $n): bool => in_array($n['name'], array_column(array_column($instances, 'node'), 'name'), true));
-            $segments[] = ['Nodes', count($nodes), $off($nodes, fn (array $n): bool => $n['status'] === 'active'), 'inactive'];
+            $segments[] = ['Nodes', count($nodes), $off($nodes, fn (array $n): bool => $n['status'] === 'active')];
         }
         if ($app === null) {
             $apps = $node === null ? $this->apps : array_unique(array_column(array_column($instances, 'app'), 'slug'));
-            $segments[] = ['Apps', count($apps), 0, ''];
+            $segments[] = ['Apps', count($apps), 0];
         }
-        $segments[] = ['Instances', count($instances), $off($instances, fn (array $i): bool => $i['status'] === 'active'), 'degraded'];
-        $segments[] = ['Processes', count($processes), $off($processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state']), 'stopped'];
-        $segments[] = ['Schedules', count($schedules), $off($schedules, fn (array $s): bool => $s['status'] === 'enabled'), 'disabled'];
+        $segments[] = ['Instances', count($instances), $off($instances, fn (array $i): bool => $i['status'] === 'active')];
+        $segments[] = ['Processes', count($processes), $off($processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state'])];
+        $segments[] = ['Schedules', count($schedules), $off($schedules, fn (array $s): bool => $s['status'] === 'enabled')];
         if ($node !== null) {
             $rules = array_filter($this->firewall, fn (array $f): bool => $f['node'] === $node['name']);
-            $segments[] = ['Firewall', count($rules), $off($rules, fn (array $f): bool => $f['status'] === 'applied'), 'pending'];
+            $segments[] = ['Firewall', count($rules), $off($rules, fn (array $f): bool => $f['status'] === 'applied')];
         }
 
+        // A count turns yellow when anything it counts needs a look.
         $spans = [Span::fromString(' ')];
-        foreach ($segments as [$label, $count, $warn, $word]) {
-            $spans[] = Span::fromString("{$label} {$count}");
-            if ($warn > 0) {
-                $spans[] = Span::styled(" · {$warn} {$word}", Style::default()->fg(AnsiColor::Yellow));
-            }
-            $spans[] = Span::fromString('  ');
+        foreach ($segments as [$label, $count, $warn]) {
+            $spans[] = Span::styled("{$label} {$count}", $warn > 0 ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
+            $spans[] = Span::fromString('    ');
         }
 
         return Line::fromSpans(...$spans);
