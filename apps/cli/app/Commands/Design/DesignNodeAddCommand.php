@@ -13,7 +13,6 @@ use App\Support\Console\TerminalText;
 use Laravel\Prompts\ConfirmPrompt;
 use Laravel\Prompts\MultiSelectPrompt;
 use Laravel\Prompts\Prompt;
-use Laravel\Prompts\SuggestPrompt;
 use Laravel\Prompts\TextPrompt;
 
 /**
@@ -134,12 +133,11 @@ final class DesignNodeAddCommand extends GatewayCommand
         $user = $this->stringOption('user');
         if ($user === null) {
             $user = $this->consoleMode()->mayPrompt
-                ? $this->promptOrRefuse('', fn (): SuggestPrompt => new SuggestPrompt(
+                ? $this->promptOrRefuse('', fn (): TextPrompt => new TextPrompt(
                     'Bootstrap SSH user',
-                    options: ['root', 'ubuntu', 'orbit'],
                     default: 'root',
                     required: true,
-                    hint: 'Orbit creates the managed user orbit through this account.',
+                    hint: 'Orbit creates the managed user orbit through this account. Name another user when root cannot log in.',
                 ))
                 : 'root';
             if ($user === null) {
