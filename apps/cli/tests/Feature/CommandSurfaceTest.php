@@ -589,7 +589,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'herdr:session:list' => [[], ['node' => null, 'json' => false]],
         'herdr:session:destroy' => [
             ['session'],
-            ['node' => null, 'accept-termination' => false, 'json' => false],
+            ['node' => null, 'accept-termination' => false, 'yes' => false, 'json' => false],
         ],
         'herdr:session:restart' => [
             ['session'],
@@ -807,7 +807,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
-        'tool:remove' => [['tool'], ['json' => false]],
+        'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
     ];

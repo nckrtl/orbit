@@ -79,6 +79,18 @@ try {
                     }
 
                     $pending = $replacement;
+                } elseif (is_array($command) && is_string($command['line'] ?? null)) {
+                    // Print a line above the live region in one write, no clear-and-restart:
+                    // the current frame (index unchanged, no toggle) reprints right after it.
+                    // The tick loop below is untouched, so the glyph keeps alternating on its
+                    // own schedule while lines stream.
+                    $writeOutput($clear.$command['line'].$frames[$index]);
+                    $lines = substr_count($frames[$index], "\n");
+                    $clear = "\r".($lines > 0 ? "\e[{$lines}A" : '')."\e[J";
+
+                    if (fwrite($ready, $receipt) !== strlen($receipt)) {
+                        throw new RuntimeException('Parent notification failed.');
+                    }
                 } else {
                     $final = is_array($command) && is_array($command['final'] ?? null) && is_string($command['final'][$index] ?? null)
                         ? $command['final'][$index] : '';

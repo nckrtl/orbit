@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
@@ -12,9 +13,12 @@ use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
+    $this->previousColumns = getenv('COLUMNS');
+    putenv('COLUMNS=200');
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-tools-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
@@ -26,6 +30,11 @@ beforeEach(function (): void {
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    if ($this->previousColumns === false) {
+        putenv('COLUMNS');
+    } else {
+        putenv('COLUMNS='.$this->previousColumns);
+    }
 });
 
 it('renders the complete manager table and exact request id', function (): void {
@@ -48,23 +57,38 @@ it('renders the complete manager table and exact request id', function (): void 
             'meta' => ['request_id' => $id],
         ]),
     ]);
-    $this
-        ->artisan('tool:manager:list', ['--node' => 12])
-        ->expectsTable(['ID', 'Manager', 'Status', 'Version', 'Failed step', 'Error'], [
-            [1,   'apt',      'active',      '2.8.1', '-',       '-'],
-            ['-', 'brew',     'uninstalled', '-',     '-',       '-'],
-            ['-', 'composer', 'uninstalled', '-',     '-',       '-'],
-            [3,   'vp',       'active',      '1.4.0', '-',       '-'],
-            [4,   'legacy',   'failed',      '-',     'install', 'manager.failed'],
-        ])
-        ->expectsOutput("Request ID: {$id}")
-        ->assertSuccessful();
+
+    [$exit, $output] = tool_list_cli_display('tool:manager:list', ['--node' => '12']);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('ID')
+        ->and($output)->toContain('MANAGER')
+        ->and($output)->toContain('FAILED STEP')
+        ->and($flat)->toContain('│ 1 │ apt │ active │ 2.8.1 │ — │ — │')
+        ->and($flat)->toContain('│ — │ brew │ uninstalled │ — │ — │ — │')
+        ->and($flat)->toContain('│ 4 │ legacy │ failed │ — │ install │ manager.failed │')
+        ->and($output)->toContain("Request ID: {$id}");
+
     expect($mock->getLastRequest()?->getMethod())
         ->toBe(Method::GET)
         ->and($mock->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/tool-managers')
         ->and($mock->getLastRequest()?->query()->all())
         ->toBe(['node_id' => 12]);
+});
+
+it('renders an empty manager table with its request id', function (): void {
+    $id = '55555555-5555-4555-8555-555555555555';
+    MockClient::global([
+        ListToolManagersRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => $id]]),
+    ]);
+
+    [$exit, $output] = tool_list_cli_display('tool:manager:list', ['--node' => '12']);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('No matching records found.')
+        ->and($output)->toContain("Request ID: {$id}");
 });
 
 it('renders the complete tool table with null and protected values', function (): void {
@@ -87,14 +111,17 @@ it('renders the complete tool table with null and protected values', function ()
             'meta' => ['request_id' => $id],
         ]),
     ]);
-    $this
-        ->artisan('tool:list', ['--node' => 12])
-        ->expectsTable(['ID', 'Manager', 'Package', 'Constraint', 'Status', 'Version', 'Protected', 'Error'], [
-            [41, 'vp',       '@openai/codex', '-',    'installed', '-',     'no',  '-'],
-            [42, 'composer', 'vendor/tool',   '^1.2', 'failed',    '1.3.0', 'yes', 'tool.failed'],
-        ])
-        ->expectsOutput("Request ID: {$id}")
-        ->assertSuccessful();
+
+    [$exit, $output] = tool_list_cli_display('tool:list', ['--node' => '12']);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('PACKAGE')
+        ->and($output)->toContain('PROTECTED')
+        ->and($flat)->toContain('│ 41 │ vp │ @openai/codex │ — │ installed │ — │ no │ — │')
+        ->and($flat)->toContain('│ 42 │ composer │ vendor/tool │ ^1.2 │ failed │ 1.3.0 │ yes │ tool.failed │')
+        ->and($output)->toContain("Request ID: {$id}");
+
     expect($mock->getLastRequest()?->getMethod())
         ->toBe(Method::GET)
         ->and($mock->getLastPendingRequest()?->getUrl())
@@ -103,33 +130,43 @@ it('renders the complete tool table with null and protected values', function ()
         ->toBe(['node_id' => 12]);
 });
 
-it('renders every show field in DTO order', function (): void {
+it('renders an empty tool table with its request id', function (): void {
+    $id = '66666666-6666-4666-8666-666666666666';
+    MockClient::global([
+        ListToolsRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => $id]]),
+    ]);
+
+    [$exit, $output] = tool_list_cli_display('tool:list', ['--node' => '12']);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('No matching records found.')
+        ->and($output)->toContain("Request ID: {$id}");
+});
+
+it('renders every show field as a detail tree', function (): void {
     $id = '33333333-3333-4333-8333-333333333333';
     $data = tool_data(['protected' => true]);
-    $mock = MockClient::global([
+    MockClient::global([
         ShowToolRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => $id]]),
     ]);
-    $this
-        ->artisan('tool:show', ['tool' => 41])
-        ->expectsTable(['Field', 'Value'], [
-            ['id',                 41],
-            ['node_id',            12],
-            ['manager',            'vp'],
-            ['package',            '@openai/codex'],
-            ['version_constraint', '-'],
-            ['protected',          'yes'],
-            ['status',             'installed'],
-            ['installed_version',  '-'],
-            ['failed_operation',   '-'],
-            ['error_code',         '-'],
-            ['outcome',            '-'],
-        ])
-        ->expectsOutput("Request ID: {$id}")
-        ->assertSuccessful();
-    expect($mock->getLastRequest()?->getMethod())
-        ->toBe(Method::GET)
-        ->and($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/tools/41');
+
+    [$exit, $output] = tool_list_cli_display('tool:show', ['tool' => '41']);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('Tool [@openai/codex].')
+        ->and($flat)->toContain('ID 41')
+        ->and($flat)->toContain('Node ID 12')
+        ->and($flat)->toContain('Manager vp')
+        ->and($flat)->toContain('Package @openai/codex')
+        ->and($flat)->toContain('Constraint —')
+        ->and($flat)->toContain('Protected yes')
+        ->and($flat)->toContain('Status installed')
+        ->and($flat)->toContain('Installed version —')
+        ->and($flat)->toContain('Failed operation —')
+        ->and($flat)->toContain('Error code —')
+        ->and($flat)->toContain('Outcome —')
+        ->and($output)->toContain($id);
 });
 
 it('writes exact one-line DTO JSON for all read commands', function (
@@ -198,6 +235,17 @@ it('rejects invalid input with exact JSON and sends no request', function (
     ['tool:list', ['--node' => 0], 'tool.node_id_invalid', 'Node ID must be a positive integer.'],
     ['tool:show', ['tool' => 0], 'tool.id_invalid', 'Tool ID must be a positive integer.'],
 ]);
+
+/**
+ * @param  array<string, mixed>  $arguments
+ * @return array{0: int, 1: string}
+ */
+function tool_list_cli_display(string $command, array $arguments = []): array
+{
+    $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+    return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
 
 /** @param array<string, int|string|null> $overrides */
 function manager_data(array $overrides = []): array

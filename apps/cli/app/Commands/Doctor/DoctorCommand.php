@@ -7,6 +7,8 @@ namespace App\Commands\Doctor;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 
@@ -41,7 +43,15 @@ final class DoctorCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $report = $this->send($connector, new RunDoctorRequest($nodeId, $families), DoctorReportResponse::class);
+        $report = $this->sendWithProgress(
+            $connector,
+            new RunDoctorRequest($nodeId, $families),
+            DoctorReportResponse::class,
+            ['Verify registered state', 'Verifying registered state', 'Verified registered state'],
+            static fn (DoctorReportResponse $response): ProgressState => $response->healthy
+                ? ProgressState::Success
+                : ProgressState::Warning,
+        );
         if (! $report instanceof DoctorReportResponse) {
             return self::FAILURE;
         }
@@ -57,7 +67,7 @@ final class DoctorCommand extends GatewayCommand
             foreach ($nodeReport->families as $family) {
                 $issues = $family->issues;
                 if ($issues === []) {
-                    $rows[] = [$nodeReport->nodeName, $family->family, $family->status, $family->checked, '—'];
+                    $rows[] = [$nodeReport->nodeName, $family->family, $family->status, $family->checked, '—', '—'];
 
                     continue;
                 }
@@ -67,15 +77,49 @@ final class DoctorCommand extends GatewayCommand
                         $family->family,
                         $family->status,
                         $family->checked,
-                        "{$issue->code}: {$issue->summary}",
+                        $this->doctorResourceLabel($issue->resourceType, $issue->resourceId, $issue->resourceName),
+                        "{$issue->code}: {$issue->summary}".$this->doctorExpectedObserved($issue->expected, $issue->observed),
                     ];
                 }
             }
         }
-        $this->table(['Node', 'Family', 'Status', 'Checked', 'Finding'], $rows);
-        $this->line('Healthy: '.($report->healthy ? 'yes' : 'no'));
-        $this->line("Request ID: {$report->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Node', 'Family', 'Status', 'Checked', 'Resource', 'Finding'],
+            $rows,
+        ));
+        $this->writeHumanMessage(sprintf(
+            'Nodes: %d, families: %d, checks: %d, drift: %d, unverifiable: %d',
+            $report->summary['nodes'], $report->summary['families'], $report->summary['checks'],
+            $report->summary['drift'], $report->summary['unverifiable'],
+        ));
+        $this->writeHumanMessage('Healthy: '.($report->healthy ? 'yes' : 'no'));
+        $this->writeHumanMessage("Request ID: {$report->requestId}");
 
         return $report->healthy ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function doctorResourceLabel(string $resourceType, int|string|null $resourceId, ?string $resourceName): string
+    {
+        $identity = $resourceName ?? ($resourceId !== null ? "#{$resourceId}" : null);
+
+        return $identity === null ? $resourceType : "{$resourceType} {$identity}";
+    }
+
+    private function doctorExpectedObserved(bool|string|null $expected, bool|string|null $observed): string
+    {
+        if ($expected === null && $observed === null) {
+            return '';
+        }
+
+        return ' (expected: '.$this->doctorFindingValue($expected).', observed: '.$this->doctorFindingValue($observed).')';
+    }
+
+    private function doctorFindingValue(bool|string|null $value): string
+    {
+        return match (true) {
+            $value === null => '—',
+            is_bool($value) => $value ? 'yes' : 'no',
+            default => $value,
+        };
     }
 }

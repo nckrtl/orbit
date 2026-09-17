@@ -64,7 +64,7 @@ final class AdoptHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new AdoptHerdrSessionRequest(
                 nodeId: $nodeId,
@@ -73,22 +73,13 @@ final class AdoptHerdrSessionCommand extends HerdrSessionCommand
                 publishObserver: $this->option('publish-observer') === true,
             ),
             HerdrSessionResponse::class,
+            ['Adopt Herdr session', 'Adopting Herdr session', 'Adopted Herdr session'],
         );
 
         if (! $response instanceof HerdrSessionResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedSessionPayload($response));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Herdr session [{$response->session}] on [{$response->node}] was adopted for observation.");
-        $this->line('Its external service lifecycle remains unchanged.');
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderSession($response, "Herdr session [{$response->session}] on [{$response->node}] was adopted for observation.");
     }
 }

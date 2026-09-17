@@ -6,6 +6,7 @@ namespace App\Commands\Metrics;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsCredentialsResponse;
@@ -24,10 +25,14 @@ final class CredentialsMetricsCommand extends MetricsCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $request = $this->option('reset') === true
-            ? new ResetMetricsCredentialsRequest
-            : new ShowMetricsCredentialsRequest;
-        $response = $this->send($connector, $request, MetricsCredentialsResponse::class);
+
+        $reset = $this->option('reset') === true;
+        $request = $reset ? new ResetMetricsCredentialsRequest : new ShowMetricsCredentialsRequest;
+        $labels = $reset
+            ? ['Reset Metrics credentials', 'Resetting Metrics credentials', 'Reset Metrics credentials']
+            : ['Show Metrics credentials', 'Loading Metrics credentials', 'Loaded Metrics credentials'];
+
+        $response = $this->sendWithProgress($connector, $request, MetricsCredentialsResponse::class, $labels);
         if (! $response instanceof MetricsCredentialsResponse) {
             return self::FAILURE;
         }
@@ -36,10 +41,13 @@ final class CredentialsMetricsCommand extends MetricsCommand
 
             return self::SUCCESS;
         }
-        $this->line("URL: {$response->url}");
-        $this->line("Username: {$response->username}");
-        $this->line("Password: {$response->password}");
-        $this->line("Request ID: {$response->requestId}");
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Metrics credentials.', [
+            'URL' => $response->url,
+            'Username' => $response->username,
+            'Password' => $response->password,
+            'Request ID' => $response->requestId,
+        ]));
 
         return self::SUCCESS;
     }

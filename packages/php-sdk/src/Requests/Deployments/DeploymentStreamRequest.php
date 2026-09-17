@@ -52,6 +52,7 @@ abstract class DeploymentStreamRequest extends GatewayRequest implements HasBody
                 $response->close();
             },
             $requestId,
+            silenceLimitSeconds: self::OPERATION_TIMEOUT_SECONDS,
         );
     }
 
@@ -61,10 +62,17 @@ abstract class DeploymentStreamRequest extends GatewayRequest implements HasBody
         return ['Accept' => 'application/x-ndjson'];
     }
 
-    /** @return array{stream: true, timeout: int} */
+    /**
+     * read_timeout bounds each individual socket read, not the whole operation, so a silent
+     * step keeps polling instead of blocking the process on one indefinite read. This is what
+     * lets a Ctrl-C during a silent human stream take effect promptly instead of waiting for
+     * the next byte (up to `timeout` later).
+     *
+     * @return array{stream: true, timeout: int, read_timeout: float}
+     */
     protected function defaultConfig(): array
     {
-        return ['stream' => true, 'timeout' => self::OPERATION_TIMEOUT_SECONDS];
+        return ['stream' => true, 'timeout' => self::OPERATION_TIMEOUT_SECONDS, 'read_timeout' => 0.5];
     }
 
     protected function successRequestId(#[SensitiveParameter] Response $response): string

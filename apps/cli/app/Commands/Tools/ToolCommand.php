@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Tools;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 
 abstract class ToolCommand extends GatewayCommand
@@ -21,40 +22,6 @@ abstract class ToolCommand extends GatewayCommand
         return null;
     }
 
-    protected function mayPrompt(): bool
-    {
-        return $this->input->isInteractive() && $this->option('json') !== true;
-    }
-
-    /** @param list<string> $choices */
-    protected function chooseString(string $question, array $choices): ?string
-    {
-        $selected = $this->choice($question, $choices);
-
-        return is_string($selected) && $selected !== '' ? $selected : null;
-    }
-
-    protected function promptedStringArgument(
-        string $argument,
-        string $question,
-        string $errorCode,
-        string $errorMessage,
-    ): ?string {
-        $value = $this->argument($argument);
-
-        if ($value === null && $this->mayPrompt()) {
-            $value = $this->ask($question);
-        }
-
-        if (! is_string($value) || $value === '') {
-            $this->renderGatewayFailure($errorCode, $errorMessage);
-
-            return null;
-        }
-
-        return $value;
-    }
-
     protected function toolId(): ?int
     {
         return $this->positiveId('tool', 'Tool', 'tool.id_invalid');
@@ -65,15 +32,29 @@ abstract class ToolCommand extends GatewayCommand
         $this->writeJson($response->toArray());
     }
 
-    protected function value(mixed $value): string
+    protected function renderTool(ToolResponse $tool, string $message): int
     {
-        if ($value === null || $value === '') {
-            return '-';
-        }
-        if (is_bool($value)) {
-            return $value ? 'yes' : 'no';
+        if ($this->option('json') === true) {
+            $this->writeToolJson($tool);
+
+            return self::SUCCESS;
         }
 
-        return (string) $value;
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+            'ID' => $tool->id,
+            'Node ID' => $tool->nodeId,
+            'Manager' => $tool->manager,
+            'Package' => $tool->package,
+            'Constraint' => $tool->versionConstraint,
+            'Protected' => $tool->protected,
+            'Status' => $tool->status,
+            'Installed version' => $tool->installedVersion,
+            'Failed operation' => $tool->failedOperation,
+            'Error code' => $tool->errorCode,
+            'Outcome' => $tool->outcome,
+            'Request ID' => $tool->requestId,
+        ]));
+
+        return self::SUCCESS;
     }
 }

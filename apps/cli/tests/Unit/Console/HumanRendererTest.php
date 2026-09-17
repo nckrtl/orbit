@@ -99,6 +99,24 @@ describe('human result layouts', function (): void {
             ->and($renderer->properties([['title' => 'Group', 'items' => []]]))->toBe('')
             ->and($renderer->failure('Failure'))->toBe('');
     });
+
+    it('renders warning text plain, orange when decorated, and never in machine mode', function (): void {
+        $plain = new HumanRenderer(human_layout_mode())->warning('Publication not cleaned.');
+        $decorated = new HumanRenderer(human_layout_mode(decorated: true))->warning('Publication not cleaned.');
+        $machine = new HumanRenderer(new ConsoleMode(machine: true, mayPrompt: false, decorated: false, mayRepaint: false, columns: 80))->warning('Publication not cleaned.');
+
+        expect($plain)->toBe("Publication not cleaned.\n")
+            ->not->toContain("\033")
+            ->and($decorated)->toBe("\033[38;5;208mPublication not cleaned.\033[0m\n")
+            ->and($machine)->toBe('');
+    });
+
+    it('wraps warning text within the available width', function (): void {
+        $result = new HumanRenderer(human_layout_mode(20))->warning('Publication not cleaned: no single active Gateway.');
+
+        human_layout_assert_width($result, 20);
+        expect($result)->not->toContain('…');
+    });
 });
 
 describe('Prompts table layout', function (): void {

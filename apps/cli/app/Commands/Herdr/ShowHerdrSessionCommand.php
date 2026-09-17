@@ -52,37 +52,17 @@ final class ShowHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ShowHerdrSessionRequest($listed->id),
             HerdrSessionResponse::class,
+            ['Show Herdr session', 'Loading Herdr session', 'Loaded Herdr session'],
         );
 
         if (! $response instanceof HerdrSessionResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedSessionPayload($response));
-
-            return self::SUCCESS;
-        }
-
-        $data = $response->toArray();
-        unset($data['request_id']);
-        $this->table(
-            ['Field', 'Value'],
-            array_map(
-                static fn (string $key, mixed $value): array => [
-                    $key,
-                    is_array($value) ? json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : (string) ($value ?? ''),
-                ],
-                array_keys($data),
-                array_values($data),
-            ),
-        );
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderSession($response, "Herdr session [{$response->session}] on [{$response->node}].");
     }
 }

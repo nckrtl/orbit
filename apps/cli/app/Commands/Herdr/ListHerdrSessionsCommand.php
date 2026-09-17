@@ -6,6 +6,7 @@ namespace App\Commands\Herdr;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
 use Orbit\Sdk\Responses\Herdr\HerdrSessionsResponse;
 
@@ -39,10 +40,11 @@ final class ListHerdrSessionsCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new ListHerdrSessionsRequest($nodeId),
             HerdrSessionsResponse::class,
+            ['List Herdr sessions', 'Listing Herdr sessions', 'Listed Herdr sessions'],
         );
 
         if (! $response instanceof HerdrSessionsResponse) {
@@ -63,15 +65,18 @@ final class ListHerdrSessionsCommand extends HerdrSessionCommand
                 $session->session,
                 $session->node,
                 $session->user,
-                $session->processId ?? '—',
+                $session->processId,
                 $session->status,
-                $session->observerUrl ?? '—',
-                $session->herdrVersion ?? '—',
+                $session->observerUrl,
+                $session->herdrVersion,
             ];
         }
 
-        $this->table(['ID', 'Session', 'Node', 'User', 'Process', 'Status', 'Observer', 'Version'], $rows);
-        $this->line("Request ID: {$response->requestId}");
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['ID', 'Session', 'Node', 'User', 'Process', 'Status', 'Observer', 'Version'],
+            $rows,
+        ));
+        $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }

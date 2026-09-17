@@ -6,9 +6,11 @@ namespace App\Commands\Metrics;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Metrics\EnableMetricsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class EnableMetricsCommand extends MetricsCommand
@@ -27,36 +29,71 @@ final class EnableMetricsCommand extends MetricsCommand
         }
 
         $value = $this->argument('node');
-        $nodes = null;
-        if ($value === null && $this->input->isInteractive() && $this->option('json') !== true) {
-            $nodes = $this->send($connector, new ListNodesRequest, NodesResponse::class);
-            if (! $nodes instanceof NodesResponse) {
-                return self::FAILURE;
-            }
-            $eligible = array_values(array_filter(
-                $nodes->nodes,
-                static fn ($node): bool => $node->status === 'active',
-            ));
-            $this->line('Eligible active nodes:');
-            $this->table(['ID', 'Name', 'Roles'], array_map(static fn ($node): array => [
-                $node->id,
-                $node->name,
-                $node->roles === [] ? '-' : implode(', ', $node->roles),
-            ], $eligible));
-            /** @var string|null $answer */
-            $answer = $this->ask('Node ID or name');
-            $value = $answer;
-        }
+
         if ($value === null || $value === '') {
-            return $this->validationFailure('node', 'Node ID or name is required.');
+            $nodeId = $this->promptForNode($connector);
+        } else {
+            $nodeId = $this->resolveNodeId($connector, $value);
         }
-        $nodeId = $this->resolveNodeId($connector, $value, $nodes);
+
         if ($nodeId === null) {
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new EnableMetricsRequest($nodeId), MetricsMutationResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new EnableMetricsRequest($nodeId),
+            MetricsMutationResponse::class,
+            ['Enable Metrics', 'Enabling Metrics', 'Enabled Metrics'],
+        );
 
         return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;
+    }
+
+    private function promptForNode(GatewayConnector $connector): ?int
+    {
+        if (! $this->consoleMode()->mayPrompt) {
+            $this->validationFailure('node', 'Node ID or name is required.');
+
+            return null;
+        }
+
+        $nodes = $this->sendWithProgress(
+            $connector,
+            new ListNodesRequest,
+            NodesResponse::class,
+            ['List Nodes', 'Loading Nodes', 'Loaded Nodes'],
+        );
+        if (! $nodes instanceof NodesResponse) {
+            return null;
+        }
+
+        $selected = $this->commandPrompts()->selectEntity('Node', ['ID', 'Name', 'Roles'], self::eligibleNodeRows($nodes));
+
+        return is_int($selected) ? $selected : null;
+    }
+
+    /**
+     * Eligible means the node can accept the Metrics role: active.
+     *
+     * @return array<int, array{0: string, 1: string, 2: string}>
+     */
+    private static function eligibleNodeRows(NodesResponse $nodes): array
+    {
+        $eligible = array_filter(
+            $nodes->nodes,
+            static fn (NodeResponse $node): bool => $node->status === 'active',
+        );
+
+        $rows = [];
+        foreach ($eligible as $node) {
+            $rows[$node->id] = [
+                (string) $node->id,
+                $node->name,
+                $node->roles === [] ? '—' : implode(', ', $node->roles),
+            ];
+        }
+
+        return $rows;
     }
 }
