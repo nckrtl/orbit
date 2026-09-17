@@ -586,7 +586,7 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => [['all' => true, 'name' => 'All'], ...$this->nodes],
             'apps' => [['all' => true, 'slug' => 'All'], ...$this->appsOnSelectedNode()],
             'instances' => $this->scopedInstances(),
-            'processes' => array_values(array_filter($this->processes, fn (array $process): bool => $process['target_id'] === $this->contextInstance()['id'])),
+            'processes' => $this->contextProcesses(),
             'schedules' => array_values(array_filter($this->schedules, fn (array $schedule): bool => $schedule['instance_id'] === $this->contextInstance()['id'])),
             'firewall' => array_values(array_filter($this->firewall, fn (array $rule): bool => $rule['node'] === $this->currentNode()['name'])),
             default => [],
@@ -643,6 +643,24 @@ final class TopFlowCommand extends GatewayCommand
     }
 
     /**
+     * The Processes in view: the context instance's own, then the processes that belong to the node
+     * itself (postgres in docker, and so on). An instance page lists only the instance's own.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function contextProcesses(): array
+    {
+        $instance = $this->contextInstance();
+        $own = array_values(array_filter($this->processes, fn (array $p): bool => ($p['target_type'] ?? 'app_instance') !== 'node' && $p['target_id'] === $instance['id']));
+        if ($this->detail !== null || $this->detailStack !== []) {
+            return $own;
+        }
+        $node = $this->currentNode()['name'];
+
+        return [...$own, ...array_values(array_filter($this->processes, fn (array $p): bool => ($p['target_type'] ?? '') === 'node' && $p['node'] === $node))];
+    }
+
+    /**
      * The instance the Processes and Schedules belong to: the open instance page, else the selected row.
      *
      * @return array<string, mixed>
@@ -672,6 +690,16 @@ final class TopFlowCommand extends GatewayCommand
     private function currentNode(): array
     {
         return $this->selectedNode() ?? ['name' => $this->currentInstance()['node']['name']];
+    }
+
+    /**
+     * A process name, tagged when the process belongs to the node rather than to an instance.
+     *
+     * @param  array<string, mixed>  $process
+     */
+    private function processName(array $process): string
+    {
+        return ($process['target_type'] ?? '') === 'node' ? "{$process['name']} (node)" : $process['name'];
     }
 
     /** The name of the node an instance runs on. */
@@ -727,7 +755,7 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'LAN IP' => $row['lan_ip'] ?? null, 'SSH host' => $row['public_ssh_host'] ?? null],
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
             'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
-            'processes' => ['Name' => $row['name'], 'Instance' => $instance($row['target_id']), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Keep alive' => $row['keep_alive'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status'], 'Failed step' => $row['failed_step'] ?? null, 'Error code' => $row['error_code'] ?? null],
+            'processes' => ['Name' => $row['name'], 'Owner' => ($row['target_type'] ?? '') === 'node' ? "node {$row['node']}" : 'instance '.$instance($row['target_id']), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Keep alive' => $row['keep_alive'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status'], 'Failed step' => $row['failed_step'] ?? null, 'Error code' => $row['error_code'] ?? null],
             'schedules' => ['Name' => $row['name'], 'Instance' => $instance($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
             default => [],
@@ -808,7 +836,7 @@ final class TopFlowCommand extends GatewayCommand
         // A Process whose runtime disagrees with its desired state is the thing to inspect.
         // With every node in view the Processes and Schedules say which node runs them.
         $nodeOf = fn (int $instanceId): string => $this->instanceNode($instanceId);
-        $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], ...$node === null ? [$nodeOf($p['target_id'])] : [], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
+        $processRows = array_map(fn (array $p): TableRow => $this->row([$this->processName($p), ...$node === null ? [$p['node'] ?? $nodeOf($p['target_id'])] : [], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
         $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : []], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
         $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
         $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->rowsFor('nodes'));
@@ -1143,7 +1171,10 @@ final class TopFlowCommand extends GatewayCommand
     private function stats(?array $node, ?array $app, array $instances, int $width): Line
     {
         $ids = array_column($instances, 'id');
-        $processes = array_filter($this->processes, fn (array $p): bool => in_array($p['target_id'], $ids, true));
+        $nodeNames = $node === null ? array_column($this->nodes, 'name') : [$node['name']];
+        $processes = array_filter($this->processes, fn (array $p): bool => ($p['target_type'] ?? '') === 'node'
+            ? $app === null && in_array($p['node'], $nodeNames, true)
+            : in_array($p['target_id'], $ids, true));
         $schedules = array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $ids, true));
         $off = fn (array $rows, callable $ok): int => count(array_filter($rows, fn (array $row): bool => ! $ok($row)));
 
@@ -1275,6 +1306,10 @@ final class TopFlowCommand extends GatewayCommand
         $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'prune-logs', 'command' => 'find storage/logs -mtime +14 -delete', 'expression' => '0 4 * * 0', 'next_run' => 'Sunday 04:00', 'status' => 'disabled'];
 
         foreach ($this->nodes as $node) {
+            $gateway = in_array('gateway', $node['roles'], true);
+            foreach ($gateway ? ['orbit-dns', 'wg-easy'] : ['postgres', 'redis'] as $service) {
+                $this->processes[] = ['id' => ++$processId, 'target_type' => 'node', 'target_id' => 0, 'node' => $node['name'], 'name' => $service, 'runtime' => 'docker', 'working_directory' => '/srv/orbit/services/'.$service, 'restart_policy' => 'always', 'keep_alive' => true, 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
+            }
             $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '22/tcp', 'action' => 'allow', 'source' => '10.44.0.0/16', 'status' => 'applied'];
             $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '443/tcp', 'action' => 'allow', 'source' => 'any', 'status' => 'applied'];
             if (in_array('gateway', $node['roles'], true)) {
