@@ -8,8 +8,11 @@ use App\Commands\GatewayCommand;
 use PhpTui\Term\Actions;
 use PhpTui\Term\Event\CharKeyEvent;
 use PhpTui\Term\Event\CodedKeyEvent;
+use PhpTui\Term\Event\MouseEvent;
 use PhpTui\Term\KeyCode;
 use PhpTui\Term\KeyModifiers;
+use PhpTui\Term\MouseButton;
+use PhpTui\Term\MouseEventKind;
 use PhpTui\Term\Terminal;
 use PhpTui\Tui\Color\AnsiColor;
 use PhpTui\Tui\Display\Area;
@@ -23,6 +26,7 @@ use PhpTui\Tui\Extension\Core\Widget\Table\TableCell;
 use PhpTui\Tui\Extension\Core\Widget\Table\TableRow;
 use PhpTui\Tui\Extension\Core\Widget\TableWidget;
 use PhpTui\Tui\Layout\Constraint;
+use PhpTui\Tui\Layout\Layout;
 use PhpTui\Tui\Style\Modifier;
 use PhpTui\Tui\Style\Style;
 use PhpTui\Tui\Text\Line;
@@ -41,9 +45,11 @@ use RuntimeException;
  *
  * Stats on top. Nodes and Apps on the left pick the scope: the focused selector decides
  * which App instances show on the right, the selected instance decides the Processes and
- * Schedules, and the Firewall follows the node. Every two seconds the sketch "fetches"
- * again and flips one Process status so the refresh is visible. The data is the recorded
- * fixtures plus made-up rows where no fixture exists. Registered only when ORBIT_DESIGN=1.
+ * Schedules, and the Firewall follows the node. Enter on a row opens its detail page, a
+ * right click (or `a`) lists the commands that take it, and the mouse selects rows and
+ * panes. Every two seconds the sketch "fetches" again and flips one Process status so the
+ * refresh is visible. The data is the recorded fixtures plus made-up rows where no fixture
+ * exists. Registered only when ORBIT_DESIGN=1.
  */
 final class TopFlowCommand extends GatewayCommand
 {
@@ -56,6 +62,8 @@ final class TopFlowCommand extends GatewayCommand
         'schedules' => ['up' => 'instances', 'left' => 'processes', 'down' => 'firewall'],
         'firewall' => ['up' => 'processes', 'left' => 'apps'],
     ];
+
+    private const int MENU_WIDTH = 36;
 
     #[\Override]
     protected $signature = 'design:top
@@ -82,6 +90,9 @@ final class TopFlowCommand extends GatewayCommand
     /** @var list<array<string, mixed>> */
     private array $firewall = [];
 
+    /** @var list<string> */
+    private array $logs = [];
+
     /** The pane the arrows point at while hovering, and the one Enter focused. */
     private string $hover = 'nodes';
 
@@ -89,18 +100,32 @@ final class TopFlowCommand extends GatewayCommand
 
     private string $scope = 'nodes';
 
+    /** @var array<string, int> */
+    private array $selected = ['nodes' => 0, 'apps' => 0, 'instances' => 0, 'processes' => 0, 'schedules' => 0, 'firewall' => 0];
+
     /**
-     * The open action menu: which row it belongs to, its actions, and the highlighted one.
+     * The open action menu: which row it belongs to, its actions, the highlighted one, and where it floats.
      *
-     * @var array{pane: string, title: string, row: array<string, mixed>, actions: array<string, string>, selected: int}|null
+     * @var array{pane: string, title: string, row: array<string, mixed>, actions: array<string, string>, selected: int, at: array{int, int}|null}|null
      */
     private ?array $menu = null;
+
+    /**
+     * The record whose detail page is open.
+     *
+     * @var array{pane: string, row: array<string, mixed>}|null
+     */
+    private ?array $detail = null;
 
     /** The last action that ran, shown in the status bar. */
     private string $ran = '';
 
-    /** @var array<string, int> */
-    private array $selected = ['nodes' => 0, 'apps' => 0, 'instances' => 0, 'processes' => 0, 'schedules' => 0, 'firewall' => 0];
+    /**
+     * Where each pane was drawn in the last frame, for mouse hit-testing.
+     *
+     * @var array<string, array{area: Area, header: bool}>
+     */
+    private array $drawn = [];
 
     public function handle(): int
     {
@@ -114,7 +139,7 @@ final class TopFlowCommand extends GatewayCommand
         $terminal = Terminal::new();
         $display = DisplayBuilder::default()->fullscreen()->build();
         $terminal->enableRawMode();
-        $terminal->execute(Actions::alternateScreenEnable(), Actions::cursorHide());
+        $terminal->execute(Actions::alternateScreenEnable(), Actions::cursorHide(), Actions::enableMouseCapture());
 
         $refreshes = 0;
         $lastRefresh = microtime(true);
@@ -127,7 +152,7 @@ final class TopFlowCommand extends GatewayCommand
                     $lastRefresh = microtime(true);
                     $flip = $refreshes % 2 === 1;
                     $this->processes[1]['runtime_status'] = $flip ? 'stopped' : 'running';
-                    $this->processes[1]['status'] = $flip ? 'degraded' : 'active';
+                    $this->logs[] = sprintf('%s  Processed job App\\Jobs\\SyncOrders #%d in %d ms', date('H:i:s'), 4200 + $refreshes, 40 + ($refreshes * 37) % 300);
                 }
 
                 while (($event = $terminal->events()->next()) !== null) {
@@ -135,24 +160,25 @@ final class TopFlowCommand extends GatewayCommand
                         if ($event->char === 'q' || ($event->char === 'c' && $event->modifiers === KeyModifiers::CONTROL)) {
                             break 2;
                         }
-                        if ($event->char === 'r') {
-                            $lastRefresh = 0;
-                        }
+                        match ($event->char) {
+                            'r' => $lastRefresh = 0,
+                            'a' => $this->openMenu(),
+                            default => null,
+                        };
                     }
                     if ($event instanceof CodedKeyEvent) {
                         $this->handleKey($event->code);
                     }
+                    if ($event instanceof MouseEvent) {
+                        $this->handleMouse($event);
+                    }
                 }
 
                 $display->draw($this->screen($refreshes, $lastRefresh, $tick, $display->viewportArea()));
-                usleep(100_000);
-            }
-        } catch (RuntimeException $exception) {
-            if ($exception->getMessage() !== 'leave') {
-                throw $exception;
+                usleep(50_000);
             }
         } finally {
-            $terminal->execute(Actions::cursorShow(), Actions::alternateScreenDisable());
+            $terminal->execute(Actions::disableMouseCapture(), Actions::cursorShow(), Actions::alternateScreenDisable());
             $terminal->disableRawMode();
         }
 
@@ -160,6 +186,8 @@ final class TopFlowCommand extends GatewayCommand
 
         return self::SUCCESS;
     }
+
+    // ---- input -----------------------------------------------------------------------------
 
     private function handleKey(KeyCode $code): void
     {
@@ -170,6 +198,16 @@ final class TopFlowCommand extends GatewayCommand
                 KeyCode::Up => $this->menu['selected'] = max(0, $this->menu['selected'] - 1),
                 KeyCode::Enter => $this->runAction(),
                 KeyCode::Esc => $this->menu = null,
+                default => null,
+            };
+
+            return;
+        }
+
+        if ($this->detail !== null) {
+            match ($code) {
+                KeyCode::Esc, KeyCode::Backspace, KeyCode::Left => $this->detail = null,
+                KeyCode::Enter => $this->openMenu(),
                 default => null,
             };
 
@@ -198,92 +236,102 @@ final class TopFlowCommand extends GatewayCommand
         match ($code) {
             KeyCode::Down => $this->move(1),
             KeyCode::Up => $this->move(-1),
-            KeyCode::Enter => $this->openMenu(),
+            KeyCode::Enter => $this->openDetail(),
             KeyCode::Esc => $this->focus = null,
             default => null,
         };
     }
 
-    /** Enter on a row lists the commands that take this record. */
-    private function openMenu(): void
+    private function handleMouse(MouseEvent $event): void
     {
-        if ($this->focus === null) {
-            return;
-        }
-        $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
-        if ($row === null) {
-            return;
-        }
+        $x = $event->column;
+        $y = $event->row;
 
-        $actions = match ($this->focus) {
-            'nodes' => ['show' => "node:show {$row['name']}", 'doctor' => "node:doctor {$row['name']}", 'ssh' => "node:ssh {$row['name']}"],
-            'apps' => ['show' => "app:show {$row['slug']}", 'deploy' => "app:deploy {$row['slug']}"],
-            'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}"],
-            'processes' => [
-                'logs' => "process:logs {$row['id']}",
-                'restart' => "process:restart {$row['id']}",
-                ...$row['runtime_status'] === 'running' ? ['stop' => "process:stop {$row['id']}"] : ['start' => "process:start {$row['id']}"],
-            ],
-            'schedules' => [
-                'show' => "schedule:show {$row['id']}",
-                'run now' => "schedule:run {$row['id']}",
-                ...$row['status'] === 'enabled' ? ['disable' => "schedule:disable {$row['id']}"] : ['enable' => "schedule:enable {$row['id']}"],
-            ],
-            'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
-            default => [],
-        };
-
-        $this->menu = ['pane' => $this->focus, 'title' => $this->rowTitle($this->focus, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0];
-    }
-
-    /** @param  array<string, mixed>  $row */
-    private function rowTitle(string $pane, array $row): string
-    {
-        return match ($pane) {
-            'nodes' => $row['name'],
-            'apps' => $row['slug'],
-            'instances' => "{$row['app']['slug']}/{$row['name']}",
-            'processes', 'schedules' => $row['name'],
-            'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
-            default => '',
-        };
-    }
-
-    /** The sketch applies the state change locally; the real screen would send the command's request. */
-    private function runAction(): void
-    {
-        if ($this->menu === null) {
-            return;
-        }
-        $label = array_keys($this->menu['actions'])[$this->menu['selected']];
-        $command = $this->menu['actions'][$label];
-        $row = $this->menu['row'];
-
-        if ($this->menu['pane'] === 'processes') {
-            foreach ($this->processes as $index => $process) {
-                if ($process['id'] === $row['id']) {
-                    $state = match ($label) {
-                        'stop' => 'stopped',
-                        'start', 'restart' => 'running',
-                        default => null,
-                    };
-                    if ($state !== null) {
-                        $this->processes[$index]['desired_state'] = $state;
-                        $this->processes[$index]['runtime_status'] = $state;
-                    }
-                }
+        if ($this->menu !== null) {
+            if ($event->kind !== MouseEventKind::Down) {
+                return;
             }
+            $item = $this->hitRow('menu', $x, $y);
+            if ($item !== null && $item < count($this->menu['actions'])) {
+                $this->menu['selected'] = $item;
+                $this->runAction();
+            } else {
+                $this->menu = null;
+            }
+
+            return;
         }
-        if ($this->menu['pane'] === 'schedules') {
-            foreach ($this->schedules as $index => $schedule) {
-                if ($schedule['id'] === $row['id'] && in_array($label, ['enable', 'disable'], true)) {
-                    $this->schedules[$index]['status'] = $label === 'enable' ? 'enabled' : 'disabled';
-                }
+
+        if ($this->detail !== null) {
+            if ($event->kind === MouseEventKind::Down && $event->button === MouseButton::Right) {
+                $this->openMenu([$x, $y]);
+            }
+            if ($event->kind === MouseEventKind::Down && $event->button === MouseButton::Left && $this->hitRow('back', $x, $y) !== null) {
+                $this->detail = null;
+            }
+
+            return;
+        }
+
+        $pane = $this->paneAt($x, $y);
+        if ($pane === null) {
+            return;
+        }
+
+        if ($event->kind === MouseEventKind::ScrollDown || $event->kind === MouseEventKind::ScrollUp) {
+            $this->focusOn($pane);
+            $this->move($event->kind === MouseEventKind::ScrollDown ? 1 : -1);
+
+            return;
+        }
+        if ($event->kind !== MouseEventKind::Down) {
+            return;
+        }
+
+        // A click lands on a pane and, when it hits a row, selects that row.
+        $this->hover = $pane;
+        $this->focusOn($pane);
+        $row = $this->hitRow($pane, $x, $y);
+        if ($row !== null && $row < count($this->rowsFor($pane))) {
+            $this->select($pane, $row);
+        }
+        if ($event->button === MouseButton::Right) {
+            $this->openMenu([$x, $y]);
+        }
+    }
+
+    private function paneAt(int $x, int $y): ?string
+    {
+        foreach ($this->drawn as $name => $drawn) {
+            if ($name === 'menu' || $name === 'back') {
+                continue;
+            }
+            $area = $drawn['area'];
+            if ($x >= $area->left() && $x < $area->right() && $y >= $area->top() && $y < $area->bottom()) {
+                return $name;
             }
         }
 
-        $this->ran = "orbit {$command}";
-        $this->menu = null;
+        return null;
+    }
+
+    /** The row index under a point inside a drawn pane: below its border and header, above its bottom border. */
+    private function hitRow(string $name, int $x, int $y): ?int
+    {
+        $drawn = $this->drawn[$name] ?? null;
+        if ($drawn === null) {
+            return null;
+        }
+        $area = $drawn['area'];
+        if ($x < $area->left() || $x >= $area->right()) {
+            return null;
+        }
+        $first = $area->top() + 1 + ($drawn['header'] ? 1 : 0);
+        if ($y < $first || $y >= $area->bottom() - 1) {
+            return null;
+        }
+
+        return $y - $first;
     }
 
     private function focusOn(string $pane): void
@@ -303,20 +351,116 @@ final class TopFlowCommand extends GatewayCommand
             return;
         }
         $rows = count($this->rowsFor($this->focus));
-        $before = $this->selected[$this->focus];
-        $this->selected[$this->focus] = max(0, min(max(0, $rows - 1), $before + $step));
+        $this->select($this->focus, max(0, min(max(0, $rows - 1), $this->selected[$this->focus] + $step)));
+    }
+
+    private function select(string $pane, int $row): void
+    {
+        if ($this->selected[$pane] === $row) {
+            return;
+        }
+        $this->selected[$pane] = $row;
 
         // A new scope row or instance narrows the panes that depend on it.
-        if ($this->selected[$this->focus] !== $before) {
-            if ($this->focus === 'nodes' || $this->focus === 'apps') {
-                $this->selected['instances'] = 0;
-            }
-            if ($this->focus !== 'processes' && $this->focus !== 'schedules' && $this->focus !== 'firewall') {
-                $this->selected['processes'] = 0;
-                $this->selected['schedules'] = 0;
-            }
+        if ($pane === 'nodes' || $pane === 'apps') {
+            $this->selected['instances'] = 0;
+        }
+        if ($pane !== 'processes' && $pane !== 'schedules' && $pane !== 'firewall') {
+            $this->selected['processes'] = 0;
+            $this->selected['schedules'] = 0;
         }
     }
+
+    private function openDetail(): void
+    {
+        if ($this->focus === null) {
+            return;
+        }
+        $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
+        if ($row !== null) {
+            $this->detail = ['pane' => $this->focus, 'row' => $row];
+        }
+    }
+
+    /**
+     * Lists the commands that take the current record: the detail's, or the focused row.
+     *
+     * @param  array{int, int}|null  $at
+     */
+    private function openMenu(?array $at = null): void
+    {
+        $pane = $this->detail['pane'] ?? $this->focus;
+        if ($pane === null) {
+            return;
+        }
+        $row = $this->detail['row'] ?? $this->rowsFor($pane)[$this->selected[$pane]] ?? null;
+        if ($row === null) {
+            return;
+        }
+
+        $actions = match ($pane) {
+            'nodes' => ['show' => "node:show {$row['name']}", 'doctor' => "node:doctor {$row['name']}", 'ssh' => "node:ssh {$row['name']}"],
+            'apps' => ['show' => "app:show {$row['slug']}", 'deploy' => "app:deploy {$row['slug']}"],
+            'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}"],
+            'processes' => [
+                'logs' => "process:logs {$row['id']}",
+                'restart' => "process:restart {$row['id']}",
+                ...$row['runtime_status'] === 'running' ? ['stop' => "process:stop {$row['id']}"] : ['start' => "process:start {$row['id']}"],
+            ],
+            'schedules' => [
+                'show' => "schedule:show {$row['id']}",
+                'run now' => "schedule:run {$row['id']}",
+                ...$row['status'] === 'enabled' ? ['disable' => "schedule:disable {$row['id']}"] : ['enable' => "schedule:enable {$row['id']}"],
+            ],
+            'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
+            default => [],
+        };
+
+        $this->menu = ['pane' => $pane, 'title' => $this->rowTitle($pane, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0, 'at' => $at];
+    }
+
+    /** The sketch applies the state change locally; the real screen would send the command's request. */
+    private function runAction(): void
+    {
+        if ($this->menu === null) {
+            return;
+        }
+        $label = array_keys($this->menu['actions'])[$this->menu['selected']];
+        $command = $this->menu['actions'][$label];
+        $row = $this->menu['row'];
+
+        if ($this->menu['pane'] === 'processes') {
+            foreach ($this->processes as $index => $process) {
+                if ($process['id'] !== $row['id']) {
+                    continue;
+                }
+                $state = match ($label) {
+                    'stop' => 'stopped',
+                    'start', 'restart' => 'running',
+                    default => null,
+                };
+                if ($state !== null) {
+                    $this->processes[$index]['desired_state'] = $state;
+                    $this->processes[$index]['runtime_status'] = $state;
+                    if ($this->detail !== null && $this->detail['row']['id'] === $row['id']) {
+                        $this->detail['row'] = $this->processes[$index];
+                    }
+                }
+            }
+        }
+        if ($this->menu['pane'] === 'schedules') {
+            foreach ($this->schedules as $index => $schedule) {
+                if ($schedule['id'] === $row['id'] && in_array($label, ['enable', 'disable'], true)) {
+                    $this->schedules[$index]['status'] = $label === 'enable' ? 'enabled' : 'disabled';
+                }
+            }
+        }
+
+        $this->ran = "orbit {$command}";
+        $this->menu = null;
+    }
+
+    // ---- data ------------------------------------------------------------------------------
 
     /** @return list<array<string, mixed>> */
     private function rowsFor(string $pane): array
@@ -361,36 +505,115 @@ final class TopFlowCommand extends GatewayCommand
         return ['name' => $this->currentInstance()['node']['name']];
     }
 
-    /** The command Enter would run for the focused row; the status bar shows it. */
-    private function enterCommand(): string
+    /** @param  array<string, mixed>  $row */
+    private function rowTitle(string $pane, array $row): string
     {
-        $row = $this->focus === null ? null : $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
-        if ($row === null) {
-            return '';
-        }
-
-        return match ($this->focus) {
-            'nodes' => "orbit node:show {$row['name']}",
-            'apps' => "orbit app:show {$row['slug']}",
-            'instances' => "orbit instance:show {$row['app']['slug']}/{$row['name']}",
-            'processes' => "orbit process:logs {$row['id']}",
-            'schedules' => "orbit schedule:show {$row['id']}",
-            'firewall' => "orbit firewall:show {$row['id']}",
+        return match ($pane) {
+            'nodes' => $row['name'],
+            'apps' => $row['slug'],
+            'instances' => "{$row['app']['slug']}/{$row['name']}",
+            'processes', 'schedules' => $row['name'],
+            'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
             default => '',
         };
     }
 
+    /**
+     * The properties a detail page lists, named as the show commands name them.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, string>
+     */
+    private function properties(string $pane, array $row): array
+    {
+        $value = fn (mixed $v): string => match (true) {
+            $v === null, $v === '' => '—',
+            is_bool($v) => $v ? 'yes' : 'no',
+            is_array($v) => implode(', ', $v),
+            default => (string) $v,
+        };
+        $instance = fn (int $id): string => (function () use ($id): string {
+            foreach ($this->instances as $instance) {
+                if ($instance['id'] === $id) {
+                    return "{$instance['app']['slug']}/{$instance['name']}";
+                }
+            }
+
+            return '—';
+        })();
+
+        $properties = match ($pane) {
+            'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'LAN IP' => $row['lan_ip'] ?? null, 'SSH host' => $row['public_ssh_host'] ?? null],
+            'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
+            'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
+            'processes' => ['Name' => $row['name'], 'Instance' => $instance($row['target_id']), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Keep alive' => $row['keep_alive'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status'], 'Failed step' => $row['failed_step'] ?? null, 'Error code' => $row['error_code'] ?? null],
+            'schedules' => ['Name' => $row['name'], 'Instance' => $instance($row['instance_id']), 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
+            'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
+            default => [],
+        };
+
+        return array_map($value, $properties);
+    }
+
+    // ---- screens ---------------------------------------------------------------------------
+
     private function screen(int $refreshes, float $lastRefresh, float $tick, Area $area): Widget
     {
+        $this->drawn = [];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
-        $bold = Style::default()->addModifier(Modifier::BOLD);
         $age = max(0, (int) round(microtime(true) - $lastRefresh));
 
+        $rows = Layout::default()->direction(Direction::Vertical)
+            ->constraints([Constraint::length(1), Constraint::min(10), Constraint::length(1)])
+            ->split($area);
+
+        $header = GridWidget::default()
+            ->direction(Direction::Horizontal)
+            ->constraints(Constraint::min(12), Constraint::length(60))
+            ->widgets(
+                ParagraphWidget::fromString('  orbit top')->style(Style::default()->addModifier(Modifier::BOLD)),
+                ParagraphWidget::fromString("Gateway 10.44.0.1 · refreshed {$age}s ago · every {$tick}s · {$refreshes} refreshes  ")->style($dim)->alignment(HorizontalAlignment::Right),
+            );
+
+        $body = $this->detail === null ? $this->dashboard($rows->get(1)) : $this->detailPage($rows->get(1));
+
+        $footer = ParagraphWidget::fromString(match (true) {
+            $this->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
+            $this->detail !== null => '  Esc or ‹ back · a or right-click actions · q leave',
+            $this->focus === null => '  ←↑→↓ or click picks a pane · Enter focuses · q leave',
+            default => '  ↑↓ move · Enter opens · a or right-click actions · Esc back to panes · q leave',
+        }.($this->ran !== '' ? "  │  Ran {$this->ran}" : ''))->style($dim);
+
+        $screen = GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length(1), Constraint::min(10), Constraint::length(1))
+            ->widgets($header, $body, $footer);
+
+        return $this->menu === null ? $screen : CompositeWidget::fromWidgets($screen, $this->menuPopup($area));
+    }
+
+    private function dashboard(Area $area): Widget
+    {
         $instances = $this->scopedInstances();
         $instance = $this->currentInstance();
         $scopeName = $this->scope === 'apps' ? $this->apps[$this->selected['apps']]['slug'] : $this->nodes[$this->selected['nodes']]['name'];
         $instanceName = isset($instance['app']) ? "{$instance['app']['slug']}/{$instance['name']}" : '—';
         $nodeName = $this->scope === 'nodes' ? $scopeName : ($instance['node']['name'] ?? '—');
+
+        // The same splits the grid makes, kept so the mouse can find a pane and a row.
+        $outer = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::min(10)])->split($area);
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($outer->get(1));
+        $left = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(count($this->nodes) + 2), Constraint::min(5)])->split($columns->get(0));
+        $right = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::percentage(40), Constraint::percentage(35), Constraint::min(5)])->split($columns->get(1));
+        $middle = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($right->get(1));
+        $this->drawn = [
+            'nodes' => ['area' => $left->get(0), 'header' => false],
+            'apps' => ['area' => $left->get(1), 'header' => false],
+            'instances' => ['area' => $right->get(0), 'header' => true],
+            'processes' => ['area' => $middle->get(0), 'header' => true],
+            'schedules' => ['area' => $middle->get(1), 'header' => true],
+            'firewall' => ['area' => $right->get(2), 'header' => true],
+        ];
 
         $instanceRows = array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances);
         // A Process whose runtime disagrees with its desired state is the thing to inspect.
@@ -400,7 +623,7 @@ final class TopFlowCommand extends GatewayCommand
         $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->nodes);
         $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->apps);
 
-        $left = GridWidget::default()
+        $leftColumn = GridWidget::default()
             ->direction(Direction::Vertical)
             ->constraints(Constraint::length(count($this->nodes) + 2), Constraint::min(5))
             ->widgets(
@@ -408,7 +631,7 @@ final class TopFlowCommand extends GatewayCommand
                 $this->pane('apps', ' Apps ', [], [Constraint::percentage(96)], $appRows),
             );
 
-        $right = GridWidget::default()
+        $rightColumn = GridWidget::default()
             ->direction(Direction::Vertical)
             ->constraints(Constraint::percentage(40), Constraint::percentage(35), Constraint::min(5))
             ->widgets(
@@ -423,41 +646,88 @@ final class TopFlowCommand extends GatewayCommand
                 $this->pane('firewall', " Firewall on {$nodeName} ", ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(50), Constraint::percentage(18)], $firewallRows),
             );
 
-        $enter = $this->enterCommand();
-        $footer = ParagraphWidget::fromString(match (true) {
-            $this->menu !== null => '  ↑↓ choose · Enter run · Esc close',
-            $this->focus === null => '  ←↑→↓ move between panes · Enter focus pane · r refresh · q leave',
-            default => '  ↑↓ move · Enter actions · Esc back to panes · q leave'.($enter !== '' ? "  │  Enter → {$enter}" : ''),
-        }.($this->ran !== '' ? "  │  Ran {$this->ran}" : ''))->style($dim);
-
-        $screen = GridWidget::default()
+        return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(1), Constraint::length(3), Constraint::min(10), Constraint::length(1))
+            ->constraints(Constraint::length(3), Constraint::min(10))
             ->widgets(
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::min(12), Constraint::length(60))
-                    ->widgets(
-                        ParagraphWidget::fromString('  orbit top')->style($bold),
-                        ParagraphWidget::fromString("Gateway 10.44.0.1 · refreshed {$age}s ago · every {$tick}s · {$refreshes} refreshes  ")->style($dim)->alignment(HorizontalAlignment::Right),
-                    ),
-                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
                     ->widget(ParagraphWidget::fromString($this->stats())),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(24), Constraint::min(40))
-                    ->widgets($left, $right),
-                $footer,
+                    ->widgets($leftColumn, $rightColumn),
             );
-
-        return $this->menu === null ? $screen : CompositeWidget::fromWidgets($screen, $this->menuPopup($area));
     }
 
-    /** A small centred box over the screen listing the actions for the chosen row. */
+    /** One record: its properties on the left, and for a Process its recent log lines on the right. */
+    private function detailPage(Area $area): Widget
+    {
+        $detail = $this->detail ?? throw new RuntimeException('No detail is open.');
+        $pane = $detail['pane'];
+        $row = $detail['row'];
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(5)])->split($area);
+        $this->drawn = ['back' => ['area' => Area::fromScalars($rows->get(0)->left(), $rows->get(0)->top() - 1, 12, 3), 'header' => false]];
+
+        $kind = match ($pane) {
+            'nodes' => 'Node',
+            'apps' => 'App',
+            'instances' => 'App instance',
+            'processes' => 'Process',
+            'schedules' => 'Schedule',
+            'firewall' => 'Firewall rule',
+            default => '',
+        };
+        $crumbs = Line::fromSpans(
+            Span::styled('  ‹ back  ', Style::default()->fg(AnsiColor::Cyan)),
+            Span::styled("{$kind}: ", $dim),
+            Span::styled($this->rowTitle($pane, $row), Style::default()->addModifier(Modifier::BOLD)),
+        );
+
+        $propertyRows = [];
+        foreach ($this->properties($pane, $row) as $name => $value) {
+            $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
+            $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $this->cell($value, $warn));
+        }
+        $propertiesTable = TableWidget::default()->widths(Constraint::length(18), Constraint::min(10))->rows(...$propertyRows);
+        $propertiesTable->columnSpacing = 1;
+
+        $properties = BlockWidget::default()
+            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->titles(Title::fromString(' Properties '))
+            ->borderStyle($dim)
+            ->widget($propertiesTable);
+
+        $side = match ($pane) {
+            'processes' => BlockWidget::default()
+                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                ->titles(Title::fromString(' Recent logs '))
+                ->borderStyle($dim)
+                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->logs, -max(1, $rows->get(1)->height - 2))))),
+            default => BlockWidget::default()
+                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                ->borderStyle($dim)
+                ->widget(ParagraphWidget::fromString(' Nothing more to show for this record yet.')->style($dim)),
+        };
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length(1), Constraint::min(5))
+            ->widgets(
+                ParagraphWidget::fromText(Text::fromLines($crumbs)),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::length(56), Constraint::min(30))
+                    ->widgets($properties, $side),
+            );
+    }
+
+    /** A small box over the screen listing the actions for the chosen row, at the pointer or in the middle. */
     private function menuPopup(Area $area): Widget
     {
         $menu = $this->menu ?? throw new RuntimeException('No menu is open.');
-        $width = 36;
+        $width = self::MENU_WIDTH;
         $lines = [];
         foreach (array_keys($menu['actions']) as $index => $label) {
             $text = str_pad('  '.$label, $width - 2);
@@ -467,36 +737,21 @@ final class TopFlowCommand extends GatewayCommand
         $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$menu['actions'][array_keys($menu['actions'])[$menu['selected']]], $width - 2), Style::default()->fg(AnsiColor::DarkGray)));
         $height = count($lines) + 2;
 
+        [$left, $top] = $menu['at'] ?? [intdiv($area->width - $width, 2), intdiv($area->height - $height, 2)];
+        $left = max(0, min($left, $area->width - $width));
+        $top = max(0, min($top, $area->height - $height));
+        $this->drawn['menu'] = ['area' => Area::fromScalars($left, $top, $width, $height), 'header' => false];
+
         $box = BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
             ->borderStyle(Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD))
             ->titles(Title::fromString(" {$menu['title']} "))
             ->widget(ParagraphWidget::fromText(Text::fromLines(...$lines)));
 
-        // A borderless block with padding places the box in the middle and leaves the rest of the screen as drawn.
-        $left = max(0, intdiv($area->width - $width, 2));
-        $top = max(0, intdiv($area->height - $height, 2));
-
+        // A borderless block with padding places the box and leaves the rest of the screen as drawn.
         return BlockWidget::default()
             ->padding(Padding::fromScalars($left, max(0, $area->width - $width - $left), $top, max(0, $area->height - $height - $top)))
             ->widget($box);
-    }
-
-    /**
-     * A row that turns yellow when the record needs a look: yellow means "inspect".
-     *
-     * @param  list<string>  $cells
-     */
-    private function row(array $cells, string $status, bool $warn): TableRow
-    {
-        $style = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
-
-        return TableRow::fromCells(...array_map(function (string $cell) use ($style): TableCell {
-            $tableCell = TableCell::fromString($cell);
-            $tableCell->style = $style;
-
-            return $tableCell;
-        }, [...$cells, $status]));
     }
 
     private function stats(): string
@@ -537,7 +792,6 @@ final class TopFlowCommand extends GatewayCommand
 
         $table = TableWidget::default();
         $table->columnSpacing = 1;
-
         if ($headers !== []) {
             $table->header(TableRow::fromStrings(...$headers));
         }
@@ -550,6 +804,24 @@ final class TopFlowCommand extends GatewayCommand
                 ->highlightSymbol('› ')
                 ->highlightStyle($focused ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()->addModifier(Modifier::BOLD)),
         );
+    }
+
+    /**
+     * A row that turns yellow when the record needs a look: yellow means "inspect".
+     *
+     * @param  list<string>  $cells
+     */
+    private function row(array $cells, string $status, bool $warn): TableRow
+    {
+        return TableRow::fromCells(...array_map(fn (string $cell): TableCell => $this->cell($cell, $warn), [...$cells, $status]));
+    }
+
+    private function cell(string $text, bool $warn): TableCell
+    {
+        $cell = TableCell::fromString($text);
+        $cell->style = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
+
+        return $cell;
     }
 
     /** Recorded fixtures where they exist; made-up rows fill the rest so every pane has data. */
@@ -597,6 +869,12 @@ final class TopFlowCommand extends GatewayCommand
                 $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '51820/udp', 'action' => 'allow', 'source' => 'any', 'status' => 'applied'];
             }
         }
+
+        $this->logs = [
+            date('H:i:s', time() - 9).'  Horizon started on charlie-shop/dev',
+            date('H:i:s', time() - 6).'  Processed job App\\Jobs\\SyncOrders #4198 in 212 ms',
+            date('H:i:s', time() - 3).'  Processed job App\\Jobs\\SendReceipt #4199 in 88 ms',
+        ];
     }
 
     /** @return list<array<string, mixed>> */
