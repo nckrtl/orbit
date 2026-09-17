@@ -93,7 +93,7 @@ The CLI sends each operation through the Gateway.
 | `orbit herdr:session:list --node=ID-or-name` | List sessions on one Node with identity and health. |
 | `orbit herdr:session:show NAME --node=ID-or-name` | Show one session. |
 | `orbit herdr:session:restart NAME --node=ID-or-name [--handoff]` | Restart the server explicitly, using Herdr live handoff when the operator asks and Herdr reports support. |
-| `orbit herdr:session:destroy NAME --node=ID-or-name [--accept-termination]` | Remove the Orbit record and observer; also destroy the Process only for a managed session. |
+| `orbit herdr:session:destroy NAME --node=ID-or-name [--accept-termination] [--yes]` | Remove the Orbit record and observer; also destroy the Process only for a managed session. |
 | `orbit herdr:observe NAME --node=ID-or-name --pane=PANE --terminal=TERMINAL --cols=COLS --rows=ROWS --origin=HTTPS-ORIGIN` | Issue one short-lived receive-only grant. |
 
 `--node` accepts a positive Node ID or the registered Node name. Every command also accepts `--json`.
@@ -108,10 +108,14 @@ The Gateway keeps a compatible running Herdr server in place unless the operator
 | Ordinary session ensure or Doctor inspection | Leaves a compatible running server in place. |
 | External session adoption | Inspects and publishes only. It does not create or control a Process. |
 | `herdr:session:restart --handoff` | The current Herdr command contract reports no supported handoff, so the Gateway restarts the owned Process. |
-| Removal | For managed sessions, inspects live panes first and requires `--accept-termination` while a pane is live. For adopted sessions, retracts only Orbit state and never terminates the external service. |
+| Removal | Resolves the session, then asks for destructive consent before it mutates anything. `--accept-termination` stays an independent override for live panes on managed sessions. |
 | Observer publication failure | Records listener health. It does not destroy or restart the Herdr session. |
 | Node removal | The Gateway refuses `node:remove` while the Node owns a Herdr session. [Node provisioning](/reference/node-provisioning#remove-a-node) owns that guard. |
 | Offline decommissioning of an unreachable Node | Deletes those session and Process records without remote cleanup. |
+
+`herdr:session:destroy` resolves the named session first, so it can name the session, the Node, and the effect in its consent prompt. An interactive operator confirms a default-No prompt: for a managed session the effect is Process destruction, for an adopted session the effect is Orbit state only. Noninteractive callers and `--json` mode must pass `--yes`; without it the command exits 1 with `input.confirmation_required`. Declining, Ctrl-C, or end of input exits 1 with `input.cancelled` and makes no mutation.
+
+For a managed session with live panes, `--accept-termination` is a separate override that bypasses the Gateway's live-pane guard; it does not supply destructive consent by itself. For an adopted session, removal retracts only Orbit state and never terminates the external service.
 
 ## Doctor
 

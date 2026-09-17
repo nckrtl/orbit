@@ -6,6 +6,7 @@ namespace App\Commands\Herdr;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Responses\Herdr\ObservationGrantResponse;
 
@@ -86,10 +87,11 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new IssueObservationGrantRequest($listed->id, $pane, $terminal, $cols, $rows, $origin),
             ObservationGrantResponse::class,
+            ['Issue observation grant', 'Issuing observation grant', 'Issued observation grant'],
         );
 
         if (! $response instanceof ObservationGrantResponse) {
@@ -102,9 +104,25 @@ final class ObserveHerdrSessionCommand extends HerdrSessionCommand
             return self::SUCCESS;
         }
 
-        $this->info("Observation grant for [{$response->pane}] expires at {$response->expiresAt}.");
+        // The observer URL carries a bearer token and can run well past a
+        // detail tree's value column at any realistic terminal width. Wrapped
+        // across `│`-prefixed continuation lines it stops being one copyable
+        // string, so it prints on its own full-width, unprefixed line below
+        // the tree instead of as one more tree value.
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
+            "Observation grant for [{$response->pane}] expires at {$response->expiresAt}.",
+            [
+                'Pane' => $response->pane,
+                'Terminal' => $response->terminal,
+                'Scope' => $response->scope,
+                'Columns' => $response->cols,
+                'Rows' => $response->rows,
+                'Expires' => $response->expiresAt,
+                'Nonce' => $response->nonce,
+                'Request ID' => $response->requestId,
+            ],
+        ));
         $this->line($response->observerUrl);
-        $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }
