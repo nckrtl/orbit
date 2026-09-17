@@ -22,9 +22,18 @@ export const TerminalDemo = ({ demo }) => {
     // Show only the columns the recording used, at the page's code size. A wider recording never wrapped
     // inside those columns, so a terminal this wide replays it exactly; a very wide output scrolls sideways.
     const rows = Math.min(demo.rows, (demo.rows_used || demo.rows) + 4);
-    const cols = Math.min(demo.columns, Math.max(demo.columns_used || demo.columns, demo.command.length + 3, 40));
     const font = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
     const fontSize = 13;
+    // The typed command line may use the columns that fit the page without scrolling; only the recorded output
+    // itself can make the terminal wider than that.
+    const probe = document.createElement('span');
+    probe.textContent = 'M'.repeat(50);
+    probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-family:${font};font-size:${fontSize}px;line-height:1`;
+    screen.current.appendChild(probe);
+    const cellWidth = probe.getBoundingClientRect().width / 50 || fontSize * 0.6;
+    probe.remove();
+    const fitColumns = Math.max(40, Math.floor(((screen.current.clientWidth || 720) - 24) / cellWidth));
+    const cols = Math.min(demo.columns, Math.max(demo.columns_used || demo.columns, Math.min(demo.command.length + 3, fitColumns), 40));
     const instance = new window.Terminal({
       cols, rows, fontFamily: font,
       fontSize, lineHeight: 1, theme, cursorBlink: true, cursorStyle: 'bar', disableStdin: true, scrollback: 0, convertEol: false,
