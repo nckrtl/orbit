@@ -12,6 +12,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final readonly class CommandPrompts
 {
+    /** Rows a data list shows before it scrolls. */
+    private const int SCROLL_ROWS = 15;
+
     public function __construct(
         private ConsoleMode $mode,
         private OutputInterface $output,
@@ -56,6 +59,8 @@ final readonly class CommandPrompts
                 label: $label,
                 required: true,
                 validate: $validate,
+                // Show every row of a short list; a long list scrolls inside a fixed window.
+                scroll: max(1, min(count($rows), self::SCROLL_ROWS)),
             );
         });
 

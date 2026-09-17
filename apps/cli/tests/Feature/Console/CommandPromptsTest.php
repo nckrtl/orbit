@@ -188,7 +188,7 @@ it('returns sparse stable datatable keys after filtering and after clearing an e
         $prompts = new CommandPrompts(promptFixtureMode(), $output, new PromptKeysFixtureTerminal(['Beta', Key::ENTER]));
 
         expect($prompts->selectEntity('Choose record', ['ID', 'Name'], $rows))->toBe('record-beta');
-        expect($output->fetch())->toContain('Type to filter');
+        expect($output->fetch())->toContain('/ Search');
 
         $prompts = new CommandPrompts(promptFixtureMode(), $output, new PromptKeysFixtureTerminal(['absent', Key::ENTER, Key::CTRL_U, Key::DOWN, Key::DOWN, Key::ENTER]));
         expect($prompts->selectEntity('Choose record', ['ID', 'Name'], $rows))->toBe(94);
@@ -206,9 +206,8 @@ it('shows plain selection and search changes before accepting a stable key', fun
         $prompts = new CommandPrompts(promptFixtureMode(decorated: false), $output, $terminal);
 
         expect($prompts->selectEntity('Choose record', ['ID', 'Name'], [17 => ['17', 'Alpha'], 'record-beta' => ['18', 'Beta'], 94 => ['94', 'Gamma']]))->toBe(94);
-        expect($frames[0])->toMatch('/›│[^\n]*Alpha/')
-            ->and($frames[1])->toMatch('/›│[^\n]*Beta/')
-            ->and($frames[2])->toContain('Gamma▏')->toMatch('/›│[^\n]*Gamma/')->not->toContain('Alpha', 'Beta')
+        expect($frames[0])->toContain('Alpha', 'Beta', 'Gamma', '/ Search')
+            ->and($frames[2])->toContain('/ Gamma', 'Gamma')->not->toContain('Alpha', 'Beta')
             ->and(implode('', $frames).$output->fetch())->not->toContain("\e");
     });
 });

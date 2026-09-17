@@ -44,7 +44,8 @@ final class TableTheme
     /** @return array<class-string<Prompt>, class-string> */
     public static function renderers(): array
     {
-        return [Table::class => TableRenderer::class, DataTablePrompt::class => DataTableRenderer::class, SearchableDataTablePrompt::class => DataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class];
+        // The data list is the stock Laravel Prompts rendering, minus the summary a chosen row would leave behind.
+        return [Table::class => TableRenderer::class, DataTablePrompt::class => EphemeralDataTableRenderer::class, SearchableDataTablePrompt::class => EphemeralDataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class];
     }
 
     public static function mode(): ConsoleMode

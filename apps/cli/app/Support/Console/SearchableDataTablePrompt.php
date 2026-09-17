@@ -17,9 +17,9 @@ final class SearchableDataTablePrompt extends DataTablePrompt
      * @param  list<string>  $headers
      * @param  array<int|string, list<string>>  $rows
      */
-    public function __construct(array $headers, array $rows, string $label, string $hint = '', bool|string $required = false, mixed $validate = null)
+    public function __construct(array $headers, array $rows, string $label, string $hint = '', bool|string $required = false, mixed $validate = null, int $scroll = 10)
     {
-        parent::__construct(headers: $headers, rows: $rows, label: $label, hint: $hint, required: $required, validate: $validate);
+        parent::__construct(headers: $headers, rows: $rows, scroll: $scroll, label: $label, hint: $hint, required: $required, validate: $validate);
 
         $this->on('key', function (string $key): void {
             if ($this->state !== 'active' || $key === '') {
@@ -32,7 +32,8 @@ final class SearchableDataTablePrompt extends DataTablePrompt
             } elseif ($key[0] === "\e" || $key === Key::ENTER || $key === "\r" || ord($key[0]) < 32) {
                 return;
             } else {
-                $this->typedValue .= $key;
+                // A pasted chunk can carry control characters; keep only the printable text.
+                $this->typedValue .= (string) preg_replace('/[\x00-\x1f\x7f]/', '', $key);
             }
             $this->cursorPosition = mb_strlen($this->typedValue);
             $this->search();
