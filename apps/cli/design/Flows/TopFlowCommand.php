@@ -1084,7 +1084,7 @@ final class TopFlowCommand extends GatewayCommand
             }
         }
         foreach ($this->instances as $instance) {
-            $latest = array_values(array_filter($this->deployments, fn (array $d): bool => $d['instance_id'] === $instance['id']))[0] ?? null;
+            $latest = array_first(array_filter($this->deployments, fn (array $d): bool => $d['instance_id'] === $instance['id'])) ?? null;
             if ($latest !== null && $latest['status'] === 'failed') {
                 $rows[] = ['kind' => 'deployments', 'record' => $latest, 'label' => 'Deployment', 'name' => $latest['release'], 'where' => "{$instance['app']['slug']}/{$instance['name']}", 'state' => "failed at {$latest['failed_step']}"];
             }
@@ -1400,7 +1400,7 @@ final class TopFlowCommand extends GatewayCommand
             ['Firewall', count($this->firewall), $off($this->firewall, fn (array $f): bool => $f['status'] === 'applied')],
         ];
         $texts = array_map(fn (array $segment): string => "{$segment[0]} {$segment[1]}", $segments);
-        $slack = max(0, $width - 2 - array_sum(array_map('strlen', $texts)));
+        $slack = max(0, $width - 2 - array_sum(array_map(strlen(...), $texts)));
         $gaps = max(1, count($texts) - 1);
         $spans = [Span::fromString(' ')];
         foreach ($segments as $index => [$label, $count, $warn]) {
@@ -1638,7 +1638,7 @@ final class TopFlowCommand extends GatewayCommand
             $this->drawn[$name] = ['area' => $sideAreas->get($index), 'header' => true];
             $this->paneOrder[] = $name;
             $sideConstraints[] = Constraint::percentage($share);
-            $sideWidgets[] = $this->pane($name, $title, $headers, array_map(fn (int $w): Constraint => Constraint::percentage($w), $widths), array_map(fn (array $r): TableRow => $this->row(...$mapper($r)), $this->rowsFor($name)), $name === 'users' ? 'No users recorded. database:user:create records the next one.' : 'None.');
+            $sideWidgets[] = $this->pane($name, $title, $headers, array_map(Constraint::percentage(...), $widths), array_map(fn (array $r): TableRow => $this->row(...$mapper($r)), $this->rowsFor($name)), $name === 'users' ? 'No users recorded. database:user:create records the next one.' : 'None.');
         }
         $widgets = [
             GridWidget::default()
@@ -1658,7 +1658,7 @@ final class TopFlowCommand extends GatewayCommand
             [$name, $title, $headers, $widths, $mapper] = $extra;
             $this->drawn[$name] = ['area' => $rows->get(3), 'header' => true];
             $this->paneOrder[] = $name;
-            $widgets[] = $this->pane($name, $title, $headers, array_map(fn (int $w): Constraint => Constraint::percentage($w), $widths), array_map(fn (array $r): TableRow => $this->row(...$mapper($r)), $this->rowsFor($name)));
+            $widgets[] = $this->pane($name, $title, $headers, array_map(Constraint::percentage(...), $widths), array_map(fn (array $r): TableRow => $this->row(...$mapper($r)), $this->rowsFor($name)));
         }
 
         return GridWidget::default()->direction(Direction::Vertical)->constraints(...$constraints)->widgets(...$widgets);
