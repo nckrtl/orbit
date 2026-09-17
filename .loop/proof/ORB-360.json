@@ -1,0 +1,305 @@
+{
+  "setup": [
+    {
+      "id": "prepare-recorder-gateway",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb360-setup.sh"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "prepare",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "prepare"
+      ],
+      "timeout_seconds": 90
+    },
+    {
+      "id": "guard",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "guard"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "tool-not-installed",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "tool-not-installed"
+      ],
+      "timeout_seconds": 150
+    },
+    {
+      "id": "unknown-session",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "unknown-session"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "invalid-input",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "invalid-input"
+      ],
+      "timeout_seconds": 90
+    },
+    {
+      "id": "install",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "install"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "external-session",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "external-session"
+      ],
+      "timeout_seconds": 90
+    },
+    {
+      "id": "create",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "create"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "discover-panes",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "discover-panes"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "observe",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "observe"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "adopt",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "adopt"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "list-populated",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "list-populated"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "show",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "show"
+      ],
+      "timeout_seconds": 150
+    },
+    {
+      "id": "restart",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "restart"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "consent",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "consent"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "live-pane-destroy",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "live-pane-destroy"
+      ],
+      "timeout_seconds": 150
+    },
+    {
+      "id": "cleanup",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "cleanup"
+      ],
+      "timeout_seconds": 90
+    },
+    {
+      "id": "verify-external-survives",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "verify-external-survives"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "coverage-report",
+      "node": "gateway",
+      "argv": [
+        "python3",
+        "/var/lib/orbit-e2e/proof/orb360-live.py",
+        "--candidate",
+        "a94ebb9127fc89d477825dce0474effc0cc5caad",
+        "--state",
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-360/state",
+        "--stage",
+        "coverage-report"
+      ],
+      "timeout_seconds": 60
+    }
+  ],
+  "mutates": true,
+  "inputs": [
+    "apps/cli",
+    ".agents/skills/verifying-cli-output"
+  ]
+}
