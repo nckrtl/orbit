@@ -4,7 +4,7 @@ export const TerminalDemo = ({ demo }) => {
   const element = useRef(null);
   const screen = useRef(null);
   const terminal = useRef(null);
-  const typingDelay = 35;
+  const typingDelay = 18;
   // A wait longer than this plays as this long; the recording's cadence is otherwise unchanged.
   const maxGap = 1.5;
 
