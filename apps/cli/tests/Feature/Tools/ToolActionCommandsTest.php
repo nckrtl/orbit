@@ -6,6 +6,7 @@ use App\Commands\Tools\RemoveToolCommand;
 use App\Commands\Tools\UpdateToolCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
@@ -281,14 +282,61 @@ it('classifies Tool action outcomes into truthful progress states', function ():
         '11111111-1111-4111-8111-111111111111',
     );
 
+    $unchanged = $updateState->invoke($update, $tool(['outcome' => 'unchanged']));
+    $blocked = $updateState->invoke($update, $tool(['outcome' => 'blocked_by_constraint', 'version_constraint' => '^8']));
+
     expect($updateState->invoke($update, $tool(['outcome' => 'applied'])))
         ->toBe(ProgressState::Success)
-        ->and($updateState->invoke($update, $tool(['outcome' => 'unchanged'])))
-        ->toBe(ProgressState::Skipped)
-        ->and($updateState->invoke($update, $tool(['outcome' => 'blocked_by_constraint', 'version_constraint' => '^8'])))
-        ->toBe(ProgressState::Warning)
+        ->and($unchanged)->toBeInstanceOf(ProgressOutcome::class)
+        ->and($unchanged->state)->toBe(ProgressState::Skipped)
+        ->and($unchanged->footer)->not->toBeEmpty()
+        ->and($blocked)->toBeInstanceOf(ProgressOutcome::class)
+        ->and($blocked->state)->toBe(ProgressState::Warning)
+        ->and($blocked->footer)->not->toBeEmpty()
         ->and($removeState->invoke($remove, $tool(['outcome' => 'applied'])))
         ->toBe(ProgressState::Success);
+});
+
+it('settles the progress row and footer truthfully for every update outcome', function (): void {
+    foreach ([
+        ['applied', '● Updated Tool', 'Updated Tool.'],
+        ['unchanged', '● Update Tool', 'Tool already up to date.'],
+        ['blocked_by_constraint', '● Updated Tool', 'Update blocked by constraint.'],
+    ] as [$outcome, $row, $footer]) {
+        MockClient::destroyGlobal();
+        MockClient::global([
+            UpdateToolRequest::class => MockResponse::make([
+                'data' => tool_action_data([
+                    'manager' => 'apt',
+                    'package' => 'curl',
+                    'version_constraint' => '^8',
+                    'outcome' => $outcome,
+                ]),
+                'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
+            ]),
+        ]);
+
+        [$exit, $output] = tool_action_cli_display('tool:update', ['tool' => '41']);
+
+        expect($exit)->toBe(0)
+            ->and($output)->toContain($row)
+            ->and($output)->toContain($footer);
+    }
+
+    MockClient::destroyGlobal();
+    MockClient::global([
+        UpdateToolRequest::class => MockResponse::make([
+            'data' => tool_action_data(['manager' => 'apt', 'package' => 'curl', 'outcome' => 'unexpected']),
+            'meta' => ['request_id' => '22222222-2222-4222-8222-222222222222'],
+        ]),
+    ]);
+
+    [$exit, $output] = tool_action_cli_display('tool:update', ['tool' => '41']);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Operation failed.')
+        ->and($output)->not->toContain('Updated Tool.')
+        ->and($output)->not->toContain('Update Tool.');
 });
 
 it('renders a successful remove of a failed version-probe tool', function (string $failedOperation): void {

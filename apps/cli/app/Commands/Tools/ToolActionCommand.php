@@ -6,6 +6,7 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
@@ -34,7 +35,7 @@ abstract class ToolActionCommand extends ToolCommand
             $this->request($toolId),
             ToolResponse::class,
             $this->progressLabels(),
-            function (object $response): ProgressState {
+            function (object $response): ProgressState|ProgressOutcome {
                 if (! $response instanceof ToolResponse || ! $this->accepts($response)) {
                     throw new GatewayApiException(
                         'Gateway response is invalid.',
@@ -64,7 +65,7 @@ abstract class ToolActionCommand extends ToolCommand
     abstract protected function progressLabels(): array;
 
     /** The response already passed accepts(); classify how truthfully the progress settles. */
-    protected function resultState(ToolResponse $tool): ProgressState
+    protected function resultState(ToolResponse $tool): ProgressState|ProgressOutcome
     {
         return ProgressState::Success;
     }

@@ -6,6 +6,7 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayApiException;
@@ -61,7 +62,7 @@ final class InstallToolCommand extends ToolCommand
             new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint')),
             ToolResponse::class,
             ['Install Tool', 'Installing Tool', 'Installed Tool'],
-            static function (object $response): ProgressState {
+            static function (object $response): ProgressState|ProgressOutcome {
                 if (! $response instanceof ToolResponse || ! in_array($response->outcome, ['applied', 'unchanged'], strict: true)) {
                     throw new GatewayApiException(
                         'Gateway response is invalid.',
@@ -70,7 +71,9 @@ final class InstallToolCommand extends ToolCommand
                     );
                 }
 
-                return $response->outcome === 'unchanged' ? ProgressState::Skipped : ProgressState::Success;
+                return $response->outcome === 'unchanged'
+                    ? new ProgressOutcome(ProgressState::Skipped, 'Tool already installed')
+                    : ProgressState::Success;
             },
         );
         if (! $response instanceof ToolResponse) {

@@ -351,6 +351,7 @@ it('warns when a Metrics disable leaves the Gateway publication uncleaned', func
     $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
 
     expect($exit)->toBe(0)
+        ->and($output)->toContain('Disabled Metrics; publication not cleaned.')
         ->and($output)->toContain('Metrics operation completed for node #7.')
         ->and($flat)->toContain('Publication uncleaned')
         ->and($output)->toContain(
@@ -373,8 +374,10 @@ it('renders no uncleaned warning for a cleaned Metrics disable', function (): vo
     $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
 
     expect($exit)->toBe(0)
+        ->and($output)->toContain('Disabled Metrics.')
         ->and($flat)->toContain('Publication cleaned')
-        ->and($output)->not->toContain('Publication not cleaned');
+        ->and($output)->not->toContain('Publication not cleaned')
+        ->and($output)->not->toContain('publication not cleaned');
 });
 
 it('resets credentials through the focused request and renders exact JSON', function (): void {

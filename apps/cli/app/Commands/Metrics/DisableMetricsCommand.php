@@ -6,6 +6,7 @@ namespace App\Commands\Metrics;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
@@ -68,9 +69,9 @@ final class DisableMetricsCommand extends MetricsCommand
             new DisableMetricsRequest(force: true, purgeData: $purge),
             MetricsMutationResponse::class,
             ['Disable Metrics', 'Disabling Metrics', 'Disabled Metrics'],
-            static fn (object $response): ProgressState => $response instanceof MetricsMutationResponse
+            static fn (object $response): ProgressState|ProgressOutcome => $response instanceof MetricsMutationResponse
                 && $response->publication === 'uncleaned'
-                ? ProgressState::Warning
+                ? new ProgressOutcome(ProgressState::Warning, 'Disabled Metrics; publication not cleaned')
                 : ProgressState::Success,
         );
 

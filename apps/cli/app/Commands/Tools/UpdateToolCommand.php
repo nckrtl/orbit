@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Tools;
 
+use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
@@ -52,12 +53,12 @@ final class UpdateToolCommand extends ToolActionCommand
     }
 
     #[\Override]
-    protected function resultState(ToolResponse $tool): ProgressState
+    protected function resultState(ToolResponse $tool): ProgressState|ProgressOutcome
     {
         return match ($tool->outcome) {
             'applied' => ProgressState::Success,
-            'unchanged' => ProgressState::Skipped,
-            default => ProgressState::Warning,
+            'unchanged' => new ProgressOutcome(ProgressState::Skipped, 'Tool already up to date'),
+            default => new ProgressOutcome(ProgressState::Warning, 'Update blocked by constraint'),
         };
     }
 }

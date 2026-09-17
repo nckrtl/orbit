@@ -127,6 +127,9 @@ it('renders unchanged human output with its request ID', function (): void {
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('Tool [@openai/codex] is already installed with [vp].')
+        ->and($output)->toContain('Tool already installed.')
+        ->and($output)->toContain('● Install Tool')
+        ->and($output)->not->toContain('● Installed Tool')
         ->and($flat)->toContain("Request ID {$id}");
 });
 
@@ -148,6 +151,7 @@ it('does not settle the row as installed before an invalid outcome fails', funct
     $output = $tester->getDisplay(true);
 
     expect($exit)->toBe(1)
+        ->and($output)->toContain('Operation failed.')
         ->and($output)->toContain('Gateway response is invalid.')
         ->and($output)->not->toContain('Installed Tool.');
 });
