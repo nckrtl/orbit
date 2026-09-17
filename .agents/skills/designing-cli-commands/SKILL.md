@@ -30,6 +30,6 @@ Do not turn a baseline signature or an unverified implementation into a verdict.
 
 For each command record its source, contract, supported modes, applicable rules, observed gaps, justified exceptions, automated checks, terminal cases, artifact paths, and verdict. A gap remains open until verified; a current implementation alone does not justify an exception.
 
-Inspect the full human surface, the actual nested machine shape, missing/invalid input, cancellation, consent, empty results, warnings, partial outcomes, and failures where applicable. Preserve current command-specific constraints such as explicit-only targets or force options that discard source.
+Inspect the full human surface, the actual nested machine shape, missing/invalid input, cancellation, consent, empty results, warnings, partial outcomes, and failures where applicable. Preserve current command-specific constraints such as force options that discard source. A required input the caller omits is prompted in a terminal, with a default where one exists; treat a command that refuses instead as a gap.
 
 Use `verifying-cli-output` when correctness depends on prompts, terminal width, color, cursor movement, streaming, buffering, or liveness. A JSON test or final transcript cannot prove those behaviors. Return findings and evidence to the implementation or review task; do not claim broader command coverage than the inspected matrix supports.
