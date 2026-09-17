@@ -1378,7 +1378,7 @@ final class TopFlowCommand extends GatewayCommand
 
         [$stats, $panes, $extra] = match ($db['driver']) {
             'pgsql' => [
-                sprintf('Connections %d/%d · %d active · %d idle · %d waiting     Cache hit %.1f%%     Size %s     WAL %s     Replication %s', ...$db['stats']),
+                sprintf('Connections %d/%d · %d active · %d idle · %d waiting   Cache hit %.1f%%   Size %s   WAL %s   Replication %s', ...$db['stats']),
                 [
                     ['users', ' Roles ', ['Role', 'Privileges', 'Used by', 'Created'], [26, 22, 32, 20], fn (array $u): array => [[$u['username'], $u['privileges'], $u['used_by']], $u['created'], $u['used_by'] === '—'], 55],
                     ['tables', ' Tables ', ['Schema', 'Table', 'Rows', 'Size'], [18, 36, 22, 24], fn (array $r): array => [[$r['schema'], $r['name'], $r['rows']], $r['size'], false], 45],
@@ -1386,7 +1386,7 @@ final class TopFlowCommand extends GatewayCommand
                 null,
             ],
             'mysql' => [
-                sprintf('Threads %d connected · %d running     Slow queries %d     InnoDB buffer pool hit %.1f%%     Size %s     Binlog %s', ...$db['stats']),
+                sprintf('Threads %d connected · %d running   Slow queries %d   InnoDB buffer pool hit %.1f%%   Size %s   Binlog %s', ...$db['stats']),
                 [
                     ['users', ' Users ', ['User', 'Host', 'Privileges', 'Used by'], [24, 14, 30, 32], fn (array $u): array => [[$u['username'], $u['host'], $u['privileges']], $u['used_by'], $u['used_by'] === '—'], 55],
                     ['tables', ' Tables ', ['Table', 'Engine', 'Rows', 'Size'], [40, 18, 20, 22], fn (array $r): array => [[$r['name'], $r['engine'], $r['rows']], $r['size'], false], 45],
@@ -1394,7 +1394,7 @@ final class TopFlowCommand extends GatewayCommand
                 null,
             ],
             'redis' => [
-                sprintf('Memory %s / %s     Clients %d     Ops/s %s     Hit rate %.1f%%     Evictions %d     Persistence %s', ...$db['stats']),
+                sprintf('Memory %s / %s   Clients %d   Ops/s %s   Hit rate %.1f%%   Evictions %d   Persistence %s', ...$db['stats']),
                 [
                     ['keyspace', ' Keyspace ', ['DB', 'Keys', 'With TTL', 'Avg TTL'], [16, 28, 28, 28], fn (array $k): array => [[$k['db'], $k['keys'], $k['expires']], $k['avg_ttl'], false], 40],
                     ['users', ' ACL users ', ['User', 'Rules', 'Used by'], [22, 46, 32], fn (array $u): array => [[$u['username'], $u['privileges']], $u['used_by'], $u['used_by'] === '—'], 60],
@@ -1402,7 +1402,7 @@ final class TopFlowCommand extends GatewayCommand
                 ['slowlog', ' Slow log ', ['When', 'Duration', 'Command'], [22, 14, 64], fn (array $s): array => [[$s['at'], $s['duration']], $s['command'], true]],
             ],
             default => [
-                sprintf('File %s     Journal %s     Page size %s     Tables %d', $db['size'], $db['journal'], $db['page_size'], count($db['tables'])),
+                sprintf('File %s   Journal %s   Page size %s   Tables %d', $db['size'], $db['journal'], $db['page_size'], count($db['tables'])),
                 [
                     ['tables', ' Tables ', ['Table', 'Rows', 'Size'], [50, 24, 24], fn (array $r): array => [[$r['name'], $r['rows']], $r['size'], false], 100],
                 ],
