@@ -262,6 +262,38 @@ it('removes a managed session with explicit consent and accepted termination', f
         ->toBe(['accept_termination' => true]);
 });
 
+it('does not claim the removed session is still active or healthy', function (): void {
+    MockClient::global([
+        ListHerdrSessionsRequest::class => MockResponse::make([
+            'data' => [herdr_cli_session_payload()],
+            'meta' => ['request_id' => herdr_cli_request_id()],
+        ]),
+        DestroyHerdrSessionRequest::class => herdr_cli_session_response(),
+    ]);
+
+    [$exit, $output] = herdr_cli_display('herdr:session:destroy', [
+        'session' => 'commander-tasks',
+        '--node' => '4',
+        '--yes' => true,
+    ]);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('removed from Orbit')
+        ->and($output)->toContain('commander-tasks')
+        ->and($output)->toContain('beast')
+        ->and($output)->toContain('nckrtl')
+        ->and($output)->toContain('managed')
+        ->and($output)->toContain(herdr_cli_request_id())
+        ->and($output)->not->toContain('Status')
+        ->and($output)->not->toContain('active')
+        ->and($output)->not->toContain('healthy')
+        ->and($output)->not->toContain('Process health')
+        ->and($output)->not->toContain('Listener health')
+        ->and($output)->not->toContain('Session health')
+        ->and($output)->not->toContain('Herdr version')
+        ->and($output)->not->toContain('Protocol');
+});
+
 it('refuses JSON session destruction without --yes and sends no mutation', function (): void {
     $mock = MockClient::global([
         ListHerdrSessionsRequest::class => MockResponse::make([
@@ -400,7 +432,7 @@ it('issues receive-only observation grants for panes on two Nodes without SSH or
         ->toBe('/api/v1/herdr/sessions/12/observation-grants');
 });
 
-it('delivers the observer URL as a raw credential line in human output', function (): void {
+it('renders every observation grant field in human output without redacting the observer URL', function (): void {
     MockClient::global([
         ListHerdrSessionsRequest::class => MockResponse::make([
             'data' => [herdr_cli_session_payload()],
@@ -432,7 +464,15 @@ it('delivers the observer URL as a raw credential line in human output', functio
     ]);
 
     expect($exit)->toBe(0)
+        ->and($output)->toContain('w1:p1')
+        ->and($output)->toContain('term-abc')
+        ->and($output)->toContain('terminal.observe')
+        ->and($output)->toContain('120')
+        ->and($output)->toContain('40')
+        ->and($output)->toContain('2026-09-13T21:00:00+00:00')
+        ->and($output)->toContain('aabbccddeeff00112233445566778899')
         ->and($output)->toContain('wss://commander-tasks.herdr.beast.orbit?access_token=orbit-grant-token')
+        ->and($output)->toContain(herdr_cli_request_id())
         ->and($output)->not->toContain('[redacted]');
 });
 

@@ -160,6 +160,8 @@ The Gateway inspects live panes first and refuses with `herdr.session_in_use` wh
 The confirmation prompt states the effect by management: a managed session's Process is destroyed, an adopted session loses only its Orbit record. `--yes` is CLI-only consent; the Gateway `DELETE` route and its SDK request keep their current `accept_termination` parameter only.
 </Warning>
 
+Human output after removal shows only the fields that stay true once the session is gone: ID, Session, Node, Node ID, User, Management, and Request ID. It does not show status or health, since the Gateway's response describes the record as it was immediately before removal, not its current, now-nonexistent state. JSON keeps every field the Gateway returns, unchanged.
+
 ## orbit herdr:observe
 
 Issue one short-lived, receive-only observation grant for one recorded pane and its expected terminal.
@@ -192,6 +194,8 @@ orbit herdr:observe commander-tasks \
 ```
 
 The Gateway returns a private `wss://` URL that carries the grant and its expiry. The grant is a signed token that expires after 60 seconds, permits only `terminal.observe` for the named pane and terminal within the bounded viewport, is tied to the one HTTPS origin, and can be used once. The Node adapter refuses input, control, arbitrary pane selection, an expired grant, a wrong Node or session, an origin mismatch, a pane-to-terminal mismatch, and a reused grant. Reconnecting means asking for a new grant.
+
+Human output shows a detail tree with every field the JSON returns: pane, terminal, scope, columns, rows, expiry, nonce, and request ID, alongside the observer URL. The observer URL stays on its own value line so it stays easy to copy. It is a short-lived credential; do not share it outside the browser that will use it.
 
 A request that lacks a pane, terminal, viewport bound, or HTTPS origin fails with `herdr.grant_invalid` before the CLI sends it.
 
