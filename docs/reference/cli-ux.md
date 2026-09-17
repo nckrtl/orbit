@@ -25,7 +25,7 @@ Public product commands that return data support `--json`. Their existing final-
 
 Resolve and validate required fields before mutations. Validate a supplied value when it is read, and validate a prompted value when the user submits it. If a prompted value is invalid, ask again without an arbitrary retry cap. Stop on cancellation or end of input, using the command's failure status, before mutation begins.
 
-Prompt only where the current command permits interactive input. A command requiring an explicit target must continue to refuse an omitted target. Read-only lookups needed to resolve a permitted prompt may run before consent. A slow lookup needs visible waiting feedback.
+In a terminal, a command prompts for every required input the caller omitted, and it offers a default where one exists, such as `root` for a bootstrap user or the App default branch. A destructive target is selected through the interactive data list, never inferred. A noninteractive or machine call refuses an omitted required input with the command's documented error code. Read-only lookups needed to resolve a prompt may run before consent. A slow lookup needs visible waiting feedback.
 
 ## Prompt selection
 
