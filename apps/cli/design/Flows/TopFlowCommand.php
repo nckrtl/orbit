@@ -513,7 +513,7 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-        if (in_array($this->focus, ['users', 'tables'], true)) {
+        if (in_array($this->focus, ['users', 'tables', 'keyspace', 'slowlog'], true)) {
             return;
         }
         $this->open($this->kindOf($this->focus), $row);
@@ -837,8 +837,7 @@ final class TopFlowCommand extends GatewayCommand
             },
             'firewall' => array_values(array_filter($this->firewall, fn (array $f): bool => $f['node'] === ($page['row']['name'] ?? null))),
             'targets' => ($page['kind'] ?? '') === 'databases' ? array_values(array_filter($this->instances, fn (array $i): bool => in_array($i['id'], $page['row']['targets'], true))) : [],
-            'users' => ($page['kind'] ?? '') === 'databases' ? $page['row']['users'] : [],
-            'tables' => ($page['kind'] ?? '') === 'databases' ? $page['row']['tables'] : [],
+            'users', 'tables', 'keyspace', 'slowlog' => ($page['kind'] ?? '') === 'databases' ? ($page['row'][$pane] ?? []) : [],
             default => [],
         };
     }
@@ -970,7 +969,11 @@ final class TopFlowCommand extends GatewayCommand
             'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'SSH' => isset($row['public_ssh_host']) ? "{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}" : null],
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
             'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
-            'databases' => ['Slug' => $row['slug'], 'Driver' => $row['driver'], 'Node' => $row['node'], 'Host' => isset($row['host']) ? "{$row['host']}:{$row['port']}" : null, 'Path' => $row['path'] ?? null, 'Database' => $row['database'] ?? null, 'Username' => $row['username'] ?? null, 'Password' => isset($row['username']) ? '••••••••' : null, 'Server process' => $row['process'] ?? null],
+            'databases' => match ($row['driver']) {
+                'sqlite' => ['Slug' => $row['slug'], 'Driver' => 'sqlite', 'Node' => $row['node'], 'Path' => $row['path'], 'Size' => $row['size'], 'Journal' => $row['journal']],
+                'redis' => ['Slug' => $row['slug'], 'Driver' => 'redis', 'Node' => $row['node'], 'Host' => "{$row['host']}:{$row['port']}", 'Database' => $row['database'], 'Auth' => $row['username'] ?? 'default user', 'Password' => '••••••••', 'Version' => $row['version'], 'Server process' => $row['process']],
+                default => ['Slug' => $row['slug'], 'Driver' => $row['driver'], 'Node' => $row['node'], 'Host' => "{$row['host']}:{$row['port']}", 'Database' => $row['database'], 'Username' => $row['username'], 'Password' => '••••••••', 'Version' => $row['version'], 'Server process' => $row['process']],
+            },
             'processes' => ['Name' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Owner' => $this->processOwner($row), 'Node' => $this->processNode($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
             'schedules' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Node' => $this->instanceNode($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
@@ -1134,7 +1137,7 @@ final class TopFlowCommand extends GatewayCommand
             'databases' => [
                 ['Slug', 'Driver', 'Node', 'Host', 'Database', 'Instances', 'Users'],
                 [Constraint::percentage(16), Constraint::percentage(10), Constraint::percentage(12), Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(10), Constraint::percentage(10)],
-                array_map(fn (array $d): TableRow => $this->row([$d['slug'], $d['driver'], $d['node'] ?? '—', $d['host'] ?? $d['path'], $d['database'] ?? '—', (string) count($d['targets'])], (string) count($d['users']), false), $rows),
+                array_map(fn (array $d): TableRow => $this->row([$d['slug'], $d['driver'], $d['node'] ?? '—', isset($d['host']) ? "{$d['host']}:{$d['port']}" : $d['path'], $d['database'] ?? '—', (string) count($d['targets'])], isset($d['users']) ? (string) count($d['users']) : '—', false), $rows),
             ],
             default => [[], [], []],
         };
@@ -1362,41 +1365,97 @@ final class TopFlowCommand extends GatewayCommand
             );
     }
 
-    /** Properties beside the attached instances, then the database's users beside its tables. */
+    /**
+     * A database page is bespoke to its engine: what it lists and which numbers matter differ
+     * between PostgreSQL, MySQL, Redis, and SQLite. All start with the properties beside the
+     * attached instances and a one-line stats block for the server.
+     */
     private function databasePage(Widget $properties, int $propertiesHeight, Area $body): Widget
     {
+        $db = $this->page()['row'] ?? [];
         $targets = $this->rowsFor('targets');
-        $users = $this->rowsFor('users');
-        $tables = $this->rowsFor('tables');
         $top = max($propertiesHeight, count($targets) + 3);
-        $constraints = [Constraint::length($top), Constraint::min(5)];
+
+        [$stats, $panes, $extra] = match ($db['driver']) {
+            'pgsql' => [
+                sprintf('Connections %d/%d · %d active · %d idle · %d waiting     Cache hit %.1f%%     Size %s     WAL %s     Replication %s', ...$db['stats']),
+                [
+                    ['users', ' Roles ', ['Role', 'Privileges', 'Used by', 'Created'], [26, 22, 32, 20], fn (array $u): array => [[$u['username'], $u['privileges'], $u['used_by']], $u['created'], $u['used_by'] === '—'], 55],
+                    ['tables', ' Tables ', ['Schema', 'Table', 'Rows', 'Size'], [18, 36, 22, 24], fn (array $r): array => [[$r['schema'], $r['name'], $r['rows']], $r['size'], false], 45],
+                ],
+                null,
+            ],
+            'mysql' => [
+                sprintf('Threads %d connected · %d running     Slow queries %d     InnoDB buffer pool hit %.1f%%     Size %s     Binlog %s', ...$db['stats']),
+                [
+                    ['users', ' Users ', ['User', 'Host', 'Privileges', 'Used by'], [24, 14, 30, 32], fn (array $u): array => [[$u['username'], $u['host'], $u['privileges']], $u['used_by'], $u['used_by'] === '—'], 55],
+                    ['tables', ' Tables ', ['Table', 'Engine', 'Rows', 'Size'], [40, 18, 20, 22], fn (array $r): array => [[$r['name'], $r['engine'], $r['rows']], $r['size'], false], 45],
+                ],
+                null,
+            ],
+            'redis' => [
+                sprintf('Memory %s / %s     Clients %d     Ops/s %s     Hit rate %.1f%%     Evictions %d     Persistence %s', ...$db['stats']),
+                [
+                    ['keyspace', ' Keyspace ', ['DB', 'Keys', 'With TTL', 'Avg TTL'], [16, 28, 28, 28], fn (array $k): array => [[$k['db'], $k['keys'], $k['expires']], $k['avg_ttl'], false], 40],
+                    ['users', ' ACL users ', ['User', 'Rules', 'Used by'], [22, 46, 32], fn (array $u): array => [[$u['username'], $u['privileges']], $u['used_by'], $u['used_by'] === '—'], 60],
+                ],
+                ['slowlog', ' Slow log ', ['When', 'Duration', 'Command'], [22, 14, 64], fn (array $s): array => [[$s['at'], $s['duration']], $s['command'], true]],
+            ],
+            default => [
+                sprintf('File %s     Journal %s     Page size %s     Tables %d', $db['size'], $db['journal'], $db['page_size'], count($db['tables'])),
+                [
+                    ['tables', ' Tables ', ['Table', 'Rows', 'Size'], [50, 24, 24], fn (array $r): array => [[$r['name'], $r['rows']], $r['size'], false], 100],
+                ],
+                null,
+            ],
+        };
+
+        $constraints = [Constraint::length($top), Constraint::length(3), $extra === null ? Constraint::min(5) : Constraint::percentage(45), ...$extra === null ? [] : [Constraint::min(4)]];
         $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
         $topColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(0));
-        $bottom = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($rows->get(1));
         $this->drawn['targets'] = ['area' => $topColumns->get(1), 'header' => true];
-        $this->drawn['users'] = ['area' => $bottom->get(0), 'header' => true];
-        $this->drawn['tables'] = ['area' => $bottom->get(1), 'header' => true];
-        $this->paneOrder = ['targets', 'users', 'tables'];
+        $this->paneOrder = ['targets'];
 
-        return GridWidget::default()
-            ->direction(Direction::Vertical)
-            ->constraints(...$constraints)
-            ->widgets(
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
-                    ->widgets(
-                        $properties,
-                        $this->pane('targets', ' Attached instances ', ['App', 'Name', 'Node', 'Prefix', 'Status'], [Constraint::percentage(24), Constraint::percentage(20), Constraint::percentage(18), Constraint::percentage(20), Constraint::percentage(14)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['node']['name'], $i['name'] === 'dev' ? '' : "{$i['name']}_"], $i['status'], $i['status'] !== 'active'), $targets)),
-                    ),
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(55), Constraint::percentage(45))
-                    ->widgets(
-                        $this->pane('users', ' Users ', ['Username', 'Privileges', 'Used by', 'Created'], [Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(28), Constraint::percentage(20)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges'], $u['used_by']], $u['created'], $u['used_by'] === '—'), $users), 'No users recorded. database:user:create records the next one.'),
-                        $this->pane('tables', ' Tables ', ['Table', 'Rows', 'Size'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $t): TableRow => $this->row([$t['name'], $t['rows']], $t['size'], false), $tables)),
-                    ),
-            );
+        $sideWidgets = [];
+        $sideConstraints = [];
+        $sideAreas = Layout::default()->direction(Direction::Horizontal)->constraints(array_map(fn (array $pane): Constraint => Constraint::percentage($pane[5]), $panes))->split($rows->get(2));
+        foreach ($panes as $index => [$name, $title, $headers, $widths, $mapper, $share]) {
+            $this->drawn[$name] = ['area' => $sideAreas->get($index), 'header' => true];
+            $this->paneOrder[] = $name;
+            $sideConstraints[] = Constraint::percentage($share);
+            $sideWidgets[] = $this->pane($name, $title, $headers, array_map(fn (int $w): Constraint => Constraint::percentage($w), $widths), array_map(fn (array $r): TableRow => $this->row(...$mapper($r)), $this->rowsFor($name)), $name === 'users' ? 'No users recorded. database:user:create records the next one.' : 'None.');
+        }
+        $widgets = [
+            GridWidget::default()
+                ->direction(Direction::Horizontal)
+                ->constraints(Constraint::percentage(40), Constraint::percentage(60))
+                ->widgets(
+                    $properties,
+                    $this->pane('targets', ' Attached instances ', ['App', 'Name', 'Node', 'Prefix', 'Status'], [Constraint::percentage(24), Constraint::percentage(20), Constraint::percentage(18), Constraint::percentage(20), Constraint::percentage(14)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['node']['name'], $i['name'] === 'dev' ? '' : "{$i['name']}_"], $i['status'], $i['status'] !== 'active'), $targets)),
+                ),
+            BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
+                ->titles(Title::fromString(' '.$this->engineName($db['driver']).' '.$db['version'].' · polled 5s ago '))
+                ->widget(ParagraphWidget::fromString(' '.$stats)),
+            GridWidget::default()->direction(Direction::Horizontal)->constraints(...$sideConstraints)->widgets(...$sideWidgets),
+        ];
+        if ($extra !== null) {
+            [$name, $title, $headers, $widths, $mapper] = $extra;
+            $this->drawn[$name] = ['area' => $rows->get(3), 'header' => true];
+            $this->paneOrder[] = $name;
+            $widgets[] = $this->pane($name, $title, $headers, array_map(fn (int $w): Constraint => Constraint::percentage($w), $widths), array_map(fn (array $r): TableRow => $this->row(...$mapper($r)), $this->rowsFor($name)));
+        }
+
+        return GridWidget::default()->direction(Direction::Vertical)->constraints(...$constraints)->widgets(...$widgets);
+    }
+
+    private function engineName(string $driver): string
+    {
+        return match ($driver) {
+            'pgsql' => 'PostgreSQL',
+            'mysql' => 'MySQL',
+            'redis' => 'Redis',
+            default => 'SQLite',
+        };
     }
 
     /**
@@ -1625,10 +1684,15 @@ final class TopFlowCommand extends GatewayCommand
             return $block->widget(ParagraphWidget::fromString(' '.$empty)->style(Style::default()->fg(AnsiColor::DarkGray)));
         }
 
+        // The last column is right-aligned: its cells are padded to the column's width, which the
+        // same layout split the table renderer uses gives us.
+        $lastWidth = $this->lastColumnWidth($name, $widths);
+        $rows = array_map(fn (TableRow $row): TableRow => $this->alignLast($row, $lastWidth), $rows);
+
         $table = TableWidget::default();
         $table->columnSpacing = 1;
         if ($headers !== []) {
-            $table->header(TableRow::fromStrings(...$headers));
+            $table->header($this->alignLast(TableRow::fromStrings(...$headers), $lastWidth));
         }
 
         return $block->widget(
@@ -1639,6 +1703,41 @@ final class TopFlowCommand extends GatewayCommand
                 ->highlightSymbol('› ')
                 ->highlightStyle($focused ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()->addModifier(Modifier::BOLD)),
         );
+    }
+
+    /** @param  list<Constraint>  $widths */
+    private function lastColumnWidth(string $pane, array $widths): int
+    {
+        $area = $this->drawn[$pane]['area'] ?? null;
+        if ($area === null || $widths === []) {
+            return 0;
+        }
+        $constraints = [Constraint::length(2)];
+        foreach ($widths as $width) {
+            $constraints[] = $width;
+            $constraints[] = Constraint::length(1);
+        }
+        array_pop($constraints);
+        $chunks = Layout::default()->direction(Direction::Horizontal)->constraints($constraints)->split(Area::fromDimensions(max(1, $area->width - 2), 1));
+
+        return $chunks->get(count($constraints) - 1)->width;
+    }
+
+    private function alignLast(TableRow $row, int $width): TableRow
+    {
+        $cells = [];
+        for ($i = 0; ($cell = $row->getCell($i)) !== null; $i++) {
+            $cells[] = $cell;
+        }
+        if ($cells === [] || $width <= 0) {
+            return $row;
+        }
+        $last = array_pop($cells);
+        $text = implode('', array_map(fn (Line $line): string => (string) $line, $last->content->lines));
+        $aligned = TableCell::fromString(mb_strlen($text) >= $width ? $text : str_repeat(' ', $width - mb_strlen($text)).$text);
+        $aligned->style = $last->style;
+
+        return TableRow::fromCells(...[...$cells, $aligned]);
     }
 
     /**
@@ -1718,7 +1817,7 @@ final class TopFlowCommand extends GatewayCommand
 
         foreach ($this->nodes as $node) {
             $gateway = in_array('gateway', $node['roles'], true);
-            $services = $gateway ? ['orbit-dns' => null, 'wg-easy' => null] : ['postgres' => 'PostgreSQL 16', 'redis' => 'Redis 7'];
+            $services = $gateway ? ['orbit-dns' => null, 'wg-easy' => null] : ['postgres' => 'PostgreSQL 16', 'mysql' => 'MySQL 8', 'redis' => 'Redis 7'];
             foreach ($services as $service => $engine) {
                 $this->processes[] = ['id' => ++$processId, 'target_type' => 'node', 'target_id' => 0, 'node' => $node['name'], 'name' => $service, ...$engine === null ? [] : ['engine' => $engine], 'runtime' => 'docker', 'working_directory' => '/srv/orbit/services/'.$service, 'restart_policy' => 'always', 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
             }
@@ -1738,26 +1837,41 @@ final class TopFlowCommand extends GatewayCommand
 
         $this->databases = [
             [
-                'slug' => 'charlie-shop', 'driver' => 'pgsql', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 5432, 'database' => 'charlie_shop', 'username' => 'charlie_shop', 'process' => 'postgres on app-dev',
+                'slug' => 'charlie-shop', 'driver' => 'pgsql', 'version' => '16.4', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 5432, 'database' => 'charlie_shop', 'username' => 'charlie_shop', 'process' => 'postgres on app-dev',
                 'targets' => [1, 2, 3],
+                'stats' => [23, 100, 4, 18, 1, 99.2, '214 MB', '1.2 GB', 'none'],
                 'users' => [
                     ['username' => 'charlie_shop', 'privileges' => 'owner', 'used_by' => 'charlie-shop/dev, staging', 'created' => '2026-08-02'],
                     ['username' => 'charlie_shop_ro', 'privileges' => 'read-only', 'used_by' => 'metrics exporter', 'created' => '2026-09-01'],
                     ['username' => 'nick', 'privileges' => 'superuser', 'used_by' => '—', 'created' => '2026-07-14'],
                 ],
-                'tables' => [['name' => 'users', 'rows' => '12 480', 'size' => '9.1 MB'], ['name' => 'orders', 'rows' => '88 102', 'size' => '61 MB'], ['name' => 'order_items', 'rows' => '301 774', 'size' => '140 MB'], ['name' => 'jobs', 'rows' => '14', 'size' => '96 kB']],
+                'tables' => [['schema' => 'public', 'name' => 'users', 'rows' => '12 480', 'size' => '9.1 MB'], ['schema' => 'public', 'name' => 'orders', 'rows' => '88 102', 'size' => '61 MB'], ['schema' => 'public', 'name' => 'order_items', 'rows' => '301 774', 'size' => '140 MB'], ['schema' => 'audit', 'name' => 'events', 'rows' => '1 204 511', 'size' => '388 MB']],
             ],
             [
-                'slug' => 'acme', 'driver' => 'pgsql', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 5432, 'database' => 'acme', 'username' => 'acme', 'process' => 'postgres on app-dev',
+                'slug' => 'acme', 'driver' => 'mysql', 'version' => '8.4', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 3306, 'database' => 'acme', 'username' => 'acme', 'process' => 'mysql on app-dev',
                 'targets' => [4, 5],
-                'users' => [['username' => 'acme', 'privileges' => 'owner', 'used_by' => 'acme/dev, main', 'created' => '2026-08-20']],
-                'tables' => [['name' => 'users', 'rows' => '2 310', 'size' => '1.8 MB'], ['name' => 'invoices', 'rows' => '9 904', 'size' => '12 MB']],
+                'stats' => [12, 3, 4, 99.8, '1.9 GB', 'on'],
+                'users' => [
+                    ['username' => 'acme', 'host' => '%', 'privileges' => 'ALL on acme.*', 'used_by' => 'acme/dev, main'],
+                    ['username' => 'acme_backup', 'host' => 'localhost', 'privileges' => 'SELECT, LOCK TABLES', 'used_by' => 'backup schedule'],
+                ],
+                'tables' => [['name' => 'users', 'engine' => 'InnoDB', 'rows' => '2 310', 'size' => '1.8 MB'], ['name' => 'invoices', 'engine' => 'InnoDB', 'rows' => '9 904', 'size' => '12 MB'], ['name' => 'sessions', 'engine' => 'MEMORY', 'rows' => '77', 'size' => '256 kB']],
             ],
             [
-                'slug' => 'bravo-docs', 'driver' => 'sqlite', 'node' => 'gateway', 'path' => '/srv/orbit/apps/bravo-docs/main/database.sqlite',
+                'slug' => 'charlie-shop-cache', 'driver' => 'redis', 'version' => '7.4', 'node' => 'app-dev', 'host' => '127.0.0.1', 'port' => 6379, 'database' => '0', 'username' => 'charlie_shop', 'process' => 'redis on app-dev',
+                'targets' => [1, 2, 3],
+                'stats' => ['212 MB', '1 GB', 14, '1 240', 97.4, 0, 'AOF every second'],
+                'keyspace' => [['db' => 'db0', 'keys' => '48 211', 'expires' => '39 870', 'avg_ttl' => '2h 14m'], ['db' => 'db1', 'keys' => '312', 'expires' => '0', 'avg_ttl' => '—']],
+                'users' => [
+                    ['username' => 'default', 'privileges' => 'on ~* +@all', 'used_by' => '—'],
+                    ['username' => 'charlie_shop', 'privileges' => 'on ~charlie:* +@read +@write -@dangerous', 'used_by' => 'charlie-shop/dev, staging'],
+                ],
+                'slowlog' => [['at' => date('H:i:s', time() - 400), 'duration' => '31 ms', 'command' => 'KEYS charlie:cart:*'], ['at' => date('H:i:s', time() - 1900), 'duration' => '18 ms', 'command' => 'SMEMBERS charlie:sessions']],
+            ],
+            [
+                'slug' => 'bravo-docs', 'driver' => 'sqlite', 'node' => 'gateway', 'path' => '/srv/orbit/apps/bravo-docs/main/database.sqlite', 'size' => '2.2 MB', 'journal' => 'WAL', 'page_size' => '4096',
                 'targets' => [6],
-                'users' => [],
-                'tables' => [['name' => 'pages', 'rows' => '412', 'size' => '2.2 MB']],
+                'tables' => [['name' => 'pages', 'rows' => '412', 'size' => '2.1 MB'], ['name' => 'revisions', 'rows' => '1 980', 'size' => '96 kB']],
             ],
         ];
 
