@@ -41,40 +41,42 @@ use PhpTui\Tui\Widget\Widget;
 use RuntimeException;
 
 /**
- * Design sketch: an htop-like screen on php-tui that refreshes on a tick.
+ * Design sketch: Orbit as a sectioned screen on php-tui, refreshed on a tick.
  *
- * Nodes and Apps on the left are the navigation; each list starts with "All". Both on All
- * shows the whole network; a chosen node or app narrows the right side to that record:
- * its own stats, the node's metrics, and its App instances. The selected instance decides
- * the Processes and Schedules, and the Firewall follows the node. Enter on a row opens its detail page, a
- * right click (or `a`) lists the commands that take it, and the mouse selects rows and
- * panes. Every two seconds the sketch "fetches" again and flips one Process status so the
- * refresh is visible. The data is the recorded fixtures plus made-up rows where no fixture
+ * The sidebar lists the sections: Dashboard, then one per record family. A section is that
+ * family's list; Enter or a click on a row opens the record's page, and pages stack so Esc
+ * returns one step. Instances, Processes, and Schedules carry a node/app filter bar. The Nodes
+ * list has a "+ create" link that opens a form following the node:add prompts. Every two
+ * seconds the sketch "fetches" again and flips one Process status; node metrics random-walk
+ * on their own tick. The data is the recorded fixtures plus made-up rows where no fixture
  * exists. Registered only when ORBIT_DESIGN=1.
  */
 final class TopFlowCommand extends GatewayCommand
 {
-    /** Where the arrow keys lead from each pane while hovering. */
-    private const array NEIGHBOURS = [
-        'nodes' => ['down' => 'apps', 'right' => 'instances'],
-        'apps' => ['up' => 'nodes', 'right' => 'processes'],
-        'instances' => ['left' => 'nodes', 'down' => 'processes'],
-        'processes' => ['up' => 'instances', 'right' => 'schedules', 'down' => 'firewall', 'left' => 'apps'],
-        'schedules' => ['up' => 'instances', 'left' => 'processes', 'down' => 'firewall'],
-        'firewall' => ['up' => 'processes', 'left' => 'apps'],
+    private const array SECTIONS = [
+        'dashboard' => 'Dashboard',
+        'nodes' => 'Nodes',
+        'apps' => 'Apps',
+        'instances' => 'Instances',
+        'processes' => 'Processes',
+        'schedules' => 'Schedules',
+        'databases' => 'Databases',
     ];
+
+    private const int NAV_WIDTH = 16;
 
     private const int MENU_WIDTH = 36;
 
-    /** Seconds between polls of a node's metrics; the lists refresh on their own tick. */
     private const int METRICS_TICK = 5;
+
+    private const array CREATE_STEPS = ['Checking SSH access', 'Trusting the host key', 'Installing the Orbit agent', 'Joining the WireGuard network', 'Applying the node roles'];
 
     #[\Override]
     protected $signature = 'design:top
         {--tick=2 : Seconds between refreshes}';
 
     #[\Override]
-    protected $description = 'Design sketch of a live top-like screen; runs no Gateway request.';
+    protected $description = 'Design sketch of a live sectioned screen; runs no Gateway request.';
 
     /** @var list<array<string, mixed>> */
     private array $nodes = [];
@@ -97,56 +99,55 @@ final class TopFlowCommand extends GatewayCommand
     /** @var list<string> */
     private array $logs = [];
 
-    /**
-     * Made-up node_exporter-like readings per node, random-walked on the metrics tick.
-     *
-     * @var array<string, array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, load: array{float, float, float}, uptime: string, psi: array{cpu: float, mem: float, io: float}, disks: list<array{string, float, float}>}>
-     */
+    /** @var list<string> */
+    private array $instanceLogs = [];
+
+    /** @var array<string, array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}> */
     private array $metrics = [];
 
     private float $lastMetrics = 0;
 
-    /** The pane the arrows point at while hovering, and the one Enter focused. */
-    private string $hover = 'nodes';
+    private string $section = 'dashboard';
+
+    /** The pane the arrows point at while hovering ('nav' or a page pane), and the pane Enter focused. */
+    private string $hover = 'nav';
 
     private ?string $focus = null;
 
     /** @var array<string, int> */
-    private array $selected = ['nodes' => 0, 'apps' => 0, 'instances' => 0, 'processes' => 0, 'schedules' => 0, 'firewall' => 0];
+    private array $selected = [];
 
     /**
-     * The open action menu: which row it belongs to, its actions, the highlighted one, and where it floats.
+     * Open record pages, last on top; empty means the section's own view.
      *
-     * @var array{pane: string, title: string, row: array<string, mixed>, actions: array<string, string>, selected: int, at: array{int, int}|null}|null
+     * @var list<array{kind: string, row: array<string, mixed>}>
      */
+    private array $pages = [];
+
+    /** @var array{node: string|null, app: string|null} */
+    private array $filters = ['node' => null, 'app' => null];
+
+    /** @var array{kind: string, title: string, row: array<string, mixed>, actions: array<string, string>, selected: int, at: array{int, int}|null}|null */
     private ?array $menu = null;
 
     /**
-     * The record whose detail page is open.
+     * The node create form: its fields, the active one, and how far the creation got.
      *
-     * @var array{pane: string, row: array<string, mixed>}|null
+     * @var array{fields: list<array{string, string}>, active: int, stage: string, step: int, stepAt: float, fingerprint: string}|null
      */
-    private ?array $detail = null;
+    private ?array $form = null;
 
-    /**
-     * Detail pages opened from a detail page, so back returns one step.
-     *
-     * @var list<array{pane: string, row: array<string, mixed>}>
-     */
-    private array $detailStack = [];
-
-    /** @var list<string> */
-    private array $instanceLogs = [];
-
-    /** The last action that ran, shown in the status bar. */
     private string $ran = '';
 
     /**
-     * Where each pane was drawn in the last frame, for mouse hit-testing.
+     * Where each pane, link, and button was drawn in the last frame, for mouse hit-testing.
      *
      * @var array<string, array{area: Area, header: bool}>
      */
     private array $drawn = [];
+
+    /** @var list<string> */
+    private array $paneOrder = [];
 
     public function handle(): int
     {
@@ -169,7 +170,6 @@ final class TopFlowCommand extends GatewayCommand
         try {
             while (true) {
                 if (microtime(true) - $this->lastMetrics >= self::METRICS_TICK) {
-                    // The real screen would poll the node's metrics endpoint here.
                     $this->lastMetrics = microtime(true);
                     $this->walkMetrics();
                 }
@@ -182,17 +182,20 @@ final class TopFlowCommand extends GatewayCommand
                     $this->logs[] = sprintf('%s  Processed job App\\Jobs\\SyncOrders #%d in %d ms', date('H:i:s'), 4200 + $refreshes, 40 + ($refreshes * 37) % 300);
                     $this->instanceLogs[] = sprintf('[%s] local.INFO: GET /checkout 200 in %d ms', date('Y-m-d H:i:s'), 60 + ($refreshes * 53) % 400);
                 }
+                $this->advanceForm();
 
                 while (($event = $terminal->events()->next()) !== null) {
                     if ($event instanceof CharKeyEvent) {
-                        if ($event->char === 'q' || ($event->char === 'c' && $event->modifiers === KeyModifiers::CONTROL)) {
+                        if ($event->char === 'c' && $event->modifiers === KeyModifiers::CONTROL) {
                             break 2;
                         }
-                        match ($event->char) {
-                            'r' => $lastRefresh = 0,
-                            'a' => $this->openMenu(),
-                            default => null,
-                        };
+                        if ($this->form !== null) {
+                            $this->typeInForm($event->char);
+                        } elseif ($event->char === 'q') {
+                            break 2;
+                        } else {
+                            $this->handleChar($event->char, $lastRefresh);
+                        }
                     }
                     if ($event instanceof CodedKeyEvent) {
                         $this->handleKey($event->code);
@@ -217,6 +220,23 @@ final class TopFlowCommand extends GatewayCommand
 
     // ---- input -----------------------------------------------------------------------------
 
+    private function handleChar(string $char, float &$lastRefresh): void
+    {
+        if ($this->menu !== null) {
+            return;
+        }
+        $sections = array_keys(self::SECTIONS);
+        match (true) {
+            $char === 'r' => $lastRefresh = 0.0,
+            $char === 'a' => $this->openMenu(),
+            $char === 'c' && $this->section === 'nodes' && $this->pages === [] => $this->openForm(),
+            $char === 'n' && $this->hasFilters() => $this->cycleFilter('node'),
+            $char === 'p' && $this->hasFilters() => $this->cycleFilter('app'),
+            ctype_digit($char) && isset($sections[(int) $char - 1]) => $this->goTo($sections[(int) $char - 1]),
+            default => null,
+        };
+    }
+
     private function handleKey(KeyCode $code): void
     {
         if ($this->menu !== null) {
@@ -231,32 +251,14 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-
-        if ($this->detail !== null) {
-            match ($code) {
-                KeyCode::Esc, KeyCode::Backspace, KeyCode::Left => $this->back(),
-                KeyCode::Enter => $this->openMenu(),
-                default => null,
-            };
+        if ($this->form !== null) {
+            $this->keyInForm($code);
 
             return;
         }
 
         if ($this->focus === null) {
-            // Hovering: the arrows walk the panes, Enter focuses the hovered one.
-            $direction = match ($code) {
-                KeyCode::Up => 'up',
-                KeyCode::Down => 'down',
-                KeyCode::Left => 'left',
-                KeyCode::Right => 'right',
-                default => null,
-            };
-            if ($direction !== null) {
-                $this->hover = self::NEIGHBOURS[$this->hover][$direction] ?? $this->hover;
-            }
-            if ($code === KeyCode::Enter) {
-                $this->focusOn($this->hover);
-            }
+            $this->hoverKey($code);
 
             return;
         }
@@ -264,8 +266,36 @@ final class TopFlowCommand extends GatewayCommand
         match ($code) {
             KeyCode::Down => $this->move(1),
             KeyCode::Up => $this->move(-1),
-            KeyCode::Enter => $this->openDetail(),
+            KeyCode::Enter => $this->openSelected(),
             KeyCode::Esc => $this->focus = null,
+            default => null,
+        };
+    }
+
+    /** Hovering: the sidebar reacts straight away, the page panes wait for Enter. */
+    private function hoverKey(KeyCode $code): void
+    {
+        if ($this->hover === 'nav') {
+            $sections = array_keys(self::SECTIONS);
+            $index = (int) array_search($this->section, $sections, true);
+            match ($code) {
+                KeyCode::Down => $this->goTo($sections[min(count($sections) - 1, $index + 1)]),
+                KeyCode::Up => $this->goTo($sections[max(0, $index - 1)]),
+                KeyCode::Right, KeyCode::Enter => $this->hover = $this->paneOrder[0] ?? 'nav',
+                KeyCode::Esc => $this->back(),
+                default => null,
+            };
+
+            return;
+        }
+
+        $index = (int) array_search($this->hover, $this->paneOrder, true);
+        match ($code) {
+            KeyCode::Left => $this->hover = 'nav',
+            KeyCode::Down => $this->hover = $this->paneOrder[min(count($this->paneOrder) - 1, $index + 1)] ?? 'nav',
+            KeyCode::Up => $this->hover = $this->paneOrder[max(0, $index - 1)] ?? 'nav',
+            KeyCode::Enter => $this->focus = $this->hover,
+            KeyCode::Esc => $this->back(),
             default => null,
         };
     }
@@ -290,48 +320,31 @@ final class TopFlowCommand extends GatewayCommand
             return;
         }
 
-        if ($this->detail !== null) {
-            if ($event->kind !== MouseEventKind::Down) {
-                return;
-            }
-            if ($event->button === MouseButton::Left && $this->hitRow('back', $x, $y) !== null) {
-                $this->back();
-
-                return;
-            }
-            if ($event->button === MouseButton::Left && ($link = $this->linkAt($x, $y)) !== null) {
-                $this->follow($link);
-
-                return;
-            }
-            // Panes on a detail page (an instance's Processes and Schedules) work like the dashboard's.
-            $pane = $this->paneAt($x, $y);
-            $row = $pane === null ? null : $this->hitRow($pane, $x, $y);
-            $hit = $pane !== null && $row !== null && $row < count($this->rowsFor($pane)) ? $this->rowsFor($pane)[$row] : null;
-            if ($event->button === MouseButton::Right) {
-                $hit === null ? $this->openMenu([$x, $y]) : $this->openMenu([$x, $y], $pane, $hit);
-
-                return;
-            }
-            if ($pane !== null && $hit !== null) {
-                if ($this->selected[$pane] === $row) {
-                    $this->open($pane, $hit);
-                } else {
-                    $this->select($pane, $row);
+        if ($this->form !== null) {
+            if ($event->kind === MouseEventKind::Down && $event->button === MouseButton::Left) {
+                if ($this->hitRow('back', $x, $y) !== null) {
+                    $this->form = null;
+                } elseif ($this->form['stage'] === 'edit') {
+                    foreach (array_keys($this->form['fields']) as $index) {
+                        if ($this->hitPoint("field:{$index}", $x, $y)) {
+                            $this->form['active'] = $index;
+                        }
+                    }
+                    if ($this->hitPoint('form:submit', $x, $y)) {
+                        $this->submitForm();
+                    }
                 }
             }
 
             return;
         }
 
-        $pane = $this->paneAt($x, $y);
-        if ($pane === null) {
-            return;
-        }
-
         if ($event->kind === MouseEventKind::ScrollDown || $event->kind === MouseEventKind::ScrollUp) {
-            $this->focusOn($pane);
-            $this->move($event->kind === MouseEventKind::ScrollDown ? 1 : -1);
+            $pane = $this->paneAt($x, $y);
+            if ($pane !== null && $pane !== 'nav') {
+                $this->focus = $pane;
+                $this->move($event->kind === MouseEventKind::ScrollDown ? 1 : -1);
+            }
 
             return;
         }
@@ -339,24 +352,65 @@ final class TopFlowCommand extends GatewayCommand
             return;
         }
 
-        // A click lands on a pane and, when it hits a row, selects that row. A click on the row
-        // that is already selected opens its detail page, as does Enter.
+        if ($event->button === MouseButton::Left) {
+            if ($this->hitRow('back', $x, $y) !== null) {
+                $this->back();
+
+                return;
+            }
+            if ($this->hitPoint('create', $x, $y)) {
+                $this->openForm();
+
+                return;
+            }
+            foreach (['node', 'app'] as $filter) {
+                if ($this->hitPoint("filter:{$filter}", $x, $y)) {
+                    $this->cycleFilter($filter);
+
+                    return;
+                }
+            }
+            if (($link = $this->linkAt($x, $y)) !== null) {
+                $this->follow($link);
+
+                return;
+            }
+        }
+
+        $pane = $this->paneAt($x, $y);
+        if ($pane === null) {
+            return;
+        }
+        if ($pane === 'nav') {
+            $row = $this->hitRow('nav', $x, $y);
+            $sections = array_keys(self::SECTIONS);
+            if ($row !== null && isset($sections[$row])) {
+                $this->goTo($sections[$row]);
+            }
+
+            return;
+        }
+
+        // A click lands on a pane and, when it hits a row, selects that row; a click on the
+        // selected row opens it. A right click lists the row's actions.
         $this->hover = $pane;
-        $this->focusOn($pane);
+        $this->focus = $pane;
+        $rows = $this->rowsFor($pane);
         $row = $this->hitRow($pane, $x, $y);
+        $hit = $row !== null && $row < count($rows);
         if ($event->button === MouseButton::Right) {
-            if ($row !== null && $row < count($this->rowsFor($pane))) {
-                $this->select($pane, $row);
+            if ($hit) {
+                $this->selected[$pane] = $row;
             }
             $this->openMenu([$x, $y]);
 
             return;
         }
-        if ($row !== null && $row < count($this->rowsFor($pane))) {
-            if ($this->selected[$pane] === $row) {
-                $this->openDetail();
+        if ($hit) {
+            if (($this->selected[$pane] ?? 0) === $row) {
+                $this->openSelected();
             } else {
-                $this->select($pane, $row);
+                $this->selected[$pane] = $row;
             }
         }
     }
@@ -364,11 +418,10 @@ final class TopFlowCommand extends GatewayCommand
     private function paneAt(int $x, int $y): ?string
     {
         foreach ($this->drawn as $name => $drawn) {
-            if ($name === 'menu' || $name === 'back' || str_starts_with($name, 'link:')) {
+            if (str_contains($name, ':') || $name === 'menu' || $name === 'back' || $name === 'create') {
                 continue;
             }
-            $area = $drawn['area'];
-            if ($x >= $area->left() && $x < $area->right() && $y >= $area->top() && $y < $area->bottom()) {
+            if ($this->inside($drawn['area'], $x, $y)) {
                 return $name;
             }
         }
@@ -376,66 +429,52 @@ final class TopFlowCommand extends GatewayCommand
         return null;
     }
 
-    /** The property link (node or app) under a point, if any. */
-    private function linkAt(int $x, int $y): ?string
+    private function inside(Area $area, int $x, int $y): bool
     {
-        foreach ($this->drawn as $name => $drawn) {
-            $area = $drawn['area'];
-            if (str_starts_with($name, 'link:') && $x >= $area->left() && $x < $area->right() && $y === $area->top()) {
-                return $name;
-            }
-        }
-
-        return null;
+        return $x >= $area->left() && $x < $area->right() && $y >= $area->top() && $y < $area->bottom();
     }
 
-    /** A node or app link leaves the detail pages and scopes the dashboard to that record. */
-    private function follow(string $link): void
+    private function hitPoint(string $name, int $x, int $y): bool
     {
-        $row = $this->detail['row'] ?? [];
-        $this->detail = null;
-        $this->detailStack = [];
-        $this->focus = null;
-
-        if ($link === 'link:node') {
-            $name = $row['node']['name'] ?? $row['node'] ?? null;
-            $index = array_search($name, array_column($this->nodes, 'name'), true);
-            $this->selected['nodes'] = $index === false ? 0 : $index + 1;
-            $this->selected['apps'] = 0;
-            $this->hover = 'nodes';
-        }
-        if ($link === 'link:app') {
-            $slug = $row['app']['slug'] ?? null;
-            $this->selected['nodes'] = 0;
-            $index = array_search($slug, array_column($this->apps, 'slug'), true);
-            $this->selected['apps'] = $index === false ? 0 : $index + 1;
-            $this->hover = 'apps';
-        }
-        $this->selected['instances'] = 0;
+        return isset($this->drawn[$name]) && $this->inside($this->drawn[$name]['area'], $x, $y);
     }
 
     /** The row index under a point inside a drawn pane: below its border and header, above its bottom border. */
     private function hitRow(string $name, int $x, int $y): ?int
     {
         $drawn = $this->drawn[$name] ?? null;
-        if ($drawn === null) {
+        if ($drawn === null || $x < $drawn['area']->left() || $x >= $drawn['area']->right()) {
             return null;
         }
-        $area = $drawn['area'];
-        if ($x < $area->left() || $x >= $area->right()) {
-            return null;
-        }
-        $first = $area->top() + 1 + ($drawn['header'] ? 1 : 0);
-        if ($y < $first || $y >= $area->bottom() - 1) {
+        $first = $drawn['area']->top() + 1 + ($drawn['header'] ? 1 : 0);
+        if ($y < $first || $y >= $drawn['area']->bottom() - 1) {
             return null;
         }
 
         return $y - $first;
     }
 
-    private function focusOn(string $pane): void
+    private function linkAt(int $x, int $y): ?string
     {
-        $this->focus = $pane;
+        foreach ($this->drawn as $name => $drawn) {
+            if (str_starts_with($name, 'link:') && $this->inside($drawn['area'], $x, $y)) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    // ---- navigation ------------------------------------------------------------------------
+
+    private function goTo(string $section): void
+    {
+        $this->section = $section;
+        $this->pages = [];
+        $this->form = null;
+        $this->focus = null;
+        $this->hover = 'nav';
+        $this->filters = ['node' => null, 'app' => null];
     }
 
     private function move(int $step): void
@@ -444,82 +483,123 @@ final class TopFlowCommand extends GatewayCommand
             return;
         }
         $rows = count($this->rowsFor($this->focus));
-        $this->select($this->focus, max(0, min(max(0, $rows - 1), $this->selected[$this->focus] + $step)));
+        $this->selected[$this->focus] = max(0, min(max(0, $rows - 1), ($this->selected[$this->focus] ?? 0) + $step));
     }
 
-    private function select(string $pane, int $row): void
+    private function openSelected(): void
     {
-        if ($this->selected[$pane] === $row) {
+        if ($this->focus === null) {
             return;
         }
-        $this->selected[$pane] = $row;
-
-        // A new scope row or instance narrows the panes that depend on it; a new node also
-        // changes which apps the sidebar lists, so the app choice returns to All.
-        if ($pane === 'nodes') {
-            $this->selected['apps'] = 0;
-        }
-        if ($pane === 'nodes' || $pane === 'apps') {
-            $this->selected['instances'] = 0;
-        }
-        if ($pane !== 'processes' && $pane !== 'schedules' && $pane !== 'firewall') {
-            $this->selected['processes'] = 0;
-            $this->selected['schedules'] = 0;
-        }
-    }
-
-    private function openDetail(): void
-    {
-        // The sidebar navigates: choosing a node or app already shows it on the right.
-        if ($this->focus === null || $this->focus === 'nodes' || $this->focus === 'apps') {
+        $rows = $this->rowsFor($this->focus);
+        $row = $rows[$this->selected[$this->focus] ?? 0] ?? null;
+        if ($row === null) {
             return;
         }
-        $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
-        if ($row !== null) {
-            $this->open($this->focus, $row);
+        if ($this->focus === 'attention') {
+            $this->open($row['kind'], $row['record']);
+
+            return;
         }
+        $this->open($this->kindOf($this->focus), $row);
     }
 
-    /**
-     * Shows a record's detail page; a page opened from another page returns there on back.
-     *
-     * @param  array<string, mixed>  $row
-     */
-    private function open(string $pane, array $row): void
+    /** Which record family a pane's rows belong to. */
+    private function kindOf(string $pane): string
     {
-        if ($this->detail !== null) {
-            $this->detailStack[] = $this->detail;
-        }
-        $this->detail = ['pane' => $pane, 'row' => $row];
+        return $pane === 'list' ? $this->section : $pane;
+    }
+
+    /** @param  array<string, mixed>  $row */
+    private function open(string $kind, array $row): void
+    {
+        $this->pages[] = ['kind' => $kind, 'row' => $row];
+        $this->focus = null;
+        $this->hover = 'nav';
     }
 
     private function back(): void
     {
-        $this->detail = array_pop($this->detailStack);
+        if ($this->form !== null) {
+            $this->form = null;
+
+            return;
+        }
+        array_pop($this->pages);
+        $this->focus = null;
     }
 
-    /**
-     * Lists the commands that take the current record: the detail's, or the focused row.
-     *
-     * @param  array{int, int}|null  $at
-     * @param  array<string, mixed>|null  $row
-     */
-    private function openMenu(?array $at = null, ?string $pane = null, ?array $row = null): void
+    /** @return array{kind: string, row: array<string, mixed>}|null */
+    private function page(): ?array
     {
-        $pane ??= $this->detail['pane'] ?? $this->focus;
-        if ($pane === null) {
+        return $this->pages[count($this->pages) - 1] ?? null;
+    }
+
+    /** A node or app link on a page opens that record's page. */
+    private function follow(string $link): void
+    {
+        $row = $this->page()['row'] ?? [];
+        if ($link === 'link:node') {
+            $name = $row['node']['name'] ?? $row['node'] ?? null;
+            foreach ($this->nodes as $node) {
+                if ($node['name'] === $name) {
+                    $this->open('nodes', $node);
+                }
+            }
+        }
+        if ($link === 'link:app') {
+            foreach ($this->apps as $app) {
+                if ($app['slug'] === ($row['app']['slug'] ?? null)) {
+                    $this->open('apps', $app);
+                }
+            }
+        }
+    }
+
+    private function hasFilters(): bool
+    {
+        return $this->pages === [] && in_array($this->section, ['instances', 'processes', 'schedules'], true);
+    }
+
+    /** The node or app filter steps through All and every value. */
+    private function cycleFilter(string $filter): void
+    {
+        $values = $filter === 'node' ? array_column($this->nodes, 'name') : array_column($this->apps, 'slug');
+        $current = $this->filters[$filter];
+        $index = $current === null ? -1 : (int) array_search($current, $values, true);
+        $this->filters[$filter] = $values[$index + 1] ?? null;
+        $this->selected['list'] = 0;
+    }
+
+    // ---- actions ---------------------------------------------------------------------------
+
+    /**
+     * @param  array{int, int}|null  $at
+     */
+    private function openMenu(?array $at = null): void
+    {
+        $page = $this->page();
+        $pane = $this->focus;
+        if ($pane !== null && $pane !== 'nav') {
+            $rows = $this->rowsFor($pane);
+            $row = $rows[$this->selected[$pane] ?? 0] ?? null;
+            $kind = $pane === 'attention' ? ($row['kind'] ?? '') : $this->kindOf($pane);
+            $row = $pane === 'attention' ? ($row['record'] ?? null) : $row;
+        } elseif ($page !== null) {
+            $kind = $page['kind'];
+            $row = $page['row'];
+        } else {
             return;
         }
-        $row ??= $this->detail['row'] ?? $this->rowsFor($pane)[$this->selected[$pane]] ?? null;
-        if ($row === null || isset($row['all'])) {
+        if ($row === null) {
             return;
         }
 
-        $actions = match ($pane) {
+        $actions = match ($kind) {
             'nodes' => ['show' => "node:show {$row['name']}", 'doctor' => "node:doctor {$row['name']}", 'ssh' => "node:ssh {$row['name']}"],
             'apps' => ['show' => "app:show {$row['slug']}", 'deploy' => "app:deploy {$row['slug']}"],
             'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}", 'profile' => "instance:profile {$row['app']['slug']}/{$row['name']}"],
-            'processes' => [
+            'processes', 'databases' => [
                 'logs' => "process:logs {$row['id']}",
                 'restart' => "process:restart {$row['id']}",
                 ...$row['runtime_status'] === 'running' ? ['stop' => "process:stop {$row['id']}"] : ['start' => "process:start {$row['id']}"],
@@ -532,8 +612,11 @@ final class TopFlowCommand extends GatewayCommand
             'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
             default => [],
         };
+        if ($actions === []) {
+            return;
+        }
 
-        $this->menu = ['pane' => $pane, 'title' => $this->rowTitle($pane, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0, 'at' => $at];
+        $this->menu = ['kind' => $kind, 'title' => $this->rowTitle($kind, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0, 'at' => $at];
     }
 
     /** The sketch applies the state change locally; the real screen would send the command's request. */
@@ -546,7 +629,7 @@ final class TopFlowCommand extends GatewayCommand
         $command = $this->menu['actions'][$label];
         $row = $this->menu['row'];
 
-        if ($this->menu['pane'] === 'processes') {
+        if (in_array($this->menu['kind'], ['processes', 'databases'], true)) {
             foreach ($this->processes as $index => $process) {
                 if ($process['id'] !== $row['id']) {
                     continue;
@@ -559,13 +642,15 @@ final class TopFlowCommand extends GatewayCommand
                 if ($state !== null) {
                     $this->processes[$index]['desired_state'] = $state;
                     $this->processes[$index]['runtime_status'] = $state;
-                    if ($this->detail !== null && $this->detail['row']['id'] === $row['id']) {
-                        $this->detail['row'] = $this->processes[$index];
+                    foreach ($this->pages as $i => $page) {
+                        if (in_array($page['kind'], ['processes', 'databases'], true) && $page['row']['id'] === $row['id']) {
+                            $this->pages[$i]['row'] = $this->processes[$index];
+                        }
                     }
                 }
             }
         }
-        if ($this->menu['pane'] === 'schedules') {
+        if ($this->menu['kind'] === 'schedules') {
             foreach ($this->schedules as $index => $schedule) {
                 if ($schedule['id'] === $row['id'] && in_array($label, ['enable', 'disable'], true)) {
                     $this->schedules[$index]['status'] = $label === 'enable' ? 'enabled' : 'disabled';
@@ -577,136 +662,238 @@ final class TopFlowCommand extends GatewayCommand
         $this->menu = null;
     }
 
+    // ---- node create form ------------------------------------------------------------------
+
+    private function openForm(): void
+    {
+        $this->form = [
+            'fields' => [['Name', ''], ['SSH host', ''], ['SSH port', '22'], ['User', 'root'], ['Roles', 'app-dev'], ['TLD', 'test']],
+            'active' => 0,
+            'stage' => 'edit',
+            'step' => 0,
+            'stepAt' => 0,
+            'fingerprint' => 'SHA256:Qm3fL9xTz1a8YhVw2pR7dKcN4bE6sJ0uGiXo5mHt2Ac',
+        ];
+        $this->focus = null;
+    }
+
+    private function typeInForm(string $char): void
+    {
+        if ($this->form === null || $this->form['stage'] !== 'edit') {
+            return;
+        }
+        $this->form['fields'][$this->form['active']][1] .= $char;
+    }
+
+    private function keyInForm(KeyCode $code): void
+    {
+        if ($this->form === null) {
+            return;
+        }
+        $count = count($this->form['fields']);
+        switch ($this->form['stage']) {
+            case 'edit':
+                match ($code) {
+                    KeyCode::Backspace => $this->form['fields'][$this->form['active']][1] = mb_substr($this->form['fields'][$this->form['active']][1], 0, -1),
+                    KeyCode::Tab, KeyCode::Down => $this->form['active'] = ($this->form['active'] + 1) % $count,
+                    KeyCode::BackTab, KeyCode::Up => $this->form['active'] = ($this->form['active'] + $count - 1) % $count,
+                    KeyCode::Enter => $this->form['active'] === $count - 1 ? $this->submitForm() : $this->form['active']++,
+                    KeyCode::Esc => $this->form = null,
+                    default => null,
+                };
+                break;
+            case 'fingerprint':
+                // The host key is confirmed by the user, as node:add asks; Esc aborts the whole add.
+                match ($code) {
+                    KeyCode::Enter => $this->form = [...$this->form, 'stage' => 'steps', 'step' => 1, 'stepAt' => microtime(true)],
+                    KeyCode::Esc => $this->form = null,
+                    default => null,
+                };
+                break;
+            case 'done':
+                if ($code === KeyCode::Enter || $code === KeyCode::Esc) {
+                    $this->finishForm();
+                }
+                break;
+        }
+    }
+
+    /** Every required field needs a value before the add starts; the first empty one gets the cursor. */
+    private function submitForm(): void
+    {
+        if ($this->form === null) {
+            return;
+        }
+        foreach ($this->form['fields'] as $index => [$label, $value]) {
+            if (trim($value) === '') {
+                $this->form['active'] = $index;
+
+                return;
+            }
+        }
+        $this->form['stage'] = 'steps';
+        $this->form['step'] = 0;
+        $this->form['stepAt'] = microtime(true);
+    }
+
+    /** Steps advance on their own; the second one stops to ask about the host key. */
+    private function advanceForm(): void
+    {
+        if ($this->form === null || $this->form['stage'] !== 'steps' || microtime(true) - $this->form['stepAt'] < 0.9) {
+            return;
+        }
+        $next = $this->form['step'] + 1;
+        if ($next === 1) {
+            $this->form['stage'] = 'fingerprint';
+
+            return;
+        }
+        if ($next >= count(self::CREATE_STEPS)) {
+            $this->form['stage'] = 'done';
+            $this->form['step'] = count(self::CREATE_STEPS);
+
+            return;
+        }
+        $this->form['step'] = $next;
+        $this->form['stepAt'] = microtime(true);
+    }
+
+    /** The created node joins the list and its page opens. */
+    private function finishForm(): void
+    {
+        if ($this->form === null) {
+            return;
+        }
+        $values = array_column($this->form['fields'], 1, 0);
+        $node = [
+            'id' => count($this->nodes) + 1,
+            'name' => $values['Name'],
+            'status' => 'active',
+            'roles' => array_map('trim', explode(',', $values['Roles'])),
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => $values['TLD'],
+            'public_ssh_host' => $values['SSH host'],
+            'public_ssh_port' => (int) $values['SSH port'],
+            'user' => $values['User'],
+            'wireguard_ip' => '10.44.0.'.(10 + count($this->nodes)),
+            'lan_ip' => null,
+        ];
+        $this->nodes[] = $node;
+        $this->metrics[$node['name']] = ['cores' => [0.03, 0.02, 0.04, 0.02], 'mem' => [0.9, 8], 'swap' => [0.0, 2], 'uptime' => '0 days, 0:01', 'disks' => [['/', 6, 80]]];
+        $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '22/tcp', 'action' => 'allow', 'source' => '10.44.0.0/16', 'status' => 'applied'];
+        $this->ran = "orbit node:add {$node['name']} --host {$values['SSH host']}";
+        $this->form = null;
+        $this->open('nodes', $node);
+    }
+
     // ---- data ------------------------------------------------------------------------------
 
     /** @return list<array<string, mixed>> */
     private function rowsFor(string $pane): array
     {
+        $page = $this->page();
+
         return match ($pane) {
-            'nodes' => [['all' => true, 'name' => 'All'], ...$this->nodes],
-            'apps' => [['all' => true, 'slug' => 'All'], ...$this->appsOnSelectedNode()],
-            'instances' => $this->scopedInstances(),
-            'processes' => $this->contextProcesses(),
-            'schedules' => array_values(array_filter($this->schedules, fn (array $schedule): bool => $schedule['instance_id'] === $this->contextInstance()['id'])),
-            'firewall' => array_values(array_filter($this->firewall, fn (array $rule): bool => $rule['node'] === $this->currentNode()['name'])),
+            'nav' => array_map(fn (string $title): array => ['title' => $title], array_values(self::SECTIONS)),
+            'list' => $this->listRows(),
+            'attention' => $this->attentionRows(),
+            'instances' => match ($page['kind'] ?? '') {
+                'nodes' => array_values(array_filter($this->instances, fn (array $i): bool => $i['node']['name'] === $page['row']['name'])),
+                'apps' => array_values(array_filter($this->instances, fn (array $i): bool => $i['app']['slug'] === $page['row']['slug'])),
+                default => [],
+            },
+            'processes' => match ($page['kind'] ?? '') {
+                'instances' => array_values(array_filter($this->processes, fn (array $p): bool => $p['target_type'] === 'app_instance' && $p['target_id'] === $page['row']['id'])),
+                'nodes' => array_values(array_filter($this->processes, fn (array $p): bool => $p['target_type'] === 'node' && $p['node'] === $page['row']['name'])),
+                default => [],
+            },
+            'schedules' => match ($page['kind'] ?? '') {
+                'instances' => array_values(array_filter($this->schedules, fn (array $s): bool => $s['instance_id'] === $page['row']['id'])),
+                'apps' => array_values(array_filter($this->schedules, fn (array $s): bool => str_starts_with($this->instanceName($s['instance_id']), $page['row']['slug'].'/'))),
+                default => [],
+            },
+            'firewall' => array_values(array_filter($this->firewall, fn (array $f): bool => $f['node'] === ($page['row']['name'] ?? null))),
             default => [],
         };
     }
 
     /**
-     * The node chosen in the sidebar, or null for All.
-     *
-     * @return array<string, mixed>|null
-     */
-    private function selectedNode(): ?array
-    {
-        return $this->nodes[$this->selected['nodes'] - 1] ?? null;
-    }
-
-    /**
-     * The app chosen in the sidebar, or null for All.
-     *
-     * @return array<string, mixed>|null
-     */
-    private function selectedApp(): ?array
-    {
-        return $this->appsOnSelectedNode()[$this->selected['apps'] - 1] ?? null;
-    }
-
-    /**
-     * The Apps list follows the node: with a node chosen it lists only the apps with an instance there.
+     * The section's list, narrowed by the node and app filters where the section has them.
      *
      * @return list<array<string, mixed>>
      */
-    private function appsOnSelectedNode(): array
+    private function listRows(): array
     {
-        $node = $this->selectedNode();
-        if ($node === null) {
-            return $this->apps;
-        }
-        $slugs = array_column(array_column(array_filter($this->instances, fn (array $i): bool => $i['node']['name'] === $node['name']), 'app'), 'slug');
+        $node = $this->filters['node'];
+        $app = $this->filters['app'];
+        $instanceIds = array_column(array_filter($this->instances, fn (array $i): bool => ($node === null || $i['node']['name'] === $node) && ($app === null || $i['app']['slug'] === $app)), 'id');
 
-        return array_values(array_filter($this->apps, fn (array $app): bool => in_array($app['slug'], $slugs, true)));
-    }
-
-    /** @return list<array<string, mixed>> */
-    private function scopedInstances(): array
-    {
-        $node = $this->selectedNode();
-        $app = $this->selectedApp();
-
-        return array_values(array_filter(
-            $this->instances,
-            fn (array $instance): bool => ($node === null || $instance['node']['name'] === $node['name'])
-                && ($app === null || $instance['app']['slug'] === $app['slug']),
-        ));
+        return match ($this->section) {
+            'nodes' => $this->nodes,
+            'apps' => $this->apps,
+            'instances' => array_values(array_filter($this->instances, fn (array $i): bool => in_array($i['id'], $instanceIds, true))),
+            'processes' => array_values(array_filter($this->processes, fn (array $p): bool => $p['target_type'] === 'node'
+                ? $app === null && ($node === null || $p['node'] === $node)
+                : in_array($p['target_id'], $instanceIds, true))),
+            'schedules' => array_values(array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $instanceIds, true))),
+            'databases' => array_values(array_filter($this->processes, fn (array $p): bool => isset($p['engine']))),
+            default => [],
+        };
     }
 
     /**
-     * The Processes in view: the context instance's own, then the processes that belong to the node
-     * itself (postgres in docker, and so on). An instance page lists only the instance's own.
+     * Everything that is yellow somewhere, gathered for the dashboard.
      *
      * @return list<array<string, mixed>>
      */
-    private function contextProcesses(): array
+    private function attentionRows(): array
     {
-        $instance = $this->contextInstance();
-        $own = array_values(array_filter($this->processes, fn (array $p): bool => ($p['target_type'] ?? 'app_instance') !== 'node' && $p['target_id'] === $instance['id']));
-        if ($this->detail !== null || $this->detailStack !== []) {
-            return $own;
+        $rows = [];
+        foreach ($this->nodes as $node) {
+            if ($node['status'] !== 'active') {
+                $rows[] = ['kind' => 'nodes', 'record' => $node, 'label' => 'Node', 'name' => $node['name'], 'where' => '—', 'state' => $node['status']];
+            }
         }
-        $node = $this->currentNode()['name'];
-
-        return [...$own, ...array_values(array_filter($this->processes, fn (array $p): bool => ($p['target_type'] ?? '') === 'node' && $p['node'] === $node))];
-    }
-
-    /**
-     * The instance the Processes and Schedules belong to: the open instance page, else the selected row.
-     *
-     * @return array<string, mixed>
-     */
-    private function contextInstance(): array
-    {
-        foreach ([$this->detail, ...array_reverse($this->detailStack)] as $page) {
-            if ($page !== null && $page['pane'] === 'instances') {
-                return $page['row'];
+        foreach ($this->instances as $instance) {
+            if ($instance['status'] !== 'active') {
+                $rows[] = ['kind' => 'instances', 'record' => $instance, 'label' => 'Instance', 'name' => "{$instance['app']['slug']}/{$instance['name']}", 'where' => $instance['node']['name'], 'state' => $instance['status']];
+            }
+        }
+        foreach ($this->processes as $process) {
+            if ($process['runtime_status'] !== $process['desired_state']) {
+                $rows[] = ['kind' => isset($process['engine']) ? 'databases' : 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->processOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
+            }
+        }
+        foreach ($this->schedules as $schedule) {
+            if ($schedule['status'] !== 'enabled') {
+                $rows[] = ['kind' => 'schedules', 'record' => $schedule, 'label' => 'Schedule', 'name' => $schedule['name'], 'where' => $this->instanceName($schedule['instance_id']), 'state' => $schedule['status']];
+            }
+        }
+        foreach ($this->firewall as $rule) {
+            if ($rule['status'] !== 'applied') {
+                $rows[] = ['kind' => 'firewall', 'record' => $rule, 'label' => 'Firewall', 'name' => "{$rule['port']} {$rule['action']} {$rule['source']}", 'where' => $rule['node'], 'state' => $rule['status']];
             }
         }
 
-        return $this->currentInstance();
+        return $rows;
     }
 
-    /** @return array<string, mixed> */
-    private function currentInstance(): array
-    {
-        return $this->scopedInstances()[$this->selected['instances']] ?? ['id' => 0, 'node' => ['name' => '']];
-    }
-
-    /**
-     * The node the Firewall pane follows: the chosen node, else the node of the current instance.
-     *
-     * @return array<string, mixed>
-     */
-    private function currentNode(): array
-    {
-        return $this->selectedNode() ?? ['name' => $this->currentInstance()['node']['name']];
-    }
-
-    /**
-     * A process name, tagged when the process belongs to the node rather than to an instance.
-     *
-     * @param  array<string, mixed>  $process
-     */
-    private function processName(array $process): string
-    {
-        return ($process['target_type'] ?? '') === 'node' ? "{$process['name']} (node)" : $process['name'];
-    }
-
-    /** The name of the node an instance runs on. */
-    private function instanceNode(int $instanceId): string
+    private function instanceName(int $id): string
     {
         foreach ($this->instances as $instance) {
-            if ($instance['id'] === $instanceId) {
+            if ($instance['id'] === $id) {
+                return "{$instance['app']['slug']}/{$instance['name']}";
+            }
+        }
+
+        return '—';
+    }
+
+    private function instanceNode(int $id): string
+    {
+        foreach ($this->instances as $instance) {
+            if ($instance['id'] === $id) {
                 return $instance['node']['name'];
             }
         }
@@ -714,26 +901,38 @@ final class TopFlowCommand extends GatewayCommand
         return '—';
     }
 
-    /** @param  array<string, mixed>  $row */
-    private function rowTitle(string $pane, array $row): string
+    /** @param  array<string, mixed>  $process */
+    private function processOwner(array $process): string
     {
-        return match ($pane) {
+        return $process['target_type'] === 'node' ? "node {$process['node']}" : $this->instanceName($process['target_id']);
+    }
+
+    /** @param  array<string, mixed>  $process */
+    private function processNode(array $process): string
+    {
+        return $process['target_type'] === 'node' ? $process['node'] : $this->instanceNode($process['target_id']);
+    }
+
+    /** @param  array<string, mixed>  $row */
+    private function rowTitle(string $kind, array $row): string
+    {
+        return match ($kind) {
             'nodes' => $row['name'],
             'apps' => $row['slug'],
             'instances' => "{$row['app']['slug']}/{$row['name']}",
-            'processes', 'schedules' => $row['name'],
+            'processes', 'schedules', 'databases' => $row['name'],
             'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
             default => '',
         };
     }
 
     /**
-     * The properties a detail page lists, named as the show commands name them.
+     * The properties a page lists, named as the show commands name them.
      *
      * @param  array<string, mixed>  $row
      * @return array<string, string>
      */
-    private function properties(string $pane, array $row): array
+    private function properties(string $kind, array $row): array
     {
         $value = fn (mixed $v): string => match (true) {
             $v === null, $v === '' => '—',
@@ -741,22 +940,12 @@ final class TopFlowCommand extends GatewayCommand
             is_array($v) => implode(', ', $v),
             default => (string) $v,
         };
-        $instance = fn (int $id): string => (function () use ($id): string {
-            foreach ($this->instances as $instance) {
-                if ($instance['id'] === $id) {
-                    return "{$instance['app']['slug']}/{$instance['name']}";
-                }
-            }
-
-            return '—';
-        })();
-
-        $properties = match ($pane) {
-            'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'LAN IP' => $row['lan_ip'] ?? null, 'SSH host' => $row['public_ssh_host'] ?? null],
+        $properties = match ($kind) {
+            'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'SSH' => isset($row['public_ssh_host']) ? "{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}" : null],
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
             'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
-            'processes' => ['Name' => $row['name'], 'Owner' => ($row['target_type'] ?? '') === 'node' ? "node {$row['node']}" : 'instance '.$instance($row['target_id']), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Keep alive' => $row['keep_alive'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status'], 'Failed step' => $row['failed_step'] ?? null, 'Error code' => $row['error_code'] ?? null],
-            'schedules' => ['Name' => $row['name'], 'Instance' => $instance($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
+            'processes', 'databases' => ['Name' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Owner' => $this->processOwner($row), 'Node' => $this->processNode($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
+            'schedules' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Node' => $this->instanceNode($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
             default => [],
         };
@@ -769,133 +958,466 @@ final class TopFlowCommand extends GatewayCommand
     private function screen(int $refreshes, float $lastRefresh, float $tick, Area $area): Widget
     {
         $this->drawn = [];
+        $this->paneOrder = [];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $age = max(0, (int) round(microtime(true) - $lastRefresh));
 
-        $rows = Layout::default()->direction(Direction::Vertical)
-            ->constraints([Constraint::length(1), Constraint::min(10), Constraint::length(1)])
-            ->split($area);
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(10), Constraint::length(1)])->split($area);
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(self::NAV_WIDTH), Constraint::min(40)])->split($rows->get(1));
+        $this->drawn['nav'] = ['area' => $columns->get(0), 'header' => false];
 
         $header = GridWidget::default()
             ->direction(Direction::Horizontal)
             ->constraints(Constraint::min(12), Constraint::length(60))
             ->widgets(
-                ParagraphWidget::fromString('  orbit top')->style(Style::default()->addModifier(Modifier::BOLD)),
+                ParagraphWidget::fromString('  orbit')->style(Style::default()->addModifier(Modifier::BOLD)),
                 ParagraphWidget::fromString("Gateway 10.44.0.1 · refreshed {$age}s ago · every {$tick}s · {$refreshes} refreshes  ")->style($dim)->alignment(HorizontalAlignment::Right),
             );
 
-        $body = $this->detail === null ? $this->dashboard($rows->get(1)) : $this->detailPage($rows->get(1));
+        $body = $this->form !== null ? $this->formPage($columns->get(1)) : ($this->page() === null ? $this->sectionView($columns->get(1)) : $this->recordPage($columns->get(1)));
 
         $footer = ParagraphWidget::fromString(match (true) {
             $this->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
-            $this->detail !== null => '  Esc or ‹ back · a or right-click actions · q leave',
-            $this->focus === null => '  ←↑→↓ or click picks a pane · Enter focuses · q leave',
+            $this->form !== null => match ($this->form['stage']) {
+                'edit' => '  type to fill · Tab or ↑↓ next field · Enter on the last field creates · Esc cancels',
+                'fingerprint' => '  Enter trusts the host key · Esc aborts',
+                'done' => '  Enter opens the node',
+                default => '  adding the node…',
+            },
+            $this->page() !== null && $this->focus === null => '  ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions · q leave',
+            $this->focus === null => '  ↑↓ sections · → into the page · 1-7 jump · '.($this->section === 'nodes' ? 'c or + create · ' : '').($this->hasFilters() ? 'n/p filters · ' : '').'q leave',
             default => '  ↑↓ move · Enter or click again opens · a or right-click actions · Esc back to panes · q leave',
         }.($this->ran !== '' ? "  │  Ran {$this->ran}" : ''))->style($dim);
 
         $screen = GridWidget::default()
             ->direction(Direction::Vertical)
             ->constraints(Constraint::length(1), Constraint::min(10), Constraint::length(1))
-            ->widgets($header, $body, $footer);
+            ->widgets(
+                $header,
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::length(self::NAV_WIDTH), Constraint::min(40))
+                    ->widgets($this->nav(), $body),
+                $footer,
+            );
 
         return $this->menu === null ? $screen : CompositeWidget::fromWidgets($screen, $this->menuPopup($area));
     }
 
-    private function dashboard(Area $area): Widget
+    private function nav(): Widget
     {
-        $node = $this->selectedNode();
-        $app = $this->selectedApp();
-        $instances = $this->scopedInstances();
-        $instance = $this->currentInstance();
-        $instancesTitle = ' '.($node === null && $app === null ? 'All instances' : 'Instances')
-            .($app === null ? '' : " of {$app['slug']}").($node === null ? '' : " on {$node['name']}").' ';
-        $instanceName = isset($instance['app']) ? "{$instance['app']['slug']}/{$instance['name']}" : '—';
-        $nodeName = $this->currentNode()['name'] !== '' ? $this->currentNode()['name'] : '—';
+        $hovered = $this->hover === 'nav' && $this->focus === null && $this->form === null;
+        $rows = [];
+        foreach (self::SECTIONS as $key => $title) {
+            $rows[] = TableRow::fromStrings($title);
+        }
+        $table = TableWidget::default()
+            ->widths(Constraint::percentage(96))
+            ->rows(...$rows)
+            ->select((int) array_search($this->section, array_keys(self::SECTIONS), true))
+            ->highlightSymbol('› ')
+            ->highlightStyle($hovered ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()->addModifier(Modifier::BOLD));
 
-        // Metrics belong to a node; with an app chosen they would mislead, since an app can span nodes.
-        $metricsNode = $app === null ? ($node['name'] ?? null) : null;
-        $metricsHeight = $metricsNode === null ? 0 : $this->metricsHeight($metricsNode);
+        return BlockWidget::default()
+            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->borderStyle($hovered ? Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD) : Style::default()->fg(AnsiColor::DarkGray))
+            ->widget($table);
+    }
 
-        // The same splits the grid makes, kept so the mouse can find a pane and a row. The sidebar
-        // (Nodes, Apps) runs the full height; stats, metrics, and the record panes fill the right.
-        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($area);
-        $left = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(count($this->nodes) + 3), Constraint::min(5)])->split($columns->get(0));
-        $rightConstraints = [Constraint::length($metricsHeight), Constraint::length(3), Constraint::percentage(38), Constraint::percentage(32), Constraint::min(5)];
-        $right = Layout::default()->direction(Direction::Vertical)->constraints($rightConstraints)->split($columns->get(1));
-        $middle = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($right->get(3));
-        $this->drawn = [
-            'nodes' => ['area' => $left->get(0), 'header' => false],
-            'apps' => ['area' => $left->get(1), 'header' => false],
-            'instances' => ['area' => $right->get(2), 'header' => true],
-            'processes' => ['area' => $middle->get(0), 'header' => true],
-            'schedules' => ['area' => $middle->get(1), 'header' => true],
-            'firewall' => ['area' => $right->get(4), 'header' => true],
-        ];
+    /** A section without an open page: the dashboard, or the family's list with its title row. */
+    private function sectionView(Area $area): Widget
+    {
+        if ($this->section === 'dashboard') {
+            return $this->dashboard($area);
+        }
 
-        $instanceRows = array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances);
-        // A Process whose runtime disagrees with its desired state is the thing to inspect.
-        // With every node in view the Processes and Schedules say which node runs them.
-        $nodeOf = fn (int $instanceId): string => $this->instanceNode($instanceId);
-        $processRows = array_map(fn (array $p): TableRow => $this->row([$this->processName($p), ...$node === null ? [$p['node'] ?? $nodeOf($p['target_id'])] : [], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
-        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : []], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
-        $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
-        $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->rowsFor('nodes'));
-        $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->rowsFor('apps'));
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(5)])->split($area);
+        $this->drawn['list'] = ['area' => $split->get(1), 'header' => true];
+        $this->paneOrder = ['list'];
 
-        $leftColumn = GridWidget::default()
-            ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(count($this->nodes) + 3), Constraint::min(5))
-            ->widgets(
-                $this->pane('nodes', ' Nodes ', [], [Constraint::percentage(96)], $nodeRows),
-                $this->pane('apps', ' Apps ', [], [Constraint::percentage(96)], $appRows),
-            );
+        $spans = [Span::styled('  '.self::SECTIONS[$this->section], Style::default()->addModifier(Modifier::BOLD))];
+        $x = $split->get(0)->left() + 2 + strlen(self::SECTIONS[$this->section]);
+        if ($this->section === 'nodes') {
+            $spans[] = Span::fromString('   ');
+            $spans[] = Span::styled('+ create', Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED));
+            $this->drawn['create'] = ['area' => Area::fromScalars($x + 3, $split->get(0)->top(), 8, 1), 'header' => false];
+        }
+        if ($this->hasFilters()) {
+            foreach (['node', 'app'] as $filter) {
+                $text = "{$filter}: ".($this->filters[$filter] ?? 'all').' ▾';
+                $spans[] = Span::fromString('   ');
+                $spans[] = Span::styled($text, $this->filters[$filter] === null ? $dim : Style::default()->fg(AnsiColor::Cyan));
+                $x += 3;
+                $this->drawn["filter:{$filter}"] = ['area' => Area::fromScalars($x, $split->get(0)->top(), mb_strlen($text), 1), 'header' => false];
+                $x += mb_strlen($text);
+            }
+        }
 
-        $rightColumn = GridWidget::default()
-            ->direction(Direction::Vertical)
-            ->constraints(...$rightConstraints)
-            ->widgets(
-                $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $columns->get(1)->width),
-                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
-                    ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($node, $app, $instances, $columns->get(1)->width - 2)))),
-                $this->pane('instances', $instancesTitle, ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(55), Constraint::percentage(45))
-                    ->widgets(
-                        $node === null
-                            ? $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Node', 'Runtime', 'Status'], [Constraint::percentage(36), Constraint::percentage(20), Constraint::percentage(20), Constraint::percentage(20)], $processRows)
-                            : $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
-                        $node === null
-                            ? $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Node', 'Next run'], [Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(30)], $scheduleRows)
-                            : $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
-                    ),
-                $this->pane('firewall', " Firewall on {$nodeName} ", ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(50), Constraint::percentage(18)], $firewallRows),
-            );
+        [$headers, $widths, $rows] = $this->listTable();
 
         return GridWidget::default()
-            ->direction(Direction::Horizontal)
-            ->constraints(Constraint::length(24), Constraint::min(40))
-            ->widgets($leftColumn, $rightColumn);
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length(1), Constraint::min(5))
+            ->widgets(
+                ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(...$spans))),
+                $this->pane('list', '', $headers, $widths, $rows),
+            );
+    }
+
+    /**
+     * The columns and rows of the current section's list.
+     *
+     * @return array{list<string>, list<Constraint>, list<TableRow>}
+     */
+    private function listTable(): array
+    {
+        $rows = $this->listRows();
+
+        return match ($this->section) {
+            'nodes' => [
+                ['Name', 'Status', 'Roles', 'WireGuard IP', 'Instances', 'Uptime'],
+                [Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(20), Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(18)],
+                array_map(fn (array $n): TableRow => $this->row([$n['name'], $n['status'], implode(', ', $n['roles']), $n['wireguard_ip'] ?? '—', (string) count(array_filter($this->instances, fn (array $i): bool => $i['node']['name'] === $n['name']))], $this->metrics[$n['name']]['uptime'] ?? '—', $n['status'] !== 'active'), $rows),
+            ],
+            'apps' => [
+                ['Slug', 'Name', 'Default branch', 'Instances', 'Nodes'],
+                [Constraint::percentage(22), Constraint::percentage(30), Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(14)],
+                array_map(function (array $a): TableRow {
+                    $instances = array_filter($this->instances, fn (array $i): bool => $i['app']['slug'] === $a['slug']);
+
+                    return $this->row([$a['slug'], $a['name'], $a['default_branch'] ?? 'main', (string) count($instances)], (string) count(array_unique(array_column(array_column($instances, 'node'), 'name'))), false);
+                }, $rows),
+            ],
+            'instances' => [
+                ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'],
+                [Constraint::percentage(18), Constraint::percentage(14), Constraint::percentage(14), Constraint::percentage(12), Constraint::percentage(28), Constraint::percentage(10)],
+                array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $rows),
+            ],
+            'processes' => [
+                ['Name', 'Owner', 'Node', 'Runtime', 'Status'],
+                [Constraint::percentage(20), Constraint::percentage(30), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(16)],
+                array_map(fn (array $p): TableRow => $this->row([$p['name'], $this->processOwner($p), $this->processNode($p), $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $rows),
+            ],
+            'schedules' => [
+                ['Name', 'Instance', 'Node', 'Command', 'Next run'],
+                [Constraint::percentage(18), Constraint::percentage(20), Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(14)],
+                array_map(fn (array $s): TableRow => $this->row([$s['name'], $this->instanceName($s['instance_id']), $this->instanceNode($s['instance_id']), $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $rows),
+            ],
+            'databases' => [
+                ['Name', 'Engine', 'Node', 'Runtime', 'Status'],
+                [Constraint::percentage(20), Constraint::percentage(24), Constraint::percentage(18), Constraint::percentage(16), Constraint::percentage(18)],
+                array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['engine'], $p['node'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $rows),
+            ],
+            default => [[], [], []],
+        };
+    }
+
+    /** The dashboard: counts, one compact metrics line per node, and everything that needs a look. */
+    private function dashboard(Area $area): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $nodeBlocks = count($this->nodes) * 3;
+        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($nodeBlocks), Constraint::min(5)])->split($area);
+        $this->drawn['attention'] = ['area' => $split->get(2), 'header' => true];
+        $this->paneOrder = ['attention'];
+
+        $nodeWidgets = [];
+        foreach ($this->nodes as $node) {
+            $m = $this->metrics[$node['name']];
+            $inner = $area->width - 4;
+            $third = intdiv($inner - 4, 3);
+            $cpu = array_sum($m['cores']) / count($m['cores']);
+            [$mount, $used, $total] = $m['disks'][0];
+            $nodeWidgets[] = BlockWidget::default()
+                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                ->titles(Title::fromString(" {$node['name']} · {$node['status']} · up {$m['uptime']} "))
+                ->borderStyle($node['status'] === 'active' ? $dim : Style::default()->fg(AnsiColor::Yellow))
+                ->padding(Padding::horizontal(1))
+                ->widget(ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(...[
+                    ...$this->bar('cpu', $cpu, sprintf('%3.0f%%', $cpu * 100), $third),
+                    Span::fromString('  '),
+                    ...$this->bar('mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), $third),
+                    Span::fromString('  '),
+                    ...$this->bar(str_pad($mount, 3), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), $inner - 2 * $third - 4, [80, 90]),
+                ]))));
+        }
+
+        $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $this->attentionRows());
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length(3), Constraint::length($nodeBlocks), Constraint::min(5))
+            ->widgets(
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)
+                    ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($area->width - 2)))),
+                GridWidget::default()
+                    ->direction(Direction::Vertical)
+                    ->constraints(...array_fill(0, count($nodeWidgets), Constraint::length(3)))
+                    ->widgets(...$nodeWidgets),
+                $this->pane('attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, 'Nothing needs attention.'),
+            );
+    }
+
+    /** Counts for the whole network, a count in yellow when something in it needs a look. */
+    private function stats(int $width): Line
+    {
+        $off = fn (array $rows, callable $ok): int => count(array_filter($rows, fn (array $row): bool => ! $ok($row)));
+        $segments = [
+            ['Nodes', count($this->nodes), $off($this->nodes, fn (array $n): bool => $n['status'] === 'active')],
+            ['Apps', count($this->apps), 0],
+            ['Instances', count($this->instances), $off($this->instances, fn (array $i): bool => $i['status'] === 'active')],
+            ['Processes', count($this->processes), $off($this->processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state'])],
+            ['Schedules', count($this->schedules), $off($this->schedules, fn (array $s): bool => $s['status'] === 'enabled')],
+            ['Firewall', count($this->firewall), $off($this->firewall, fn (array $f): bool => $f['status'] === 'applied')],
+        ];
+        $texts = array_map(fn (array $segment): string => "{$segment[0]} {$segment[1]}", $segments);
+        $slack = max(0, $width - 2 - array_sum(array_map('strlen', $texts)));
+        $gaps = max(1, count($texts) - 1);
+        $spans = [Span::fromString(' ')];
+        foreach ($segments as $index => [$label, $count, $warn]) {
+            if ($index > 0) {
+                $spans[] = Span::fromString(str_repeat(' ', intdiv($slack * $index, $gaps) - intdiv($slack * ($index - 1), $gaps)));
+            }
+            $spans[] = Span::styled($texts[$index], $warn > 0 ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
+        }
+
+        return Line::fromSpans(...$spans);
+    }
+
+    /** One record: crumbs, properties, and the panes the family has. */
+    private function recordPage(Area $area): Widget
+    {
+        $page = $this->page() ?? throw new RuntimeException('No page is open.');
+        $kind = $page['kind'];
+        $row = $page['row'];
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+
+        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(5)])->split($area);
+        $body = $split->get(1);
+        $this->drawn['back'] = ['area' => Area::fromScalars($split->get(0)->left(), $split->get(0)->top(), 10, 1), 'header' => false];
+
+        $label = match ($kind) {
+            'nodes' => 'Node',
+            'apps' => 'App',
+            'instances' => 'App instance',
+            'processes' => 'Process',
+            'schedules' => 'Schedule',
+            'databases' => 'Database',
+            'firewall' => 'Firewall rule',
+            default => '',
+        };
+        $crumbs = ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(
+            Span::styled('  ‹ back  ', Style::default()->fg(AnsiColor::Cyan)),
+            Span::styled("{$label}: ", $dim),
+            Span::styled($this->rowTitle($kind, $row), Style::default()->addModifier(Modifier::BOLD)),
+        )));
+
+        // Properties first; App and Node values are links to those records' pages.
+        $propertiesWidth = in_array($kind, ['nodes', 'instances'], true) ? intdiv($body->width * 40, 100) : $body->width;
+        $propertyRows = [];
+        $index = 0;
+        foreach ($this->properties($kind, $row) as $name => $value) {
+            $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
+            $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
+            if ($link) {
+                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, $propertiesWidth - 2), 1), 'header' => false];
+            }
+            $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
+            $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
+            $index++;
+        }
+        $table = TableWidget::default()->widths(Constraint::length(18), Constraint::min(10))->rows(...$propertyRows);
+        $table->columnSpacing = 1;
+        $properties = BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Properties '))->borderStyle($dim)->widget($table);
+        $propertiesHeight = count($propertyRows) + 2;
+
+        $content = match ($kind) {
+            'nodes' => $this->nodePage($row, $properties, $propertiesHeight, $body),
+            'apps' => $this->appPage($properties, $propertiesHeight, $body),
+            'instances' => $this->instancePage($properties, $propertiesHeight, $body),
+            'schedules' => $this->stackedPage($properties, $propertiesHeight, ' Runs ', $this->scheduleRuns($row), $body),
+            default => $this->stackedPage($properties, $propertiesHeight, ' Logs ', $this->logs, $body),
+        };
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length(1), Constraint::min(5))
+            ->widgets($crumbs, $content);
+    }
+
+    /**
+     * Properties beside the metrics block, then the node's instances, then its own processes beside its firewall.
+     *
+     * @param  array<string, mixed>  $node
+     */
+    private function nodePage(array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $metricsHeight = $this->metricsHeight($node['name']);
+        $top = max($propertiesHeight, $metricsHeight);
+        $instances = $this->rowsFor('instances');
+        $constraints = [Constraint::length($top), Constraint::length(min(count($instances) + 3, max(5, $body->height - $top - 8))), Constraint::min(5)];
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
+        $topColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(0));
+        $bottom = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(50), Constraint::percentage(50)])->split($rows->get(2));
+        $this->drawn['instances'] = ['area' => $rows->get(1), 'header' => true];
+        $this->drawn['processes'] = ['area' => $bottom->get(0), 'header' => true];
+        $this->drawn['firewall'] = ['area' => $bottom->get(1), 'header' => true];
+        $this->paneOrder = ['instances', 'processes', 'firewall'];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(...$constraints)
+            ->widgets(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
+                    ->widgets($properties, $this->metricsPanel($node['name'], $topColumns->get(1)->width)),
+                $this->pane('instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances)),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(50), Constraint::percentage(50))
+                    ->widgets(
+                        $this->pane('processes', ' Node processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'))),
+                        $this->pane('firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'))),
+                    ),
+            );
+    }
+
+    /** Properties, then the app's instances, then their schedules. */
+    private function appPage(Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $instances = $this->rowsFor('instances');
+        $constraints = [Constraint::length($propertiesHeight), Constraint::length(count($instances) + 3), Constraint::min(5)];
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
+        $this->drawn['instances'] = ['area' => $rows->get(1), 'header' => true];
+        $this->drawn['schedules'] = ['area' => $rows->get(2), 'header' => true];
+        $this->paneOrder = ['instances', 'schedules'];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(...$constraints)
+            ->widgets(
+                $properties,
+                $this->pane('instances', ' Instances ', ['Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(40), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances)),
+                $this->pane('schedules', ' Schedules ', ['Name', 'Instance', 'Command', 'Next run'], [Constraint::percentage(20), Constraint::percentage(22), Constraint::percentage(36), Constraint::percentage(20)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $this->instanceName($s['instance_id']), $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'))),
+            );
+    }
+
+    /** Properties, Processes, and Schedules side by side over the full width, the logs below. */
+    private function instancePage(Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $processes = $this->rowsFor('processes');
+        $schedules = $this->rowsFor('schedules');
+        $topHeight = max($propertiesHeight, count($processes) + 3, count($schedules) + 3);
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($topHeight), Constraint::min(4)])->split($body);
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34)])->split($rows->get(0));
+        $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
+        $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
+        $this->paneOrder = ['processes', 'schedules'];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length($topHeight), Constraint::min(4))
+            ->widgets(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34))
+                    ->widgets(
+                        $properties,
+                        $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes)),
+                        $this->pane('schedules', ' Schedules ', ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $schedules)),
+                    ),
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(1)->height - 2))))),
+            );
+    }
+
+    /**
+     * Properties across the top, then lines the record produced (logs, runs) over the full width.
+     *
+     * @param  list<string>  $lines
+     */
+    private function stackedPage(Widget $properties, int $propertiesHeight, string $title, array $lines, Area $body): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $tail = max(1, $body->height - $propertiesHeight - 2);
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length($propertiesHeight), Constraint::min(4))
+            ->widgets(
+                $properties,
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString($title))->borderStyle($dim)
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($lines, -$tail)))),
+            );
+    }
+
+    /** The node create form, then its steps, then the result. */
+    private function formPage(Area $area): Widget
+    {
+        $form = $this->form ?? throw new RuntimeException('No form is open.');
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $this->drawn['back'] = ['area' => Area::fromScalars($area->left(), $area->top(), 10, 1), 'header' => false];
+
+        $lines = [Line::fromString('')];
+        foreach ($form['fields'] as $index => [$label, $value]) {
+            $active = $form['stage'] === 'edit' && $index === $form['active'];
+            $this->drawn["field:{$index}"] = ['area' => Area::fromScalars($area->left() + 1, $area->top() + 2 + count($lines), $area->width - 2, 1), 'header' => false];
+            $lines[] = Line::fromSpans(
+                Span::styled('  '.str_pad($label, 12), $dim),
+                Span::styled($active ? "{$value}▏" : ($value === '' ? '—' : $value), $active ? Style::default()->fg(AnsiColor::Cyan) : Style::default()),
+                Span::styled($value === '' && ! $active ? '  required' : '', Style::default()->fg(AnsiColor::Yellow)),
+            );
+        }
+        $lines[] = Line::fromString('');
+        if ($form['stage'] === 'edit') {
+            $this->drawn['form:submit'] = ['area' => Area::fromScalars($area->left() + 3, $area->top() + 2 + count($lines), 10, 1), 'header' => false];
+            $lines[] = Line::fromSpans(Span::styled('  [ Create ]', Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD)), Span::styled('   every field is asked for, as node:add prompts for it', $dim));
+        } else {
+            foreach (self::CREATE_STEPS as $index => $step) {
+                $state = match (true) {
+                    $index < $form['step'] || $form['stage'] === 'done' => ['✓ ', AnsiColor::Green],
+                    $index === $form['step'] => [$form['stage'] === 'fingerprint' ? '? ' : '◌ ', AnsiColor::Cyan],
+                    default => ['  ', AnsiColor::DarkGray],
+                };
+                $lines[] = Line::fromSpans(Span::styled('  '.$state[0], Style::default()->fg($state[1])), Span::styled($step, $index <= $form['step'] ? Style::default() : $dim));
+                if ($index === 1 && $form['stage'] === 'fingerprint') {
+                    $lines[] = Line::fromSpans(Span::styled("      {$form['fields'][1][1]} presents {$form['fingerprint']}", Style::default()->fg(AnsiColor::Yellow)));
+                    $lines[] = Line::fromSpans(Span::styled('      Enter trusts it · Esc aborts', $dim));
+                }
+            }
+            if ($form['stage'] === 'done') {
+                $lines[] = Line::fromString('');
+                $lines[] = Line::fromSpans(Span::styled("  Node {$form['fields'][0][1]} added. ", Style::default()->fg(AnsiColor::Green)), Span::styled('Enter opens it.', $dim));
+            }
+        }
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length(1), Constraint::min(5))
+            ->widgets(
+                ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(Span::styled('  ‹ back  ', Style::default()->fg(AnsiColor::Cyan)), Span::styled('Create node', Style::default()->addModifier(Modifier::BOLD))))),
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::Cyan))
+                    ->titles(Title::fromString($form['stage'] === 'edit' ? ' node:add ' : " node:add {$form['fields'][0][1]} "))
+                    ->widget(ParagraphWidget::fromText(Text::fromLines(...$lines))),
+            );
     }
 
     // ---- metrics ---------------------------------------------------------------------------
 
     private function metricsHeight(string $node): int
     {
-        $m = $this->metrics[$node];
-
-        // Core rows, then Mem+Swp beside Disk+Uptime, inside the border.
-        return intdiv(count($m['cores']) + 3, 4) + 2 + 2;
+        return intdiv(count($this->metrics[$node]['cores']) + 3, 4) + 2 + 2;
     }
 
-    /** An htop-like block for the selected node: cores in four columns, then memory and swap beside the root disk and uptime. */
+    /** An htop-like block: cores in four columns, then memory and swap beside the root disk and uptime. */
     private function metricsPanel(string $node, int $width): Widget
     {
         $m = $this->metrics[$node];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $age = max(0, (int) round(microtime(true) - $this->lastMetrics));
-        // Bars are spread over the inner width, one cell in from each border: four columns for
-        // cores, two halves below, a two-cell gap between columns, the last column to the edge.
         $inner = $width - 4;
         $gap = 2;
         $column = intdiv($inner - 3 * $gap, 4);
@@ -916,13 +1438,11 @@ final class TopFlowCommand extends GatewayCommand
             }
             $coreLines[] = Line::fromSpans(...$spans);
         }
-
+        [$mount, $used, $total] = $m['disks'][0];
         $left = [
             Line::fromSpans(...$this->bar('Mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), $half)),
             Line::fromSpans(...$this->bar('Swp', $m['swap'][1] > 0 ? $m['swap'][0] / $m['swap'][1] : 0, sprintf('%.1fG/%.0fG', $m['swap'][0], $m['swap'][1]), $half)),
         ];
-
-        [$mount, $used, $total] = $m['disks'][0];
         $right = [
             Line::fromSpans(...$this->bar(str_pad($mount, 3), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), $lastHalf, [80, 90])),
             Line::fromSpans(Span::styled('Up ', $dim), Span::fromString($m['uptime'])),
@@ -930,7 +1450,7 @@ final class TopFlowCommand extends GatewayCommand
 
         return BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-            ->titles(Title::fromString(" {$node} · metrics · polled {$age}s ago · every ".self::METRICS_TICK.'s '))
+            ->titles(Title::fromString(" metrics · polled {$age}s ago · every ".self::METRICS_TICK.'s '))
             ->borderStyle($dim)
             ->padding(Padding::horizontal(1))
             ->widget(
@@ -942,11 +1462,7 @@ final class TopFlowCommand extends GatewayCommand
                         GridWidget::default()
                             ->direction(Direction::Horizontal)
                             ->constraints(Constraint::length($half), Constraint::length($gap), Constraint::min($lastHalf))
-                            ->widgets(
-                                ParagraphWidget::fromText(Text::fromLines(...$left)),
-                                BlockWidget::default(),
-                                ParagraphWidget::fromText(Text::fromLines(...$right)),
-                            ),
+                            ->widgets(ParagraphWidget::fromText(Text::fromLines(...$left)), BlockWidget::default(), ParagraphWidget::fromText(Text::fromLines(...$right))),
                     ),
             );
     }
@@ -954,7 +1470,7 @@ final class TopFlowCommand extends GatewayCommand
     /**
      * One htop-style bar: label, [|||||    ], and a reading; green, then yellow, then red past the thresholds.
      *
-     * @param  array{int, int}  $thresholds  percentages where the bar turns yellow, then red
+     * @param  array{int, int}  $thresholds
      * @return list<Span>
      */
     private function bar(string $label, float $ratio, string $reading, int $width, array $thresholds = [60, 85]): array
@@ -977,156 +1493,17 @@ final class TopFlowCommand extends GatewayCommand
         ];
     }
 
-    /** Nudges every reading a little so the panel visibly moves between polls. */
     private function walkMetrics(): void
     {
         $nudge = fn (float $value, float $step, float $min, float $max): float => max($min, min($max, $value + (mt_rand(-100, 100) / 100) * $step));
         foreach ($this->metrics as $node => $m) {
             $this->metrics[$node]['cores'] = array_map(fn (float $c): float => $nudge($c, 0.12, 0.01, 0.99), $m['cores']);
             $this->metrics[$node]['mem'][0] = $nudge($m['mem'][0], 0.3, 0.5, $m['mem'][1] - 0.2);
-            $this->metrics[$node]['load'] = [$nudge($m['load'][0], 0.3, 0.05, 12), $nudge($m['load'][1], 0.15, 0.05, 12), $nudge($m['load'][2], 0.05, 0.05, 12)];
-            foreach (['cpu', 'mem', 'io'] as $key) {
-                $this->metrics[$node]['psi'][$key] = $nudge($m['psi'][$key], 3, 0, 100);
-            }
             $this->metrics[$node]['disks'] = array_map(fn (array $d): array => [$d[0], $nudge($d[1], 0.4, 1, $d[2]), $d[2]], $m['disks']);
         }
     }
 
-    /** One record: its properties on the left, and for a Process its recent log lines on the right. */
-    private function detailPage(Area $area): Widget
-    {
-        $detail = $this->detail ?? throw new RuntimeException('No detail is open.');
-        $pane = $detail['pane'];
-        $row = $detail['row'];
-        $dim = Style::default()->fg(AnsiColor::DarkGray);
-
-        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(5)])->split($area);
-        $this->drawn = ['back' => ['area' => Area::fromScalars($rows->get(0)->left(), $rows->get(0)->top() - 1, 12, 3), 'header' => false]];
-
-        $kind = match ($pane) {
-            'nodes' => 'Node',
-            'apps' => 'App',
-            'instances' => 'App instance',
-            'processes' => 'Process',
-            'schedules' => 'Schedule',
-            'firewall' => 'Firewall rule',
-            default => '',
-        };
-        $crumbs = Line::fromSpans(
-            Span::styled('  ‹ back  ', Style::default()->fg(AnsiColor::Cyan)),
-            Span::styled("{$kind}: ", $dim),
-            Span::styled($this->rowTitle($pane, $row), Style::default()->addModifier(Modifier::BOLD)),
-        );
-
-        // App and Node values are links back to the dashboard, scoped to that record.
-        $body = $rows->get(1);
-        $propertyRows = [];
-        $index = 0;
-        foreach ($this->properties($pane, $row) as $name => $value) {
-            $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
-            $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
-            if ($link) {
-                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, ($pane === 'instances' ? intdiv($body->width * 34, 100) : $body->width) - 2), 1), 'header' => false];
-            }
-            $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
-            $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
-            $index++;
-        }
-        $propertiesTable = TableWidget::default()->widths(Constraint::length(18), Constraint::min(10))->rows(...$propertyRows);
-        $propertiesTable->columnSpacing = 1;
-
-        $properties = BlockWidget::default()
-            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-            ->titles(Title::fromString(' Properties '))
-            ->borderStyle($dim)
-            ->widget($propertiesTable);
-
-        if ($pane === 'instances') {
-            return $this->instancePage($crumbs, $properties, count($propertyRows) + 2, $body);
-        }
-
-        // Properties across the top, then what the record produces (logs, runs) over the full width.
-        $topHeight = count($propertyRows) + 2;
-        $tail = max(1, $body->height - $topHeight - 2);
-        $below = match ($pane) {
-            'processes' => BlockWidget::default()
-                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                ->titles(Title::fromString(' Logs '))
-                ->borderStyle($dim)
-                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->logs, -$tail)))),
-            'schedules' => BlockWidget::default()
-                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                ->titles(Title::fromString(' Runs '))
-                ->borderStyle($dim)
-                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->scheduleRuns($row), -$tail)))),
-            default => BlockWidget::default()
-                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                ->borderStyle($dim)
-                ->widget(ParagraphWidget::fromString(' Nothing more to show for this record yet.')->style($dim)),
-        };
-
-        return GridWidget::default()
-            ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(1), Constraint::length($topHeight), Constraint::min(4))
-            ->widgets(ParagraphWidget::fromText(Text::fromLines($crumbs)), $properties, $below);
-    }
-
-    /**
-     * Made-up run history for a schedule page, one line per past run.
-     *
-     * @param  array<string, mixed>  $row
-     * @return list<string>
-     */
-    private function scheduleRuns(array $row): array
-    {
-        $runs = [];
-        $step = str_starts_with((string) $row['expression'], '*/5') ? 300 : 86400;
-        for ($i = 6; $i >= 1; $i--) {
-            $at = time() - $i * $step;
-            $failed = $i === 3 && $row['status'] === 'enabled';
-            $runs[] = sprintf('[%s]  %-8s  %s', date('Y-m-d H:i:s', $at), $failed ? 'FAILED' : 'ok', $failed ? 'exit 1 after 12.4 s' : sprintf('exit 0 after %.1f s', 0.8 + ($i * 7) % 5));
-        }
-
-        return $runs;
-    }
-
-    /** An instance page: properties, Processes, and Schedules side by side over the full width, the logs below. */
-    private function instancePage(Line $crumbs, Widget $properties, int $propertiesHeight, Area $body): Widget
-    {
-        $dim = Style::default()->fg(AnsiColor::DarkGray);
-        $processes = $this->rowsFor('processes');
-        $schedules = $this->rowsFor('schedules');
-        $topHeight = max($propertiesHeight, count($processes) + 3, count($schedules) + 3);
-
-        // The same splits the grids make, so the mouse can find the two panes.
-        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($topHeight), Constraint::min(4)])->split($body);
-        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(34), Constraint::percentage(26), Constraint::percentage(40)])->split($rows->get(0));
-        $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
-        $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
-
-        $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes);
-        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $schedules);
-
-        return GridWidget::default()
-            ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(1), Constraint::length($topHeight), Constraint::min(4))
-            ->widgets(
-                ParagraphWidget::fromText(Text::fromLines($crumbs)),
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(34), Constraint::percentage(26), Constraint::percentage(40))
-                    ->widgets(
-                        $properties,
-                        $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], $processRows),
-                        $this->pane('schedules', ' Schedules ', ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], $scheduleRows),
-                    ),
-                BlockWidget::default()
-                    ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                    ->titles(Title::fromString(' Logs '))
-                    ->borderStyle($dim)
-                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(1)->height - 2))))),
-            );
-    }
+    // ---- widgets ---------------------------------------------------------------------------
 
     /** A small box over the screen listing the actions for the chosen row, at the pointer or in the middle. */
     private function menuPopup(Area $area): Widget
@@ -1135,8 +1512,7 @@ final class TopFlowCommand extends GatewayCommand
         $width = self::MENU_WIDTH;
         $lines = [];
         foreach (array_keys($menu['actions']) as $index => $label) {
-            $text = str_pad('  '.$label, $width - 2);
-            $lines[] = Line::fromSpan(Span::styled($text, $index === $menu['selected'] ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()));
+            $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$label, $width - 2), $index === $menu['selected'] ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()));
         }
         $lines[] = Line::fromString(str_repeat(' ', $width - 2));
         $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$menu['actions'][array_keys($menu['actions'])[$menu['selected']]], $width - 2), Style::default()->fg(AnsiColor::DarkGray)));
@@ -1153,62 +1529,9 @@ final class TopFlowCommand extends GatewayCommand
             ->titles(Title::fromString(" {$menu['title']} "))
             ->widget(ParagraphWidget::fromText(Text::fromLines(...$lines)));
 
-        // A borderless block with padding places the box and leaves the rest of the screen as drawn.
         return BlockWidget::default()
             ->padding(Padding::fromScalars($left, max(0, $area->width - $width - $left), $top, max(0, $area->height - $height - $top)))
             ->widget($box);
-    }
-
-    /**
-     * The stats line follows the navigation: the network, one node, one app, or an app on a node.
-     * A count is yellow when something in it needs a look.
-     *
-     * @param  array<string, mixed>|null  $node
-     * @param  array<string, mixed>|null  $app
-     * @param  list<array<string, mixed>>  $instances
-     * @param  int  $width  the cells available; the counts spread evenly over them
-     */
-    private function stats(?array $node, ?array $app, array $instances, int $width): Line
-    {
-        $ids = array_column($instances, 'id');
-        $nodeNames = $node === null ? array_column($this->nodes, 'name') : [$node['name']];
-        $processes = array_filter($this->processes, fn (array $p): bool => ($p['target_type'] ?? '') === 'node'
-            ? $app === null && in_array($p['node'], $nodeNames, true)
-            : in_array($p['target_id'], $ids, true));
-        $schedules = array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $ids, true));
-        $off = fn (array $rows, callable $ok): int => count(array_filter($rows, fn (array $row): bool => ! $ok($row)));
-
-        $segments = [];
-        if ($node === null) {
-            $nodes = $app === null ? $this->nodes : array_filter($this->nodes, fn (array $n): bool => in_array($n['name'], array_column(array_column($instances, 'node'), 'name'), true));
-            $segments[] = ['Nodes', count($nodes), $off($nodes, fn (array $n): bool => $n['status'] === 'active')];
-        }
-        if ($app === null) {
-            $apps = $node === null ? $this->apps : array_unique(array_column(array_column($instances, 'app'), 'slug'));
-            $segments[] = ['Apps', count($apps), 0];
-        }
-        $segments[] = ['Instances', count($instances), $off($instances, fn (array $i): bool => $i['status'] === 'active')];
-        $segments[] = ['Processes', count($processes), $off($processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state'])];
-        $segments[] = ['Schedules', count($schedules), $off($schedules, fn (array $s): bool => $s['status'] === 'enabled')];
-        if ($node !== null) {
-            $rules = array_filter($this->firewall, fn (array $f): bool => $f['node'] === $node['name']);
-            $segments[] = ['Firewall', count($rules), $off($rules, fn (array $f): bool => $f['status'] === 'applied')];
-        }
-
-        // A count turns yellow when anything it counts needs a look. The counts are spread
-        // evenly over the width, one cell in from each edge.
-        $texts = array_map(fn (array $segment): string => "{$segment[0]} {$segment[1]}", $segments);
-        $slack = max(0, $width - 2 - array_sum(array_map('strlen', $texts)));
-        $gaps = max(1, count($texts) - 1);
-        $spans = [Span::fromString(' ')];
-        foreach ($segments as $index => [$label, $count, $warn]) {
-            if ($index > 0) {
-                $spans[] = Span::fromString(str_repeat(' ', intdiv($slack * $index, $gaps) - intdiv($slack * ($index - 1), $gaps)));
-            }
-            $spans[] = Span::styled($texts[$index], $warn > 0 ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
-        }
-
-        return Line::fromSpans(...$spans);
     }
 
     /**
@@ -1216,21 +1539,23 @@ final class TopFlowCommand extends GatewayCommand
      * @param  list<Constraint>  $widths
      * @param  list<TableRow>  $rows
      */
-    private function pane(string $name, string $title, array $headers, array $widths, array $rows): Widget
+    private function pane(string $name, string $title, array $headers, array $widths, array $rows, string $empty = 'None.'): Widget
     {
         $focused = $this->focus === $name;
-        $hovered = $this->focus === null && $this->hover === $name;
+        $hovered = $this->focus === null && $this->hover === $name && $this->form === null;
         $block = BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-            ->titles(Title::fromString($title))
             ->borderStyle(match (true) {
                 $focused => Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD),
                 $hovered => Style::default()->fg(AnsiColor::White)->addModifier(Modifier::BOLD),
                 default => Style::default()->fg(AnsiColor::DarkGray),
             });
+        if ($title !== '') {
+            $block = $block->titles(Title::fromString($title));
+        }
 
         if ($rows === []) {
-            return $block->widget(ParagraphWidget::fromString(' None.')->style(Style::default()->fg(AnsiColor::DarkGray)));
+            return $block->widget(ParagraphWidget::fromString(' '.$empty)->style(Style::default()->fg(AnsiColor::DarkGray)));
         }
 
         $table = TableWidget::default();
@@ -1243,7 +1568,7 @@ final class TopFlowCommand extends GatewayCommand
             $table
                 ->widths(...$widths)
                 ->rows(...$rows)
-                ->select($this->selected[$name])
+                ->select(min($this->selected[$name] ?? 0, count($rows) - 1))
                 ->highlightSymbol('› ')
                 ->highlightStyle($focused ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()->addModifier(Modifier::BOLD)),
         );
@@ -1254,9 +1579,9 @@ final class TopFlowCommand extends GatewayCommand
      *
      * @param  list<string>  $cells
      */
-    private function row(array $cells, string $status, bool $warn): TableRow
+    private function row(array $cells, string $last, bool $warn): TableRow
     {
-        return TableRow::fromCells(...array_map(fn (string $cell): TableCell => $this->cell($cell, $warn), [...$cells, $status]));
+        return TableRow::fromCells(...array_map(fn (string $cell): TableCell => $this->cell($cell, $warn), [...$cells, $last]));
     }
 
     private function cell(string $text, bool $warn): TableCell
@@ -1267,12 +1592,32 @@ final class TopFlowCommand extends GatewayCommand
         return $cell;
     }
 
-    /** Recorded fixtures where they exist; made-up rows fill the rest so every pane has data. */
+    /**
+     * Made-up run history for a schedule page, one line per past run.
+     *
+     * @param  array<string, mixed>  $row
+     * @return list<string>
+     */
+    private function scheduleRuns(array $row): array
+    {
+        $runs = [];
+        $step = str_starts_with((string) $row['expression'], '*/5') ? 300 : 86400;
+        for ($i = 6; $i >= 1; $i--) {
+            $failed = $i === 3 && $row['status'] === 'enabled';
+            $runs[] = sprintf('[%s]  %-8s  %s', date('Y-m-d H:i:s', time() - $i * $step), $failed ? 'FAILED' : 'ok', $failed ? 'exit 1 after 12.4 s' : sprintf('exit 0 after %.1f s', 0.8 + ($i * 7) % 5));
+        }
+
+        return $runs;
+    }
+
+    // ---- fixtures --------------------------------------------------------------------------
+
+    /** Recorded fixtures where they exist; made-up rows fill the rest so every section has data. */
     private function loadData(): void
     {
         $this->nodes = $this->fixture('nodes/node-list/default');
         $this->apps = $this->fixture('apps/app-list/many');
-        $this->processes = $this->fixture('processes/process-list/instance');
+        $this->processes = array_map(fn (array $p): array => [...$p, 'target_type' => 'app_instance'], $this->fixture('processes/process-list/instance'));
 
         $recorded = $this->fixture('instances/instance-list/charlie-shop');
         $this->instances = array_map(fn (array $i): array => [...$i, 'domain' => $i['route']['domain'] ?? '—'], $recorded);
@@ -1288,16 +1633,15 @@ final class TopFlowCommand extends GatewayCommand
                     continue;
                 }
                 $node = $this->nodes[($index + $offset) % count($this->nodes)];
-                $name = $environment === 'production' ? 'main' : 'staging';
                 $this->instances[] = [
-                    'id' => ++$id, 'name' => $name, 'environment' => $environment,
+                    'id' => ++$id, 'name' => $environment === 'production' ? 'main' : 'staging', 'environment' => $environment,
                     'app' => ['id' => $app['id'], 'name' => $app['name'], 'slug' => $app['slug']],
                     'node' => ['id' => $node['id'], 'name' => $node['name']],
                     'domain' => ($environment === 'production' ? '' : 'staging.').$app['slug'].'.test',
                     'status' => $index === 4 ? 'degraded' : 'active',
                 ];
                 foreach (['queue', 'scheduler'] as $process) {
-                    $this->processes[] = ['id' => ++$processId, 'target_id' => $id, 'name' => $process, 'runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
+                    $this->processes[] = ['id' => ++$processId, 'target_type' => 'app_instance', 'target_id' => $id, 'name' => $process, 'runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
                 }
                 $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => $id, 'name' => 'backup', 'command' => 'php artisan backup:run --only-db', 'expression' => '0 3 * * *', 'next_run' => 'tomorrow 03:00', 'status' => 'enabled'];
             }
@@ -1307,26 +1651,21 @@ final class TopFlowCommand extends GatewayCommand
 
         foreach ($this->nodes as $node) {
             $gateway = in_array('gateway', $node['roles'], true);
-            foreach ($gateway ? ['orbit-dns', 'wg-easy'] : ['postgres', 'redis'] as $service) {
-                $this->processes[] = ['id' => ++$processId, 'target_type' => 'node', 'target_id' => 0, 'node' => $node['name'], 'name' => $service, 'runtime' => 'docker', 'working_directory' => '/srv/orbit/services/'.$service, 'restart_policy' => 'always', 'keep_alive' => true, 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
+            $services = $gateway ? ['orbit-dns' => null, 'wg-easy' => null] : ['postgres' => 'PostgreSQL 16', 'redis' => 'Redis 7'];
+            foreach ($services as $service => $engine) {
+                $this->processes[] = ['id' => ++$processId, 'target_type' => 'node', 'target_id' => 0, 'node' => $node['name'], 'name' => $service, ...$engine === null ? [] : ['engine' => $engine], 'runtime' => 'docker', 'working_directory' => '/srv/orbit/services/'.$service, 'restart_policy' => 'always', 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
             }
             $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '22/tcp', 'action' => 'allow', 'source' => '10.44.0.0/16', 'status' => 'applied'];
             $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '443/tcp', 'action' => 'allow', 'source' => 'any', 'status' => 'applied'];
-            if (in_array('gateway', $node['roles'], true)) {
+            if ($gateway) {
                 $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '51820/udp', 'action' => 'allow', 'source' => 'any', 'status' => 'applied'];
             }
-        }
-
-        foreach ($this->nodes as $node) {
-            $gateway = in_array('gateway', $node['roles'], true);
             $this->metrics[$node['name']] = [
                 'cores' => $gateway ? [0.08, 0.05, 0.11, 0.04] : [0.42, 0.37, 0.55, 0.28, 0.61, 0.33, 0.47, 0.39],
                 'mem' => $gateway ? [1.4, 4] : [9.8, 16],
                 'swap' => $gateway ? [0.0, 2] : [0.3, 4],
-                'load' => $gateway ? [0.12, 0.10, 0.08] : [2.31, 1.98, 1.75],
                 'uptime' => $gateway ? '41 days, 3:12' : '12 days, 17:40',
-                'psi' => $gateway ? ['cpu' => 0.4, 'mem' => 0.0, 'io' => 0.9] : ['cpu' => 6.2, 'mem' => 0.3, 'io' => 12.8],
-                'disks' => $gateway ? [['/', 9, 40]] : [['/', 31, 80], ['/srv/orbit', 188, 480]],
+                'disks' => $gateway ? [['/', 9, 40]] : [['/', 31, 80]],
             ];
         }
 
