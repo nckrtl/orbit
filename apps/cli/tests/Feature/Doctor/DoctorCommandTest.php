@@ -15,6 +15,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     $this->originalColumns = getenv('COLUMNS');
@@ -168,6 +169,10 @@ it('renders rich unhealthy reports in received order', function (): void {
             'Healthy: no',
             "Request ID: {$requestId}",
         );
+    // The report goes through sendWithProgress(), not a bare send() (M14): the progress tree
+    // itself (title, running row, settled footer) renders above the table.
+    expect($output)
+        ->toContain('┌  Verify registered state', '●', 'Verified registered state.');
 });
 
 it('renders a completed unverifiable report instead of a gateway failure', function (): void {
@@ -308,6 +313,33 @@ it('renders only SDK-redacted credential values from nested gateway data', funct
         ->not->toContain($credential);
 });
 
+it('colors the request row orange for an unhealthy result, not green (F7, M7)', function (): void {
+    if (! function_exists('posix_kill') || ! function_exists('openssl_csr_new') || ! Process::isPtySupported()) {
+        $this->markTestSkipped('PTY is unavailable.');
+    }
+
+    $fixture = doctor_cli_pty_fixture($this->orbitHome, healthy: false);
+    $command = new Process(
+        [PHP_BINARY, dirname(__DIR__, 3).'/orbit', 'doctor', '--ansi', '--no-interaction'],
+        env: ['ORBIT_HOME' => $fixture['home']],
+        timeout: 10,
+    );
+    $command->setPty(true);
+
+    try {
+        $command->run();
+        $output = $command->getOutput();
+
+        expect($command->getExitCode())->toBe(1)
+            ->and($output)->toContain("\e[38;5;208m\u{25cf}\e[0m Verified registered state")
+            ->not->toContain("\e[32m\u{25cf}\e[0m Verified registered state");
+    } finally {
+        if ($fixture['server']->isRunning()) {
+            $fixture['server']->stop(0.1, 9);
+        }
+    }
+});
+
 it('renders gateway API errors through the shared exact json failure envelope', function (): void {
     $requestId = doctor_cli_request_id();
     $credential = 'doctor-gateway-error-secret';
@@ -423,4 +455,174 @@ function doctor_cli_mock(array $data, ?string $requestId = null): MockClient
 function doctor_cli_request_id(): string
 {
     return '11111111-1111-4111-8111-111111111111';
+}
+
+/**
+ * Starts a real local TLS server and a persisted Gateway profile for a real subprocess to hit
+ * (a real PTY, and the decoration it produces, only exists across a genuine process boundary —
+ * CommandTester and Artisan::call() never run against a real terminal, so they cannot force it).
+ *
+ * @return array{home: string, server: Process}
+ */
+function doctor_cli_pty_fixture(string $root, bool $healthy): array
+{
+    $directory = "{$root}/pty-doctor";
+    mkdir($directory, 0o700, recursive: true);
+    [$certificate, $privateKey] = doctor_cli_pty_certificate($directory);
+    $ready = "{$directory}/ready";
+    $body = json_encode([
+        'data' => $healthy
+            ? doctor_cli_report(healthy: true)
+            : doctor_cli_report(
+                healthy: false,
+                nodes: [doctor_cli_node('alpha', [
+                    doctor_cli_family(family: 'instance', status: 'drift', checked: 1, issues: [
+                        doctor_cli_issue(code: 'instance.origin_mismatch', summary: 'Origin differs.'),
+                    ]),
+                ])],
+                summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0],
+            ),
+        'meta' => ['request_id' => doctor_cli_request_id()],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $server = new Process([
+        PHP_BINARY,
+        '-r',
+        <<<'PHP'
+            $context = stream_context_create(['ssl' => [
+                'local_cert' => $argv[1],
+                'local_pk' => $argv[2],
+                'verify_peer' => false,
+            ]]);
+            $server = stream_socket_server(
+                'tls://127.0.0.1:0',
+                $errorNumber,
+                $errorMessage,
+                STREAM_SERVER_BIND | STREAM_SERVER_LISTEN,
+                $context,
+            );
+
+            if ($server === false) {
+                fwrite(STDERR, $errorMessage);
+                exit($errorNumber ?: 1);
+            }
+
+            $address = stream_socket_get_name($server, false);
+
+            if (! is_string($address)) {
+                exit(2);
+            }
+
+            file_put_contents($argv[3], $address);
+            $connection = stream_socket_accept($server, 5);
+
+            if ($connection === false) {
+                exit(3);
+            }
+
+            $request = '';
+
+            while (! str_contains($request, "\r\n\r\n")) {
+                $chunk = fread($connection, 8192);
+
+                if (! is_string($chunk) || $chunk === '') {
+                    exit(4);
+                }
+
+                $request .= $chunk;
+            }
+
+            $body = $argv[4];
+            $response = "HTTP/1.1 200 OK\r\n"
+                ."Content-Type: application/json\r\n"
+                ."Content-Length: ".strlen($body)."\r\n"
+                ."Connection: close\r\n\r\n"
+                .$body;
+            fwrite($connection, $response);
+            fflush($connection);
+            usleep(200_000);
+            fclose($connection);
+            fclose($server);
+            PHP,
+        $certificate,
+        $privateKey,
+        $ready,
+        $body,
+    ], timeout: 8);
+    $server->start();
+    doctor_cli_pty_wait_until(static fn (): bool => is_file($ready));
+    $address = file_get_contents($ready);
+
+    if (! is_string($address) || $address === '') {
+        throw new RuntimeException('Could not resolve the doctor PTY fixture address.');
+    }
+
+    $home = "{$directory}/home";
+    mkdir($home, 0o700);
+    new GatewayConfigRepository("{$home}/config.json")->add(new GatewayProfile(
+        name: 'pty',
+        url: "https://{$address}",
+        caPath: $certificate,
+    ));
+
+    return compact('home', 'server');
+}
+
+/** @return array{string, string} */
+function doctor_cli_pty_certificate(string $directory): array
+{
+    $configuration = "{$directory}/openssl.cnf";
+    file_put_contents($configuration, <<<'OPENSSL'
+        [req]
+        distinguished_name = subject
+        x509_extensions = v3_ca
+        prompt = no
+
+        [subject]
+        CN = 127.0.0.1
+
+        [v3_ca]
+        subjectAltName = IP:127.0.0.1
+        basicConstraints = critical, CA:TRUE
+        keyUsage = critical, keyCertSign, digitalSignature
+        OPENSSL);
+    $key = openssl_pkey_new([
+        'config' => $configuration,
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    $certificate = openssl_csr_sign(
+        openssl_csr_new(
+            ['commonName' => '127.0.0.1'],
+            $key,
+            ['config' => $configuration],
+        ),
+        null,
+        $key,
+        1,
+        ['config' => $configuration, 'x509_extensions' => 'v3_ca'],
+    );
+    openssl_x509_export($certificate, $certificatePem);
+    openssl_pkey_export($key, $privateKeyPem, null, ['config' => $configuration]);
+    $certificatePath = "{$directory}/ca.pem";
+    $privateKeyPath = "{$directory}/key.pem";
+    file_put_contents($certificatePath, $certificatePem);
+    file_put_contents($privateKeyPath, $privateKeyPem);
+    chmod($certificatePath, 0o600);
+    chmod($privateKeyPath, 0o600);
+
+    return [$certificatePath, $privateKeyPath];
+}
+
+function doctor_cli_pty_wait_until(Closure $condition, float $timeoutSeconds = 5): void
+{
+    $deadline = microtime(true) + $timeoutSeconds;
+
+    while (! $condition()) {
+        if (microtime(true) >= $deadline) {
+            throw new RuntimeException('Timed out waiting for the doctor PTY fixture.');
+        }
+
+        usleep(10_000);
+    }
 }

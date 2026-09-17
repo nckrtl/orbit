@@ -111,6 +111,9 @@ describe('deployment streams', function (): void {
             ->toHaveCount(1)
             ->and($mock->getLastResponse()?->stream()->isReadable())
             ->toBeFalse();
+        // The revealed before_activation row must sit before activation in the tree, not
+        // appended after it (M3): admitBefore(), not admit(), places it at its real position.
+        expect(strpos($output, '● Ran migrate'))->toBeLessThan(strpos($output, '● Activated release'));
     });
 
     it('does not repeat the tree frame while several output lines print during one step', function (): void {
@@ -224,6 +227,9 @@ describe('deployment streams', function (): void {
                 'Error code: deployment.activation_failed',
             )
             ->not->toContain('Selected release:');
+        // The failed row itself carries the error code as its message (once), separate from
+        // the "Error code:" summary line below the tree (once more) — not blank (M13).
+        expect(substr_count($output, 'deployment.activation_failed'))->toBe(2);
     });
 
     it('marks the current row failed for a rollback cache_refresh failure', function (): void {
@@ -353,6 +359,38 @@ describe('deployment streams', function (): void {
                 'Selected release: release-b',
                 'Request ID: '.deployment_cli_request_id(),
             );
+
+        expect($mock->getRecordedResponses())->toHaveCount(1);
+    });
+
+    it('reveals the php_refresh row between activation and after_activation (F7)', function (): void {
+        $mock = MockClient::global([
+            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'source_preparation'),
+                deployment_cli_phase(2, 'environment_sync'),
+                deployment_cli_phase(3, 'activation'),
+                deployment_cli_phase(4, 'php_refresh'),
+                deployment_cli_phase(5, 'after_activation', 'notify'),
+                deployment_cli_result(6, 'succeeded', selectedRelease: 'release-b'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)
+            ->toContain(
+                '● Resolved release',
+                '● Synced environment',
+                '● Activated release',
+                '● Refreshed PHP cache',
+                '● Ran notify',
+                'Deployment succeeded.',
+                'Selected release: release-b',
+            )
+            ->and(strpos($output, '● Activated release'))->toBeLessThan(strpos($output, '● Refreshed PHP cache'))
+            ->and(strpos($output, '● Refreshed PHP cache'))->toBeLessThan(strpos($output, '● Ran notify'));
 
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });

@@ -205,4 +205,20 @@ describe('shared progress', function (): void {
         expect(fn () => $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate'))
             ->toThrow(LogicException::class);
     });
+
+    it('fails loudly when the admitBefore anchor has already left Waiting (M12)', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+        $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
+        $display->during('source_preparation', fn (): int => 0);
+        $display->complete('source_preparation', ProgressState::Success);
+        // Activation already ran to completion: a later before_activation event is out of
+        // order, and the anchor existing is not enough on its own — it must still be Waiting.
+        $display->during('activation', fn (): int => 0);
+        $display->complete('activation', ProgressState::Success);
+
+        expect(fn () => $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate'))
+            ->toThrow(LogicException::class);
+    });
 });
