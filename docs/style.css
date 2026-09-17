@@ -132,3 +132,30 @@ table th {
   background: #20231f;
   color: #f6f5f1;
 }
+
+/* Terminal demo: a recorded command replayed frame by frame (docs/snippets/terminal-demo.jsx). */
+.orbit-demo { margin: 1.25rem 0; border: 1px solid rgba(127, 127, 127, 0.25); border-radius: 0.75rem; overflow: hidden; background: #0b0b0d; color: #e8e6e0; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8125rem; }
+.orbit-demo__bar { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.875rem; background: #151518; border-bottom: 1px solid rgba(127, 127, 127, 0.2); }
+.orbit-demo__dots { display: inline-flex; gap: 0.375rem; }
+.orbit-demo__dots i { width: 0.625rem; height: 0.625rem; border-radius: 50%; background: #3a3a40; }
+.orbit-demo__title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9a9890; }
+.orbit-demo__replay { padding: 0.125rem 0.625rem; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 0.375rem; background: transparent; color: #e8e6e0; font: inherit; cursor: pointer; }
+.orbit-demo__replay:disabled { opacity: 0.5; cursor: default; }
+.orbit-demo__screen { margin: 0; padding: 0.875rem 1rem; max-width: 100%; overflow-x: auto; background: transparent; color: inherit; line-height: 1.45; white-space: pre; }
+.orbit-demo__prompt { color: #6f6d66; }
+.orbit-demo__cursor { display: inline-block; width: 0.6em; height: 1.1em; vertical-align: text-bottom; background: #e8e6e0; animation: orbit-demo-blink 1s steps(1) infinite; }
+@keyframes orbit-demo-blink { 50% { opacity: 0; } }
+.orbit-demo__caption { padding: 0.375rem 0.875rem; border-top: 1px solid rgba(127, 127, 127, 0.2); color: #6f6d66; font-size: 0.75rem; }
+.orbit-demo__b { font-weight: 700; }
+.orbit-demo__d { opacity: 0.55; }
+.orbit-demo__i { font-style: italic; }
+.orbit-demo__u { text-decoration: underline; }
+.orbit-demo__r { background: #e8e6e0; color: #0b0b0d; }
+.orbit-demo__fg-black { color: #6f6d66; }
+.orbit-demo__fg-red, .orbit-demo__fg-brightred { color: #f07178; }
+.orbit-demo__fg-green, .orbit-demo__fg-brightgreen { color: #8fd18f; }
+.orbit-demo__fg-yellow, .orbit-demo__fg-brightyellow { color: #e5c07b; }
+.orbit-demo__fg-blue, .orbit-demo__fg-brightblue { color: #82aaff; }
+.orbit-demo__fg-magenta, .orbit-demo__fg-brightmagenta { color: #c792ea; }
+.orbit-demo__fg-cyan, .orbit-demo__fg-brightcyan { color: #89ddff; }
+.orbit-demo__fg-white, .orbit-demo__fg-brightwhite { color: #f4f2ec; }

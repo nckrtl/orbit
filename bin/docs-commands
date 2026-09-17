@@ -36,6 +36,8 @@ CLI = ROOT / 'docs/cli'
 SKILL = ROOT / 'docs/skills/orbit'
 BUNDLE = ROOT / 'docs/skills/orbit.json'
 NAVIGATION = ROOT / 'docs/docs.json'
+DEMOS = ROOT / 'docs/demos'
+DEMO_IMPORT = 'import { TerminalDemo } from "/snippets/terminal-demo.jsx";'
 SITE = 'https://orbit.nckrtl.com/docs'
 PLACEHOLDER = '{/* commands */}'
 BUNDLE_FORMAT = 1
@@ -186,6 +188,38 @@ def skill_link(target, family, index):
     return target
 
 
+DEMO_BLOCK = re.compile(r'```demo\n([a-z0-9/-]+)\n```')
+
+
+def load_demo(name, family):
+    path = DEMOS / f'{name}.json'
+    if not path.is_file():
+        sys.exit(f'Demo [{name}] in docs/commands/{family}/ has no file at docs/demos/{name}.json.')
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def page_demos(text, family):
+    """Replace ```demo blocks with the player component; return (text, used)."""
+    used = False
+
+    def replace(match):
+        nonlocal used
+        used = True
+        demo = json.dumps(load_demo(match.group(1), family), ensure_ascii=False, separators=(',', ':'))
+        return f'<TerminalDemo demo={{{demo}}} />'
+    return DEMO_BLOCK.sub(replace, text), used
+
+
+def skill_demos(text, family):
+    """Replace ```demo blocks with the recorded transcript for agents."""
+    def replace(match):
+        demo = load_demo(match.group(1), family)
+        recorded = demo['recorded']
+        return (f"Recorded output from commit {recorded['candidate'][:8]} on {recorded['date']}, exit status {recorded['exit_code']}:\n\n"
+                f"```text\n$ {demo['command']}\n{demo['transcript']}\n```")
+    return DEMO_BLOCK.sub(replace, text)
+
+
 def shift_headings(text):
     return outside_fences(text, lambda line: '#' + line if line.startswith('#') else line)
 
@@ -201,15 +235,22 @@ def callouts_to_markdown(text):
 # ---------------------------------------------------------------- renderers
 def render_page(family, data, index):
     sections = []
+    uses_demo = False
     for command in data['commands']:
         body = shift_headings(rewrite_links(command['body'], lambda target: page_link(target, family, index)))
+        body, used = page_demos(body, family)
+        uses_demo = uses_demo or used
         sections.append(f"## orbit {command['name']}\n\n{body}")
-    body = data['body'].replace(PLACEHOLDER, '\n'.join(sections).rstrip('\n'))
-    return frontmatter(title=data['title'], description=data['description']) + '\n' + marker(family) + '\n\n' + body
+    body, used = page_demos(data['body'], family)
+    uses_demo = uses_demo or used
+    body = body.replace(PLACEHOLDER, '\n'.join(sections).rstrip('\n'))
+    head = frontmatter(title=data['title'], description=data['description']) + '\n' + marker(family) + '\n\n'
+    return head + (DEMO_IMPORT + '\n\n' if uses_demo else '') + body
 
 
 def render_reference(family, command, index):
     body = callouts_to_markdown(rewrite_links(command['body'], lambda target: skill_link(target, family, index)))
+    body = skill_demos(body, family)
     return frontmatter(title=command['name'], description=command['description']) + f"\n# {command['name']}\n\n{body}"
 
 

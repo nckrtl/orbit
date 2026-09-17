@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Import a terminal recording as a documentation demo.
+
+Run from any directory:
+
+    bin/docs-demo-import CAPTURE_DIR DEMO --command "orbit node:add ..."
+
+CAPTURE_DIR is a recording made by .agents/skills/verifying-cli-output/scripts/capture.py. DEMO names the
+output file docs/demos/<DEMO>.json, such as node/node-add. The import keeps the visible screen of every
+frame with its bold, dim, and color attributes, stores each frame as the rows that changed since the frame
+before it, and adds the final screen as a plain transcript. It does not copy raw bytes, arguments, or
+environment values, so the demo is safe to publish. bin/docs-commands renders the demo into the CLI page
+and the skill file of the command that names it.
+"""
+
+import argparse
+import datetime
+import json
+import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DEMOS = ROOT / 'docs/demos'
+FORMAT = 1
+
+
+def style(cell):
+    tokens = []
+    if cell['bold']:
+        tokens.append('b')
+    if cell['dim']:
+        tokens.append('d')
+    if cell['italics']:
+        tokens.append('i')
+    if cell['underscore']:
+        tokens.append('u')
+    if cell['reverse']:
+        tokens.append('r')
+    if cell['fg'] != 'default':
+        tokens.append('fg-' + cell['fg'])
+    if cell['bg'] != 'default':
+        tokens.append('bg-' + cell['bg'])
+    return ' '.join(tokens)
+
+
+def runs(frame, columns):
+    """Return {row: [[text, style], ...]} for every row that has visible content."""
+    styled = {(cell['row'], cell['column']): style(cell) for cell in frame['cells']}
+    rows = {}
+    for row, line in enumerate(frame['lines']):
+        line = line.rstrip()
+        if not line:
+            continue
+        segments = []
+        for column, char in enumerate(line[:columns]):
+            current = styled.get((row, column), '')
+            if segments and segments[-1][1] == current:
+                segments[-1][0] += char
+            else:
+                segments.append([char, current])
+        rows[row] = segments
+    return rows
+
+
+def delta_frames(frames, columns):
+    """Keep only the rows that changed between consecutive frames."""
+    previous = {}
+    output = []
+    for frame in frames:
+        current = runs(frame, columns)
+        changed = {str(row): segments for row, segments in current.items() if previous.get(row) != segments}
+        for row in previous:
+            if row not in current:
+                changed[str(row)] = []
+        if changed or not output:
+            output.append({'t': round(frame['elapsed'], 3), 'rows': changed})
+        previous = current
+    return output
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    parser.add_argument('capture', type=pathlib.Path)
+    parser.add_argument('demo', help='Output name under docs/demos, such as node/node-add')
+    parser.add_argument('--command', required=True, help='The command line to show, without secrets')
+    parser.add_argument('--date', default=datetime.date.today().isoformat())
+    args = parser.parse_args()
+
+    metadata = json.loads((args.capture / 'metadata.json').read_text(encoding='utf-8'))
+    summary = json.loads((args.capture / 'summary.json').read_text(encoding='utf-8'))
+    frames = [json.loads(line) for line in (args.capture / 'frames.jsonl').read_text(encoding='utf-8').splitlines()]
+    if not frames or not frames[-1].get('final'):
+        sys.exit('The recording has no final frame; import a complete capture.')
+    if summary.get('capture_exit_code') not in (0, summary.get('child_exit_code')):
+        sys.exit('The recording did not complete; import a complete capture.')
+
+    columns = metadata['columns']
+    transcript = '\n'.join(line.rstrip() for line in frames[-1]['lines']).strip('\n')
+    demo = {
+        'format': FORMAT,
+        'command': args.command,
+        'columns': columns,
+        'rows': metadata['rows'],
+        'recorded': {'candidate': metadata['candidate'], 'date': args.date, 'exit_code': summary['child_exit_code'],
+                     'duration_seconds': round(summary['duration_seconds'], 3)},
+        'frames': delta_frames(frames, columns),
+        'transcript': transcript,
+    }
+    output = DEMOS / f'{args.demo}.json'
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(demo, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+    print(f'Wrote {output.relative_to(ROOT)} with {len(demo["frames"])} frames.')
+
+
+if __name__ == '__main__':
+    main()
