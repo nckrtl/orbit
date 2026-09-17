@@ -1,0 +1,112 @@
+{
+  "mutates": true,
+  "setup": [
+    {
+      "id": "prepare-recorder-gateway",
+      "node": "gateway",
+      "argv": ["bash", "/var/lib/orbit-e2e/proof/orb359-setup.sh"],
+      "timeout_seconds": 240
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "tools",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-live.py",
+        "--candidate", "f17170fffbcbea57e547d69fdfa538e99c3d01dd",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--stage", "tools"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "tools-consent",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-live.py",
+        "--candidate", "f17170fffbcbea57e547d69fdfa538e99c3d01dd",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--stage", "tools-consent"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "metrics-status-creds",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-live.py",
+        "--candidate", "f17170fffbcbea57e547d69fdfa538e99c3d01dd",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--stage", "metrics-status-creds"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "metrics-exporters",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-live.py",
+        "--candidate", "f17170fffbcbea57e547d69fdfa538e99c3d01dd",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--stage", "metrics-exporters"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "metrics-lifecycle",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-live.py",
+        "--candidate", "f17170fffbcbea57e547d69fdfa538e99c3d01dd",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--stage", "metrics-lifecycle"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "coverage-report",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-live.py",
+        "--candidate", "f17170fffbcbea57e547d69fdfa538e99c3d01dd",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--stage", "coverage-report"
+      ],
+      "timeout_seconds": 240
+    },
+    {
+      "id": "export-recordings-gateway",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/.local/state/orbit-cli-ux/ORB-359/venv/bin/python",
+        "/var/lib/orbit-e2e/proof/orb359-export.py",
+        "--state", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/proof",
+        "--output", "/home/orbit/.local/state/orbit-cli-ux/ORB-359/export"
+      ],
+      "timeout_seconds": 240
+    }
+  ],
+  "inputs": [
+    "apps/cli/app/Commands/Tools",
+    "apps/cli/app/Commands/Metrics",
+    "apps/cli/app/Commands/GatewayCommand.php",
+    "apps/cli/app/Support/Console",
+    "packages/php-sdk/src/Requests/Tools",
+    "packages/php-sdk/src/Requests/Metrics",
+    "packages/php-sdk/src/Responses/Tools",
+    "packages/php-sdk/src/Responses/Metrics",
+    ".agents/skills/verifying-cli-output",
+    "docs/reference/cli-ux.md",
+    "docs/reference/tools.md",
+    "docs/reference/metrics.md",
+    "docs/cli/tool.mdx",
+    "docs/cli/metrics.mdx"
+  ]
+}
