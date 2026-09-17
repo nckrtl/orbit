@@ -998,7 +998,7 @@ final class TopFlowCommand extends GatewayCommand
             $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
             $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
             if ($link) {
-                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, 54, 1), 'header' => false];
+                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, min(54, intdiv($body->width * 40, 100)) - 2), 1), 'header' => false];
             }
             $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
             $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
@@ -1013,14 +1013,11 @@ final class TopFlowCommand extends GatewayCommand
             ->borderStyle($dim)
             ->widget($propertiesTable);
 
-        $left = $pane === 'instances' ? $this->instanceColumn($properties, count($propertyRows) + 2, $body) : $properties;
+        if ($pane === 'instances') {
+            return $this->instancePage($crumbs, $properties, count($propertyRows) + 2, $body);
+        }
 
         $side = match ($pane) {
-            'instances' => BlockWidget::default()
-                ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                ->titles(Title::fromString(' Logs '))
-                ->borderStyle($dim)
-                ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $body->height - 2))))),
             'processes' => BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
                 ->titles(Title::fromString(' Recent logs '))
@@ -1040,33 +1037,45 @@ final class TopFlowCommand extends GatewayCommand
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(56), Constraint::min(30))
-                    ->widgets($left, $side),
+                    ->widgets($properties, $side),
             );
     }
 
-    /** The left column of an instance page: its properties, then its Processes and Schedules as clickable panes. */
-    private function instanceColumn(Widget $properties, int $propertiesHeight, Area $body): Widget
+    /** An instance page: properties, Processes, and Schedules side by side over the full width, the logs below. */
+    private function instancePage(Line $crumbs, Widget $properties, int $propertiesHeight, Area $body): Widget
     {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
         $processes = $this->rowsFor('processes');
         $schedules = $this->rowsFor('schedules');
-        $constraints = [Constraint::length($propertiesHeight), Constraint::length(count($processes) + 3), Constraint::min(count($schedules) + 3)];
+        $topHeight = max($propertiesHeight, count($processes) + 3, count($schedules) + 3);
 
-        // The column is the 56-wide strip on the left; the mouse needs the pane areas within it.
-        $column = Area::fromScalars($body->left(), $body->top(), min(56, $body->width), $body->height);
-        $split = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($column);
-        $this->drawn['processes'] = ['area' => $split->get(1), 'header' => true];
-        $this->drawn['schedules'] = ['area' => $split->get(2), 'header' => true];
+        // The same splits the grids make, so the mouse can find the two panes.
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($topHeight), Constraint::min(4)])->split($body);
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(32), Constraint::percentage(28)])->split($rows->get(0));
+        $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
+        $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
 
         $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes);
         $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name']], $s['next_run'], $s['status'] !== 'enabled'), $schedules);
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(...$constraints)
+            ->constraints(Constraint::length(1), Constraint::length($topHeight), Constraint::min(4))
             ->widgets(
-                $properties,
-                $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], $processRows),
-                $this->pane('schedules', ' Schedules ', ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
+                ParagraphWidget::fromText(Text::fromLines($crumbs)),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(32), Constraint::percentage(28))
+                    ->widgets(
+                        $properties,
+                        $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], $processRows),
+                        $this->pane('schedules', ' Schedules ', ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
+                    ),
+                BlockWidget::default()
+                    ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+                    ->titles(Title::fromString(' Logs '))
+                    ->borderStyle($dim)
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(1)->height - 2))))),
             );
     }
 
