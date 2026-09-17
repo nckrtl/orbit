@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\Animation;
 use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
+use App\Support\Console\TerminalText;
 use Generator;
 use LogicException;
 use Orbit\Sdk\GatewayApiException;
@@ -289,9 +291,26 @@ abstract class DeploymentCommand extends GatewayCommand
         while ($iterator->valid() && $iterator->current() instanceof DeploymentOutputEvent) {
             $event = $iterator->current();
             $this->requestId = $event->requestId;
-            $this->writeHumanMessage("{$event->stream}: ".$this->terminalValue($event->data));
+            $this->writeStreamedMessage("{$event->stream}: ".$this->terminalValue($event->data));
             $iterator->next();
         }
+    }
+
+    /**
+     * Opt-in to Animation::printLine() (F4/ORB-363): deploy and rollback step output prints
+     * above the live progress region without a clear-and-restart cycle. Every other caller of
+     * writeHumanMessage() keeps the shared clear-and-restart mechanism untouched.
+     */
+    private function writeStreamedMessage(string $message): void
+    {
+        if ($this->consoleMode()->machine) {
+            return;
+        }
+
+        Animation::printLine($this->output, implode("\n", TerminalText::wrap(
+            TerminalText::safe($message),
+            $this->consoleMode()->columns,
+        ))."\n");
     }
 
     private function writeDeploymentResultSummary(DeploymentResultEvent $event): void
