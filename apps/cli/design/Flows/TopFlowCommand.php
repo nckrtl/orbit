@@ -12,8 +12,11 @@ use PhpTui\Term\KeyCode;
 use PhpTui\Term\KeyModifiers;
 use PhpTui\Term\Terminal;
 use PhpTui\Tui\Color\AnsiColor;
+use PhpTui\Tui\Display\Area;
 use PhpTui\Tui\DisplayBuilder;
+use PhpTui\Tui\Extension\Core\Widget\Block\Padding;
 use PhpTui\Tui\Extension\Core\Widget\BlockWidget;
+use PhpTui\Tui\Extension\Core\Widget\CompositeWidget;
 use PhpTui\Tui\Extension\Core\Widget\GridWidget;
 use PhpTui\Tui\Extension\Core\Widget\ParagraphWidget;
 use PhpTui\Tui\Extension\Core\Widget\Table\TableCell;
@@ -22,6 +25,9 @@ use PhpTui\Tui\Extension\Core\Widget\TableWidget;
 use PhpTui\Tui\Layout\Constraint;
 use PhpTui\Tui\Style\Modifier;
 use PhpTui\Tui\Style\Style;
+use PhpTui\Tui\Text\Line;
+use PhpTui\Tui\Text\Span;
+use PhpTui\Tui\Text\Text;
 use PhpTui\Tui\Text\Title;
 use PhpTui\Tui\Widget\Borders;
 use PhpTui\Tui\Widget\BorderType;
@@ -83,6 +89,16 @@ final class TopFlowCommand extends GatewayCommand
 
     private string $scope = 'nodes';
 
+    /**
+     * The open action menu: which row it belongs to, its actions, and the highlighted one.
+     *
+     * @var array{pane: string, title: string, row: array<string, mixed>, actions: array<string, string>, selected: int}|null
+     */
+    private ?array $menu = null;
+
+    /** The last action that ran, shown in the status bar. */
+    private string $ran = '';
+
     /** @var array<string, int> */
     private array $selected = ['nodes' => 0, 'apps' => 0, 'instances' => 0, 'processes' => 0, 'schedules' => 0, 'firewall' => 0];
 
@@ -128,7 +144,7 @@ final class TopFlowCommand extends GatewayCommand
                     }
                 }
 
-                $display->draw($this->screen($refreshes, $lastRefresh, $tick));
+                $display->draw($this->screen($refreshes, $lastRefresh, $tick, $display->viewportArea()));
                 usleep(100_000);
             }
         } catch (RuntimeException $exception) {
@@ -147,6 +163,19 @@ final class TopFlowCommand extends GatewayCommand
 
     private function handleKey(KeyCode $code): void
     {
+        if ($this->menu !== null) {
+            $count = count($this->menu['actions']);
+            match ($code) {
+                KeyCode::Down => $this->menu['selected'] = min($count - 1, $this->menu['selected'] + 1),
+                KeyCode::Up => $this->menu['selected'] = max(0, $this->menu['selected'] - 1),
+                KeyCode::Enter => $this->runAction(),
+                KeyCode::Esc => $this->menu = null,
+                default => null,
+            };
+
+            return;
+        }
+
         if ($this->focus === null) {
             // Hovering: the arrows walk the panes, Enter focuses the hovered one.
             $direction = match ($code) {
@@ -169,9 +198,92 @@ final class TopFlowCommand extends GatewayCommand
         match ($code) {
             KeyCode::Down => $this->move(1),
             KeyCode::Up => $this->move(-1),
+            KeyCode::Enter => $this->openMenu(),
             KeyCode::Esc => $this->focus = null,
             default => null,
         };
+    }
+
+    /** Enter on a row lists the commands that take this record. */
+    private function openMenu(): void
+    {
+        if ($this->focus === null) {
+            return;
+        }
+        $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
+        if ($row === null) {
+            return;
+        }
+
+        $actions = match ($this->focus) {
+            'nodes' => ['show' => "node:show {$row['name']}", 'doctor' => "node:doctor {$row['name']}", 'ssh' => "node:ssh {$row['name']}"],
+            'apps' => ['show' => "app:show {$row['slug']}", 'deploy' => "app:deploy {$row['slug']}"],
+            'instances' => ['show' => "instance:show {$row['app']['slug']}/{$row['name']}", 'deploy' => "instance:deploy {$row['app']['slug']}/{$row['name']}", 'logs' => "instance:logs {$row['app']['slug']}/{$row['name']}"],
+            'processes' => [
+                'logs' => "process:logs {$row['id']}",
+                'restart' => "process:restart {$row['id']}",
+                ...$row['runtime_status'] === 'running' ? ['stop' => "process:stop {$row['id']}"] : ['start' => "process:start {$row['id']}"],
+            ],
+            'schedules' => [
+                'show' => "schedule:show {$row['id']}",
+                'run now' => "schedule:run {$row['id']}",
+                ...$row['status'] === 'enabled' ? ['disable' => "schedule:disable {$row['id']}"] : ['enable' => "schedule:enable {$row['id']}"],
+            ],
+            'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
+            default => [],
+        };
+
+        $this->menu = ['pane' => $this->focus, 'title' => $this->rowTitle($this->focus, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0];
+    }
+
+    /** @param  array<string, mixed>  $row */
+    private function rowTitle(string $pane, array $row): string
+    {
+        return match ($pane) {
+            'nodes' => $row['name'],
+            'apps' => $row['slug'],
+            'instances' => "{$row['app']['slug']}/{$row['name']}",
+            'processes', 'schedules' => $row['name'],
+            'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
+            default => '',
+        };
+    }
+
+    /** The sketch applies the state change locally; the real screen would send the command's request. */
+    private function runAction(): void
+    {
+        if ($this->menu === null) {
+            return;
+        }
+        $label = array_keys($this->menu['actions'])[$this->menu['selected']];
+        $command = $this->menu['actions'][$label];
+        $row = $this->menu['row'];
+
+        if ($this->menu['pane'] === 'processes') {
+            foreach ($this->processes as $index => $process) {
+                if ($process['id'] === $row['id']) {
+                    $state = match ($label) {
+                        'stop' => 'stopped',
+                        'start', 'restart' => 'running',
+                        default => null,
+                    };
+                    if ($state !== null) {
+                        $this->processes[$index]['desired_state'] = $state;
+                        $this->processes[$index]['runtime_status'] = $state;
+                    }
+                }
+            }
+        }
+        if ($this->menu['pane'] === 'schedules') {
+            foreach ($this->schedules as $index => $schedule) {
+                if ($schedule['id'] === $row['id'] && in_array($label, ['enable', 'disable'], true)) {
+                    $this->schedules[$index]['status'] = $label === 'enable' ? 'enabled' : 'disabled';
+                }
+            }
+        }
+
+        $this->ran = "orbit {$command}";
+        $this->menu = null;
     }
 
     private function focusOn(string $pane): void
@@ -268,7 +380,7 @@ final class TopFlowCommand extends GatewayCommand
         };
     }
 
-    private function screen(int $refreshes, float $lastRefresh, float $tick): GridWidget
+    private function screen(int $refreshes, float $lastRefresh, float $tick, Area $area): Widget
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $bold = Style::default()->addModifier(Modifier::BOLD);
@@ -312,12 +424,13 @@ final class TopFlowCommand extends GatewayCommand
             );
 
         $enter = $this->enterCommand();
-        $footer = ParagraphWidget::fromString($this->focus === null
-            ? '  ←↑→↓ move between panes · Enter focus pane · r refresh · q leave'
-            : '  ↑↓ move · Esc back to panes · q leave'.($enter !== '' ? "  │  Enter → {$enter}" : ''),
-        )->style($dim);
+        $footer = ParagraphWidget::fromString(match (true) {
+            $this->menu !== null => '  ↑↓ choose · Enter run · Esc close',
+            $this->focus === null => '  ←↑→↓ move between panes · Enter focus pane · r refresh · q leave',
+            default => '  ↑↓ move · Enter actions · Esc back to panes · q leave'.($enter !== '' ? "  │  Enter → {$enter}" : ''),
+        }.($this->ran !== '' ? "  │  Ran {$this->ran}" : ''))->style($dim);
 
-        return GridWidget::default()
+        $screen = GridWidget::default()
             ->direction(Direction::Vertical)
             ->constraints(Constraint::length(1), Constraint::length(3), Constraint::min(10), Constraint::length(1))
             ->widgets(
@@ -336,6 +449,37 @@ final class TopFlowCommand extends GatewayCommand
                     ->widgets($left, $right),
                 $footer,
             );
+
+        return $this->menu === null ? $screen : CompositeWidget::fromWidgets($screen, $this->menuPopup($area));
+    }
+
+    /** A small centred box over the screen listing the actions for the chosen row. */
+    private function menuPopup(Area $area): Widget
+    {
+        $menu = $this->menu ?? throw new RuntimeException('No menu is open.');
+        $width = 36;
+        $lines = [];
+        foreach (array_keys($menu['actions']) as $index => $label) {
+            $text = str_pad('  '.$label, $width - 2);
+            $lines[] = Line::fromSpan(Span::styled($text, $index === $menu['selected'] ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()));
+        }
+        $lines[] = Line::fromString(str_repeat(' ', $width - 2));
+        $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$menu['actions'][array_keys($menu['actions'])[$menu['selected']]], $width - 2), Style::default()->fg(AnsiColor::DarkGray)));
+        $height = count($lines) + 2;
+
+        $box = BlockWidget::default()
+            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->borderStyle(Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD))
+            ->titles(Title::fromString(" {$menu['title']} "))
+            ->widget(ParagraphWidget::fromText(Text::fromLines(...$lines)));
+
+        // A borderless block with padding places the box in the middle and leaves the rest of the screen as drawn.
+        $left = max(0, intdiv($area->width - $width, 2));
+        $top = max(0, intdiv($area->height - $height, 2));
+
+        return BlockWidget::default()
+            ->padding(Padding::fromScalars($left, max(0, $area->width - $width - $left), $top, max(0, $area->height - $height - $top)))
+            ->widget($box);
     }
 
     /**
