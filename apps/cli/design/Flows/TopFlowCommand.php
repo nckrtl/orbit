@@ -710,27 +710,37 @@ final class TopFlowCommand extends GatewayCommand
         $m = $this->metrics[$node];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $age = max(0, (int) round(microtime(true) - $this->lastMetrics));
+        // Bars are spread over the full inner width: four columns for cores, two halves below,
+        // with a two-cell gap between columns and the last column running to the edge.
         $inner = $width - 2;
-        $column = intdiv($inner, 4);
-        $half = intdiv($inner, 2);
+        $gap = 2;
+        $column = intdiv($inner - 3 * $gap, 4);
+        $lastColumn = $inner - 3 * ($column + $gap);
+        $half = intdiv($inner - $gap, 2);
+        $lastHalf = $inner - $half - $gap;
 
         $coreLines = [];
         foreach (array_chunk($m['cores'], 4, true) as $group) {
             $spans = [];
+            $position = 0;
             foreach ($group as $core => $load) {
-                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $column - 2), Span::fromString('  ')];
+                if ($position > 0) {
+                    $spans[] = Span::fromString(str_repeat(' ', $gap));
+                }
+                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $position === 3 ? $lastColumn : $column)];
+                $position++;
             }
             $coreLines[] = Line::fromSpans(...$spans);
         }
 
         $left = [
-            Line::fromSpans(...$this->bar('Mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), $half - 2)),
-            Line::fromSpans(...$this->bar('Swp', $m['swap'][1] > 0 ? $m['swap'][0] / $m['swap'][1] : 0, sprintf('%.1fG/%.0fG', $m['swap'][0], $m['swap'][1]), $half - 2)),
+            Line::fromSpans(...$this->bar('Mem', $m['mem'][0] / $m['mem'][1], sprintf('%.1fG/%.0fG', $m['mem'][0], $m['mem'][1]), $half)),
+            Line::fromSpans(...$this->bar('Swp', $m['swap'][1] > 0 ? $m['swap'][0] / $m['swap'][1] : 0, sprintf('%.1fG/%.0fG', $m['swap'][0], $m['swap'][1]), $half)),
         ];
 
         [$mount, $used, $total] = $m['disks'][0];
         $right = [
-            Line::fromSpans(...$this->bar(str_pad($mount, 3), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), $half - 2, [80, 90])),
+            Line::fromSpans(...$this->bar(str_pad($mount, 3), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), $lastHalf, [80, 90])),
             Line::fromSpans(Span::styled('Up ', $dim), Span::fromString($m['uptime'])),
         ];
 
@@ -746,9 +756,10 @@ final class TopFlowCommand extends GatewayCommand
                         ParagraphWidget::fromText(Text::fromLines(...$coreLines)),
                         GridWidget::default()
                             ->direction(Direction::Horizontal)
-                            ->constraints(Constraint::percentage(50), Constraint::percentage(50))
+                            ->constraints(Constraint::length($half), Constraint::length($gap), Constraint::min($lastHalf))
                             ->widgets(
                                 ParagraphWidget::fromText(Text::fromLines(...$left)),
+                                BlockWidget::default(),
                                 ParagraphWidget::fromText(Text::fromLines(...$right)),
                             ),
                     ),
