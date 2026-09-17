@@ -916,7 +916,7 @@ final class TopFlowCommand extends GatewayCommand
             $segments[] = ['Apps', count($apps), 0, ''];
         }
         $segments[] = ['Instances', count($instances), $off($instances, fn (array $i): bool => $i['status'] === 'active'), 'degraded'];
-        $segments[] = ['Processes', count($processes), $off($processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state']), 'not as desired'];
+        $segments[] = ['Processes', count($processes), $off($processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state']), 'stopped'];
         $segments[] = ['Schedules', count($schedules), $off($schedules, fn (array $s): bool => $s['status'] === 'enabled'), 'disabled'];
         if ($node !== null) {
             $rules = array_filter($this->firewall, fn (array $f): bool => $f['node'] === $node['name']);
@@ -929,7 +929,7 @@ final class TopFlowCommand extends GatewayCommand
             if ($warn > 0) {
                 $spans[] = Span::styled(" · {$warn} {$word}", Style::default()->fg(AnsiColor::Yellow));
             }
-            $spans[] = Span::fromString('   ');
+            $spans[] = Span::fromString('  ');
         }
 
         return Line::fromSpans(...$spans);
