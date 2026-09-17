@@ -4,7 +4,6 @@ export const TerminalDemo = ({ demo }) => {
   const element = useRef(null);
   const screen = useRef(null);
   const terminal = useRef(null);
-  const typingDelay = 18;
   // A wait longer than this plays as this long; the recording's cadence is otherwise unchanged.
   const maxGap = 1.5;
 
@@ -68,13 +67,9 @@ export const TerminalDemo = ({ demo }) => {
     const start = () => {
       const term = terminal.current;
       term.reset();
-      setPhase('typing');
-      term.write('\x1b[90m$\x1b[0m ');
-      const command = demo.command;
-      for (let i = 0; i < command.length; i += 1) {
-        later((i + 1) * typingDelay, () => term.write(command[i]));
-      }
-      let at = command.length * typingDelay + 350;
+      // Show the command line at once, hold it briefly, then play the recorded output.
+      term.write('\x1b[90m$\x1b[0m ' + demo.command);
+      let at = 600;
       later(at, () => { term.write('\r\n'); setPhase('playing'); });
       demo.cast.forEach(([delta, text]) => {
         at += Math.min(delta, maxGap) * 1000;
@@ -95,7 +90,7 @@ export const TerminalDemo = ({ demo }) => {
       <div className="orbit-demo__bar">
         <span className="orbit-demo__dots"><i /><i /><i /></span>
         <span className="orbit-demo__title">{demo.command}</span>
-        <button type="button" className="orbit-demo__replay" onClick={() => setRun(run + 1)} disabled={phase === 'typing' || phase === 'playing'}>
+        <button type="button" className="orbit-demo__replay" onClick={() => setRun(run + 1)} disabled={phase === 'playing'}>
           {phase === 'done' ? 'Replay' : phase === 'idle' ? 'Play' : 'Playing'}
         </button>
       </div>
