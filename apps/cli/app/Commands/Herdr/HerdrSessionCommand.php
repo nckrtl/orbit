@@ -120,6 +120,7 @@ abstract class HerdrSessionCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
             'ID' => $session->id,
             'Node' => $session->node,
+            'Node ID' => $session->nodeId,
             'Session' => $session->session,
             'User' => $session->user,
             'Process ID' => $session->processId,

@@ -179,6 +179,7 @@ it('shows one named Herdr session after resolving it on the Node', function (): 
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('commander-tasks')
+        ->and($output)->toContain('Node ID')
         ->and($output)->toContain('healthy')
         ->and($output)->toContain('observer')
         ->and($output)->toContain('herdr.observer_failed');
