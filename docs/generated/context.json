@@ -106,6 +106,18 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/agent-skill.mdx",
+            "title": "Agent skill",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": [
+                "0084"
+            ]
+        },
+        {
             "path": "docs/cli/app.mdx",
             "title": "app",
             "kind": "product",
@@ -420,6 +432,1660 @@
                 "App",
                 "App instance",
                 "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/_skill.md",
+            "title": "Orbit",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/activity/_family.md",
+            "title": "activity",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/activity/activity-list.md",
+            "title": "activity:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/activity/activity-show.md",
+            "title": "activity:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/app/_family.md",
+            "title": "app",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Repository identity",
+                "Route",
+                "Schedule",
+                "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/app/app-create.md",
+            "title": "app:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/app/app-destroy.md",
+            "title": "app:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/app/app-list.md",
+            "title": "app:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/app/app-show.md",
+            "title": "app:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/app/app-update.md",
+            "title": "app:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/_family.md",
+            "title": "cluster",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-create.md",
+            "title": "cluster:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-destroy.md",
+            "title": "cluster:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-list.md",
+            "title": "cluster:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-node-add.md",
+            "title": "cluster:node:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-node-remove.md",
+            "title": "cluster:node:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Ingress",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-router-set.md",
+            "title": "cluster:router:set",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-router-unset.md",
+            "title": "cluster:router:unset",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-show.md",
+            "title": "cluster:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/cluster/cluster-update.md",
+            "title": "cluster:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/_family.md",
+            "title": "database",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-create.md",
+            "title": "database:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-describe.md",
+            "title": "database:describe",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-destroy.md",
+            "title": "database:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-list.md",
+            "title": "database:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-query.md",
+            "title": "database:query",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-schema.md",
+            "title": "database:schema",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-show.md",
+            "title": "database:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-tables.md",
+            "title": "database:tables",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-update.md",
+            "title": "database:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/database/database-user-create.md",
+            "title": "database:user:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/dns/_family.md",
+            "title": "dns",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/dns/dns-resolve.md",
+            "title": "dns:resolve",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/doctor/_family.md",
+            "title": "doctor",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0004"
+            ]
+        },
+        {
+            "path": "docs/commands/doctor/doctor.md",
+            "title": "doctor",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/env/_family.md",
+            "title": "env",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/env/env-import.md",
+            "title": "env:import",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/env/env-sync.md",
+            "title": "env:sync",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/env/env-update.md",
+            "title": "env:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/extension/_family.md",
+            "title": "extension",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/extension/extension-disable.md",
+            "title": "extension:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Herdr session",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/extension/extension-enable.md",
+            "title": "extension:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/extension/extension-list.md",
+            "title": "extension:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/firewall/_family.md",
+            "title": "firewall",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/firewall/firewall-allow.md",
+            "title": "firewall:allow",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/firewall/firewall-deny.md",
+            "title": "firewall:deny",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/firewall/firewall-list.md",
+            "title": "firewall:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/firewall/firewall-remove.md",
+            "title": "firewall:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/gateway/_family.md",
+            "title": "gateway",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/gateway/gateway-add.md",
+            "title": "gateway:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/gateway/gateway-remove.md",
+            "title": "gateway:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/gateway/gateway-status.md",
+            "title": "gateway:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/gateway/gateway-trust.md",
+            "title": "gateway:trust",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/gateway/gateway-use.md",
+            "title": "gateway:use",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/_family.md",
+            "title": "herdr",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-observe.md",
+            "title": "herdr:observe",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-session-adopt.md",
+            "title": "herdr:session:adopt",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Herdr session",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-session-create.md",
+            "title": "herdr:session:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-session-destroy.md",
+            "title": "herdr:session:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-session-list.md",
+            "title": "herdr:session:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Herdr session",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-session-restart.md",
+            "title": "herdr:session:restart",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/herdr/herdr-session-show.md",
+            "title": "herdr:session:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Herdr session",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/_family.md",
+            "title": "instance",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-clone.md",
+            "title": "instance:clone",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-create.md",
+            "title": "instance:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-database-add.md",
+            "title": "instance:database:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-database-remove.md",
+            "title": "instance:database:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-deploy-step-create.md",
+            "title": "instance:deploy-step:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-deploy-step-destroy.md",
+            "title": "instance:deploy-step:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-deploy-step-list.md",
+            "title": "instance:deploy-step:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-deploy-step-update.md",
+            "title": "instance:deploy-step:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-deploy.md",
+            "title": "instance:deploy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-destroy.md",
+            "title": "instance:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-list.md",
+            "title": "instance:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-register.md",
+            "title": "instance:register",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Repository identity",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-release-list.md",
+            "title": "instance:release:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-rollback.md",
+            "title": "instance:rollback",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-show.md",
+            "title": "instance:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-transfer.md",
+            "title": "instance:transfer",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/instance/instance-update.md",
+            "title": "instance:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/_family.md",
+            "title": "metrics",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/metrics-credentials.md",
+            "title": "metrics:credentials",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/metrics-disable.md",
+            "title": "metrics:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/metrics-enable.md",
+            "title": "metrics:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/metrics-exporter-disable.md",
+            "title": "metrics:exporter:disable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/metrics-exporter-enable.md",
+            "title": "metrics:exporter:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/metrics/metrics-status.md",
+            "title": "metrics:status",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/_family.md",
+            "title": "node",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-access-add.md",
+            "title": "node:access:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-access-remove.md",
+            "title": "node:access:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-add.md",
+            "title": "node:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-list.md",
+            "title": "node:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-remove.md",
+            "title": "node:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-role-add.md",
+            "title": "node:role:add",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-role-list.md",
+            "title": "node:role:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-role-remove.md",
+            "title": "node:role:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-settings.md",
+            "title": "node:settings",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/node/node-show.md",
+            "title": "node:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/_family.md",
+            "title": "process",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-create.md",
+            "title": "process:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-destroy.md",
+            "title": "process:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-list.md",
+            "title": "process:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-logs.md",
+            "title": "process:logs",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-restart.md",
+            "title": "process:restart",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-show.md",
+            "title": "process:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-start.md",
+            "title": "process:start",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-stop.md",
+            "title": "process:stop",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/process/process-update.md",
+            "title": "process:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/profile/_family.md",
+            "title": "profile",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/profile/profile.md",
+            "title": "profile",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/_family.md",
+            "title": "route",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-create.md",
+            "title": "route:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-destroy.md",
+            "title": "route:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-list.md",
+            "title": "route:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-show.md",
+            "title": "route:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-target-set.md",
+            "title": "route:target:set",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-target-unset.md",
+            "title": "route:target:unset",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/route/route-update.md",
+            "title": "route:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/_family.md",
+            "title": "schedule",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-create.md",
+            "title": "schedule:create",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Node",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-destroy.md",
+            "title": "schedule:destroy",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-enable.md",
+            "title": "schedule:enable",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-list.md",
+            "title": "schedule:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Node",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-logs.md",
+            "title": "schedule:logs",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-run.md",
+            "title": "schedule:run",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-show.md",
+            "title": "schedule:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/schedule/schedule-update.md",
+            "title": "schedule:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/_family.md",
+            "title": "tool",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Tool",
+                "Tool Manager"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/tool-install.md",
+            "title": "tool:install",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Tool",
+                "Tool Manager"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/tool-list.md",
+            "title": "tool:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/tool-manager-list.md",
+            "title": "tool:manager:list",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/tool-remove.md",
+            "title": "tool:remove",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/tool-show.md",
+            "title": "tool:show",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/commands/tool/tool-update.md",
+            "title": "tool:update",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Herdr session",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2202,6 +3868,22 @@
             ]
         },
         {
+            "path": "docs/decisions/0084-publish-one-orbit-agent-skill-from-the-docs.md",
+            "title": "ADR 0084: Publish one Orbit Agent Skill from the documentation",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs"
+            ],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": [
+                "0071",
+                "0084"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2313,7 +3995,8 @@
                 "0080",
                 "0081",
                 "0082",
-                "0083"
+                "0083",
+                "0084"
             ]
         },
         {

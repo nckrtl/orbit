@@ -113,3 +113,27 @@ it('rejects operation navigation when its specification is missing or malformed'
 
     expect($this->rule->check())->toHaveCount(1);
 })->with([null, '{broken', 'null', '{"paths":{}}']);
+
+it('accepts relative file links between command sources and still checks that they exist', function (): void {
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"groups":[{"pages":["reference/apps"]}]}}');
+    new Filesystem()->makeDirectory($this->root.'/commands/instance', 0777, true);
+    new Filesystem()->makeDirectory($this->root.'/commands/node', 0777, true);
+    file_put_contents($this->root.'/commands/instance/instance-create.md', "[Clone](instance-clone.md)\n[Node](../node/node-add.md)\n[Missing](instance-missing.md)");
+    file_put_contents($this->root.'/commands/instance/instance-clone.md', '# Clone');
+    file_put_contents($this->root.'/commands/node/node-add.md', '# Add');
+    file_put_contents($this->root.'/reference/links.md', '[Source](../commands/instance/instance-create.md)');
+
+    $findings = $this->rule->check();
+
+    expect(array_map(static fn ($finding): string => $finding->path.' '.$finding->message, $findings))->toBe([
+        'docs/commands/instance/instance-create.md Local documentation target [instance-missing.md] does not exist.',
+        'docs/reference/links.md Use a root-relative page URL without a file extension instead of [../commands/instance/instance-create.md].',
+    ]);
+});
+
+it('skips the generated skill folder', function (): void {
+    new Filesystem()->makeDirectory($this->root.'/skills/orbit/references/instance', 0777, true);
+    file_put_contents($this->root.'/skills/orbit/references/instance/instance-create.md', '[Missing](instance-missing.md)');
+
+    expect($this->rule->check())->toBe([]);
+});

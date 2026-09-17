@@ -1,0 +1,51 @@
+---
+title: "activity"
+description: "Read the Gateway's log of every authorized command: who ran it, what it targeted, and how it ended."
+commands:
+  - activity:list
+  - activity:show
+---
+
+The Gateway records one Activity for every command it authorizes. The `activity` family lists recent records and shows one attempt in full. Use it to answer what changed, who changed it, and whether it succeeded, without rebuilding the story from several machines.
+
+Every result that the CLI prints carries a Gateway request ID. That ID is the link between a command you ran and the Activity the Gateway kept for it.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`activity:list`](#orbit-activitylist) | List recent Gateway command activity. |
+| [`activity:show`](#orbit-activityshow) | Show one Gateway command activity attempt. |
+
+Every command accepts `--json`. Human requests show progress while waiting. Lists use uppercase table headers; one Activity uses a detail tree. Inputs remain explicit in every mode.
+
+{/* commands */}
+
+## What a record holds
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Numeric Activity ID. |
+| `request_id` | The API request UUID that the Gateway assigned to the attempt. |
+| `command` | The Gateway operation name. |
+| `status` | `running` while the request is in flight, then `succeeded` or `failed`. |
+| `caller_node_id` | The Node that sent the request, or null. |
+| `caller_ip` | The address the request came from, or null. |
+| `target_node_id` | The Node the operation acted on, or null. |
+| `subject_type`, `subject_id` | The record the operation acted on, when there is one. |
+| `duration_ms` | How long the Gateway took, or null while running. |
+| `exit_code` | The exit code of a remote operation, when one applies. |
+| `error_code` | The stable error code of a failed attempt, or null. |
+| `properties` | Bounded operation metadata such as the step that failed or the release a deployment selected. |
+| `occurred_at` | When the Gateway recorded the attempt. |
+
+A record identifies the operation, its target, its caller, and its result. It never holds a command line, a calendar, a journal line, an environment value, a credential, a path, a runtime user, unit or container content, application output, or raw remote output. The SDK redacts credential-shaped values from `properties` before the CLI prints them. Deployment and rollback records carry only the terminal status, selected release, failed step, and error code.
+
+<Note>
+Doctor writes one ordinary Activity for each request and stores no findings in it. Schedule completion callbacks create no Activity at all.
+</Note>
+
+## Related
+
+- [`doctor`](/cli/doctor) reports drift; use the request ID it prints to find its Activity.
+- [Using the CLI](/cli/overview#follow-a-request-through-the-gateway) explains request IDs and the JSON error envelope.

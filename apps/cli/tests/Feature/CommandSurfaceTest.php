@@ -1153,3 +1153,53 @@ function orbitProductCommandNames(): array
         ->values()
         ->all();
 }
+
+describe('command sources', function (): void {
+    it('keeps one command source per product command that names every argument and option', function (): void {
+        $root = realpath(base_path('../../docs/commands'));
+        $frameworkOptions = ['help', 'quiet', 'verbose', 'version', 'ansi', 'no-ansi', 'no-interaction', 'env', 'silent'];
+        // Every product command offers --json; a separate test asserts that.
+        $frameworkOptions[] = 'json';
+        $expectedSources = [];
+        $problems = [];
+
+        foreach (orbitProductCommandNames() as $name) {
+            if (str_starts_with($name, 'internal:')) {
+                continue;
+            }
+
+            $source = $root.'/'.explode(':', $name)[0].'/'.str_replace(':', '-', $name).'.md';
+            $expectedSources[] = $source;
+            if (! is_file($source)) {
+                $problems[] = "{$name} has no source at docs/commands/.";
+
+                continue;
+            }
+
+            $contents = (string) file_get_contents($source);
+            if (! str_starts_with($contents, "---\ntitle: \"{$name}\"\n")) {
+                $problems[] = "{$name} source does not start with its title.";
+            }
+
+            $definition = app(Kernel::class)->all()[$name]->getDefinition();
+            foreach ($definition->getArguments() as $argument) {
+                if (! str_contains($contents, '<'.$argument->getName().'>') && ! str_contains($contents, '`'.$argument->getName().'`')) {
+                    $problems[] = "{$name} source does not name the argument {$argument->getName()}.";
+                }
+            }
+
+            foreach ($definition->getOptions() as $option) {
+                if (! in_array($option->getName(), $frameworkOptions, true) && ! str_contains($contents, '--'.$option->getName())) {
+                    $problems[] = "{$name} source does not name the option --{$option->getName()}.";
+                }
+            }
+        }
+
+        $sources = array_filter(glob($root.'/*/*.md') ?: [], static fn (string $path): bool => basename($path) !== '_family.md');
+        foreach (array_diff($sources, $expectedSources) as $source) {
+            $problems[] = substr($source, strlen($root) + 1).' names no product command.';
+        }
+
+        expect($problems)->toBe([]);
+    });
+});

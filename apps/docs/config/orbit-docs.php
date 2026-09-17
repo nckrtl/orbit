@@ -31,6 +31,20 @@ return [
         'librarian.document_complexity',
     ],
 
+    // Rendered files whose text is linted at its source under docs/commands.
+    'generated_paths' => [
+        'docs/skills/orbit/',
+    ],
+
+    // Prose rules that never apply to the command sources under docs/commands or
+    // the CLI pages rendered from them: a command opens its sections with the
+    // tables and steps an agent scans.
+    'command_ignored_rules' => [
+        'librarian.section_opener_prose',
+        'librarian.bullet_complexity',
+        'librarian.document_complexity',
+    ],
+
     // A maintained page outside docs/decisions states current behavior, not the
     // work that produced it. These tracker prefixes name that work.
     'issue_key_prefixes' => [

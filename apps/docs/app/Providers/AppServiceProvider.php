@@ -25,6 +25,8 @@ final class AppServiceProvider extends ServiceProvider
             $this->stringList('orbit-docs.legacy_decision_rules'),
             $this->decisionRecordInteger('from_number'),
             $this->stringList('orbit-docs.decision_ignored_rules'),
+            $this->stringList('orbit-docs.command_ignored_rules'),
+            $this->stringList('orbit-docs.generated_paths'),
         ));
 
         $this->app->singleton(DocumentationNarrativeRule::class, fn (): DocumentationNarrativeRule => new DocumentationNarrativeRule(

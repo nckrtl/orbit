@@ -19,6 +19,9 @@ final readonly class MintlifyLinksRule implements GroupedRule
 {
     public const string RULE = 'orbit.mintlify_links';
 
+    /** Command sources link each other by relative file path; bin/docs-commands renders them for the site and for agents. */
+    public const string COMMAND_SOURCES = 'docs/commands/';
+
     public function __construct(private DocumentationRepository $repository) {}
 
     public function group(): string
@@ -40,7 +43,7 @@ final readonly class MintlifyLinksRule implements GroupedRule
                     $target = trim($match[2] ?? $match[1], '<>');
                     if (! $this->exists($path, $target)) {
                         $findings[] = $this->missing($path, $target, $lineNumber);
-                    } elseif ($mintlify && $this->usesRepositoryUrl($target)) {
+                    } elseif ($mintlify && ! str_starts_with($path, self::COMMAND_SOURCES) && $this->usesRepositoryUrl($target)) {
                         $findings[] = new Finding(
                             path: $path,
                             line: $lineNumber,

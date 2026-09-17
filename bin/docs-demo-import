@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Import a terminal recording as a documentation demo.
+
+Run from any directory:
+
+    bin/docs-demo-import CAPTURE_DIR DEMO --command "orbit node:add ..."
+
+CAPTURE_DIR is a recording made by .agents/skills/verifying-cli-output/scripts/capture.py. DEMO names the
+output file docs/demos/<DEMO>.json, such as node/node-add. The import keeps the terminal output chunks with
+their timing, so the page replays them through a terminal emulator, and adds the final screen as a plain
+transcript for the skill file. It does not copy arguments or environment values. Keep secrets out of the
+recorded output itself. bin/docs-commands renders the demo into the CLI page and the skill file of the
+command that names it.
+"""
+
+import argparse
+import datetime
+import json
+import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DEMOS = ROOT / 'docs/demos'
+FORMAT = 1
+
+
+SPINNER_GLYPHS = str.maketrans({'○': '•', '◉': '•'})
+
+# A wait shows only spinner ticks. Keep this many seconds of them, then cut to the next real change.
+KEEP_WAIT_SECONDS = 4.0
+
+
+def cast(chunks):
+    """Return [[seconds since the previous chunk, output text], ...] with long spinner-only waits shortened."""
+    output = []
+    previous = None
+    waited = 0.0
+    carried = 0.0
+    for chunk in chunks:
+        text = chunk['text']
+        if text == '':
+            continue
+        delta = chunk['delta'] + carried
+        carried = 0.0
+        same_frame = previous is not None and text.translate(SPINNER_GLYPHS) == previous.translate(SPINNER_GLYPHS)
+        if same_frame:
+            waited += delta
+            if waited > KEEP_WAIT_SECONDS:
+                carried = 0.0
+                continue
+        else:
+            waited = 0.0
+        output.append([round(delta, 3), text])
+        previous = text
+    return output
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    parser.add_argument('capture', type=pathlib.Path)
+    parser.add_argument('demo', help='Output name under docs/demos, such as node/node-add')
+    parser.add_argument('--command', required=True, help='The command line to show, without secrets')
+    parser.add_argument('--date', default=datetime.date.today().isoformat())
+    args = parser.parse_args()
+
+    metadata = json.loads((args.capture / 'metadata.json').read_text(encoding='utf-8'))
+    summary = json.loads((args.capture / 'summary.json').read_text(encoding='utf-8'))
+    frames = [json.loads(line) for line in (args.capture / 'frames.jsonl').read_text(encoding='utf-8').splitlines()]
+    chunks = [json.loads(line) for line in (args.capture / 'chunks.jsonl').read_text(encoding='utf-8').splitlines()]
+    if not frames or not frames[-1].get('final'):
+        sys.exit('The recording has no final frame; import a complete capture.')
+    if summary.get('capture_exit_code') not in (0, summary.get('child_exit_code')):
+        sys.exit('The recording did not complete; import a complete capture.')
+
+    columns = metadata['columns']
+    # The rows the recording used, so the page shows the screen area the command needed rather than the whole terminal.
+    # The longest line the recording drew. No line reached the recorded width beyond it, so a terminal this wide
+    # replays the bytes without any wrap that the original did not have.
+    columns_used = max((len(line.rstrip()) for frame in frames for line in frame['lines']), default=1)
+    rows_used = max((len(frame['lines']) - next((i for i, line in enumerate(reversed(frame['lines'])) if line.strip()), len(frame['lines']))
+                     for frame in frames), default=1)
+    transcript = '\n'.join(line.rstrip() for line in frames[-1]['lines']).strip('\n')
+    demo = {
+        'format': FORMAT,
+        'command': args.command,
+        'columns': columns,
+        'rows': metadata['rows'],
+        'columns_used': columns_used,
+        'rows_used': rows_used,
+        'recorded': {'candidate': metadata['candidate'], 'date': args.date, 'exit_code': summary['child_exit_code'],
+                     'duration_seconds': round(summary['duration_seconds'], 3)},
+        'cast': cast(chunks),
+        'transcript': transcript,
+    }
+    output = DEMOS / f'{args.demo}.json'
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(demo, ensure_ascii=False, separators=(',', ':')) + '\n', encoding='utf-8')
+    print(f'Wrote {output.relative_to(ROOT)} with {len(demo["cast"])} output chunks.')
+
+
+if __name__ == '__main__':
+    main()
