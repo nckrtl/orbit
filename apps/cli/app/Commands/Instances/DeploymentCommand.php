@@ -153,7 +153,17 @@ abstract class DeploymentCommand extends GatewayCommand
                 if (in_array($nextPhase, $alwaysEmitted, true)) {
                     // Already admitted up front; nothing to reveal.
                 } elseif ($nextPhase === 'before_activation' && $activationStepId !== null) {
-                    $progress->admitBefore($activationStepId, $nextStepId, $waiting, $running, $completed);
+                    try {
+                        $progress->admitBefore($activationStepId, $nextStepId, $waiting, $running, $completed);
+                    } catch (LogicException) {
+                        // The activation anchor already settled (before_activation arrived
+                        // after activation — SDK-valid, though the Gateway never emits this
+                        // order live): admitBefore() cannot position the row ahead of a row
+                        // that is no longer waiting. Append it instead of failing outright, so
+                        // human and JSON agree on the eventual outcome (R2), the same way a
+                        // literal duplicate degrades rather than throws.
+                        $progress->admit($nextStepId, $waiting, $running, $completed);
+                    }
                 } else {
                     $progress->admit($nextStepId, $waiting, $running, $completed);
                 }
