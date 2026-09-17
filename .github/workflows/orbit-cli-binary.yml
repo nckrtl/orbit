@@ -43,7 +43,7 @@ jobs:
         run: bin/orbit-build-cli-binary linux x64 "${{ steps.version.outputs.value }}"
 
       - name: Upload Ubuntu x86_64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: orbit-linux-x64
           path: apps/cli/builds/dist/linux/linux-x64
@@ -75,7 +75,7 @@ jobs:
         run: bin/orbit-build-cli-binary mac arm "${{ steps.version.outputs.value }}"
 
       - name: Upload macOS arm64 binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: orbit-macos-arm64
           path: apps/cli/builds/dist/mac/mac-arm
