@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Commands\Design;
+namespace Design\Flows;
 
 use App\Commands\GatewayCommand;
 use App\Support\Console\ConsoleInterrupted;
@@ -18,11 +18,13 @@ use Laravel\Prompts\TextPrompt;
 /**
  * Design sketch: the intended node:add experience without a Gateway.
  *
+ * Registered only when ORBIT_DESIGN=1; see design/README.md.
+ *
  * The sketch prompts for every missing input, reads a made-up host key, and plays
  * a scripted provisioning sequence through the real progress tree. `--outcome`
  * selects where it fails so each refusal can be reviewed and recorded.
  */
-final class DesignNodeAddCommand extends GatewayCommand
+final class NodeAddFlowCommand extends GatewayCommand
 {
     private const array ROLES = ['app-dev', 'app-prod', 'router', 'ingress', 'database', 'metrics'];
 
@@ -42,9 +44,6 @@ final class DesignNodeAddCommand extends GatewayCommand
 
     #[\Override]
     protected $description = 'Design sketch of the node:add experience; runs no Gateway request.';
-
-    #[\Override]
-    protected $hidden = true;
 
     public function handle(): int
     {
@@ -100,7 +99,7 @@ final class DesignNodeAddCommand extends GatewayCommand
             }
         }
 
-        $roles = array_values(array_filter($this->option('role'), 'is_string'));
+        $roles = array_values(array_filter($this->option('role'), is_string(...)));
         if ($roles === []) {
             $selected = $this->promptOrRefuse('At least one --role is required.', fn (): MultiSelectPrompt => new MultiSelectPrompt(
                 'Roles',
@@ -112,7 +111,7 @@ final class DesignNodeAddCommand extends GatewayCommand
             if ($selected === null) {
                 return null;
             }
-            $roles = array_values(array_filter(is_array($selected) ? $selected : [], 'is_string'));
+            $roles = array_values(array_filter(is_array($selected) ? $selected : [], is_string(...)));
         }
 
         $tld = $this->stringOption('tld');

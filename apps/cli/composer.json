@@ -2,7 +2,12 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "nckrtl/orbit-cli",
     "description": "The minimal command-line client for the Orbit gateway.",
-    "keywords": ["cli", "infrastructure", "laravel-zero", "orbit"],
+    "keywords": [
+        "cli",
+        "infrastructure",
+        "laravel-zero",
+        "orbit"
+    ],
     "type": "project",
     "license": "MIT",
     "require": {
@@ -31,7 +36,8 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Tests\\": "tests/"
+            "Tests\\": "tests/",
+            "Design\\": "design/"
         }
     },
     "repositories": [
@@ -71,5 +77,7 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "bin": ["orbit"]
+    "bin": [
+        "orbit"
+    ]
 }

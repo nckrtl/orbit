@@ -55,8 +55,6 @@ final readonly class CommandVocabulary
     /** @var list<string> */
     public const array INTERNAL_COMMANDS = [
         'internal:database-local',
-        // Design sketches are hidden and run no Gateway request.
-        'design:node-add',
     ];
 
     public static function lastSegment(string $name): string
