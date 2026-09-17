@@ -1733,7 +1733,7 @@ final class TopFlowCommand extends GatewayCommand
             return $row;
         }
         $last = array_pop($cells);
-        $text = implode('', array_map(fn (Line $line): string => (string) $line, $last->content->lines));
+        $text = implode('', array_map(fn (Line $line): string => implode('', array_map(fn (Span $span): string => $span->content, iterator_to_array($line))), $last->content->lines));
         $aligned = TableCell::fromString(mb_strlen($text) >= $width ? $text : str_repeat(' ', $width - mb_strlen($text)).$text);
         $aligned->style = $last->style;
 
