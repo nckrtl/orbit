@@ -675,7 +675,7 @@ final class TopFlowCommand extends GatewayCommand
             ->constraints(...$rightConstraints)
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
-                    ->widget(ParagraphWidget::fromString($this->stats($node, $app, $instances))),
+                    ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($node, $app, $instances)))),
                 $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $columns->get(1)->width),
                 $this->pane('instances', $instancesTitle, ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
                 GridWidget::default()
@@ -700,11 +700,11 @@ final class TopFlowCommand extends GatewayCommand
     {
         $m = $this->metrics[$node];
 
-        // Core rows, then the taller of Mem+Swp and Disk+Load+Uptime+Pressure, inside the border.
-        return intdiv(count($m['cores']) + 3, 4) + 4 + 2;
+        // Core rows, then Mem+Swp beside Disk+Uptime, inside the border.
+        return intdiv(count($m['cores']) + 3, 4) + 2 + 2;
     }
 
-    /** An htop-like block for the selected node: cores in four columns, then memory beside disk, load, and uptime. */
+    /** An htop-like block for the selected node: cores in four columns, then memory and swap beside the root disk and uptime. */
     private function metricsPanel(string $node, int $width): Widget
     {
         $m = $this->metrics[$node];
@@ -731,9 +731,7 @@ final class TopFlowCommand extends GatewayCommand
         [$mount, $used, $total] = $m['disks'][0];
         $right = [
             Line::fromSpans(...$this->bar(str_pad($mount, 3), $used / $total, sprintf('%.0fG/%.0fG', $used, $total), $half - 2, [80, 90])),
-            Line::fromSpans(Span::styled('Load    ', $dim), Span::fromString(sprintf('%.2f  %.2f  %.2f', ...$m['load']))),
-            Line::fromSpans(Span::styled('Uptime  ', $dim), Span::fromString($m['uptime'])),
-            Line::fromSpans(Span::styled('Pressure', $dim), Span::fromString(sprintf('  cpu %.0f%%  mem %.0f%%  io %.0f%%', $m['psi']['cpu'], $m['psi']['mem'], $m['psi']['io'])), Span::styled('  some, 10 s', $dim)),
+            Line::fromSpans(Span::styled('Up ', $dim), Span::fromString($m['uptime'])),
         ];
 
         return BlockWidget::default()
@@ -743,7 +741,7 @@ final class TopFlowCommand extends GatewayCommand
             ->widget(
                 GridWidget::default()
                     ->direction(Direction::Vertical)
-                    ->constraints(Constraint::length(count($coreLines)), Constraint::min(4))
+                    ->constraints(Constraint::length(count($coreLines)), Constraint::min(2))
                     ->widgets(
                         ParagraphWidget::fromText(Text::fromLines(...$coreLines)),
                         GridWidget::default()
@@ -894,38 +892,47 @@ final class TopFlowCommand extends GatewayCommand
     }
 
     /**
-     * The stats line follows the navigation: the whole network, one node, one app, or an app on a node.
+     * The stats line follows the navigation: the network, one node, one app, or an app on a node.
+     * Each count carries a yellow suffix only when something in it needs a look.
      *
      * @param  array<string, mixed>|null  $node
      * @param  array<string, mixed>|null  $app
      * @param  list<array<string, mixed>>  $instances
      */
-    private function stats(?array $node, ?array $app, array $instances): string
+    private function stats(?array $node, ?array $app, array $instances): Line
     {
-        $count = fn (array $rows, string $key, string $value): int => count(array_filter($rows, fn (array $row): bool => $row[$key] === $value));
         $ids = array_column($instances, 'id');
-        $processes = array_values(array_filter($this->processes, fn (array $p): bool => in_array($p['target_id'], $ids, true)));
-        $schedules = array_values(array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $ids, true)));
-        $degraded = $count($instances, 'status', 'degraded');
-        $instanceStats = sprintf('Instances %d · %d active%s   Processes %d · %d running   Schedules %d',
-            count($instances), $count($instances, 'status', 'active'), $degraded > 0 ? " · {$degraded} degraded" : '',
-            count($processes), $count($processes, 'runtime_status', 'running'), count($schedules));
+        $processes = array_filter($this->processes, fn (array $p): bool => in_array($p['target_id'], $ids, true));
+        $schedules = array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $ids, true));
+        $off = fn (array $rows, callable $ok): int => count(array_filter($rows, fn (array $row): bool => ! $ok($row)));
 
-        if ($node === null && $app === null) {
-            return sprintf(' Network   Nodes %d · %d active   Apps %d   %s', count($this->nodes), $count($this->nodes, 'status', 'active'), count($this->apps), $instanceStats);
+        $segments = [];
+        if ($node === null) {
+            $nodes = $app === null ? $this->nodes : array_filter($this->nodes, fn (array $n): bool => in_array($n['name'], array_column(array_column($instances, 'node'), 'name'), true));
+            $segments[] = ['Nodes', count($nodes), $off($nodes, fn (array $n): bool => $n['status'] === 'active'), 'inactive'];
         }
-        if ($node !== null && $app !== null) {
-            return " App {$app['slug']} on node {$node['name']}   {$instanceStats}";
+        if ($app === null) {
+            $apps = $node === null ? $this->apps : array_unique(array_column(array_column($instances, 'app'), 'slug'));
+            $segments[] = ['Apps', count($apps), 0, ''];
         }
+        $segments[] = ['Instances', count($instances), $off($instances, fn (array $i): bool => $i['status'] === 'active'), 'degraded'];
+        $segments[] = ['Processes', count($processes), $off($processes, fn (array $p): bool => $p['runtime_status'] === $p['desired_state']), 'not as desired'];
+        $segments[] = ['Schedules', count($schedules), $off($schedules, fn (array $s): bool => $s['status'] === 'enabled'), 'disabled'];
         if ($node !== null) {
-            $rules = count(array_filter($this->firewall, fn (array $f): bool => $f['node'] === $node['name']));
-            $apps = count(array_unique(array_column(array_column($instances, 'app'), 'slug')));
-
-            return sprintf(' Node %s · %s   Apps %d   %s   Firewall %d', $node['name'], $node['status'], $apps, $instanceStats, $rules);
+            $rules = array_filter($this->firewall, fn (array $f): bool => $f['node'] === $node['name']);
+            $segments[] = ['Firewall', count($rules), $off($rules, fn (array $f): bool => $f['status'] === 'applied'), 'pending'];
         }
-        $nodes = count(array_unique(array_column(array_column($instances, 'node'), 'name')));
 
-        return sprintf(' App %s · %s   Nodes %d   %s', $app['slug'], $app['default_branch'] ?? 'main', $nodes, $instanceStats);
+        $spans = [Span::fromString(' ')];
+        foreach ($segments as [$label, $count, $warn, $word]) {
+            $spans[] = Span::fromString("{$label} {$count}");
+            if ($warn > 0) {
+                $spans[] = Span::styled(" · {$warn} {$word}", Style::default()->fg(AnsiColor::Yellow));
+            }
+            $spans[] = Span::fromString('   ');
+        }
+
+        return Line::fromSpans(...$spans);
     }
 
     /**
