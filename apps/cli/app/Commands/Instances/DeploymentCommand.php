@@ -139,17 +139,12 @@ abstract class DeploymentCommand extends GatewayCommand
 
                 // A literal duplicate (the same step named twice) cannot be re-admitted or
                 // re-started; ProgressDisplay::during() below would throw a LogicException
-                // once this row is reused while already terminal. Settle explicitly here
-                // instead of letting that surface as an uncaught error, since this throw
-                // would happen outside any during() scope, with no automatic settle-on-
-                // exception to rely on this time.
+                // once this row is reused while already terminal. Human and JSON must still
+                // agree on the exit status for this SDK-valid stream (F6): settle the tree
+                // neutrally and fall through to plain lines instead of failing outright, since
+                // JSON keeps reading and reports whatever the eventual result says.
                 if (isset($seenStepIds[$nextStepId])) {
-                    $this->settleFirstWaitingRowAsFailed($progress, $alwaysEmitted);
-                    $progress->finish("{$verb} failed.");
-
-                    return $this->renderStreamFailure(
-                        'deployment.stream_invalid', 'Gateway deployment stream is invalid.', $event->requestId,
-                    );
+                    return $this->degradeDeploymentStream($progress, $alwaysEmitted, $currentStepId, $iterator, $event, $verb);
                 }
 
                 $seenStepIds[$nextStepId] = true;
@@ -271,27 +266,61 @@ abstract class DeploymentCommand extends GatewayCommand
 
     /**
      * A duplicate phase has no row of its own left to blame (the repeated step already
-     * settled), so finish() needs some row marked Failure or its own guard refuses to settle
-     * while any row is still Waiting. Marks the first always-emitted row still Waiting; a
-     * no-op if none is (finish() does not require a Failure row when nothing is Waiting).
+     * settled), and re-admitting or re-starting it would throw. Human and JSON must still agree
+     * on the exit status for this SDK-valid stream (F6): settle every row (Warning for the one
+     * that was current, since the eventual outcome is still unknown; Skipped for the rest), then
+     * fall through to plain lines for whatever the stream sends next, finishing with the same
+     * status JSON would report for the same terminal result — not a hard failure.
      *
      * @param  list<string>  $alwaysEmitted
+     * @param  Generator<int, DeploymentEvent>  $iterator
      */
-    private function settleFirstWaitingRowAsFailed(ProgressDisplay $progress, array $alwaysEmitted): void
-    {
+    private function degradeDeploymentStream(
+        ProgressDisplay $progress,
+        array $alwaysEmitted,
+        string $currentStepId,
+        Generator $iterator,
+        DeploymentEvent $event,
+        string $verb,
+    ): int {
+        try {
+            $progress->complete($currentStepId, ProgressState::Warning, 'Gateway deployment stream repeated a step.');
+        } catch (LogicException) {
+            // Already terminal; nothing to settle.
+        }
+
         foreach ($alwaysEmitted as $phase) {
             try {
-                $progress->complete(
-                    $this->deploymentPhaseLabels($phase, null)[0],
-                    ProgressState::Failure,
-                    'Gateway deployment stream is invalid.',
-                );
-
-                return;
+                $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
             } catch (LogicException) {
                 continue;
             }
         }
+
+        $progress->finish("{$verb} stream diverged; remaining events follow.");
+
+        while (! ($event instanceof DeploymentResultEvent)) {
+            if ($event instanceof DeploymentPhaseEvent) {
+                $this->requestId = $event->requestId;
+                $this->writeHumanMessage('Phase: '.$event->phase.($event->stepName !== null ? ":{$event->stepName}" : ''));
+            }
+
+            $iterator->next();
+            $this->renderHumanOutputEvents($iterator);
+
+            if (! $iterator->valid()) {
+                return $this->renderStreamFailure(
+                    'deployment.stream_invalid', 'Gateway deployment stream is invalid.', $this->requestId,
+                );
+            }
+
+            $event = $iterator->current();
+        }
+
+        $this->requestId = $event->requestId;
+        $this->writeDeploymentResultSummary($event);
+
+        return $event->succeeded() ? self::SUCCESS : self::FAILURE;
     }
 
     /** @param Generator<int, DeploymentEvent> $iterator */

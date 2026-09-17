@@ -503,24 +503,55 @@ describe('deployment streams', function (): void {
             ->not->toContain('deployment.stream_invalid', 'stream is invalid');
     });
 
-    it('settles the tree for a literal duplicate phase instead of an uncaught LogicException (F6)', function (): void {
-        MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
-                deployment_cli_phase(1, 'source_preparation'),
-                deployment_cli_phase(2, 'source_preparation'),
-                deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
-            ]),
-        ]);
+    it('settles the tree for a literal duplicate phase and matches JSON\'s exit status (F6)', function (): void {
+        $events = [
+            deployment_cli_phase(1, 'source_preparation'),
+            deployment_cli_phase(2, 'source_preparation'),
+            deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
+        ];
 
-        // JSON never rejects (main's contract); only human mode's ProgressDisplay guards a
-        // literal duplicate, since the repeated step cannot be re-admitted or re-started.
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        // A literal duplicate (the same step named twice) cannot be re-admitted or re-started
+        // as a tree row, since ProgressDisplay's own guards refuse to reuse an already-terminal
+        // row. JSON never rejects this SDK-valid stream (main's contract) and the stream still
+        // ends in a succeeded result, so human mode must not fail it either (F6): it degrades to
+        // plain lines for the rest of the stream instead, and exits with JSON's status.
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
+
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
-        expect($exitCode)->toBe(1)
+        expect($jsonExitCode)->toBe(0)
+            ->and($humanExitCode)->toBe($jsonExitCode)
             ->and($output)
-            ->toContain('Gateway deployment stream is invalid.', 'Deployment failed.')
-            ->not->toContain('LogicException', 'Selected release:');
+            ->toContain(
+                'Gateway deployment stream repeated a step.',
+                'Not reached.',
+                'Phase: source_preparation',
+                'Selected release: release-a',
+            )
+            ->not->toContain('LogicException', 'Deployment failed.');
+    });
+
+    it('degrades a literal duplicate phase to plain lines but still matches JSON\'s failure (F6)', function (): void {
+        $events = [
+            deployment_cli_phase(1, 'source_preparation'),
+            deployment_cli_phase(2, 'source_preparation'),
+            deployment_cli_result(3, 'failed', failedStep: 'activation', errorCode: 'deployment.activation_failed'),
+        ];
+
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
+
+        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($jsonExitCode)->toBe(1)
+            ->and($humanExitCode)->toBe($jsonExitCode)
+            ->and($output)
+            ->toContain('deployment.activation_failed', 'Failed boundary: activation');
     });
 
     it('does not lose the request ID for an output-first stream (F6)', function (): void {
