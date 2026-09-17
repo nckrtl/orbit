@@ -4,11 +4,6 @@ declare(strict_types=1);
 
 namespace Design\Support;
 
-use Laravel\Prompts\ConfirmPrompt;
-use Laravel\Prompts\Prompt;
-use Laravel\Prompts\SelectPrompt;
-use Laravel\Prompts\TextPrompt;
-
 /**
  * Design sketch: Laravel Prompts drawn inside a php-tui panel instead of on the terminal.
  *
@@ -36,44 +31,5 @@ trait PanelPrompt
     public function done(): bool
     {
         return $this->state === 'submit';
-    }
-}
-
-final class PanelTextPrompt extends TextPrompt
-{
-    use PanelPrompt;
-
-    public static function make(mixed ...$arguments): self
-    {
-        $prompt = new self(...$arguments);
-        $prompt->state = 'active';
-
-        return $prompt;
-    }
-}
-
-final class PanelSelectPrompt extends SelectPrompt
-{
-    use PanelPrompt;
-
-    public static function make(mixed ...$arguments): self
-    {
-        $prompt = new self(...$arguments);
-        $prompt->state = 'active';
-
-        return $prompt;
-    }
-}
-
-final class PanelConfirmPrompt extends ConfirmPrompt
-{
-    use PanelPrompt;
-
-    public static function make(mixed ...$arguments): self
-    {
-        $prompt = new self(...$arguments);
-        $prompt->state = 'active';
-
-        return $prompt;
     }
 }
