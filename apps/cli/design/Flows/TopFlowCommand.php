@@ -728,7 +728,7 @@ final class TopFlowCommand extends GatewayCommand
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
             'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
             'processes' => ['Name' => $row['name'], 'Instance' => $instance($row['target_id']), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Keep alive' => $row['keep_alive'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status'], 'Failed step' => $row['failed_step'] ?? null, 'Error code' => $row['error_code'] ?? null],
-            'schedules' => ['Name' => $row['name'], 'Instance' => $instance($row['instance_id']), 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
+            'schedules' => ['Name' => $row['name'], 'Instance' => $instance($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
             default => [],
         };
@@ -809,7 +809,7 @@ final class TopFlowCommand extends GatewayCommand
         // With every node in view the Processes and Schedules say which node runs them.
         $nodeOf = fn (int $instanceId): string => $this->instanceNode($instanceId);
         $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], ...$node === null ? [$nodeOf($p['target_id'])] : [], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
-        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : []], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
+        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : [], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
         $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
         $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->rowsFor('nodes'));
         $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->rowsFor('apps'));
@@ -838,8 +838,8 @@ final class TopFlowCommand extends GatewayCommand
                             ? $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Node', 'Runtime', 'Status'], [Constraint::percentage(36), Constraint::percentage(20), Constraint::percentage(20), Constraint::percentage(20)], $processRows)
                             : $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
                         $node === null
-                            ? $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Node', 'Next run'], [Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(30)], $scheduleRows)
-                            : $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
+                            ? $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Node', 'Command', 'Next run'], [Constraint::percentage(26), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(22)], $scheduleRows)
+                            : $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(40), Constraint::percentage(26)], $scheduleRows),
                     ),
                 $this->pane('firewall', " Firewall on {$nodeName} ", ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(50), Constraint::percentage(18)], $firewallRows),
             );
@@ -1077,7 +1077,7 @@ final class TopFlowCommand extends GatewayCommand
         $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
 
         $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes);
-        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name']], $s['next_run'], $s['status'] !== 'enabled'), $schedules);
+        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $schedules);
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -1090,7 +1090,7 @@ final class TopFlowCommand extends GatewayCommand
                     ->widgets(
                         $properties,
                         $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], $processRows),
-                        $this->pane('schedules', ' Schedules ', ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
+                        $this->pane('schedules', ' Schedules ', ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], $scheduleRows),
                     ),
                 BlockWidget::default()
                     ->borders(Borders::ALL)->borderType(BorderType::Rounded)
@@ -1268,11 +1268,11 @@ final class TopFlowCommand extends GatewayCommand
                 foreach (['queue', 'scheduler'] as $process) {
                     $this->processes[] = ['id' => ++$processId, 'target_id' => $id, 'name' => $process, 'runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'running', 'status' => 'active'];
                 }
-                $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => $id, 'name' => 'backup', 'expression' => '0 3 * * *', 'next_run' => 'tomorrow 03:00', 'status' => 'enabled'];
+                $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => $id, 'name' => 'backup', 'command' => 'php artisan backup:run --only-db', 'expression' => '0 3 * * *', 'next_run' => 'tomorrow 03:00', 'status' => 'enabled'];
             }
         }
-        $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'horizon-snapshot', 'expression' => '*/5 * * * *', 'next_run' => 'in 3 minutes', 'status' => 'enabled'];
-        $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'prune-logs', 'expression' => '0 4 * * 0', 'next_run' => 'Sunday 04:00', 'status' => 'disabled'];
+        $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'horizon-snapshot', 'command' => 'php artisan horizon:snapshot', 'expression' => '*/5 * * * *', 'next_run' => 'in 3 minutes', 'status' => 'enabled'];
+        $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'prune-logs', 'command' => 'find storage/logs -mtime +14 -delete', 'expression' => '0 4 * * 0', 'next_run' => 'Sunday 04:00', 'status' => 'disabled'];
 
         foreach ($this->nodes as $node) {
             $this->firewall[] = ['id' => count($this->firewall) + 1, 'node' => $node['name'], 'port' => '22/tcp', 'action' => 'allow', 'source' => '10.44.0.0/16', 'status' => 'applied'];
