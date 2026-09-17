@@ -13,6 +13,9 @@ use Laravel\Prompts\Key;
  */
 final class SearchableDataTablePrompt extends DataTablePrompt
 {
+    /** Rows the box shows before it scrolls; the box shrinks to fewer matches. */
+    private readonly int $window;
+
     /**
      * @param  list<string>  $headers
      * @param  array<int|string, list<string>>  $rows
@@ -20,6 +23,7 @@ final class SearchableDataTablePrompt extends DataTablePrompt
     public function __construct(array $headers, array $rows, string $label, string $hint = '', bool|string $required = false, mixed $validate = null, int $scroll = 10)
     {
         parent::__construct(headers: $headers, rows: $rows, scroll: $scroll, label: $label, hint: $hint, required: $required, validate: $validate);
+        $this->window = $scroll;
 
         $this->on('key', function (string $key): void {
             if ($this->state !== 'active' || $key === '') {
@@ -37,6 +41,7 @@ final class SearchableDataTablePrompt extends DataTablePrompt
             }
             $this->cursorPosition = mb_strlen($this->typedValue);
             $this->search();
+            $this->scroll = max(1, min(count($this->filteredRows()), $this->window));
         });
     }
 

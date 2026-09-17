@@ -416,6 +416,24 @@ describe('app lifecycle', function (): void {
         record_fixture($this->getJson('/api/v1/apps/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'apps/app-show/charlie-shop', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
     });
 
+    it('records a long list of apps for scrolling', function (): void {
+        $names = ['Acme', 'Bravo docs', 'Charlie shop', 'Delta api', 'Echo mail', 'Foxtrot crm', 'Golf billing', 'Hotel booking',
+            'India search', 'Juliet chat', 'Kilo metrics', 'Lima auth', 'Mike media', 'November news', 'Oscar orders', 'Papa payments',
+            'Quebec queue', 'Romeo reports', 'Sierra store', 'Tango tickets', 'Uniform uploads', 'Victor video', 'Whiskey wiki', 'X-ray export'];
+        foreach ($names as $index => $name) {
+            $slug = str_replace(' ', '-', strtolower($name));
+            OrbitApp::query()->create([
+                'name' => $name,
+                'slug' => $slug,
+                'repository_url' => ($index % 3 === 0 ? 'https://github.com/example/' : 'git@github.com:example/').$slug.'.git',
+                'default_branch' => $index % 4 === 0 ? 'release' : 'main',
+                'root' => $index % 5 === 0 ? 'web/public' : 'public',
+            ]);
+        }
+
+        record_fixture($this->getJson('/api/v1/apps')->assertOk()->assertJsonCount(24, 'data'), 'apps/app-list/many', ListAppsRequest::class, 'GET /api/v1/apps');
+    });
+
     it('does not remove an App that still owns AppInstances', function (): void {
         $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
         $node = Node::query()->create([
