@@ -117,6 +117,20 @@ final class TopFlowCommand extends GatewayCommand
     /** @var list<string> */
     private array $logs = [];
 
+    /**
+     * Deploy steps per instance, as instance:deploy-step:list shows them.
+     *
+     * @var list<array<string, mixed>>
+     */
+    private array $deploySteps = [];
+
+    /**
+     * Deployments per instance: what a Deployment record would keep of each instance:deploy run.
+     *
+     * @var list<array<string, mixed>>
+     */
+    private array $deployments = [];
+
     /** @var list<string> */
     private array $instanceLogs = [];
 
@@ -543,7 +557,7 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-        if (in_array($this->focus, ['users', 'keyspace', 'slowlog'], true)) {
+        if (in_array($this->focus, ['users', 'keyspace', 'slowlog', 'deploysteps', 'deploylog'], true)) {
             return;
         }
         $this->open($this->kindOf($this->focus), $row);
@@ -662,6 +676,11 @@ final class TopFlowCommand extends GatewayCommand
                 ...$row['status'] === 'enabled' ? ['disable' => "schedule:disable {$row['id']}"] : ['enable' => "schedule:enable {$row['id']}"],
             ],
             'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
+            'deployments' => [
+                'show' => "instance:deployment:show {$row['release']}",
+                'roll back to this release' => "instance:rollback {$this->instanceName($row['instance_id'])} --release {$row['release']}",
+                'deploy again' => "instance:deploy {$this->instanceName($row['instance_id'])}",
+            ],
             'tables' => [
                 'describe' => "database:describe {$row['database']} {$row['name']}",
                 'count' => "database:query {$row['database']} \"SELECT count(*) FROM {$row['name']}\"",
@@ -990,6 +1009,9 @@ final class TopFlowCommand extends GatewayCommand
                 default => [],
             },
             'firewall' => array_values(array_filter($this->firewall, fn (array $f): bool => $f['node'] === ($page['row']['name'] ?? null))),
+            'deploysteps' => ($page['kind'] ?? '') === 'instances' ? array_values(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $page['row']['id'])) : [],
+            'deployments' => ($page['kind'] ?? '') === 'instances' ? array_values(array_filter($this->deployments, fn (array $d): bool => $d['instance_id'] === $page['row']['id'])) : [],
+            'deploylog' => ($page['kind'] ?? '') === 'deployments' ? $page['row']['steps'] : [],
             'targets' => ($page['kind'] ?? '') === 'databases' ? array_values(array_filter($this->instances, fn (array $i): bool => in_array($i['id'], $page['row']['targets'], true))) : [],
             'users', 'tables', 'keyspace', 'slowlog' => ($page['kind'] ?? '') === 'databases' ? ($page['row'][$pane] ?? []) : [],
             default => [],
@@ -1048,6 +1070,12 @@ final class TopFlowCommand extends GatewayCommand
                 $rows[] = ['kind' => 'schedules', 'record' => $schedule, 'label' => 'Schedule', 'name' => $schedule['name'], 'where' => $this->instanceName($schedule['instance_id']), 'state' => $schedule['status']];
             }
         }
+        foreach ($this->instances as $instance) {
+            $latest = array_values(array_filter($this->deployments, fn (array $d): bool => $d['instance_id'] === $instance['id']))[0] ?? null;
+            if ($latest !== null && $latest['status'] === 'failed') {
+                $rows[] = ['kind' => 'deployments', 'record' => $latest, 'label' => 'Deployment', 'name' => $latest['release'], 'where' => "{$instance['app']['slug']}/{$instance['name']}", 'state' => "failed at {$latest['failed_step']}"];
+            }
+        }
         foreach ($this->firewall as $rule) {
             if ($rule['status'] !== 'applied') {
                 $rows[] = ['kind' => 'firewall', 'record' => $rule, 'label' => 'Firewall', 'name' => "{$rule['port']} {$rule['action']} {$rule['source']}", 'where' => $rule['node'], 'state' => $rule['status']];
@@ -1101,6 +1129,7 @@ final class TopFlowCommand extends GatewayCommand
             'processes', 'schedules' => $row['name'],
             'databases' => $row['slug'],
             'tables' => isset($row['schema']) ? "{$row['schema']}.{$row['name']}" : $row['name'],
+            'deployments' => $row['release'],
             'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
             default => '',
         };
@@ -1132,6 +1161,7 @@ final class TopFlowCommand extends GatewayCommand
             'processes' => ['Name' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Owner' => $this->processOwner($row), 'Node' => $this->processNode($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
             'schedules' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Node' => $this->instanceNode($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
+            'deployments' => ['Release' => $row['release'], 'Instance' => $this->instanceName($row['instance_id']), 'Node' => $this->instanceNode($row['instance_id']), 'Branch' => $row['branch'], 'Commit' => $row['commit'], 'Started' => $row['started'], 'Duration' => $row['duration'], 'Status' => $row['status'], 'Failed step' => $row['failed_step'], 'Selected release' => $row['selected_release'], 'Triggered by' => $row['by']],
             'tables' => ['Database' => $row['database'], ...isset($row['schema']) ? ['Schema' => $row['schema']] : [], 'Table' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Rows' => $row['rows'], 'Size' => $row['size'], 'Columns' => (string) count($this->tableColumns($row['name']))],
             default => [],
         };
@@ -1386,6 +1416,7 @@ final class TopFlowCommand extends GatewayCommand
             'schedules' => 'Schedule',
             'databases' => 'Database',
             'tables' => 'Table',
+            'deployments' => 'Deployment',
             'firewall' => 'Firewall rule',
             default => '',
         };
@@ -1396,11 +1427,11 @@ final class TopFlowCommand extends GatewayCommand
         )));
 
         // Properties first; App and Node values are links to those records' pages.
-        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases', 'tables'], true) ? intdiv($body->width * 40, 100) : $body->width;
+        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases', 'tables', 'deployments'], true) ? intdiv($body->width * 40, 100) : $body->width;
         $propertyRows = [];
         $index = 0;
         foreach ($this->properties($kind, $row) as $name => $value) {
-            $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
+            $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied', 'succeeded'], true);
             $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
             if ($link) {
                 $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 2, $body->top() + 1 + $index, max(10, $propertiesWidth - 4), 1), 'header' => false];
@@ -1420,6 +1451,7 @@ final class TopFlowCommand extends GatewayCommand
             'instances' => $this->instancePage($properties, $propertiesHeight, $body),
             'databases' => $this->databasePage($properties, $propertiesHeight, $body),
             'tables' => $this->tablePage($row, $properties, $propertiesHeight, $body),
+            'deployments' => $this->deploymentPage($row, $properties, $propertiesHeight, $body),
             'schedules' => $this->stackedPage($properties, $propertiesHeight, ' Runs ', $this->scheduleRuns($row), $body),
             default => $this->stackedPage($properties, $propertiesHeight, ' Logs ', $this->logs, $body),
         };
@@ -1498,16 +1530,23 @@ final class TopFlowCommand extends GatewayCommand
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $processes = $this->rowsFor('processes');
         $schedules = $this->rowsFor('schedules');
+        $steps = $this->rowsFor('deploysteps');
+        $deployments = $this->rowsFor('deployments');
         $topHeight = max($propertiesHeight, count($processes) + 3, count($schedules) + 3);
-        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($topHeight), Constraint::min(4)])->split($body);
+        $deployHeight = max(count($steps), count($deployments), 1) + 3;
+        $constraints = [Constraint::length($topHeight), Constraint::length($deployHeight), Constraint::min(4)];
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
         $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34)])->split($rows->get(0));
+        $deployColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(48), Constraint::percentage(52)])->split($rows->get(1));
         $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
         $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
-        $this->paneOrder = ['processes', 'schedules'];
+        $this->drawn['deploysteps'] = ['area' => $deployColumns->get(0), 'header' => true];
+        $this->drawn['deployments'] = ['area' => $deployColumns->get(1), 'header' => true];
+        $this->paneOrder = ['processes', 'schedules', 'deploysteps', 'deployments'];
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length($topHeight), Constraint::min(4))
+            ->constraints(...$constraints)
             ->widgets(
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
@@ -1517,8 +1556,15 @@ final class TopFlowCommand extends GatewayCommand
                         $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes)),
                         $this->pane('schedules', ' Schedules ', ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $schedules)),
                     ),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(48), Constraint::percentage(52))
+                    ->widgets(
+                        $this->pane('deploysteps', ' Deploy steps ', ['Phase', 'Name', 'Command', 'Timeout'], [Constraint::percentage(24), Constraint::percentage(18), Constraint::percentage(42), Constraint::percentage(12)], array_map(fn (array $s): TableRow => $this->row([$s['phase'], $s['name'], $s['command']], "{$s['timeout']} s", false), $steps), 'No deploy steps. instance:deploy-step:create adds one.'),
+                        $this->pane('deployments', ' Deployments ', ['Release', 'Branch', 'Commit', 'By', 'Started', 'Status'], [Constraint::percentage(24), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(22), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['release'], $d['branch'], $d['commit'], $d['by'], $d['started']], $d['status'], $d['status'] !== 'succeeded'), $deployments), 'Not deployed yet.'),
+                    ),
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)->padding(Padding::horizontal(1))
-                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(1)->height - 2))))),
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(2)->height - 2))))),
             );
     }
 
@@ -1604,6 +1650,38 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         return GridWidget::default()->direction(Direction::Vertical)->constraints(...$constraints)->widgets(...$widgets);
+    }
+
+    /**
+     * A deployment page: properties beside the phases and steps as they ran, then the event
+     * log the deploy streamed, over the full width.
+     *
+     * @param  array<string, mixed>  $deployment
+     */
+    private function deploymentPage(array $deployment, Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $steps = $deployment['steps'];
+        $top = max($propertiesHeight, count($steps) + 3);
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($top), Constraint::min(4)])->split($body);
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(0));
+        $this->drawn['deploylog'] = ['area' => $columns->get(1), 'header' => true];
+        $this->paneOrder = ['deploylog'];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length($top), Constraint::min(4))
+            ->widgets(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
+                    ->widgets(
+                        $properties,
+                        $this->pane('deploylog', ' Phases and steps ', ['Phase', 'Step', 'Status', 'Duration'], [Constraint::percentage(30), Constraint::percentage(30), Constraint::percentage(22), Constraint::percentage(16)], array_map(fn (array $s): TableRow => $this->row([$s['phase'], $s['step'], $s['status']], $s['duration'], $s['status'] === 'failed'), $steps)),
+                    ),
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Deploy log '))->borderStyle($dim)->padding(Padding::horizontal(1))
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($deployment['log'], -max(1, $rows->get(1)->height - 2))))),
+            );
     }
 
     /**
@@ -2115,6 +2193,19 @@ final class TopFlowCommand extends GatewayCommand
                 $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => $id, 'name' => 'backup', 'command' => 'php artisan backup:run --only-db', 'expression' => '0 3 * * *', 'next_run' => 'tomorrow 03:00', 'status' => 'enabled'];
             }
         }
+        foreach ($this->instances as $instance) {
+            $id = $instance['id'];
+            $this->deploySteps[] = ['id' => count($this->deploySteps) + 1, 'instance_id' => $id, 'phase' => 'before_activation', 'name' => 'install', 'command' => 'composer install --no-dev --optimize-autoloader', 'timeout' => 300, 'position' => 1];
+            $this->deploySteps[] = ['id' => count($this->deploySteps) + 1, 'instance_id' => $id, 'phase' => 'before_activation', 'name' => 'migrate', 'command' => 'php artisan migrate --force', 'timeout' => 300, 'position' => 2];
+            $this->deploySteps[] = ['id' => count($this->deploySteps) + 1, 'instance_id' => $id, 'phase' => 'after_activation', 'name' => 'horizon', 'command' => 'php artisan horizon:terminate', 'timeout' => 60, 'position' => 1];
+            $branch = $instance['selected_branch'] ?? ($instance['environment'] === 'production' ? 'main' : $instance['name']);
+            $this->deployments[] = $this->deployment($id, $branch, '4f2c9a1', time() - 2 * 3600 - $id * 60, 'succeeded', null);
+            if ($id === 1) {
+                $this->deployments[] = $this->deployment($id, $branch, '8b1d0e7', time() - 26 * 3600, 'failed', 'migrate');
+            }
+            $this->deployments[] = $this->deployment($id, $branch, 'c07e21d', time() - 3 * 86400 - $id * 60, 'succeeded', null);
+        }
+
         $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'horizon-snapshot', 'command' => 'php artisan horizon:snapshot', 'expression' => '*/5 * * * *', 'next_run' => 'in 3 minutes', 'status' => 'enabled'];
         $this->schedules[] = ['id' => count($this->schedules) + 1, 'instance_id' => 1, 'name' => 'prune-logs', 'command' => 'find storage/logs -mtime +14 -delete', 'expression' => '0 4 * * 0', 'next_run' => 'Sunday 04:00', 'status' => 'disabled'];
 
@@ -2187,6 +2278,54 @@ final class TopFlowCommand extends GatewayCommand
             date('H:i:s', time() - 9).'  Horizon started on charlie-shop/dev',
             date('H:i:s', time() - 6).'  Processed job App\\Jobs\\SyncOrders #4198 in 212 ms',
             date('H:i:s', time() - 3).'  Processed job App\\Jobs\\SendReceipt #4199 in 88 ms',
+        ];
+    }
+
+    /**
+     * One deployment as a Deployment record would keep it: outcome, phases with their steps, and the event log.
+     *
+     * @return array<string, mixed>
+     */
+    private function deployment(int $instanceId, string $branch, string $commit, int $startedAt, string $status, ?string $failedStep): array
+    {
+        $release = date('Ymd-His', $startedAt);
+        $phases = [['source_preparation', '—', 'ok', '6.1 s'], ['environment_sync', '—', 'ok', '0.3 s'], ['before_activation', 'install', 'ok', '22.8 s'], ['before_activation', 'migrate', $failedStep === 'migrate' ? 'failed' : 'ok', $failedStep === 'migrate' ? '1.9 s' : '3.4 s']];
+        if ($failedStep === null) {
+            $phases[] = ['activation', '—', 'ok', '0.1 s'];
+            $phases[] = ['php_refresh', '—', 'ok', '1.2 s'];
+            $phases[] = ['after_activation', 'horizon', 'ok', '0.8 s'];
+        }
+        $log = [];
+        $at = $startedAt;
+        foreach ([
+            "release {$release} created from {$branch}@{$commit}",
+            'fetched 214 objects, checked out '.$commit,
+            'synchronised 23 environment values',
+            '[before_activation] install: composer install --no-dev --optimize-autoloader',
+            '  Generating optimized autoload files',
+            '[before_activation] migrate: php artisan migrate --force',
+            ...$failedStep === 'migrate'
+                ? ['  Migrating: 2026_09_16_101200_add_index_to_orders', '  SQLSTATE[42P07]: relation "orders_status_idx" already exists', 'step migrate failed with exit 1', 'prior release kept as current']
+                : ['  Nothing to migrate', "current -> {$release}", 'php-fpm reloaded, opcache reset', '[after_activation] horizon: php artisan horizon:terminate', "deployed {$release}"],
+        ] as $line) {
+            $log[] = date('H:i:s', $at).'  '.$line;
+            $at += 3;
+        }
+
+        return [
+            'id' => count($this->deployments) + 1,
+            'instance_id' => $instanceId,
+            'release' => $release,
+            'branch' => $branch,
+            'commit' => $commit,
+            'by' => $instanceId % 2 === 0 ? 'nick' : 'herdr',
+            'started' => date('Y-m-d H:i', $startedAt),
+            'duration' => $failedStep === null ? '41 s' : '34 s',
+            'status' => $status,
+            'failed_step' => $failedStep ?? '—',
+            'selected_release' => $failedStep === null ? $release : 'previous',
+            'steps' => array_map(fn (array $p): array => ['phase' => $p[0], 'step' => $p[1], 'status' => $p[2], 'duration' => $p[3]], $phases),
+            'log' => $log,
         ];
     }
 
