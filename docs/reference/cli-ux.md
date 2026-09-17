@@ -112,8 +112,6 @@ After input resolution and consent, render the applicable progress structure bef
 
 Active indicators alternate about every 300 milliseconds and continue while a request blocks or between stream events. The pending footer is dim `Working...`. Active and completed labels are never dim. A terminal success footer names the outcome at full strength; a failure footer is red. Final footers are never dim. Plain output retains a readable outcome without color or cursor movement.
 
-A step admitted active for under one second may settle before an alternation is observable. The standard requires a moving indicator only once a step has been active for more than one second. Verification of a sub-second step checks that its row reaches its completed label without a forbidden transition. It does not require that the glyph visibly alternated.
-
 The tree has one title, a blank continuation row, one row for each known step with continuation rows between them, and a closing footer. Initial steps are waiting. Only admitted active work animates. Shared renderers own glyphs, color, spacing, repainting, and terminal cleanup so command families do not develop separate visual conventions.
 
 Use operator-facing labels. Where steps have distinct states, use imperative, active, and completed forms such as Resolve resource, Resolving resource, and Resolved resource. Do not expose storage mechanics as progress labels.
