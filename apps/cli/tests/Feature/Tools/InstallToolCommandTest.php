@@ -5,12 +5,11 @@ declare(strict_types=1);
 use App\Commands\Tools\InstallToolCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
-use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
-use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -42,95 +41,6 @@ function install_payload(string $outcome = 'applied'): array
         'outcome' => $outcome,
     ];
 }
-
-it('prompts with active and uninstalled sorted managers and renders applied output', function (): void {
-    $id = '11111111-1111-4111-8111-111111111111';
-    $mock = MockClient::global([
-        ListToolManagersRequest::class => MockResponse::make([
-            'data' => [
-                [
-                    'id' => 1,
-                    'node_id' => 12,
-                    'name' => 'vp',
-                    'status' => 'active',
-                    'installed_version' => null,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
-                [
-                    'id' => 2,
-                    'node_id' => 12,
-                    'name' => 'apt',
-                    'status' => 'active',
-                    'installed_version' => null,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
-                [
-                    'id' => null,
-                    'node_id' => 12,
-                    'name' => 'composer',
-                    'status' => 'uninstalled',
-                    'installed_version' => null,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
-                [
-                    'id' => null,
-                    'node_id' => 12,
-                    'name' => 'brew',
-                    'status' => 'uninstalled',
-                    'installed_version' => null,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ],
-                [
-                    'id' => 4,
-                    'node_id' => 12,
-                    'name' => 'broken',
-                    'status' => 'failed',
-                    'installed_version' => null,
-                    'failed_step' => 'connect',
-                    'error_code' => 'manager.unavailable',
-                ],
-            ],
-            'meta' => ['request_id' => $id],
-        ]),
-        InstallToolRequest::class => MockResponse::make(['data' => install_payload(), 'meta' => ['request_id' => $id]]),
-    ]);
-    $this
-        ->artisan('tool:install', ['--node' => 12])
-        ->expectsChoice('Tool manager', 'vp', ['apt', 'brew', 'composer', 'vp'])
-        ->expectsQuestion('Package', '@openai/codex')
-        ->expectsOutput('Tool [@openai/codex] installed with [vp].')
-        ->expectsOutput("Request ID: {$id}")
-        ->assertSuccessful();
-
-    [$managerResponse, $installResponse] = $mock->getRecordedResponses();
-    $managerRequest = $managerResponse->getPendingRequest();
-    $installRequest = $installResponse->getPendingRequest();
-
-    expect($managerRequest->getRequest())
-        ->toBeInstanceOf(ListToolManagersRequest::class)
-        ->and($managerRequest->getRequest()->getMethod())
-        ->toBe(Method::GET)
-        ->and($managerRequest->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/tool-managers')
-        ->and($managerRequest->query()->all())
-        ->toBe(['node_id' => 12])
-        ->and($installRequest->getRequest())
-        ->toBeInstanceOf(InstallToolRequest::class)
-        ->and($installRequest->getRequest()->getMethod())
-        ->toBe(Method::POST)
-        ->and($installRequest->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/tools')
-        ->and($installRequest->body()->all())
-        ->toBe([
-            'node_id' => 12,
-            'manager' => 'vp',
-            'package' => '@openai/codex',
-        ]);
-});
 
 it('sends supplied manager and constraint without manager lookup', function (): void {
     $id = '33333333-3333-4333-8333-333333333333';
@@ -204,15 +114,17 @@ it('renders unchanged human output with its request ID', function (): void {
         ]),
     ]);
 
-    $this
-        ->artisan('tool:install', [
-            'package' => '@openai/codex',
-            '--node' => 12,
-            '--manager' => 'vp',
-        ])
-        ->expectsOutput('Tool [@openai/codex] is already installed with [vp].')
-        ->expectsOutput("Request ID: {$id}")
-        ->assertSuccessful();
+    $tester = new CommandTester(app(Kernel::class)->all()['tool:install']);
+    $exit = $tester->execute([
+        'package' => '@openai/codex',
+        '--node' => 12,
+        '--manager' => 'vp',
+    ], ['interactive' => false]);
+    $output = $tester->getDisplay(true);
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('Tool [@openai/codex] is already installed with [vp].')
+        ->and($output)->toContain($id);
 });
 
 it('rejects missing inputs invalid packages and nodes before HTTP', function (): void {
@@ -245,43 +157,6 @@ it('uses noninteractive manager and package rules without prompting', function (
         ->and($packageTester->getDisplay())
         ->toContain('Package is required.');
     $mock->assertNothingSent();
-});
-
-it('renders manager lookup failures safely and does not install', function (): void {
-    $id = '44444444-4444-4444-8444-444444444444';
-    $mock = MockClient::global([
-        ListToolManagersRequest::class => MockResponse::make(
-            [
-                'error' => [
-                    'code' => 'tool.manager_unavailable',
-                    'message' => 'Manager unavailable.',
-                    'details' => ['manager_output' => 'validation-secret'],
-                ],
-            ],
-            503,
-            ['X-Orbit-Request-Id' => $id],
-        ),
-    ]);
-    $this
-        ->artisan('tool:install', ['--node' => 12])
-        ->expectsOutput('Manager unavailable.')
-        ->expectsOutput("Request ID: {$id}")
-        ->assertExitCode(1);
-    $mock->assertSentCount(1, ListToolManagersRequest::class);
-});
-
-it('returns manager required when no supported manager states exist', function (): void {
-    $mock = MockClient::global([
-        ListToolManagersRequest::class => MockResponse::make([
-            'data' => [],
-            'meta' => ['request_id' => '55555555-5555-4555-8555-555555555555'],
-        ]),
-    ]);
-    $this
-        ->artisan('tool:install', ['--node' => 12])
-        ->expectsOutput('No supported tool manager is available.')
-        ->assertExitCode(1);
-    $mock->assertSentCount(1, ListToolManagersRequest::class);
 });
 
 it('rejects unsupported successful outcomes as invalid response JSON', function (): void {

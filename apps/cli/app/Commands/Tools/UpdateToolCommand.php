@@ -25,21 +25,13 @@ final class UpdateToolCommand extends ToolActionCommand
     }
 
     #[\Override]
-    protected function renderSuccess(ToolResponse $tool): int
+    protected function message(ToolResponse $tool): string
     {
-        $message = match ($tool->outcome) {
+        return match ($tool->outcome) {
             'applied' => "Tool [{$tool->package}] updated.",
             'unchanged' => "Tool [{$tool->package}] is already current.",
-            'blocked_by_constraint' => $tool->versionConstraint === null || $tool->versionConstraint === ''
-                ? ''
-                : "Tool [{$tool->package}] update blocked by constraint [{$tool->versionConstraint}].",
-            default => '',
+            default => "Tool [{$tool->package}] update blocked by constraint [{$tool->versionConstraint}].",
         };
-
-        $this->info($message);
-        $this->line("Request ID: {$tool->requestId}");
-
-        return self::SUCCESS;
     }
 
     #[\Override]
@@ -50,5 +42,11 @@ final class UpdateToolCommand extends ToolActionCommand
             || $tool->outcome === 'blocked_by_constraint'
             && $tool->versionConstraint !== null
             && $tool->versionConstraint !== '';
+    }
+
+    #[\Override]
+    protected function progressLabels(): array
+    {
+        return ['Update Tool', 'Updating Tool', 'Updated Tool'];
     }
 }

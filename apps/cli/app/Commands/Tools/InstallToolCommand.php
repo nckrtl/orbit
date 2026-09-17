@@ -6,6 +6,8 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Laravel\Prompts\TextPrompt;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
@@ -41,56 +43,22 @@ final class InstallToolCommand extends ToolCommand
 
         $manager = $this->stringOption('manager');
         if ($manager === null) {
-            if (! $this->mayPrompt()) {
-                return $this->renderGatewayFailure('tool.manager_required', 'Tool manager is required.');
-            }
-
-            $managers = $this->send($connector, new ListToolManagersRequest($nodeId), ToolManagersResponse::class);
-            if (! $managers instanceof ToolManagersResponse) {
-                return self::FAILURE;
-            }
-
-            $names = array_values(array_unique(array_map(
-                static fn (ToolManagerResponse $item): string => $item->name,
-                array_filter(
-                    $managers->managers,
-                    static fn (ToolManagerResponse $item): bool => in_array(
-                        $item->status,
-                        ['active', 'uninstalled'],
-                        strict: true,
-                    ),
-                ),
-            )));
-            sort($names);
-            if ($names === []) {
-                return $this->renderGatewayFailure('tool.manager_required', 'No supported tool manager is available.');
-            }
-            $manager = $this->chooseString('Tool manager', $names);
+            $manager = $this->promptForManager($connector, $nodeId);
             if ($manager === null) {
-                return $this->renderGatewayFailure(
-                    'gateway.invalid_response',
-                    'Gateway response is invalid.',
-                );
+                return self::FAILURE;
             }
         }
 
-        $package = $this->promptedStringArgument(
-            'package',
-            'Package',
-            'tool.package_required',
-            'Package is required.',
-        );
+        $package = $this->resolvePackage();
         if ($package === null) {
             return self::FAILURE;
         }
-        if (strlen($package) > 255 || preg_match('/[\x00-\x1F\x7F]/', $package) === 1) {
-            return $this->renderGatewayFailure('tool.package_invalid', 'Package is invalid.');
-        }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
-            $this->request($nodeId, $manager, $package, $this->stringOption('constraint')),
+            new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint')),
             ToolResponse::class,
+            ['Install Tool', 'Installing Tool', 'Installed Tool'],
         );
         if (! $response instanceof ToolResponse) {
             return self::FAILURE;
@@ -110,20 +78,85 @@ final class InstallToolCommand extends ToolCommand
             );
         }
 
-        if ($this->option('json') === true) {
-            $this->writeToolJson($response);
-
-            return self::SUCCESS;
-        }
-
-        $this->info($message);
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderTool($response, $message);
     }
 
-    protected function request(int $nodeId, string $manager, string $package, ?string $constraint): InstallToolRequest
+    private function promptForManager(GatewayConnector $connector, int $nodeId): ?string
     {
-        return new InstallToolRequest($nodeId, $manager, $package, $constraint);
+        if (! $this->consoleMode()->mayPrompt) {
+            $this->renderGatewayFailure('tool.manager_required', 'Tool manager is required.');
+
+            return null;
+        }
+
+        $managers = $this->sendWithProgress(
+            $connector,
+            new ListToolManagersRequest($nodeId),
+            ToolManagersResponse::class,
+            ['List Tool managers', 'Loading Tool managers', 'Loaded Tool managers'],
+        );
+        if (! $managers instanceof ToolManagersResponse) {
+            return null;
+        }
+
+        $eligible = array_values(array_filter(
+            $managers->managers,
+            static fn (ToolManagerResponse $item): bool => in_array(
+                $item->status,
+                ['active', 'uninstalled'],
+                strict: true,
+            ),
+        ));
+        if ($eligible === []) {
+            $this->renderGatewayFailure('tool.manager_required', 'No supported tool manager is available.');
+
+            return null;
+        }
+
+        $rows = [];
+        foreach ($eligible as $item) {
+            $rows[$item->name] = [$item->name, $item->status];
+        }
+        ksort($rows);
+
+        return (string) $this->commandPrompts()->selectEntity('Tool manager', ['Name', 'Status'], $rows);
+    }
+
+    private function resolvePackage(): ?string
+    {
+        $package = $this->argument('package');
+
+        if ($package === null && $this->consoleMode()->mayPrompt) {
+            $package = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
+                'Package',
+                required: true,
+                validate: self::packageError(...),
+            ));
+        }
+
+        if (! is_string($package) || $package === '') {
+            $this->renderGatewayFailure('tool.package_required', 'Package is required.');
+
+            return null;
+        }
+
+        if (self::packageError($package) !== null) {
+            $this->renderGatewayFailure('tool.package_invalid', 'Package is invalid.');
+
+            return null;
+        }
+
+        return $package;
+    }
+
+    private static function packageError(string $value): ?string
+    {
+        if ($value === '') {
+            return 'Package is required.';
+        }
+
+        return strlen($value) > 255 || preg_match('/[\x00-\x1F\x7F]/', $value) === 1
+            ? 'Package is invalid.'
+            : null;
     }
 }

@@ -23,14 +23,6 @@ final class DisableMetricsCommand extends MetricsCommand
     {
         $force = $this->option('force') === true;
         $purge = $this->option('purge-data') === true;
-        $nonInteractive = $this->option('json') === true || ! $this->input->isInteractive();
-
-        if ($nonInteractive && ! $force) {
-            return $this->renderGatewayFailure(
-                'metrics.force_required',
-                'Non-interactive Metrics disable requires --force.',
-            );
-        }
 
         if ($purge && ! $force) {
             return $this->renderGatewayFailure('metrics.force_required', '--purge-data requires --force.');
@@ -40,24 +32,34 @@ final class DisableMetricsCommand extends MetricsCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $status = $this->send($connector, new ShowMetricsStatusRequest, MetricsStatusResponse::class);
-        if (! $status instanceof MetricsStatusResponse) {
-            return self::FAILURE;
-        }
 
         if (! $force) {
-            $this->line('Metrics disable preview:');
-            $this->line('  Data: preserve');
-            $this->line('  Assignment: '.($status->assignment === null ? 'none' : 'remove'));
-            if (! $this->confirm('Disable Metrics?', false)) {
-                return $this->renderGatewayFailure('metrics.confirmation_required', 'Confirmation is required.');
+            $status = $this->sendWithProgress(
+                $connector,
+                new ShowMetricsStatusRequest,
+                MetricsStatusResponse::class,
+                ['Resolve Metrics status', 'Loading Metrics status', 'Loaded Metrics status'],
+            );
+            if (! $status instanceof MetricsStatusResponse) {
+                return self::FAILURE;
+            }
+
+            if (! $this->confirmAction(
+                'Disable Metrics? Data: preserve. Assignment: '.($status->assignment === null ? 'none' : 'remove').'.',
+                'Metrics disable cancelled.',
+                option: 'force',
+                requiredCode: 'metrics.confirmation_required',
+                requiredMessage: 'Use --force to confirm Metrics disable.',
+            )) {
+                return self::FAILURE;
             }
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new DisableMetricsRequest(force: true, purgeData: $purge),
             MetricsMutationResponse::class,
+            ['Disable Metrics', 'Disabling Metrics', 'Disabled Metrics'],
         );
 
         return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;

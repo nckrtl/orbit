@@ -7,6 +7,7 @@ namespace App\Commands\Metrics;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
 
@@ -26,13 +27,22 @@ abstract class MetricsCommand extends GatewayCommand
 
             return self::SUCCESS;
         }
-        $this->line("Metrics operation completed for node #{$response->nodeId}: {$response->status}.");
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
+            "Metrics operation completed for node #{$response->nodeId}.",
+            [
+                'Node ID' => $response->nodeId,
+                'Status' => $response->status,
+                'Publication' => $response->publication,
+                'Request ID' => $response->requestId,
+            ],
+        ));
+
         if ($response->publication === 'uncleaned') {
-            $this->warn(
+            $this->writeHumanMessage(
                 'Publication not cleaned: no single active Gateway. The metrics.orbit route, certificate, and DNS record remain on the Gateway.',
             );
         }
-        $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
     }
