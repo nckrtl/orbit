@@ -689,7 +689,7 @@ final class TopFlowCommand extends GatewayCommand
             ->constraints(...$rightConstraints)
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
-                    ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($node, $app, $instances)))),
+                    ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($node, $app, $instances, $columns->get(1)->width - 2)))),
                 $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $columns->get(1)->width),
                 $this->pane('instances', $instancesTitle, ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
                 GridWidget::default()
@@ -927,8 +927,9 @@ final class TopFlowCommand extends GatewayCommand
      * @param  array<string, mixed>|null  $node
      * @param  array<string, mixed>|null  $app
      * @param  list<array<string, mixed>>  $instances
+     * @param  int  $width  the cells available; the counts spread evenly over them
      */
-    private function stats(?array $node, ?array $app, array $instances): Line
+    private function stats(?array $node, ?array $app, array $instances, int $width): Line
     {
         $ids = array_column($instances, 'id');
         $processes = array_filter($this->processes, fn (array $p): bool => in_array($p['target_id'], $ids, true));
@@ -952,11 +953,17 @@ final class TopFlowCommand extends GatewayCommand
             $segments[] = ['Firewall', count($rules), $off($rules, fn (array $f): bool => $f['status'] === 'applied')];
         }
 
-        // A count turns yellow when anything it counts needs a look.
+        // A count turns yellow when anything it counts needs a look. The counts are spread
+        // evenly over the width, one cell in from each edge.
+        $texts = array_map(fn (array $segment): string => "{$segment[0]} {$segment[1]}", $segments);
+        $slack = max(0, $width - 2 - array_sum(array_map('strlen', $texts)));
+        $gaps = max(1, count($texts) - 1);
         $spans = [Span::fromString(' ')];
-        foreach ($segments as [$label, $count, $warn]) {
-            $spans[] = Span::styled("{$label} {$count}", $warn > 0 ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
-            $spans[] = Span::fromString('    ');
+        foreach ($segments as $index => [$label, $count, $warn]) {
+            if ($index > 0) {
+                $spans[] = Span::fromString(str_repeat(' ', intdiv($slack * $index, $gaps) - intdiv($slack * ($index - 1), $gaps)));
+            }
+            $spans[] = Span::styled($texts[$index], $warn > 0 ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
         }
 
         return Line::fromSpans(...$spans);
