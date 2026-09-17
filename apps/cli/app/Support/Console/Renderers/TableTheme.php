@@ -41,11 +41,20 @@ final class TableTheme
         }
     }
 
+    /** @var array<class-string<Prompt>, class-string> Renderers added at runtime, such as design sketches. */
+    private static array $extensions = [];
+
+    /** @param array<class-string<Prompt>, class-string> $renderers */
+    public static function extend(array $renderers): void
+    {
+        self::$extensions = [...self::$extensions, ...$renderers];
+    }
+
     /** @return array<class-string<Prompt>, class-string> */
     public static function renderers(): array
     {
         // The data list is the stock Laravel Prompts rendering, minus the summary a chosen row would leave behind.
-        return [Table::class => TableRenderer::class, DataTablePrompt::class => EphemeralDataTableRenderer::class, SearchableDataTablePrompt::class => EphemeralDataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class];
+        return [Table::class => TableRenderer::class, DataTablePrompt::class => EphemeralDataTableRenderer::class, SearchableDataTablePrompt::class => EphemeralDataTableRenderer::class, ConfirmPrompt::class => ConfirmRenderer::class, ...self::$extensions];
     }
 
     public static function mode(): ConsoleMode
