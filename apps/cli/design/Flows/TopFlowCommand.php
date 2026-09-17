@@ -7,6 +7,7 @@ namespace Design\Flows;
 use App\Commands\GatewayCommand;
 use App\Support\Console\Renderers\ConfirmRenderer;
 use App\Support\Console\Renderers\TableTheme;
+use Design\Support\AnsiLine;
 use Design\Support\PanelConfirmPrompt;
 use Design\Support\PanelSelectPrompt;
 use Design\Support\PanelTextPrompt;
@@ -18,6 +19,7 @@ use PhpTui\Term\Actions;
 use PhpTui\Term\Event\CharKeyEvent;
 use PhpTui\Term\Event\CodedKeyEvent;
 use PhpTui\Term\Event\MouseEvent;
+use PhpTui\Term\Event\TerminalResizedEvent;
 use PhpTui\Term\KeyCode;
 use PhpTui\Term\KeyModifiers;
 use PhpTui\Term\MouseButton;
@@ -219,6 +221,11 @@ final class TopFlowCommand extends GatewayCommand
                     }
                     if ($event instanceof MouseEvent) {
                         $this->handleMouse($event);
+                    }
+                    if ($event instanceof TerminalResizedEvent) {
+                        // The display is sized once; a resized terminal needs a new one and a clean screen.
+                        $display = DisplayBuilder::default()->fullscreen()->build();
+                        $display->clear();
                     }
                 }
 
@@ -1637,7 +1644,7 @@ final class TopFlowCommand extends GatewayCommand
         $lines = [];
         foreach ($form['prompts'] as [$key, $prompt]) {
             foreach (explode("\n", rtrim($prompt->frame(), "\n")) as $text) {
-                $lines[] = Line::parse($text);
+                $lines[] = AnsiLine::parse($text);
             }
         }
         if ($form['stage'] !== 'prompt') {
@@ -1652,7 +1659,7 @@ final class TopFlowCommand extends GatewayCommand
                 $lines[] = Line::fromSpans(Span::styled('  '.$state[0], Style::default()->fg($state[1])), Span::styled($step, $index <= $current ? Style::default() : $dim));
                 if ($index === 1 && $form['stage'] === 'fingerprint' && $form['confirm'] !== null) {
                     foreach (explode("\n", rtrim($form['confirm']->frame(), "\n")) as $text) {
-                        $lines[] = Line::parse('    '.$text);
+                        $lines[] = AnsiLine::parse('    '.$text);
                     }
                 }
             }
