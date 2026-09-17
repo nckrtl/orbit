@@ -43,9 +43,10 @@ use RuntimeException;
 /**
  * Design sketch: an htop-like screen on php-tui that refreshes on a tick.
  *
- * Stats on top. Nodes and Apps on the left pick the scope: the focused selector decides
- * which App instances show on the right, the selected instance decides the Processes and
- * Schedules, and the Firewall follows the node. Enter on a row opens its detail page, a
+ * Nodes and Apps on the left are the navigation; each list starts with "All". Both on All
+ * shows the whole network; a chosen node or app narrows the right side to that record:
+ * its own stats, the node's metrics, and its App instances. The selected instance decides
+ * the Processes and Schedules, and the Firewall follows the node. Enter on a row opens its detail page, a
  * right click (or `a`) lists the commands that take it, and the mouse selects rows and
  * panes. Every two seconds the sketch "fetches" again and flips one Process status so the
  * refresh is visible. The data is the recorded fixtures plus made-up rows where no fixture
@@ -109,8 +110,6 @@ final class TopFlowCommand extends GatewayCommand
     private string $hover = 'nodes';
 
     private ?string $focus = null;
-
-    private string $scope = 'nodes';
 
     /** @var array<string, int> */
     private array $selected = ['nodes' => 0, 'apps' => 0, 'instances' => 0, 'processes' => 0, 'schedules' => 0, 'firewall' => 0];
@@ -355,12 +354,6 @@ final class TopFlowCommand extends GatewayCommand
     private function focusOn(string $pane): void
     {
         $this->focus = $pane;
-        if ($pane === 'nodes' || $pane === 'apps') {
-            if ($this->scope !== $pane) {
-                $this->selected['instances'] = 0;
-            }
-            $this->scope = $pane;
-        }
     }
 
     private function move(int $step): void
@@ -391,7 +384,8 @@ final class TopFlowCommand extends GatewayCommand
 
     private function openDetail(): void
     {
-        if ($this->focus === null) {
+        // The sidebar navigates: choosing a node or app already shows it on the right.
+        if ($this->focus === null || $this->focus === 'nodes' || $this->focus === 'apps') {
             return;
         }
         $row = $this->rowsFor($this->focus)[$this->selected[$this->focus]] ?? null;
@@ -412,7 +406,7 @@ final class TopFlowCommand extends GatewayCommand
             return;
         }
         $row = $this->detail['row'] ?? $this->rowsFor($pane)[$this->selected[$pane]] ?? null;
-        if ($row === null) {
+        if ($row === null || isset($row['all'])) {
             return;
         }
 
@@ -484,8 +478,8 @@ final class TopFlowCommand extends GatewayCommand
     private function rowsFor(string $pane): array
     {
         return match ($pane) {
-            'nodes' => $this->nodes,
-            'apps' => $this->apps,
+            'nodes' => [['all' => true, 'name' => 'All'], ...$this->nodes],
+            'apps' => [['all' => true, 'slug' => 'All'], ...$this->apps],
             'instances' => $this->scopedInstances(),
             'processes' => array_values(array_filter($this->processes, fn (array $process): bool => $process['target_id'] === $this->currentInstance()['id'])),
             'schedules' => array_values(array_filter($this->schedules, fn (array $schedule): bool => $schedule['instance_id'] === $this->currentInstance()['id'])),
@@ -494,17 +488,37 @@ final class TopFlowCommand extends GatewayCommand
         };
     }
 
+    /**
+     * The node chosen in the sidebar, or null for All.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function selectedNode(): ?array
+    {
+        return $this->nodes[$this->selected['nodes'] - 1] ?? null;
+    }
+
+    /**
+     * The app chosen in the sidebar, or null for All.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function selectedApp(): ?array
+    {
+        return $this->apps[$this->selected['apps'] - 1] ?? null;
+    }
+
     /** @return list<array<string, mixed>> */
     private function scopedInstances(): array
     {
-        if ($this->scope === 'apps') {
-            $app = $this->apps[$this->selected['apps']];
+        $node = $this->selectedNode();
+        $app = $this->selectedApp();
 
-            return array_values(array_filter($this->instances, fn (array $instance): bool => $instance['app']['slug'] === $app['slug']));
-        }
-        $node = $this->nodes[$this->selected['nodes']];
-
-        return array_values(array_filter($this->instances, fn (array $instance): bool => $instance['node']['name'] === $node['name']));
+        return array_values(array_filter(
+            $this->instances,
+            fn (array $instance): bool => ($node === null || $instance['node']['name'] === $node['name'])
+                && ($app === null || $instance['app']['slug'] === $app['slug']),
+        ));
     }
 
     /** @return array<string, mixed> */
@@ -513,14 +527,14 @@ final class TopFlowCommand extends GatewayCommand
         return $this->scopedInstances()[$this->selected['instances']] ?? ['id' => 0, 'node' => ['name' => '']];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * The node the Firewall pane follows: the chosen node, else the node of the current instance.
+     *
+     * @return array<string, mixed>
+     */
     private function currentNode(): array
     {
-        if ($this->scope === 'nodes') {
-            return $this->nodes[$this->selected['nodes']];
-        }
-
-        return ['name' => $this->currentInstance()['node']['name']];
+        return $this->selectedNode() ?? ['name' => $this->currentInstance()['node']['name']];
     }
 
     /** @param  array<string, mixed>  $row */
@@ -612,21 +626,22 @@ final class TopFlowCommand extends GatewayCommand
 
     private function dashboard(Area $area): Widget
     {
-        $appScope = $this->scope === 'apps';
+        $node = $this->selectedNode();
+        $app = $this->selectedApp();
         $instances = $this->scopedInstances();
         $instance = $this->currentInstance();
-        $scopeName = $appScope ? $this->apps[$this->selected['apps']]['slug'] : $this->nodes[$this->selected['nodes']]['name'];
-        $instancesTitle = $appScope ? " Instances of {$scopeName} " : " Instances on {$scopeName} ";
+        $instancesTitle = ' '.($node === null && $app === null ? 'All instances' : 'Instances')
+            .($app === null ? '' : " of {$app['slug']}").($node === null ? '' : " on {$node['name']}").' ';
         $instanceName = isset($instance['app']) ? "{$instance['app']['slug']}/{$instance['name']}" : '—';
-        $nodeName = ! $appScope ? $scopeName : ($instance['node']['name'] ?? '—');
+        $nodeName = $this->currentNode()['name'] !== '' ? $this->currentNode()['name'] : '—';
 
-        $metricsNode = ! $appScope ? $this->nodes[$this->selected['nodes']]['name'] : null;
+        $metricsNode = $node['name'] ?? null;
         $metricsHeight = $metricsNode === null ? 0 : $this->metricsHeight($metricsNode);
 
         // The same splits the grid makes, kept so the mouse can find a pane and a row. The sidebar
         // (Nodes, Apps) runs the full height; stats, metrics, and the record panes fill the right.
         $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(24), Constraint::min(40)])->split($area);
-        $left = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(count($this->nodes) + 2), Constraint::min(5)])->split($columns->get(0));
+        $left = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(count($this->nodes) + 3), Constraint::min(5)])->split($columns->get(0));
         $rightConstraints = [Constraint::length(3), Constraint::length($metricsHeight), Constraint::percentage(38), Constraint::percentage(32), Constraint::min(5)];
         $right = Layout::default()->direction(Direction::Vertical)->constraints($rightConstraints)->split($columns->get(1));
         $middle = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(55), Constraint::percentage(45)])->split($right->get(3));
@@ -644,12 +659,12 @@ final class TopFlowCommand extends GatewayCommand
         $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
         $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['expression'], $s['next_run']], $s['status'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
         $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
-        $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->nodes);
-        $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->apps);
+        $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->rowsFor('nodes'));
+        $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->rowsFor('apps'));
 
         $leftColumn = GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(count($this->nodes) + 2), Constraint::min(5))
+            ->constraints(Constraint::length(count($this->nodes) + 3), Constraint::min(5))
             ->widgets(
                 $this->pane('nodes', ' Nodes ', [], [Constraint::percentage(96)], $nodeRows),
                 $this->pane('apps', ' Apps ', [], [Constraint::percentage(96)], $appRows),
@@ -660,7 +675,7 @@ final class TopFlowCommand extends GatewayCommand
             ->constraints(...$rightConstraints)
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle(Style::default()->fg(AnsiColor::DarkGray))
-                    ->widget(ParagraphWidget::fromString($this->stats())),
+                    ->widget(ParagraphWidget::fromString($this->stats($node, $app, $instances))),
                 $metricsNode === null ? BlockWidget::default() : $this->metricsPanel($metricsNode, $columns->get(1)->width),
                 $this->pane('instances', $instancesTitle, ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(18), Constraint::percentage(11), Constraint::percentage(14), Constraint::percentage(11), Constraint::percentage(28), Constraint::percentage(11)], $instanceRows),
                 GridWidget::default()
@@ -878,18 +893,39 @@ final class TopFlowCommand extends GatewayCommand
             ->widget($box);
     }
 
-    private function stats(): string
+    /**
+     * The stats line follows the navigation: the whole network, one node, one app, or an app on a node.
+     *
+     * @param  array<string, mixed>|null  $node
+     * @param  array<string, mixed>|null  $app
+     * @param  list<array<string, mixed>>  $instances
+     */
+    private function stats(?array $node, ?array $app, array $instances): string
     {
         $count = fn (array $rows, string $key, string $value): int => count(array_filter($rows, fn (array $row): bool => $row[$key] === $value));
+        $ids = array_column($instances, 'id');
+        $processes = array_values(array_filter($this->processes, fn (array $p): bool => in_array($p['target_id'], $ids, true)));
+        $schedules = array_values(array_filter($this->schedules, fn (array $s): bool => in_array($s['instance_id'], $ids, true)));
+        $degraded = $count($instances, 'status', 'degraded');
+        $instanceStats = sprintf('Instances %d · %d active%s   Processes %d · %d running   Schedules %d',
+            count($instances), $count($instances, 'status', 'active'), $degraded > 0 ? " · {$degraded} degraded" : '',
+            count($processes), $count($processes, 'runtime_status', 'running'), count($schedules));
 
-        return sprintf(
-            ' Nodes %d · %d active     Apps %d     Instances %d · %d active · %d degraded     Processes %d · %d running     Schedules %d',
-            count($this->nodes), $count($this->nodes, 'status', 'active'),
-            count($this->apps),
-            count($this->instances), $count($this->instances, 'status', 'active'), $count($this->instances, 'status', 'degraded'),
-            count($this->processes), $count($this->processes, 'runtime_status', 'running'),
-            count($this->schedules),
-        );
+        if ($node === null && $app === null) {
+            return sprintf(' Network   Nodes %d · %d active   Apps %d   %s', count($this->nodes), $count($this->nodes, 'status', 'active'), count($this->apps), $instanceStats);
+        }
+        if ($node !== null && $app !== null) {
+            return " App {$app['slug']} on node {$node['name']}   {$instanceStats}";
+        }
+        if ($node !== null) {
+            $rules = count(array_filter($this->firewall, fn (array $f): bool => $f['node'] === $node['name']));
+            $apps = count(array_unique(array_column(array_column($instances, 'app'), 'slug')));
+
+            return sprintf(' Node %s · %s   Apps %d   %s   Firewall %d', $node['name'], $node['status'], $apps, $instanceStats, $rules);
+        }
+        $nodes = count(array_unique(array_column(array_column($instances, 'node'), 'name')));
+
+        return sprintf(' App %s · %s   Nodes %d   %s', $app['slug'], $app['default_branch'] ?? 'main', $nodes, $instanceStats);
     }
 
     /**
