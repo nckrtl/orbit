@@ -37,7 +37,7 @@ final class ShowAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $app = $this->sendWithProgress($connector, new ShowAppRequest($appId), AppResponse::class, ['Show App', 'Loading App', 'Loaded App']);
+        $app = $this->sendWithProgress($connector, new ShowAppRequest($appId), AppResponse::class, ['Show App', 'Fetching App', 'Fetched App'], dismiss: true);
 
         if (! $app instanceof AppResponse) {
             return self::FAILURE;

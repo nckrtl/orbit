@@ -1,11 +1,4 @@
-Loading App...
-
-┌  Show App
-│
-├  ● Loaded App
-│
-└  Loaded App.
-
+Fetching App...
 
 ┌  App: acme
 │

@@ -33,7 +33,7 @@ try {
     $configuration = is_string($line) ? json_decode($line, true, flags: JSON_THROW_ON_ERROR) : null;
     $frames = is_array($configuration) ? ($configuration['frames'] ?? null) : null;
 
-    if (! is_array($frames) || count($frames) !== 2 || ! is_string($frames[0]) || ! is_string($frames[1])) {
+    if (! is_array($frames) || count($frames) < 2 || ! array_is_list($frames) || array_any($frames, static fn ($frame): bool => ! is_string($frame))) {
         throw new RuntimeException('Invalid presentation frames.');
     }
 
@@ -42,7 +42,7 @@ try {
     $initialClear = is_string($configuration['clear'] ?? null) ? $configuration['clear'] : '';
     $epoch = is_numeric($configuration['epoch'] ?? null) && $configuration['epoch'] > 0 ? (float) $configuration['epoch'] : microtime(true);
     $phase = (int) floor(max(0, microtime(true) - $epoch) / 0.3);
-    $index = $phase % 2;
+    $index = $phase % count($frames);
     $writeOutput("\e[?25l".$initialClear.$frames[$index]);
     $nextTick = hrtime(true) / 1000000000 + 0.3;
     $ready = fopen('php://fd/3', 'w');
@@ -74,7 +74,7 @@ try {
                 if (is_array($command) && array_key_exists('frames', $command)) {
                     $replacement = $command['frames'];
 
-                    if (! is_array($replacement) || count($replacement) !== 2 || ! is_string($replacement[0]) || ! is_string($replacement[1]) || $pending !== null) {
+                    if (! is_array($replacement) || count($replacement) < 2 || ! array_is_list($replacement) || array_any($replacement, static fn ($frame): bool => ! is_string($frame)) || $pending !== null) {
                         throw new RuntimeException('Invalid presentation update.');
                     }
 
@@ -94,7 +94,7 @@ try {
             $updated = $pending !== null;
             $frames = $pending ?? $frames;
             $pending = null;
-            $index = 1 - $index;
+            $index = ($index + 1) % count($frames);
             $writeOutput($clear.$frames[$index]);
             $nextTick = hrtime(true) / 1000000000 + 0.3;
             $lines = substr_count($frames[$index], "\n");

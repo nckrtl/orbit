@@ -402,6 +402,20 @@ describe('app lifecycle', function (): void {
             ->toBe('app:destroy');
     });
 
+    it('records a list of several apps and one of them', function (): void {
+        foreach ([
+            ['Acme', 'acme', 'https://github.com/acme/site.git', 'main', 'public'],
+            ['Bravo docs', 'bravo-docs', 'git@github.com:bravo/docs.git', 'main', 'public'],
+            ['Charlie shop', 'charlie-shop', 'git@github.com:charlie/shop.git', 'release', 'web/public'],
+            ['Delta api', 'delta-api', 'https://github.com/delta/api.git', 'main', 'public'],
+        ] as [$name, $slug, $repository, $branch, $root]) {
+            OrbitApp::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
+        }
+
+        record_fixture($this->getJson('/api/v1/apps')->assertOk()->assertJsonCount(4, 'data'), 'apps/app-list/several', ListAppsRequest::class, 'GET /api/v1/apps');
+        record_fixture($this->getJson('/api/v1/apps/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'apps/app-show/charlie-shop', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
+    });
+
     it('does not remove an App that still owns AppInstances', function (): void {
         $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
         $node = Node::query()->create([

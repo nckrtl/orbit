@@ -266,6 +266,7 @@ abstract class GatewayCommand extends Command
     /**
      * @param  array{string, string, string}  $labels  Waiting, running and completed labels.
      * @param  null|Closure(object): ProgressState  $resultState  Validate the product result before settling progress.
+     * @param  bool  $dismiss  Remove the tree once the result arrives, for a command whose result replaces it.
      */
     protected function sendWithProgress(
         GatewayConnector $connector,
@@ -273,6 +274,7 @@ abstract class GatewayCommand extends Command
         string $responseClass,
         array $labels,
         ?Closure $resultState = null,
+        bool $dismiss = false,
     ): ?object {
         [$waiting, $running, $completed] = $labels;
         $progress = $this->progressDisplay($waiting);
@@ -297,7 +299,11 @@ abstract class GatewayCommand extends Command
         }
 
         $progress->complete('request', $state);
-        $progress->finish($completed.'.');
+        if ($dismiss) {
+            $progress->dismiss();
+        } else {
+            $progress->finish($completed.'.');
+        }
 
         return $response;
     }

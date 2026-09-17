@@ -6,4 +6,4 @@ Adding Node...
 │
 └  Operation failed.
 
-An app-dev TLD is required for node [app-dev].
+An expected SSH host fingerprint is required for node [app-dev].

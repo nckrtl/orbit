@@ -69,7 +69,7 @@ final class ProgressDisplay
             $animation = new Animation(
                 $this->mode,
                 $this->output,
-                [$this->frame(), $this->frame(alternate: true)],
+                array_map(fn (int $tick): string => $this->frame(tick: $tick), range(0, 5)),
                 implode("\n", TerminalText::wrap($this->steps[$id]['running'].'...', $this->mode->columns))."\n",
                 $this->region,
                 fn (): string => $this->frame(),
@@ -110,6 +110,18 @@ final class ProgressDisplay
         }
     }
 
+    /** Remove the tree from the screen once its result takes its place. */
+    public function dismiss(): void
+    {
+        if ($this->finished || $this->hasState(ProgressState::Running) || $this->hasState(ProgressState::Waiting)) {
+            throw new LogicException('Progress cannot be dismissed while admitted work is unresolved.');
+        }
+        $this->finished = true;
+        if ($this->mode->mayRepaint) {
+            $this->region->replace('');
+        }
+    }
+
     public function finish(string $outcome): void
     {
         if ($this->finished || $this->hasState(ProgressState::Running)
@@ -124,8 +136,11 @@ final class ProgressDisplay
         }
     }
 
-    private function frame(bool $alternate = false, ?string $outcome = null): string
+    /** A tick alternates the running glyph and cycles the dots of the waiting line. */
+    private function frame(int $tick = 0, ?string $outcome = null): string
     {
+        $alternate = $tick % 2 === 1;
+        $waiting = 'Working'.str_repeat('.', 1 + $tick % 3);
         $lines = [''];
         array_push($lines, ...$this->row('┌  ', TerminalText::safe($this->title)));
         $lines[] = $this->style('│', 'dim');
@@ -163,7 +178,7 @@ final class ProgressDisplay
             $lines[] = $this->style('│', 'dim');
         }
 
-        array_push($lines, ...$this->row('└  ', TerminalText::safe($outcome ?? 'Working...'),
+        array_push($lines, ...$this->row('└  ', TerminalText::safe($outcome ?? $waiting),
             $outcome === null ? 'dim' : ($this->hasState(ProgressState::Failure) ? 'red' : null)));
         $lines[] = '';
 

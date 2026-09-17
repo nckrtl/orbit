@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Console\Renderers;
 
 use App\Support\Console\PromptAborted;
+use App\Support\Console\SearchableDataTablePrompt;
 use App\Support\Console\TerminalText;
 use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Themes\Contracts\Scrolling;
@@ -15,6 +16,11 @@ final class DataTableRenderer extends Renderer implements Scrolling
 {
     public function __invoke(DataTablePrompt $prompt): string
     {
+        if ($prompt->state === 'submit') {
+            // The selection is ephemeral: the result the caller renders takes its place.
+            return '';
+        }
+
         $mode = TableTheme::mode();
         $columns = min($mode->columns, $prompt->terminal()->cols());
         $headers = array_map(static fn (string|array $header): string => is_array($header) ? implode(' ', $header) : $header, $prompt->headers);
@@ -42,7 +48,7 @@ final class DataTableRenderer extends Renderer implements Scrolling
         }
 
         $rows = $this->visibleRows($filtered, $selectedKey, $widths, $available, $prompt->scroll);
-        $lines = ['', ...$heading, TableLayout::border($widths, '┌', '┬', '┐', $mode->decorated)];
+        $lines = ['', ...$heading, ...$this->searchBox($prompt, $columns), TableLayout::border($widths, '┌', '┬', '┐', $mode->decorated)];
 
         foreach ($headerRows as $cells) {
             $lines[] = TableLayout::row($cells, $widths, $mode->decorated, header: true);
@@ -69,7 +75,25 @@ final class DataTableRenderer extends Renderer implements Scrolling
 
     public function reservedLines(): int
     {
-        return 10;
+        return 11;
+    }
+
+    /**
+     * The filter box stays visible; typing narrows the rows at once.
+     *
+     * @return list<string>
+     */
+    private function searchBox(DataTablePrompt $prompt, int $columns): array
+    {
+        $mode = TableTheme::mode();
+        $text = $prompt instanceof SearchableDataTablePrompt ? $prompt->filterText() : $prompt->searchValue();
+        $typed = $text === ''
+            ? TerminalText::style('Type to filter', 'dim', $mode->decorated)
+            : TerminalText::safe($text);
+        $cursor = TerminalText::style('▏', 'cyan', $mode->decorated);
+        $line = ' '.TerminalText::style('Search', 'dim', $mode->decorated).'  '.$typed.$cursor;
+
+        return [$line, ''];
     }
 
     /** @return list<string> */
@@ -81,7 +105,7 @@ final class DataTableRenderer extends Renderer implements Scrolling
             'error' => $prompt->error,
             'submit' => 'Selected.',
             'search' => '/ '.TerminalText::plain(str_replace(["\033[7m", "\033[27m"], ['▏', ''], $prompt->searchWithCursor(-1))),
-            default => $prompt->searchValue() === '' ? 'Press / to search' : '/ '.TerminalText::safe($prompt->searchValue()),
+            default => '↑↓ move, type to filter, Enter selects.',
         };
         $style = in_array($prompt->state, ['error', 'cancel'], true) ? 'red' : 'dim';
         $lines = array_map(

@@ -1,11 +1,4 @@
-Loading Apps...
-
-┌  List Apps
-│
-├  ● Loaded Apps
-│
-└  Loaded Apps.
-
+Fetching Apps...
  ┌────┬──────┬──────┬──────────────────────────────────┬────────────────┬──────────┐
  │ ID │ NAME │ SLUG │ REPOSITORY                       │ DEFAULT BRANCH │ WEB ROOT │
  ├────┼──────┼──────┼──────────────────────────────────┼────────────────┼──────────┤
