@@ -1376,13 +1376,15 @@ final class TopFlowCommand extends GatewayCommand
             $this->drawn['form:submit'] = ['area' => Area::fromScalars($area->left() + 3, $area->top() + 2 + count($lines), 10, 1), 'header' => false];
             $lines[] = Line::fromSpans(Span::styled('  [ Create ]', Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD)), Span::styled('   every field is asked for, as node:add prompts for it', $dim));
         } else {
+            // While the host key waits for an answer, the first step is done and the second is the question.
+            $current = $form['stage'] === 'fingerprint' ? 1 : $form['step'];
             foreach (self::CREATE_STEPS as $index => $step) {
                 $state = match (true) {
-                    $index < $form['step'] || $form['stage'] === 'done' => ['✓ ', AnsiColor::Green],
-                    $index === $form['step'] => [$form['stage'] === 'fingerprint' ? '? ' : '◌ ', AnsiColor::Cyan],
+                    $index < $current || $form['stage'] === 'done' => ['✓ ', AnsiColor::Green],
+                    $index === $current => [$form['stage'] === 'fingerprint' ? '? ' : '◌ ', AnsiColor::Cyan],
                     default => ['  ', AnsiColor::DarkGray],
                 };
-                $lines[] = Line::fromSpans(Span::styled('  '.$state[0], Style::default()->fg($state[1])), Span::styled($step, $index <= $form['step'] ? Style::default() : $dim));
+                $lines[] = Line::fromSpans(Span::styled('  '.$state[0], Style::default()->fg($state[1])), Span::styled($step, $index <= $current ? Style::default() : $dim));
                 if ($index === 1 && $form['stage'] === 'fingerprint') {
                     $lines[] = Line::fromSpans(Span::styled("      {$form['fields'][1][1]} presents {$form['fingerprint']}", Style::default()->fg(AnsiColor::Yellow)));
                     $lines[] = Line::fromSpans(Span::styled('      Enter trusts it · Esc aborts', $dim));
