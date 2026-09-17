@@ -537,6 +537,18 @@ final class TopFlowCommand extends GatewayCommand
         return $this->selectedNode() ?? ['name' => $this->currentInstance()['node']['name']];
     }
 
+    /** The name of the node an instance runs on. */
+    private function instanceNode(int $instanceId): string
+    {
+        foreach ($this->instances as $instance) {
+            if ($instance['id'] === $instanceId) {
+                return $instance['node']['name'];
+            }
+        }
+
+        return '—';
+    }
+
     /** @param  array<string, mixed>  $row */
     private function rowTitle(string $pane, array $row): string
     {
@@ -656,8 +668,10 @@ final class TopFlowCommand extends GatewayCommand
 
         $instanceRows = array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances);
         // A Process whose runtime disagrees with its desired state is the thing to inspect.
-        $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
-        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['expression'], $s['next_run']], $s['status'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
+        // With every node in view the Processes and Schedules say which node runs them.
+        $nodeOf = fn (int $instanceId): string => $this->instanceNode($instanceId);
+        $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], ...$node === null ? [$nodeOf($p['target_id'])] : [], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
+        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : []], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
         $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
         $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->rowsFor('nodes'));
         $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->rowsFor('apps'));
@@ -682,8 +696,12 @@ final class TopFlowCommand extends GatewayCommand
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(55), Constraint::percentage(45))
                     ->widgets(
-                        $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
-                        $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Expression', 'Next run', 'Status'], [Constraint::percentage(32), Constraint::percentage(22), Constraint::percentage(24), Constraint::percentage(18)], $scheduleRows),
+                        $node === null
+                            ? $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Node', 'Runtime', 'Status'], [Constraint::percentage(36), Constraint::percentage(20), Constraint::percentage(20), Constraint::percentage(20)], $processRows)
+                            : $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
+                        $node === null
+                            ? $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Node', 'Next run'], [Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(30)], $scheduleRows)
+                            : $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
                     ),
                 $this->pane('firewall', " Firewall on {$nodeName} ", ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(50), Constraint::percentage(18)], $firewallRows),
             );
