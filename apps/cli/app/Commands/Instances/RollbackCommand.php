@@ -50,7 +50,7 @@ final class RollbackCommand extends DeploymentCommand
         );
 
         return $stream instanceof DeploymentStream
-            ? $this->renderDeploymentStream($stream)
+            ? $this->renderDeploymentStream($stream, "Roll back AppInstance [{$instanceId}]", 'rollback', 'Rollback')
             : self::FAILURE;
     }
 }
