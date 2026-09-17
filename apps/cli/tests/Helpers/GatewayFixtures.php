@@ -46,6 +46,11 @@ function gateway_fixture_mock(string $name): array
 function expect_output(string $actual, string $name): void
 {
     $path = base_path('tests/Expected/'.$name);
+    $previewDirectory = getenv('ORBIT_EXPECTED_DIR');
+    if (getenv('ORBIT_EXPECTED') === 'update' && is_string($previewDirectory) && $previewDirectory !== '') {
+        // A preview writes the current output next to nothing committed, so bin/cli-contract can diff it.
+        $path = rtrim($previewDirectory, '/').'/'.$name;
+    }
     if (getenv('ORBIT_EXPECTED') === 'update') {
         if (! is_dir(dirname($path))) {
             mkdir(dirname($path), 0755, true);

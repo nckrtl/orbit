@@ -6,6 +6,7 @@ Run from any directory:
     bin/cli-flow node-add                    replay apps/cli/design/flows/node-add.json
     bin/cli-flow node-add --keep DIR         keep the recording in DIR for review or import
     bin/cli-flow --list                      list the flows
+    bin/cli-flow --all                       replay every flow and report failures
 
 A flow file names a sketch, its arguments, and the steps to type. Each step waits for text on the screen,
 sends keys, and names the text that must appear afterwards. `send` accepts plain text and the tokens
@@ -60,7 +61,17 @@ def main():
     parser.add_argument('flow', nargs='?')
     parser.add_argument('--keep', type=pathlib.Path, help='Directory to keep the recording in')
     parser.add_argument('--list', action='store_true')
+    parser.add_argument('--all', action='store_true', help='Replay every flow and report the ones that fail')
     args = parser.parse_args()
+
+    if args.all:
+        failed = []
+        for path in sorted(FLOWS.glob('*.json')):
+            result = subprocess.run([sys.executable, __file__, path.stem], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"{'ok  ' if result.returncode == 0 else 'FAIL'}  {path.stem}")
+            if result.returncode != 0:
+                failed.append(path.stem)
+        sys.exit(1 if failed else 0)
 
     if args.list:
         for path in sorted(FLOWS.glob('*.json')):
