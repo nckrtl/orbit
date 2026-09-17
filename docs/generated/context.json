@@ -2653,6 +2653,8 @@
             ],
             "concepts": [
                 "App",
+                "Gateway",
+                "Node",
                 "Process"
             ],
             "governing_adrs": [

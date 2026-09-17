@@ -5,7 +5,11 @@ description: Design, implement, or audit Orbit CLI input and output against the 
 
 # Designing CLI commands
 
-Read `docs/reference/cli-ux.md` from the repository root, then the current command reference, governing ADRs, CLI project rules, and relevant tests. The standard owns presentation, interaction, and explicit destructive consent. The command contract owns names, targets, defaults, existing consent/override option meanings, response schemas, transport, and available modes.
+Read `docs/reference/cli-ux.md` from the repository root, then the current command reference, governing ADRs, CLI project rules, and relevant tests. The standard owns presentation, interaction, and explicit destructive consent. The command contract owns names, targets, defaults, existing consent/override option meanings, response schemas, transport, and available modes. The canonical renderings the standard names, under `apps/cli/tests/Expected`, are the examples to copy.
+
+## Sketch first
+
+For new interaction, such as prompts or a step sequence that no command has, write a design sketch under `apps/cli/design` before the real command. A sketch uses the CLI's own prompt, progress, and failure primitives with a scripted scenario and an `--outcome` option for each refusal; see `apps/cli/design/README.md`. Run it with `ORBIT_DESIGN=1`, drive it in a terminal one key at a time, and record the agreed flow with `verifying-cli-output`. The agreed scenario becomes the mock Gateway scenario of the real command, and the agreed recording becomes its expected output.
 
 ## Design or implement
 
@@ -13,7 +17,8 @@ Read `docs/reference/cli-ux.md` from the repository root, then the current comma
 2. Choose the standard's prompt and rendering primitives. State exact prompts, columns, labels, selection results, empty states, progress transitions, and terminal outcomes where the change needs them.
 3. Use shared CLI helpers where they preserve the observable contract. Keep domain policy and remote infrastructure execution outside the CLI. A synchronous call gets truthful indeterminate feedback, not fabricated remote stages.
 4. Keep human and machine renderers backed by the same result. Check every return and error path for machine-output contamination, secret leakage, and misleading success.
-5. Update maintained documentation with the behavior. Use current repository checks and the verification skill for terminal behavior.
+5. Compare the output with the agreed renderings. Run `bin/cli-contract --changed` for a Gateway response change, or the family's contract test for a rendering change. Rewrite `apps/cli/tests/Expected` only with `ORBIT_EXPECTED=update` after the diff is reviewed, and add a contract case for a new command or outcome; see `docs/reference/gateway-response-fixtures.md`.
+6. Update maintained documentation with the behavior. Use current repository checks and the verification skill for terminal behavior.
 
 ## Audit
 
