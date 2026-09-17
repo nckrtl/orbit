@@ -112,6 +112,32 @@ describe('deployment streams', function (): void {
             ->toBeFalse();
     });
 
+    it('does not repeat the tree frame while several output lines print during one step', function (): void {
+        $mock = MockClient::global([
+            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'source_preparation'),
+                deployment_cli_phase(2, 'environment_sync'),
+                deployment_cli_phase(3, 'before_activation', 'slow'),
+                deployment_cli_output(4, 'stdout', "line one\n"),
+                deployment_cli_output(5, 'stdout', "line two\n"),
+                deployment_cli_output(6, 'stdout', "line three\n"),
+                deployment_cli_phase(7, 'activation'),
+                deployment_cli_result(8, 'succeeded', selectedRelease: 'release-b'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)
+            ->toContain('stdout: "line one\\n"', 'stdout: "line two\\n"', 'stdout: "line three\\n"')
+            ->and(substr_count($output, 'Deploy AppInstance [17]'))->toBe(1)
+            ->and(substr_count($output, 'Deployment succeeded.'))->toBe(1)
+            ->and($mock->getRecordedResponses())
+            ->toHaveCount(1);
+    });
+
     it('emits only exact compact NDJSON events in JSON mode', function (): void {
         $events = [
             deployment_cli_phase(1, 'source_preparation'),
@@ -261,6 +287,7 @@ describe('deployment streams', function (): void {
                 '● Running notify',
                 'deployment.step_failed',
                 'Deployment failed.',
+                'Failed boundary: after_activation',
                 'Error code: deployment.step_failed',
                 'Selected release: release-b',
                 'Request ID: '.deployment_cli_request_id(),
@@ -269,7 +296,38 @@ describe('deployment streams', function (): void {
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });
 
-    it('shows an operation-level failure before any deploy phase starts', function (): void {
+    it('shows a before-activation step failure and skips the unreached activation row', function (): void {
+        $mock = MockClient::global([
+            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'source_preparation'),
+                deployment_cli_phase(2, 'environment_sync'),
+                deployment_cli_phase(3, 'before_activation', 'migrate'),
+                deployment_cli_result(4, 'failed', failedStep: 'before_activation', errorCode: 'deployment.step_failed'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)
+            ->toContain(
+                '● Resolved release',
+                '● Synced environment',
+                '● Running migrate',
+                'deployment.step_failed',
+                '● Activate release',
+                'Not reached.',
+                'Deployment failed.',
+                'Failed boundary: before_activation',
+                'Error code: deployment.step_failed',
+            )
+            ->not->toContain('Selected release:');
+
+        expect($mock->getRecordedResponses())->toHaveCount(1);
+    });
+
+    it('shows an operation-level failure before any deploy phase starts without claiming a step ran', function (): void {
         $mock = MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_result(1, 'failed', failedStep: 'operation', errorCode: 'deployment_config.unavailable'),
@@ -283,12 +341,34 @@ describe('deployment streams', function (): void {
             ->and($output)
             ->toContain(
                 'Deploy AppInstance [17]',
+                '● Resolve release',
+                '● Sync environment',
+                '● Activate release',
+                'Not reached.',
                 'Deployment failed.',
-                'deployment_config.unavailable',
+                'Failed boundary: operation',
                 'Error code: deployment_config.unavailable',
                 'Request ID: '.deployment_cli_request_id(),
             )
-            ->not->toContain('Selected release:');
+            ->not->toContain('Selected release:', 'Resolved release', 'Synced environment', 'Activated release');
+
+        expect($mock->getRecordedResponses())->toHaveCount(1);
+    });
+
+    it('rejects a stream whose opening phase does not match the command', function (): void {
+        $mock = MockClient::global([
+            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+                deployment_cli_phase(1, 'environment_sync'),
+                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
+            ]),
+        ]);
+
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(1)
+            ->and($output)
+            ->toContain('Gateway deployment stream is invalid.');
 
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Commands\GatewayCommand;
+use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
 use Generator;
 use LogicException;
@@ -82,19 +83,39 @@ abstract class DeploymentCommand extends GatewayCommand
         /** @var Generator<int, DeploymentEvent> $iterator */
         $iterator = $stream->getIterator();
         $progress = $this->progressDisplay($title);
-        [$stepId, $waiting, $running, $completed] = $this->deploymentPhaseLabels($openingPhase, null);
-        $progress->admit($stepId, $waiting, $running, $completed);
-        $currentStepId = $stepId;
+        $alwaysEmitted = $this->alwaysEmittedPhases($openingPhase);
+
+        foreach ($alwaysEmitted as $phase) {
+            [$stepId, $waiting, $running, $completed] = $this->deploymentPhaseLabels($phase, null);
+            $progress->admit($stepId, $waiting, $running, $completed);
+        }
+
+        $activationStepId = in_array('activation', $alwaysEmitted, true)
+            ? $this->deploymentPhaseLabels('activation', null)[0]
+            : null;
+        $currentStepId = $this->deploymentPhaseLabels($openingPhase, null)[0];
+        $currentPhase = $openingPhase;
         $event = null;
 
         try {
-            $event = $progress->during($stepId, function () use ($iterator): ?DeploymentEvent {
+            $event = $progress->during($currentStepId, function () use ($iterator, $openingPhase): ?DeploymentEvent {
                 $iterator->rewind();
 
-                if ($iterator->valid() && $iterator->current() instanceof DeploymentPhaseEvent) {
-                    $iterator->next();
+                if (! $iterator->valid()) {
+                    return null;
                 }
 
+                $first = $iterator->current();
+
+                if ($first instanceof DeploymentResultEvent) {
+                    return $first;
+                }
+
+                if (! $first instanceof DeploymentPhaseEvent || $first->phase !== $openingPhase) {
+                    throw new GatewayApiException('Gateway deployment stream is invalid.', 'deployment.stream_invalid');
+                }
+
+                $iterator->next();
                 $this->renderHumanOutputEvents($iterator);
 
                 return $iterator->valid() ? $iterator->current() : null;
@@ -102,12 +123,22 @@ abstract class DeploymentCommand extends GatewayCommand
 
             while ($event instanceof DeploymentPhaseEvent) {
                 $this->requestId = $event->requestId;
-                [$stepId, $waiting, $running, $completed] = $this->deploymentPhaseLabels($event->phase, $event->stepName);
+                $nextPhase = $event->phase;
+                [$nextStepId, $waiting, $running, $completed] = $this->deploymentPhaseLabels($nextPhase, $event->stepName);
                 $progress->complete($currentStepId, ProgressState::Success);
-                $progress->admit($stepId, $waiting, $running, $completed);
-                $currentStepId = $stepId;
 
-                $event = $progress->during($stepId, function () use ($iterator): ?DeploymentEvent {
+                if (in_array($nextPhase, $alwaysEmitted, true)) {
+                    // Already admitted up front; nothing to reveal.
+                } elseif ($nextPhase === 'before_activation' && $activationStepId !== null) {
+                    $progress->admitBefore($activationStepId, $nextStepId, $waiting, $running, $completed);
+                } else {
+                    $progress->admit($nextStepId, $waiting, $running, $completed);
+                }
+
+                $currentStepId = $nextStepId;
+                $currentPhase = $nextPhase;
+
+                $event = $progress->during($currentStepId, function () use ($iterator): ?DeploymentEvent {
                     $iterator->next();
                     $this->renderHumanOutputEvents($iterator);
 
@@ -132,11 +163,7 @@ abstract class DeploymentCommand extends GatewayCommand
 
         if ($event instanceof DeploymentResultEvent) {
             $this->requestId = $event->requestId;
-            $progress->complete(
-                $currentStepId,
-                $event->succeeded() ? ProgressState::Success : ProgressState::Failure,
-                $event->succeeded() ? '' : ($event->errorCode ?? ''),
-            );
+            $this->settleDeploymentTree($progress, $alwaysEmitted, $currentStepId, $currentPhase, $event);
             $progress->finish($event->succeeded() ? "{$verb} succeeded." : "{$verb} failed.");
             $this->writeDeploymentResultSummary($event);
 
@@ -153,6 +180,37 @@ abstract class DeploymentCommand extends GatewayCommand
         );
     }
 
+    /** @param list<string> $alwaysEmitted */
+    private function settleDeploymentTree(
+        ProgressDisplay $progress,
+        array $alwaysEmitted,
+        string $currentStepId,
+        string $currentPhase,
+        DeploymentResultEvent $event,
+    ): void {
+        if ($event->succeeded()) {
+            $progress->complete($currentStepId, ProgressState::Success);
+
+            return;
+        }
+
+        $failurePhase = $event->failedStep !== null ? $this->deploymentPhaseForFailedStep($event->failedStep) : null;
+
+        $progress->complete(
+            $currentStepId,
+            $failurePhase === $currentPhase ? ProgressState::Failure : ProgressState::Skipped,
+            $failurePhase === $currentPhase ? ($event->errorCode ?? '') : 'Not reached.',
+        );
+
+        $currentOrder = $this->deploymentPhaseOrder($currentPhase);
+
+        foreach ($alwaysEmitted as $phase) {
+            if ($this->deploymentPhaseOrder($phase) > $currentOrder) {
+                $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
+            }
+        }
+    }
+
     /** @param Generator<int, DeploymentEvent> $iterator */
     private function renderHumanOutputEvents(Generator $iterator): void
     {
@@ -166,8 +224,14 @@ abstract class DeploymentCommand extends GatewayCommand
 
     private function writeDeploymentResultSummary(DeploymentResultEvent $event): void
     {
-        if (! $event->succeeded() && $event->errorCode !== null) {
-            $this->writeHumanMessage('Error code: '.$event->errorCode);
+        if (! $event->succeeded()) {
+            if ($event->failedStep !== null) {
+                $this->writeHumanMessage('Failed boundary: '.$event->failedStep);
+            }
+
+            if ($event->errorCode !== null) {
+                $this->writeHumanMessage('Error code: '.$event->errorCode);
+            }
         }
 
         if ($event->selectedRelease !== null) {
@@ -259,5 +323,43 @@ abstract class DeploymentCommand extends GatewayCommand
         }
 
         return ["{$phase}:{$stepName}", "Run {$stepName}", "Running {$stepName}", "Ran {$stepName}"];
+    }
+
+    /** @return list<string> The phases the Gateway always emits, in order, for a stream that opens with $openingPhase. */
+    private function alwaysEmittedPhases(string $openingPhase): array
+    {
+        return match ($openingPhase) {
+            'source_preparation' => ['source_preparation', 'environment_sync', 'activation'],
+            'rollback' => ['rollback'],
+            default => throw new LogicException("Unsupported opening phase [{$openingPhase}]."),
+        };
+    }
+
+    /** Maps a result's failed_step boundary back to the phase vocabulary, or null for a boundary with no phase. */
+    private function deploymentPhaseForFailedStep(string $failedStep): ?string
+    {
+        return match ($failedStep) {
+            'preparation' => 'source_preparation',
+            'environment' => 'environment_sync',
+            'before_activation' => 'before_activation',
+            'activation' => 'activation',
+            'cache_refresh' => 'php_refresh',
+            'after_activation' => 'after_activation',
+            'rollback_selection' => 'rollback',
+            default => null,
+        };
+    }
+
+    /** Relative execution order of a phase, used to tell which always-emitted phases were never reached. */
+    private function deploymentPhaseOrder(string $phase): float
+    {
+        return match ($phase) {
+            'source_preparation', 'rollback' => 0,
+            'environment_sync' => 1,
+            'before_activation' => 1.5,
+            'activation' => 2,
+            'php_refresh', 'after_activation' => 2.5,
+            default => 99,
+        };
     }
 }

@@ -106,7 +106,9 @@ The CLI sends each deployment operation through the typed PHP SDK. It does not r
 | `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. Add `--json` to write those same events as NDJSON, including a failed `result`. |
 | `orbit instance:release:list INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
 
-Human deploy and rollback output shows a progress tree with each phase as a step, revealing named deploy steps as their phase starts. Glyphs and color show waiting, running, success, and failure states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped while their step runs, so application output cannot become terminal control input. On failure the tree shows the failed step's name and error, and the final lines add the error code, the selected release when available, and the request ID.
+Human deploy and rollback output shows a progress tree. The phases the Gateway always sends appear up front; named deploy steps and the PHP cache refresh phase reveal only when their phase starts. Glyphs and color show waiting, running, success, and failure states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped while their step runs, so application output cannot become terminal control input.
+
+On failure the tree marks the step that reported the failure and shows every later step as not reached. The final lines add the failed boundary, the error code, the selected release when available, and the request ID.
 
 Add `--json` to deploy or rollback to write newline-delimited JSON (NDJSON) without prompts, progress decoration, or other prose. The CLI writes each validated event as one compact line using the event fields in the table above. An `output` line keeps `data_base64`, so arbitrary application bytes remain valid JSON.
 

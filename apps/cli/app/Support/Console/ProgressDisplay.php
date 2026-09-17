@@ -34,7 +34,37 @@ final class ProgressDisplay
             throw new LogicException('Progress step cannot be admitted.');
         }
 
-        $this->steps[$id] = [
+        $this->steps[$id] = $this->step($waiting, $running, $completed);
+    }
+
+    /** Admits a revealed conditional step at its real position, ahead of an already-admitted waiting step. */
+    public function admitBefore(string $beforeId, string $id, string $waiting, string $running, string $completed): void
+    {
+        if (
+            $this->finished || isset($this->steps[$id]) || $this->hasState(ProgressState::Failure)
+            || ($this->steps[$beforeId]['state'] ?? null) !== ProgressState::Waiting
+        ) {
+            throw new LogicException('Progress step cannot be admitted.');
+        }
+
+        $entry = $this->step($waiting, $running, $completed);
+        $steps = [];
+
+        foreach ($this->steps as $stepId => $step) {
+            if ($stepId === $beforeId) {
+                $steps[$id] = $entry;
+            }
+
+            $steps[$stepId] = $step;
+        }
+
+        $this->steps = $steps;
+    }
+
+    /** @return array{waiting: string, running: string, completed: string, state: ProgressState, message: string} */
+    private function step(string $waiting, string $running, string $completed): array
+    {
+        return [
             'waiting' => TerminalText::safe($waiting),
             'running' => TerminalText::safe($running),
             'completed' => TerminalText::safe($completed),

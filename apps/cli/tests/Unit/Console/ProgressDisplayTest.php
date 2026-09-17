@@ -132,4 +132,53 @@ describe('shared progress', function (): void {
             expect(TerminalText::width($line))->toBeLessThanOrEqual(1);
         }
     });
+
+    it('inserts a revealed step at its real position on a decorated terminal', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, true, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+        $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
+        $display->during('source_preparation', fn (): int => 0);
+        $display->complete('source_preparation', ProgressState::Success);
+        $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate');
+        $display->during('before_activation:migrate', fn (): int => 0);
+        $display->complete('before_activation:migrate', ProgressState::Success);
+        $display->during('activation', fn (): int => 0);
+        $display->complete('activation', ProgressState::Success);
+        $display->finish('Deployment succeeded.');
+        $text = $output->fetch();
+
+        expect($text)->toContain("\e[", 'Resolved release', 'Ran migrate', 'Activated release')
+            ->and(strpos($text, 'Resolved release'))->toBeLessThan(strpos($text, 'Ran migrate'))
+            ->and(strpos($text, 'Ran migrate'))->toBeLessThan(strpos($text, 'Activated release'));
+    });
+
+    it('inserts a revealed step at its real position on plain output', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+        $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
+        $display->during('source_preparation', fn (): int => 0);
+        $display->complete('source_preparation', ProgressState::Success);
+        $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate');
+        $display->during('before_activation:migrate', fn (): int => 0);
+        $display->complete('before_activation:migrate', ProgressState::Success);
+        $display->during('activation', fn (): int => 0);
+        $display->complete('activation', ProgressState::Success);
+        $display->finish('Deployment succeeded.');
+        $text = $output->fetch();
+
+        expect($text)->not->toContain("\e[")
+            ->and(strpos($text, 'Resolved release'))->toBeLessThan(strpos($text, 'Ran migrate'))
+            ->and(strpos($text, 'Ran migrate'))->toBeLessThan(strpos($text, 'Activated release'));
+    });
+
+    it('fails loudly when the anchor step for admitBefore does not exist', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+
+        expect(fn () => $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate'))
+            ->toThrow(LogicException::class);
+    });
 });
