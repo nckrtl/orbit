@@ -847,6 +847,20 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe(AppInstance::query()->sole()->id);
 });
 
+it('records the instances of one App among several', function (): void {
+    OrbitApp::query()->create(['name' => 'Bravo docs', 'slug' => 'bravo-docs', 'repository_url' => 'git@github.com:bravo/docs.git', 'default_branch' => 'main', 'root' => 'public']);
+    $shop = OrbitApp::query()->create(['name' => 'Charlie shop', 'slug' => 'charlie-shop', 'repository_url' => 'git@github.com:charlie/shop.git', 'default_branch' => 'release', 'root' => 'web/public']);
+    foreach (['dev', 'staging', 'feature-checkout'] as $name) {
+        // The fake source resolves to the branch the placement name selects.
+        $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
+        $this->postJson('/api/v1/instances', ['app_id' => $shop->id, 'node_id' => $this->node->id, 'name' => $name])->assertCreated();
+    }
+    $this->source->resolution = new DevelopmentSourceResolution('dev', str_repeat('a', 40));
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
+
+    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(4, 'data'), 'instances/instance-list/charlie-shop', ListAppInstancesRequest::class, 'GET /api/v1/instances');
+});
+
 it('records the list and show responses of an active checkout AppInstance', function (): void {
     $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,

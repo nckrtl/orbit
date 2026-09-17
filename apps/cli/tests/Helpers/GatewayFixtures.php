@@ -32,12 +32,16 @@ function gateway_fixture(string $name): array
     ];
 }
 
-/** @return array<class-string, MockResponse> One Saloon mock entry keyed by the SDK request class. */
-function gateway_fixture_mock(string $name): array
+/** @return array<class-string, MockResponse> Saloon mock entries keyed by the SDK request class, one per fixture. */
+function gateway_fixture_mock(string ...$names): array
 {
-    $fixture = gateway_fixture($name);
+    $mocks = [];
+    foreach ($names as $name) {
+        $fixture = gateway_fixture($name);
+        $mocks[$fixture['request']] = MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json']);
+    }
 
-    return [$fixture['request'] => MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json'])];
+    return $mocks;
 }
 
 /**

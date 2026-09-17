@@ -33,13 +33,14 @@ afterEach(function (): void {
 });
 
 /**
+ * @param  string|list<string>  $fixtures
  * @param  array<string, mixed>  $arguments
  */
-function run_app_contract(string $fixture, string $command, array $arguments, string $expected, int $exitCode): void
+function run_app_contract(string|array $fixtures, string $command, array $arguments, string $expected, int $exitCode): void
 {
     // A global mock keeps its first responses, so replace it for every replay.
     MockClient::destroyGlobal();
-    MockClient::global(gateway_fixture_mock($fixture));
+    MockClient::global(gateway_fixture_mock(...(array) $fixtures));
 
     expect(Artisan::call($command, $arguments))->toBe($exitCode);
     expect_output(Artisan::output(), $expected);
@@ -54,11 +55,11 @@ describe('app contract', function (): void {
     it('renders app:list with several apps', function (): void {
         run_app_contract('apps/app-list/several', 'app:list', [], 'apps/app-list/several.human.txt', 0);
         run_app_contract('apps/app-list/several', 'app:list', ['--json' => true], 'apps/app-list/several.json', 0);
-        run_app_contract('apps/app-show/charlie-shop', 'app:show', ['app' => '3'], 'apps/app-show/charlie-shop.human.txt', 0);
+        run_app_contract(['apps/app-show/charlie-shop', 'instances/instance-list/charlie-shop'], 'app:show', ['app' => '3'], 'apps/app-show/charlie-shop.human.txt', 0);
     });
 
     it('renders app:show from the recorded response', function (): void {
-        run_app_contract('apps/app-show/default', 'app:show', ['app' => '1'], 'apps/app-show/default.human.txt', 0);
+        run_app_contract(['apps/app-show/default', 'instances/instance-list/default'], 'app:show', ['app' => '1'], 'apps/app-show/default.human.txt', 0);
         run_app_contract('apps/app-show/default', 'app:show', ['app' => '1', '--json' => true], 'apps/app-show/default.json', 0);
     });
 

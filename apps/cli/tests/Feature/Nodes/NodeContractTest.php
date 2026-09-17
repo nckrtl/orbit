@@ -33,13 +33,14 @@ afterEach(function (): void {
 });
 
 /**
+ * @param  string|list<string>  $fixtures
  * @param  array<string, mixed>  $arguments
  */
-function run_contract(string $fixture, string $command, array $arguments, string $expected, int $exitCode): void
+function run_contract(string|array $fixtures, string $command, array $arguments, string $expected, int $exitCode): void
 {
     // A global mock keeps its first responses, so replace it for every replay.
     MockClient::destroyGlobal();
-    MockClient::global(gateway_fixture_mock($fixture));
+    MockClient::global(gateway_fixture_mock(...(array) $fixtures));
 
     expect(Artisan::call($command, $arguments))->toBe($exitCode);
     expect_output(Artisan::output(), $expected);
