@@ -1169,7 +1169,7 @@ final class TopFlowCommand extends GatewayCommand
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
             'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null, 'Deploy steps' => count(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $row['id'])).' steps'],
             'deploysteps' => ['Instance' => "{$row['app']['slug']}/{$row['name']}", 'Node' => $row['node']['name'], 'Before activation' => count(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $row['id'] && $s['phase'] === 'before_activation')).' steps', 'After activation' => count(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $row['id'] && $s['phase'] === 'after_activation')).' steps'],
-            'deploystep' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Phase' => $row['phase'], 'Position' => (string) $row['position'], 'Command' => $row['command'], 'Timeout' => "{$row['timeout']} s"],
+            'deploystep' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Phase' => $row['phase'], 'Position' => (string) $row['position'], 'Timeout' => "{$row['timeout']} s", 'Runs as' => 'the production user, from the fresh release'],
             'databases' => match ($row['driver']) {
                 'sqlite' => ['Slug' => $row['slug'], 'Driver' => 'sqlite', 'Node' => $row['node'], 'Path' => $row['path'], 'Size' => $row['size'], 'Journal' => $row['journal']],
                 'redis' => ['Slug' => $row['slug'], 'Driver' => 'redis', 'Node' => $row['node'], 'Host' => "{$row['host']}:{$row['port']}", 'Database' => $row['database'], 'Auth' => $row['username'] ?? 'default user', 'Password' => '••••••••', 'Version' => $row['version'], 'Server process' => $row['process']],
@@ -1472,6 +1472,7 @@ final class TopFlowCommand extends GatewayCommand
             'tables' => $this->tablePage($row, $properties, $propertiesHeight, $body),
             'deployments' => $this->deploymentPage($row, $properties, $propertiesHeight, $body),
             'deploysteps' => $this->deployStepsPage($properties, $propertiesHeight, $body),
+            'deploystep' => $this->stackedPage($properties, $propertiesHeight, ' Command ', $this->commandLines($row['command'], $body->width - 4), $body),
             'schedules' => $this->stackedPage($properties, $propertiesHeight, ' Runs ', $this->scheduleRuns($row), $body),
             default => $this->stackedPage($properties, $propertiesHeight, ' Logs ', $this->logs, $body),
         };
@@ -1661,6 +1662,31 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         return GridWidget::default()->direction(Direction::Vertical)->constraints(...$constraints)->widgets(...$widgets);
+    }
+
+    /**
+     * A shell command laid out to read: one argument per line after the first, long options
+     * kept whole, so a big command is legible instead of one truncated string.
+     *
+     * @return list<string>
+     */
+    private function commandLines(string $command, int $width): array
+    {
+        $words = preg_split('/\s+/', trim($command)) ?: [];
+        $lines = [];
+        $current = '';
+        foreach ($words as $index => $word) {
+            $breaks = $index > 0 && (str_starts_with($word, '-') || mb_strlen($current) + 1 + mb_strlen($word) > $width - 4);
+            if ($breaks) {
+                $lines[] = $current;
+                $current = '    '.$word;
+            } else {
+                $current = $current === '' ? $word : "{$current} {$word}";
+            }
+        }
+        $lines[] = $current;
+
+        return $lines;
     }
 
     /** The deploy steps of an instance in the order they run, opened from the count on its page. */
