@@ -1537,7 +1537,7 @@ final class TopFlowCommand extends GatewayCommand
         $constraints = [Constraint::length($topHeight), Constraint::length($deployHeight), Constraint::min(4)];
         $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
         $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34)])->split($rows->get(0));
-        $deployColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(48), Constraint::percentage(52)])->split($rows->get(1));
+        $deployColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(1));
         $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
         $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
         $this->drawn['deploysteps'] = ['area' => $deployColumns->get(0), 'header' => true];
@@ -1558,10 +1558,10 @@ final class TopFlowCommand extends GatewayCommand
                     ),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(48), Constraint::percentage(52))
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
                     ->widgets(
-                        $this->pane('deploysteps', ' Deploy steps ', ['Phase', 'Name', 'Command', 'Timeout'], [Constraint::percentage(24), Constraint::percentage(18), Constraint::percentage(42), Constraint::percentage(12)], array_map(fn (array $s): TableRow => $this->row([$s['phase'], $s['name'], $s['command']], "{$s['timeout']} s", false), $steps), 'No deploy steps. instance:deploy-step:create adds one.'),
-                        $this->pane('deployments', ' Deployments ', ['Release', 'Branch', 'Commit', 'By', 'Started', 'Status'], [Constraint::percentage(24), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(22), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['release'], $d['branch'], $d['commit'], $d['by'], $d['started']], $d['status'], $d['status'] !== 'succeeded'), $deployments), 'Not deployed yet.'),
+                        $this->pane('deploysteps', ' Deploy steps ', ['Phase', 'Name', 'Command', 'Timeout'], [Constraint::percentage(14), Constraint::percentage(18), Constraint::percentage(50), Constraint::percentage(14)], array_map(fn (array $s): TableRow => $this->row([str_replace('_activation', '', $s['phase']), $s['name'], $s['command']], "{$s['timeout']} s", false), $steps), 'No deploy steps. instance:deploy-step:create adds one.'),
+                        $this->pane('deployments', ' Deployments ', ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(20), Constraint::percentage(20), Constraint::percentage(10), Constraint::percentage(10), Constraint::percentage(10), Constraint::percentage(12), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['started'], $d['release'], $d['branch'], $d['commit'], $d['by'], $d['duration']], $d['status'], $d['status'] !== 'succeeded'), $deployments), 'Not deployed yet.'),
                     ),
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)->padding(Padding::horizontal(1))
                     ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(2)->height - 2))))),
@@ -1677,7 +1677,7 @@ final class TopFlowCommand extends GatewayCommand
                     ->constraints(Constraint::percentage(40), Constraint::percentage(60))
                     ->widgets(
                         $properties,
-                        $this->pane('deploylog', ' Phases and steps ', ['Phase', 'Step', 'Status', 'Duration'], [Constraint::percentage(30), Constraint::percentage(30), Constraint::percentage(22), Constraint::percentage(16)], array_map(fn (array $s): TableRow => $this->row([$s['phase'], $s['step'], $s['status']], $s['duration'], $s['status'] === 'failed'), $steps)),
+                        $this->pane('deploylog', ' Phases and steps ', ['Phase', 'Step', 'Status', 'Duration'], [Constraint::percentage(34), Constraint::percentage(26), Constraint::percentage(20), Constraint::percentage(16)], array_map(fn (array $s): TableRow => $this->row([$s['phase'], $s['step'], $s['status']], $s['duration'], $s['status'] === 'failed'), $steps)),
                     ),
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Deploy log '))->borderStyle($dim)->padding(Padding::horizontal(1))
                     ->widget(ParagraphWidget::fromString(implode("\n", array_slice($deployment['log'], -max(1, $rows->get(1)->height - 2))))),
