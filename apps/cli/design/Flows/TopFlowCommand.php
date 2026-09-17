@@ -557,7 +557,12 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-        if (in_array($this->focus, ['users', 'keyspace', 'slowlog', 'deploysteps', 'deploylog'], true)) {
+        if ($this->focus === 'deploysteps') {
+            $this->open('deploystep', $row);
+
+            return;
+        }
+        if (in_array($this->focus, ['users', 'keyspace', 'slowlog', 'deploylog'], true)) {
             return;
         }
         $this->open($this->kindOf($this->focus), $row);
@@ -612,6 +617,9 @@ final class TopFlowCommand extends GatewayCommand
                     $this->open('apps', $app);
                 }
             }
+        }
+        if ($link === 'link:deploysteps') {
+            $this->open('deploysteps', $row);
         }
     }
 
@@ -676,6 +684,11 @@ final class TopFlowCommand extends GatewayCommand
                 ...$row['status'] === 'enabled' ? ['disable' => "schedule:disable {$row['id']}"] : ['enable' => "schedule:enable {$row['id']}"],
             ],
             'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
+            'deploystep' => [
+                'update' => "instance:deploy-step:update {$this->instanceName($row['instance_id'])} {$row['name']}",
+                'destroy' => "instance:deploy-step:destroy {$this->instanceName($row['instance_id'])} {$row['name']}",
+            ],
+            'deploysteps' => ['add a step' => "instance:deploy-step:create {$row['app']['slug']}/{$row['name']}"],
             'deployments' => [
                 'show' => "instance:deployment:show {$row['release']}",
                 'roll back to this release' => "instance:rollback {$this->instanceName($row['instance_id'])} --release {$row['release']}",
@@ -1009,7 +1022,7 @@ final class TopFlowCommand extends GatewayCommand
                 default => [],
             },
             'firewall' => array_values(array_filter($this->firewall, fn (array $f): bool => $f['node'] === ($page['row']['name'] ?? null))),
-            'deploysteps' => ($page['kind'] ?? '') === 'instances' ? array_values(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $page['row']['id'])) : [],
+            'deploysteps' => in_array($page['kind'] ?? '', ['instances', 'deploysteps'], true) ? array_values(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $page['row']['id'])) : [],
             'deployments' => ($page['kind'] ?? '') === 'instances' ? array_values(array_filter($this->deployments, fn (array $d): bool => $d['instance_id'] === $page['row']['id'])) : [],
             'deploylog' => ($page['kind'] ?? '') === 'deployments' ? $page['row']['steps'] : [],
             'targets' => ($page['kind'] ?? '') === 'databases' ? array_values(array_filter($this->instances, fn (array $i): bool => in_array($i['id'], $page['row']['targets'], true))) : [],
@@ -1130,6 +1143,8 @@ final class TopFlowCommand extends GatewayCommand
             'databases' => $row['slug'],
             'tables' => isset($row['schema']) ? "{$row['schema']}.{$row['name']}" : $row['name'],
             'deployments' => $row['release'],
+            'deploysteps' => "{$row['app']['slug']}/{$row['name']}",
+            'deploystep' => $row['name'],
             'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
             default => '',
         };
@@ -1152,7 +1167,9 @@ final class TopFlowCommand extends GatewayCommand
         $properties = match ($kind) {
             'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'SSH' => isset($row['public_ssh_host']) ? "{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}" : null],
             'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
-            'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null],
+            'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'], 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null, 'Deploy steps' => count(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $row['id'])).' steps'],
+            'deploysteps' => ['Instance' => "{$row['app']['slug']}/{$row['name']}", 'Node' => $row['node']['name'], 'Before activation' => count(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $row['id'] && $s['phase'] === 'before_activation')).' steps', 'After activation' => count(array_filter($this->deploySteps, fn (array $s): bool => $s['instance_id'] === $row['id'] && $s['phase'] === 'after_activation')).' steps'],
+            'deploystep' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Phase' => $row['phase'], 'Position' => (string) $row['position'], 'Command' => $row['command'], 'Timeout' => "{$row['timeout']} s"],
             'databases' => match ($row['driver']) {
                 'sqlite' => ['Slug' => $row['slug'], 'Driver' => 'sqlite', 'Node' => $row['node'], 'Path' => $row['path'], 'Size' => $row['size'], 'Journal' => $row['journal']],
                 'redis' => ['Slug' => $row['slug'], 'Driver' => 'redis', 'Node' => $row['node'], 'Host' => "{$row['host']}:{$row['port']}", 'Database' => $row['database'], 'Auth' => $row['username'] ?? 'default user', 'Password' => '••••••••', 'Version' => $row['version'], 'Server process' => $row['process']],
@@ -1417,6 +1434,8 @@ final class TopFlowCommand extends GatewayCommand
             'databases' => 'Database',
             'tables' => 'Table',
             'deployments' => 'Deployment',
+            'deploysteps' => 'Deploy steps of',
+            'deploystep' => 'Deploy step',
             'firewall' => 'Firewall rule',
             default => '',
         };
@@ -1427,14 +1446,14 @@ final class TopFlowCommand extends GatewayCommand
         )));
 
         // Properties first; App and Node values are links to those records' pages.
-        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases', 'tables', 'deployments'], true) ? intdiv($body->width * 40, 100) : $body->width;
+        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases', 'tables', 'deployments', 'deploysteps'], true) ? intdiv($body->width * 40, 100) : $body->width;
         $propertyRows = [];
         $index = 0;
         foreach ($this->properties($kind, $row) as $name => $value) {
             $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied', 'succeeded'], true);
-            $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
+            $link = in_array($name, ['App', 'Node', 'Deploy steps'], true) && $value !== '—';
             if ($link) {
-                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 2, $body->top() + 1 + $index, max(10, $propertiesWidth - 4), 1), 'header' => false];
+                $this->drawn['link:'.str_replace(' ', '', strtolower($name))] = ['area' => Area::fromScalars($body->left() + 2, $body->top() + 1 + $index, max(10, $propertiesWidth - 4), 1), 'header' => false];
             }
             $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
             $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
@@ -1452,6 +1471,7 @@ final class TopFlowCommand extends GatewayCommand
             'databases' => $this->databasePage($properties, $propertiesHeight, $body),
             'tables' => $this->tablePage($row, $properties, $propertiesHeight, $body),
             'deployments' => $this->deploymentPage($row, $properties, $propertiesHeight, $body),
+            'deploysteps' => $this->deployStepsPage($properties, $propertiesHeight, $body),
             'schedules' => $this->stackedPage($properties, $propertiesHeight, ' Runs ', $this->scheduleRuns($row), $body),
             default => $this->stackedPage($properties, $propertiesHeight, ' Logs ', $this->logs, $body),
         };
@@ -1530,19 +1550,16 @@ final class TopFlowCommand extends GatewayCommand
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $processes = $this->rowsFor('processes');
         $schedules = $this->rowsFor('schedules');
-        $steps = $this->rowsFor('deploysteps');
         $deployments = $this->rowsFor('deployments');
         $topHeight = max($propertiesHeight, count($processes) + 3, count($schedules) + 3);
-        $deployHeight = max(count($steps), count($deployments), 1) + 3;
+        $deployHeight = max(count($deployments), 1) + 3;
         $constraints = [Constraint::length($topHeight), Constraint::length($deployHeight), Constraint::min(4)];
         $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
         $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34)])->split($rows->get(0));
-        $deployColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(1));
         $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
         $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
-        $this->drawn['deploysteps'] = ['area' => $deployColumns->get(0), 'header' => true];
-        $this->drawn['deployments'] = ['area' => $deployColumns->get(1), 'header' => true];
-        $this->paneOrder = ['processes', 'schedules', 'deploysteps', 'deployments'];
+        $this->drawn['deployments'] = ['area' => $rows->get(1), 'header' => true];
+        $this->paneOrder = ['processes', 'schedules', 'deployments'];
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -1556,13 +1573,7 @@ final class TopFlowCommand extends GatewayCommand
                         $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes)),
                         $this->pane('schedules', ' Schedules ', ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $schedules)),
                     ),
-                GridWidget::default()
-                    ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
-                    ->widgets(
-                        $this->pane('deploysteps', ' Deploy steps ', ['Phase', 'Name', 'Command', 'Timeout'], [Constraint::percentage(14), Constraint::percentage(18), Constraint::percentage(50), Constraint::percentage(14)], array_map(fn (array $s): TableRow => $this->row([str_replace('_activation', '', $s['phase']), $s['name'], $s['command']], "{$s['timeout']} s", false), $steps), 'No deploy steps. instance:deploy-step:create adds one.'),
-                        $this->pane('deployments', ' Deployments ', ['Started', 'Release', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(18), Constraint::percentage(24), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(14), Constraint::percentage(16)], array_map(fn (array $d): TableRow => $this->row([substr($d['started'], 5), $d['release'], $d['commit'], $d['by'], $d['duration']], $d['status'], $d['status'] !== 'succeeded'), $deployments), 'Not deployed yet.'),
-                    ),
+                $this->pane('deployments', ' Deployments ', ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(16), Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['started'], $d['release'], $d['branch'], $d['commit'], $d['by'], $d['duration']], $d['status'], $d['status'] !== 'succeeded'), $deployments), 'Not deployed yet.'),
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Logs '))->borderStyle($dim)->padding(Padding::horizontal(1))
                     ->widget(ParagraphWidget::fromString(implode("\n", array_slice($this->instanceLogs, -max(1, $rows->get(2)->height - 2))))),
             );
@@ -1650,6 +1661,24 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         return GridWidget::default()->direction(Direction::Vertical)->constraints(...$constraints)->widgets(...$widgets);
+    }
+
+    /** The deploy steps of an instance in the order they run, opened from the count on its page. */
+    private function deployStepsPage(Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $steps = $this->rowsFor('deploysteps');
+        usort($steps, fn (array $a, array $b): int => [$a['phase'] === 'before_activation' ? 0 : 1, $a['position']] <=> [$b['phase'] === 'before_activation' ? 0 : 1, $b['position']]);
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($propertiesHeight), Constraint::min(5)])->split($body);
+        $this->drawn['deploysteps'] = ['area' => $rows->get(1), 'header' => true];
+        $this->paneOrder = ['deploysteps'];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length($propertiesHeight), Constraint::min(5))
+            ->widgets(
+                $properties,
+                $this->pane('deploysteps', ' Steps in the order they run ', ['Phase', '#', 'Name', 'Command', 'Timeout'], [Constraint::percentage(18), Constraint::percentage(5), Constraint::percentage(16), Constraint::percentage(47), Constraint::percentage(10)], array_map(fn (array $s): TableRow => $this->row([$s['phase'], (string) $s['position'], $s['name'], $s['command']], "{$s['timeout']} s", false), $steps), 'No deploy steps. instance:deploy-step:create adds one.'),
+            );
     }
 
     /**
