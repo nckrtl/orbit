@@ -159,7 +159,7 @@ final class TopFlowCommand extends GatewayCommand
     /**
      * A node being added: which step runs. The host key is trusted as node:add records it.
      *
-     * @var array{node: string, step: int, stepAt: float, fingerprint: string, host: string}|null
+     * @var array{node: string, step: int, stepAt: float, fingerprint: string, host: string, log: list<string>}|null
      */
     private ?array $provisioning = null;
 
@@ -890,7 +890,8 @@ final class TopFlowCommand extends GatewayCommand
             'lan_ip' => null,
         ];
         $this->nodes[] = $node;
-        $this->provisioning = ['node' => $node['name'], 'step' => 0, 'stepAt' => microtime(true), 'fingerprint' => 'SHA256:Qm3fL9xTz1a8YhVw2pR7dKcN4bE6sJ0uGiXo5mHt2Ac', 'host' => $values['host']];
+        $this->provisioning = ['node' => $node['name'], 'step' => 0, 'stepAt' => microtime(true), 'fingerprint' => 'SHA256:Qm3fL9xTz1a8YhVw2pR7dKcN4bE6sJ0uGiXo5mHt2Ac', 'host' => $values['host'], 'log' => []];
+        $this->logStep(0);
         $this->ran = "orbit node:add {$node['name']} --host {$values['host']}";
         $this->form = null;
         $this->open('nodes', $node);
@@ -911,6 +912,27 @@ final class TopFlowCommand extends GatewayCommand
         }
         $this->provisioning['step'] = $next;
         $this->provisioning['stepAt'] = microtime(true);
+        $this->logStep($next);
+    }
+
+    /** The lines the agent would stream for a step, as node:add prints them. */
+    private function logStep(int $step): void
+    {
+        if ($this->provisioning === null) {
+            return;
+        }
+        $p = $this->provisioning;
+        $lines = match ($step) {
+            0 => ["ssh {$p['host']}:22 as root", 'authenticated with ~/.ssh/id_ed25519', 'ubuntu 24.04.2 LTS · x86_64 · 4 cores · 8 GiB'],
+            1 => ["host key {$p['fingerprint']}", 'recorded in the Gateway as trusted for '.$p['node']],
+            2 => ['apt-get install -y wireguard docker.io', 'downloaded orbit-agent 1.14.2 (12 MB)', 'systemctl enable --now orbit-agent', 'agent reported in over https'],
+            3 => ['generated WireGuard key pair', 'peer added on the gateway', 'assigned 10.44.0.'.(9 + count($this->nodes)).'/24', 'tunnel up · handshake 21 ms'],
+            4 => ['role app-dev: php 8.4, composer, node 22, caddy', 'firewall: allow 22/tcp from 10.44.0.0/16', 'node ready'],
+            default => [],
+        };
+        foreach ($lines as $line) {
+            $this->provisioning['log'][] = sprintf('%s  %s', date('H:i:s'), $line);
+        }
     }
 
     /** The node becomes active, with an address, metrics, and its first firewall rule. */
@@ -1416,7 +1438,10 @@ final class TopFlowCommand extends GatewayCommand
     private function nodePage(array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
     {
         $live = isset($this->metrics[$node['name']]);
-        $metricsHeight = $live ? $this->metricsHeight($node['name']) : count(self::CREATE_STEPS) + 6;
+        if (! $live) {
+            return $this->provisioningPage($node, $properties, $propertiesHeight, $body);
+        }
+        $metricsHeight = $this->metricsHeight($node['name']);
         $top = max($propertiesHeight, $metricsHeight);
         $instances = $this->rowsFor('instances');
         $constraints = [Constraint::length($top), Constraint::length(min(count($instances) + 3, max(5, $body->height - $top - 8))), Constraint::min(5)];
@@ -1435,7 +1460,7 @@ final class TopFlowCommand extends GatewayCommand
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(40), Constraint::percentage(60))
-                    ->widgets($properties, $live ? $this->metricsPanel($node['name'], $topColumns->get(1)->width) : $this->provisioningPanel($node)),
+                    ->widgets($properties, $this->metricsPanel($node['name'], $topColumns->get(1)->width)),
                 $this->pane('instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain']], $i['status'], $i['status'] !== 'active'), $instances)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
@@ -1678,10 +1703,32 @@ final class TopFlowCommand extends GatewayCommand
     }
 
     /**
-     * While a node is being added, its page shows the steps where the metrics will be.
+     * While a node is being added, its page shows the steps where the metrics will be and the
+     * agent's log below them; the record panes appear once the node is active.
      *
      * @param  array<string, mixed>  $node
      */
+    private function provisioningPage(array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $top = max($propertiesHeight, count(self::CREATE_STEPS) + 3);
+        $log = $this->provisioning !== null && $this->provisioning['node'] === $node['name'] ? $this->provisioning['log'] : [];
+        $this->paneOrder = [];
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(Constraint::length($top), Constraint::min(4))
+            ->widgets(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
+                    ->widgets($properties, $this->provisioningPanel($node)),
+                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Provisioning log '))->borderStyle($dim)->padding(Padding::horizontal(1))
+                    ->widget(ParagraphWidget::fromString(implode("\n", array_slice($log, -max(1, $body->height - $top - 2))))),
+            );
+    }
+
+    /** @param  array<string, mixed>  $node */
     private function provisioningPanel(array $node): Widget
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
