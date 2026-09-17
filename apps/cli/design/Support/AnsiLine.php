@@ -31,7 +31,8 @@ final class AnsiLine
 
                 continue;
             }
-            $spans[] = Span::styled($part, $reverse ? $style->addModifier(Modifier::REVERSED) : $style);
+            // Style methods change the object itself, so every span gets its own copy.
+            $spans[] = Span::styled($part, $reverse ? (clone $style)->addModifier(Modifier::REVERSED) : clone $style);
         }
 
         return Line::fromSpans(...$spans);
@@ -40,6 +41,7 @@ final class AnsiLine
     /** @return array{Style, bool} */
     private static function apply(Style $style, bool $reverse, int $code): array
     {
+        $style = clone $style;
         $colours = [AnsiColor::Black, AnsiColor::Red, AnsiColor::Green, AnsiColor::Yellow, AnsiColor::Blue, AnsiColor::Magenta, AnsiColor::Cyan, AnsiColor::Gray];
         $bright = [AnsiColor::DarkGray, AnsiColor::LightRed, AnsiColor::LightGreen, AnsiColor::LightYellow, AnsiColor::LightBlue, AnsiColor::LightMagenta, AnsiColor::LightCyan, AnsiColor::White];
 

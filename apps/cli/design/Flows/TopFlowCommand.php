@@ -754,7 +754,7 @@ final class TopFlowCommand extends GatewayCommand
         }
         $prompt = match ($key) {
             'name' => PanelTextPrompt::make(label: 'Node name', placeholder: 'beast', required: true, validate: fn (string $v): ?string => preg_match('/^[a-z0-9-]+$/', $v) === 1 ? null : 'Use lowercase letters, digits, and dashes.'),
-            'host' => PanelTextPrompt::make(label: 'SSH host', placeholder: '10.0.0.12 or beast.example.test', required: true),
+            'host' => PanelTextPrompt::make(label: 'SSH host', placeholder: '10.0.0.12 or beast.example.test', required: true, validate: fn (string $v): ?string => filter_var($v, FILTER_VALIDATE_IP) !== false || preg_match('/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i', $v) === 1 ? null : 'Enter an IP address or a host name such as beast.example.test.'),
             'port' => PanelTextPrompt::make(label: 'SSH port', default: '22', required: true, validate: fn (string $v): ?string => ctype_digit($v) && (int) $v > 0 && (int) $v < 65536 ? null : 'A port is a number from 1 to 65535.'),
             'user' => PanelTextPrompt::make(label: 'SSH user', default: 'root', required: true),
             'roles' => PanelSelectPrompt::make(label: 'Role', options: ['app-dev' => 'app-dev · runs App instances', 'gateway' => 'gateway · runs the Gateway and the VPN hub', 'app-prod' => 'app-prod · runs production App instances'], default: 'app-dev'),
