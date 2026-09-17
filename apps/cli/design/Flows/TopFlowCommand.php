@@ -844,15 +844,20 @@ final class TopFlowCommand extends GatewayCommand
         if ($this->form === null) {
             return;
         }
+        // Every field validates itself, so each invalid one shows its own message; the first takes the focus.
+        $firstInvalid = null;
         foreach ($this->form['prompts'] as $index => [$name, $field]) {
             if (! $field->done()) {
                 $field->press(Key::ENTER);
             }
             if (! $field->done()) {
-                $this->focusField($index);
-
-                return;
+                $firstInvalid ??= $index;
             }
+        }
+        if ($firstInvalid !== null) {
+            $this->focusField($firstInvalid);
+
+            return;
         }
         $this->startProvisioning();
     }
@@ -865,7 +870,8 @@ final class TopFlowCommand extends GatewayCommand
         }
         $index = max(0, min(count($this->form['prompts']), $index));
         $this->form['active'] = $index;
-        if (isset($this->form['prompts'][$index])) {
+        // A confirmed field becomes editable again; a field showing an error keeps showing it until a key arrives.
+        if (isset($this->form['prompts'][$index]) && $this->form['prompts'][$index][1]->state === 'submit') {
             $this->form['prompts'][$index][1]->state = 'active';
         }
     }
