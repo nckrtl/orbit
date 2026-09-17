@@ -332,7 +332,7 @@ it('renders shared gateway errors safely for every tool command', function (
         InstallToolRequest::class,
     ],
     'tool update' => ['tool:update', ['tool' => '41'], UpdateToolRequest::class],
-    'tool remove' => ['tool:remove', ['tool' => '41'], RemoveToolRequest::class],
+    'tool remove' => ['tool:remove', ['tool' => '41', '--yes' => true], RemoveToolRequest::class],
 ]);
 
 it('renders malformed successful tool responses through the shared json boundary', function (): void {
