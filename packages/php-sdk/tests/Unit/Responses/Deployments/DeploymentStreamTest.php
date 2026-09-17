@@ -321,6 +321,43 @@ describe(DeploymentStream::class.' silence handling', function (): void {
         }
     });
 
+    it('keeps succeeding when repeated idle gaps each stay under the limit but add up past it, because real data resets the clock', function (): void {
+        // Each gap (200 ms) leaves a 100 ms margin under the 300 ms limit on its own; two
+        // gaps back to back (400 ms) clear the limit by 100 ms if the clock is never reset.
+        // That margin has to survive real scheduling jitter, not just the nominal numbers.
+        [$address, $pid] = deployment_start_server(function ($connection): void {
+            $send = deployment_open_chunked($connection, deployment_stream_request_id());
+            usleep(200_000); // one gap under the limit
+            $send(deployment_stream_line([
+                'type' => 'phase',
+                'sequence' => 1,
+                'request_id' => deployment_stream_request_id(),
+                'phase' => 'source_preparation',
+            ]));
+            usleep(200_000); // another gap under the limit; the two together clear it
+            $send(deployment_stream_line([
+                'type' => 'phase',
+                'sequence' => 2,
+                'request_id' => deployment_stream_request_id(),
+                'phase' => 'activation',
+            ]));
+            usleep(200_000); // a third gap, again under the limit alone
+            $send(deployment_stream_line(deployment_stream_result(3)));
+            deployment_close_chunked($connection);
+        });
+
+        try {
+            $stream = deployment_connect_stream($address, readTimeout: 0.05, silenceLimitSeconds: 0.3);
+            $events = iterator_to_array($stream);
+
+            expect($events)->toHaveCount(3)
+                ->and($events[2])->toBeInstanceOf(DeploymentResultEvent::class)
+                ->and($events[2]->succeeded())->toBeTrue();
+        } finally {
+            pcntl_waitpid($pid, $status);
+        }
+    });
+
     it('fails as an invalid stream when the connection closes during silence', function (): void {
         [$address, $pid] = deployment_start_server(function ($connection): void {
             deployment_open_chunked($connection, deployment_stream_request_id());
