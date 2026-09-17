@@ -36,46 +36,23 @@ abstract class DeploymentCommand extends GatewayCommand
         $stream->onIdle(InterruptIntent::throwIfPending(...));
 
         return $this->option('json') === true
-            ? $this->renderDeploymentStreamMachine($stream, $openingPhase)
+            ? $this->renderDeploymentStreamMachine($stream)
             : $this->renderDeploymentStreamHuman($stream, $title, $openingPhase, $verb);
     }
 
-    private function renderDeploymentStreamMachine(DeploymentStream $stream, string $openingPhase): int
+    private function renderDeploymentStreamMachine(DeploymentStream $stream): int
     {
-        $currentOrder = null;
-        $seenStepIds = [];
-
         try {
             foreach ($stream as $event) {
                 $this->requestId = $event->requestId;
 
                 if ($event instanceof DeploymentPhaseEvent) {
-                    $stepId = $event->stepName !== null ? "{$event->phase}:{$event->stepName}" : $event->phase;
-                    $order = $this->deploymentPhaseOrder($event->phase);
-
-                    // Human and JSON must agree on what a valid stream looks like: a wrong
-                    // opening phase, an out-of-order phase, or a duplicate phase (F6).
-                    if (($currentOrder === null && $event->phase !== $openingPhase)
-                        || ($currentOrder !== null && ($order < $currentOrder || isset($seenStepIds[$stepId])))) {
-                        throw new GatewayApiException(
-                            'Gateway deployment stream is invalid.', 'deployment.stream_invalid', requestId: $event->requestId,
-                        );
-                    }
-
-                    $seenStepIds[$stepId] = true;
-                    $currentOrder = $order;
                     $this->renderPhaseJson($event);
 
                     continue;
                 }
 
                 if ($event instanceof DeploymentOutputEvent) {
-                    if ($currentOrder === null) {
-                        throw new GatewayApiException(
-                            'Gateway deployment stream is invalid.', 'deployment.stream_invalid', requestId: $event->requestId,
-                        );
-                    }
-
                     $this->renderOutputJson($event);
 
                     continue;
@@ -128,28 +105,25 @@ abstract class DeploymentCommand extends GatewayCommand
         $currentStepId = $this->deploymentPhaseLabels($openingPhase, null)[0];
         $currentPhase = $openingPhase;
         $seenStepIds = [$currentStepId => true];
-        $currentOrder = $this->deploymentPhaseOrder($openingPhase);
         $event = null;
 
         try {
-            $event = $progress->during($currentStepId, function () use ($iterator, $openingPhase): ?DeploymentEvent {
+            $event = $progress->during($currentStepId, function () use ($iterator): ?DeploymentEvent {
                 $iterator->rewind();
 
                 if (! $iterator->valid()) {
                     return null;
                 }
 
-                $first = $iterator->current();
-                $this->requestId = $first->requestId;
+                $this->requestId = $iterator->current()->requestId;
+                // Render whatever arrives rather than rejecting a wrong opening phase or an
+                // output-first stream: this is a documented best-effort tree, not a strict
+                // protocol check (F6). A genuinely malformed sequence (a literal duplicate)
+                // still surfaces, via ProgressDisplay's own guards below, as a settled tree.
+                $this->renderHumanOutputEvents($iterator);
 
-                if ($first instanceof DeploymentResultEvent) {
-                    return $first;
-                }
-
-                if (! $first instanceof DeploymentPhaseEvent || $first->phase !== $openingPhase) {
-                    throw new GatewayApiException(
-                        'Gateway deployment stream is invalid.', 'deployment.stream_invalid', requestId: $first->requestId,
-                    );
+                if (! $iterator->valid() || $iterator->current() instanceof DeploymentResultEvent) {
+                    return $iterator->valid() ? $iterator->current() : null;
                 }
 
                 $iterator->next();
@@ -161,16 +135,16 @@ abstract class DeploymentCommand extends GatewayCommand
             while ($event instanceof DeploymentPhaseEvent) {
                 $this->requestId = $event->requestId;
                 $nextPhase = $event->phase;
-                $nextOrder = $this->deploymentPhaseOrder($nextPhase);
                 [$nextStepId, $waiting, $running, $completed] = $this->deploymentPhaseLabels($nextPhase, $event->stepName);
 
-                // An out-of-order or duplicate phase is SDK-valid but not something the
-                // Gateway can send today; the row that was current takes the blame, the same
-                // way an unmapped failed_step boundary does in settleDeploymentTree(). Settle
-                // the tree explicitly here: this throw happens outside any during() scope, so
-                // there is no automatic settle-on-exception to rely on this time.
-                if ($nextOrder < $currentOrder || isset($seenStepIds[$nextStepId])) {
-                    $progress->complete($currentStepId, ProgressState::Failure, 'Gateway deployment stream is invalid.');
+                // A literal duplicate (the same step named twice) cannot be re-admitted or
+                // re-started; ProgressDisplay::during() below would throw a LogicException
+                // once this row is reused while already terminal. Settle explicitly here
+                // instead of letting that surface as an uncaught error, since this throw
+                // would happen outside any during() scope, with no automatic settle-on-
+                // exception to rely on this time.
+                if (isset($seenStepIds[$nextStepId])) {
+                    $this->settleFirstWaitingRowAsFailed($progress, $alwaysEmitted);
                     $progress->finish("{$verb} failed.");
 
                     return $this->renderStreamFailure(
@@ -179,7 +153,6 @@ abstract class DeploymentCommand extends GatewayCommand
                 }
 
                 $seenStepIds[$nextStepId] = true;
-                $currentOrder = $nextOrder;
                 $progress->complete($currentStepId, ProgressState::Success);
 
                 if (in_array($nextPhase, $alwaysEmitted, true)) {
@@ -262,9 +235,16 @@ abstract class DeploymentCommand extends GatewayCommand
             // finish() cannot settle with unresolved work still admitted (F6). complete() only
             // allows a Waiting row to become Skipped, never Success, so this reuses the same
             // "not reached" treatment as the failure path below, regardless of the outcome.
+            // Phase order is only a heuristic for "later" here: rendering a best-effort tree
+            // (F6) can settle a higher-order phase before a lower-order one arrives, so a row
+            // this loop expects to still be Waiting may already be terminal; skip it quietly.
             foreach ($alwaysEmitted as $phase) {
                 if ($this->deploymentPhaseOrder($phase) > $currentOrder) {
-                    $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
+                    try {
+                        $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
+                    } catch (LogicException) {
+                        continue;
+                    }
                 }
             }
 
@@ -280,7 +260,36 @@ abstract class DeploymentCommand extends GatewayCommand
 
         foreach ($alwaysEmitted as $phase) {
             if ($this->deploymentPhaseOrder($phase) > $currentOrder) {
-                $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
+                try {
+                    $progress->complete($this->deploymentPhaseLabels($phase, null)[0], ProgressState::Skipped, 'Not reached.');
+                } catch (LogicException) {
+                    continue;
+                }
+            }
+        }
+    }
+
+    /**
+     * A duplicate phase has no row of its own left to blame (the repeated step already
+     * settled), so finish() needs some row marked Failure or its own guard refuses to settle
+     * while any row is still Waiting. Marks the first always-emitted row still Waiting; a
+     * no-op if none is (finish() does not require a Failure row when nothing is Waiting).
+     *
+     * @param  list<string>  $alwaysEmitted
+     */
+    private function settleFirstWaitingRowAsFailed(ProgressDisplay $progress, array $alwaysEmitted): void
+    {
+        foreach ($alwaysEmitted as $phase) {
+            try {
+                $progress->complete(
+                    $this->deploymentPhaseLabels($phase, null)[0],
+                    ProgressState::Failure,
+                    'Gateway deployment stream is invalid.',
+                );
+
+                return;
+            } catch (LogicException) {
+                continue;
             }
         }
     }

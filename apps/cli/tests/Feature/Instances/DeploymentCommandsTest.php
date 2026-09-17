@@ -423,7 +423,10 @@ describe('deployment streams', function (): void {
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });
 
-    it('rejects a stream whose opening phase does not match the command, in human and JSON alike (F6)', function (string $mode): void {
+    it('renders a wrong opening phase as a best-effort tree instead of rejecting it, in human and JSON alike (F6)', function (string $mode): void {
+        // main's JSON contract accepts this SDK-valid stream, and human must not be stricter
+        // than JSON: neither mode rejects it. Human renders it best-effort (the opening row
+        // still stands in for whatever phase actually arrived first).
         MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'environment_sync'),
@@ -438,12 +441,10 @@ describe('deployment streams', function (): void {
         ]));
         $output = Artisan::output();
 
-        expect($exitCode)->toBe(1)->and($output)->toContain(
-            $mode === '--json' ? 'deployment.stream_invalid' : 'Gateway deployment stream is invalid.',
-        );
+        expect($exitCode)->toBe(0)->and($output)->not->toContain('deployment.stream_invalid', 'stream is invalid');
     })->with(['human' => 'human', 'JSON' => '--json']);
 
-    it('rejects an out-of-order phase and settles the tree instead of leaving a mid-frame row (F6)', function (): void {
+    it('renders an out-of-order phase as a best-effort tree instead of rejecting it (F6)', function (): void {
         MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
@@ -456,16 +457,15 @@ describe('deployment streams', function (): void {
         $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
-        // 'environment_sync' (order 1) arriving after 'activation' (order 2) is out of order;
-        // the row that was current ('activation') takes the blame, and the tree still settles
-        // (the footer prints) instead of freezing mid-frame.
-        expect($exitCode)->toBe(1)
+        // 'environment_sync' (order 1) arriving after 'activation' (order 2) is out of order,
+        // but not a literal duplicate, so it renders as the next step rather than refusing.
+        expect($exitCode)->toBe(0)
             ->and($output)
-            ->toContain('● Resolved release', '● Activating release', 'Gateway deployment stream is invalid.', 'Deployment failed.')
-            ->not->toContain('Selected release:');
+            ->toContain('● Resolved release', '● Activated release', '● Synced environment', 'Deployment succeeded.')
+            ->not->toContain('deployment.stream_invalid', 'stream is invalid');
     });
 
-    it('rejects a duplicate phase (F6)', function (): void {
+    it('settles the tree for a literal duplicate phase instead of an uncaught LogicException (F6)', function (): void {
         MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
@@ -474,23 +474,31 @@ describe('deployment streams', function (): void {
             ]),
         ]);
 
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
+        // JSON never rejects (main's contract); only human mode's ProgressDisplay guards a
+        // literal duplicate, since the repeated step cannot be re-admitted or re-started.
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
 
-        expect($exitCode)->toBe(1)->and(Artisan::output())->toContain('deployment.stream_invalid');
+        expect($exitCode)->toBe(1)
+            ->and($output)
+            ->toContain('Gateway deployment stream is invalid.', 'Deployment failed.')
+            ->not->toContain('LogicException', 'Selected release:');
     });
 
     it('does not lose the request ID for an output-first stream (F6)', function (): void {
         MockClient::global([
             DeployAppInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_output(1, 'stdout', 'too early'),
-                deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
+                deployment_cli_phase(2, 'source_preparation'),
+                deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
             ]),
         ]);
 
-        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
+        $exitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
+        $output = Artisan::output();
 
-        expect($exitCode)->toBe(1)->and(Artisan::output())->toContain(
-            'deployment.stream_invalid', deployment_cli_request_id(),
+        expect($exitCode)->toBe(0)->and($output)->toContain(
+            'stdout: "too early"', 'Deployment succeeded.', 'Request ID: '.deployment_cli_request_id(),
         );
     });
 
