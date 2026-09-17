@@ -809,7 +809,7 @@ final class TopFlowCommand extends GatewayCommand
         // With every node in view the Processes and Schedules say which node runs them.
         $nodeOf = fn (int $instanceId): string => $this->instanceNode($instanceId);
         $processRows = array_map(fn (array $p): TableRow => $this->row([$p['name'], ...$node === null ? [$nodeOf($p['target_id'])] : [], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $this->rowsFor('processes'));
-        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : [], $s['command']], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
+        $scheduleRows = array_map(fn (array $s): TableRow => $this->row([$s['name'], ...$node === null ? [$nodeOf($s['instance_id'])] : []], $s['next_run'], $s['status'] !== 'enabled'), $this->rowsFor('schedules'));
         $firewallRows = array_map(fn (array $f): TableRow => $this->row([$f['port'], $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $this->rowsFor('firewall'));
         $nodeRows = array_map(fn (array $n): TableRow => TableRow::fromStrings($n['name']), $this->rowsFor('nodes'));
         $appRows = array_map(fn (array $a): TableRow => TableRow::fromStrings($a['slug']), $this->rowsFor('apps'));
@@ -838,8 +838,8 @@ final class TopFlowCommand extends GatewayCommand
                             ? $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Node', 'Runtime', 'Status'], [Constraint::percentage(36), Constraint::percentage(20), Constraint::percentage(20), Constraint::percentage(20)], $processRows)
                             : $this->pane('processes', " Processes of {$instanceName} ", ['Name', 'Runtime', 'Status'], [Constraint::percentage(50), Constraint::percentage(24), Constraint::percentage(22)], $processRows),
                         $node === null
-                            ? $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Node', 'Command', 'Next run'], [Constraint::percentage(26), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(22)], $scheduleRows)
-                            : $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Command', 'Next run'], [Constraint::percentage(30), Constraint::percentage(40), Constraint::percentage(26)], $scheduleRows),
+                            ? $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Node', 'Next run'], [Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(30)], $scheduleRows)
+                            : $this->pane('schedules', " Schedules of {$instanceName} ", ['Name', 'Next run'], [Constraint::percentage(56), Constraint::percentage(40)], $scheduleRows),
                     ),
                 $this->pane('firewall', " Firewall on {$nodeName} ", ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(16), Constraint::percentage(12), Constraint::percentage(50), Constraint::percentage(18)], $firewallRows),
             );
@@ -998,7 +998,7 @@ final class TopFlowCommand extends GatewayCommand
             $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied'], true);
             $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
             if ($link) {
-                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, ($pane === 'instances' ? intdiv($body->width * 40, 100) : $body->width) - 2), 1), 'header' => false];
+                $this->drawn['link:'.strtolower($name)] = ['area' => Area::fromScalars($body->left() + 1, $body->top() + 1 + $index, max(10, ($pane === 'instances' ? intdiv($body->width * 34, 100) : $body->width) - 2), 1), 'header' => false];
             }
             $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
             $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
@@ -1072,7 +1072,7 @@ final class TopFlowCommand extends GatewayCommand
 
         // The same splits the grids make, so the mouse can find the two panes.
         $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($topHeight), Constraint::min(4)])->split($body);
-        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(32), Constraint::percentage(28)])->split($rows->get(0));
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(34), Constraint::percentage(26), Constraint::percentage(40)])->split($rows->get(0));
         $this->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
         $this->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
 
@@ -1086,7 +1086,7 @@ final class TopFlowCommand extends GatewayCommand
                 ParagraphWidget::fromText(Text::fromLines($crumbs)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(40), Constraint::percentage(32), Constraint::percentage(28))
+                    ->constraints(Constraint::percentage(34), Constraint::percentage(26), Constraint::percentage(40))
                     ->widgets(
                         $properties,
                         $this->pane('processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], $processRows),
