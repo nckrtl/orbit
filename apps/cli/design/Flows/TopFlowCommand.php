@@ -513,7 +513,13 @@ final class TopFlowCommand extends GatewayCommand
 
             return;
         }
-        if (in_array($this->focus, ['users', 'tables', 'keyspace', 'slowlog'], true)) {
+        if ($this->focus === 'tables') {
+            $db = $this->page()['row'] ?? [];
+            $this->open('tables', [...$row, 'database' => $db['slug'], 'driver' => $db['driver']]);
+
+            return;
+        }
+        if (in_array($this->focus, ['users', 'keyspace', 'slowlog'], true)) {
             return;
         }
         $this->open($this->kindOf($this->focus), $row);
@@ -632,6 +638,11 @@ final class TopFlowCommand extends GatewayCommand
                 ...$row['status'] === 'enabled' ? ['disable' => "schedule:disable {$row['id']}"] : ['enable' => "schedule:enable {$row['id']}"],
             ],
             'firewall' => ['show' => "firewall:show {$row['id']}", 'remove' => "firewall:remove {$row['id']}"],
+            'tables' => [
+                'describe' => "database:describe {$row['database']} {$row['name']}",
+                'count' => "database:query {$row['database']} \"SELECT count(*) FROM {$row['name']}\"",
+                'query' => "database:query {$row['database']}",
+            ],
             default => [],
         };
         if ($actions === []) {
@@ -946,6 +957,7 @@ final class TopFlowCommand extends GatewayCommand
             'instances' => "{$row['app']['slug']}/{$row['name']}",
             'processes', 'schedules' => $row['name'],
             'databases' => $row['slug'],
+            'tables' => isset($row['schema']) ? "{$row['schema']}.{$row['name']}" : $row['name'],
             'firewall' => "{$row['port']} {$row['action']} {$row['source']}",
             default => '',
         };
@@ -977,6 +989,7 @@ final class TopFlowCommand extends GatewayCommand
             'processes' => ['Name' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Owner' => $this->processOwner($row), 'Node' => $this->processNode($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
             'schedules' => ['Name' => $row['name'], 'Instance' => $this->instanceName($row['instance_id']), 'Node' => $this->instanceNode($row['instance_id']), 'Command' => $row['command'], 'Expression' => $row['expression'], 'Next run' => $row['next_run'], 'Status' => $row['status']],
             'firewall' => ['Port' => $row['port'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
+            'tables' => ['Database' => $row['database'], ...isset($row['schema']) ? ['Schema' => $row['schema']] : [], 'Table' => $row['name'], ...isset($row['engine']) ? ['Engine' => $row['engine']] : [], 'Rows' => $row['rows'], 'Size' => $row['size'], 'Columns' => (string) count($this->tableColumns($row['name']))],
             default => [],
         };
 
@@ -1234,6 +1247,7 @@ final class TopFlowCommand extends GatewayCommand
             'processes' => 'Process',
             'schedules' => 'Schedule',
             'databases' => 'Database',
+            'tables' => 'Table',
             'firewall' => 'Firewall rule',
             default => '',
         };
@@ -1244,7 +1258,7 @@ final class TopFlowCommand extends GatewayCommand
         )));
 
         // Properties first; App and Node values are links to those records' pages.
-        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases'], true) ? intdiv($body->width * 40, 100) : $body->width;
+        $propertiesWidth = in_array($kind, ['nodes', 'instances', 'databases', 'tables'], true) ? intdiv($body->width * 40, 100) : $body->width;
         $propertyRows = [];
         $index = 0;
         foreach ($this->properties($kind, $row) as $name => $value) {
@@ -1267,6 +1281,7 @@ final class TopFlowCommand extends GatewayCommand
             'apps' => $this->appPage($properties, $propertiesHeight, $body),
             'instances' => $this->instancePage($properties, $propertiesHeight, $body),
             'databases' => $this->databasePage($properties, $propertiesHeight, $body),
+            'tables' => $this->tablePage($row, $properties, $propertiesHeight, $body),
             'schedules' => $this->stackedPage($properties, $propertiesHeight, ' Runs ', $this->scheduleRuns($row), $body),
             default => $this->stackedPage($properties, $propertiesHeight, ' Logs ', $this->logs, $body),
         };
@@ -1447,6 +1462,102 @@ final class TopFlowCommand extends GatewayCommand
         }
 
         return GridWidget::default()->direction(Direction::Vertical)->constraints(...$constraints)->widgets(...$widgets);
+    }
+
+    /**
+     * A table page: properties beside the columns (what database:describe shows), then a five-row
+     * sample. A sample too wide for the pane is shown one record per block instead of as a grid.
+     *
+     * @param  array<string, mixed>  $table
+     */
+    private function tablePage(array $table, Widget $properties, int $propertiesHeight, Area $body): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $columns = $this->tableColumns($table['name']);
+        $sample = $this->tableSample($table['name']);
+        $top = max($propertiesHeight, count($columns) + 3);
+        $constraints = [Constraint::length($top), Constraint::min(5)];
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
+        $topColumns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(60)])->split($rows->get(0));
+        $this->drawn['columns'] = ['area' => $topColumns->get(1), 'header' => true];
+        $this->paneOrder = ['columns'];
+
+        // Widest value per column decides whether the grid fits; one cell of spacing between columns.
+        $names = array_column($columns, 'name');
+        $widths = array_map(fn (string $name): int => max(mb_strlen($name), ...array_map(fn (array $r): int => mb_strlen($r[$name]), $sample)), $names);
+        $fits = array_sum($widths) + count($widths) + 3 <= $rows->get(1)->width - 2;
+
+        if ($fits) {
+            $this->drawn['sample'] = ['area' => $rows->get(1), 'header' => true];
+            $this->paneOrder[] = 'sample';
+            $total = max(1, array_sum($widths));
+            $sampleWidget = $this->pane('sample', ' Sample · first 5 rows ', $names, array_map(fn (int $w): Constraint => Constraint::percentage(max(4, intdiv($w * 96, $total))), $widths), array_map(fn (array $r): TableRow => $this->row(array_slice(array_values($r), 0, -1), (string) end($r), false), $sample));
+        } else {
+            $lines = [];
+            foreach ($sample as $index => $record) {
+                $lines[] = Line::fromSpans(Span::styled('row '.($index + 1), Style::default()->addModifier(Modifier::BOLD)));
+                foreach ($record as $name => $value) {
+                    $lines[] = Line::fromSpans(Span::styled('  '.str_pad($name, 18), $dim), Span::fromString($value));
+                }
+                $lines[] = Line::fromString('');
+            }
+            $sampleWidget = BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->padding(Padding::horizontal(1))
+                ->titles(Title::fromString(' Sample · first 5 rows · '.count($columns).' columns do not fit side by side, so one record per block '))
+                ->widget(ParagraphWidget::fromText(Text::fromLines(...array_slice($lines, 0, max(1, $rows->get(1)->height - 2)))));
+        }
+
+        return GridWidget::default()
+            ->direction(Direction::Vertical)
+            ->constraints(...$constraints)
+            ->widgets(
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(40), Constraint::percentage(60))
+                    ->widgets(
+                        $properties,
+                        $this->pane('columns', ' Columns ', ['Name', 'Type', 'Nullable', 'Default', 'Key'], [Constraint::percentage(28), Constraint::percentage(26), Constraint::percentage(12), Constraint::percentage(22), Constraint::percentage(12)], array_map(fn (array $c): TableRow => $this->row([$c['name'], $c['type'], $c['nullable'] ? 'yes' : 'no', $c['default']], $c['key'], false), $columns)),
+                    ),
+                $sampleWidget,
+            );
+    }
+
+    /**
+     * Made-up schemas per table name, shaped like database:describe output.
+     *
+     * @return list<array{name: string, type: string, nullable: bool, default: string, key: string}>
+     */
+    private function tableColumns(string $table): array
+    {
+        $col = fn (string $name, string $type, bool $nullable = false, string $default = '—', string $key = ''): array => ['name' => $name, 'type' => $type, 'nullable' => $nullable, 'default' => $default, 'key' => $key];
+
+        return match ($table) {
+            'users' => [$col('id', 'bigint', key: 'PK'), $col('name', 'varchar(255)'), $col('email', 'varchar(255)', key: 'UNIQUE'), $col('email_verified_at', 'timestamp', true), $col('password', 'varchar(255)'), $col('remember_token', 'varchar(100)', true), $col('last_login_ip', 'inet', true), $col('preferences', 'jsonb', false, "'{}'"), $col('created_at', 'timestamp', true), $col('updated_at', 'timestamp', true)],
+            'orders' => [$col('id', 'bigint', key: 'PK'), $col('user_id', 'bigint', key: 'FK users'), $col('status', 'varchar(32)', false, "'pending'"), $col('total', 'numeric(10,2)'), $col('currency', 'char(3)', false, "'EUR'"), $col('placed_at', 'timestamp')],
+            'order_items' => [$col('id', 'bigint', key: 'PK'), $col('order_id', 'bigint', key: 'FK orders'), $col('sku', 'varchar(64)'), $col('quantity', 'integer', false, '1'), $col('unit_price', 'numeric(10,2)')],
+            'jobs' => [$col('id', 'bigint', key: 'PK'), $col('queue', 'varchar(255)', key: 'INDEX'), $col('payload', 'longtext'), $col('attempts', 'tinyint', false, '0'), $col('reserved_at', 'integer', true), $col('available_at', 'integer'), $col('created_at', 'integer')],
+            default => [$col('id', 'bigint', key: 'PK'), $col('name', 'varchar(255)'), $col('created_at', 'timestamp', true), $col('updated_at', 'timestamp', true)],
+        };
+    }
+
+    /**
+     * Five made-up rows per table, the result a fixed SELECT … LIMIT 5 would give.
+     *
+     * @return list<array<string, string>>
+     */
+    private function tableSample(string $table): array
+    {
+        $rows = [];
+        for ($i = 1; $i <= 5; $i++) {
+            $rows[] = match ($table) {
+                'users' => ['id' => (string) $i, 'name' => ['Ada Lovelace', 'Grace Hopper', 'Linus Torvalds', 'Margaret Hamilton', 'Ken Thompson'][$i - 1], 'email' => "user{$i}@charlie-shop.test", 'email_verified_at' => '2026-08-0'.$i.' 09:12:00', 'password' => '$2y$12$…', 'remember_token' => $i % 2 ? 'k9F…' : 'NULL', 'last_login_ip' => "10.44.0.{$i}", 'preferences' => '{"theme":"dark","newsletter":true}', 'created_at' => '2026-08-0'.$i.' 09:11:58', 'updated_at' => '2026-09-1'.$i.' 17:40:02'],
+                'orders' => ['id' => (string) (1000 + $i), 'user_id' => (string) $i, 'status' => ['paid', 'pending', 'paid', 'shipped', 'refunded'][$i - 1], 'total' => sprintf('%.2f', 19.5 * $i), 'currency' => 'EUR', 'placed_at' => "2026-09-1{$i} 14:0{$i}:00"],
+                'order_items' => ['id' => (string) (5000 + $i), 'order_id' => (string) (1000 + $i), 'sku' => "CS-00{$i}", 'quantity' => (string) $i, 'unit_price' => '19.50'],
+                'jobs' => ['id' => (string) (4200 + $i), 'queue' => 'default', 'payload' => '{"uuid":"9d1e…","displayName":"App\\Jobs\\SyncOrders","job":"Illuminate\\Queue\\CallQueuedHandler@call"}', 'attempts' => '0', 'reserved_at' => 'NULL', 'available_at' => (string) (1789700000 + $i), 'created_at' => (string) (1789700000 + $i)],
+                default => ['id' => (string) $i, 'name' => "record {$i}", 'created_at' => "2026-09-0{$i} 10:00:00", 'updated_at' => "2026-09-0{$i} 10:00:00"],
+            };
+        }
+
+        return $rows;
     }
 
     private function engineName(string $driver): string
