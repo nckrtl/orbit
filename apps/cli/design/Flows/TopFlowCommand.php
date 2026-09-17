@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Design\Flows;
 
 use App\Commands\GatewayCommand;
-use App\Support\Console\Renderers\ConfirmRenderer;
 use App\Support\Console\Renderers\TableTheme;
 use Design\Support\AnsiLine;
 use Design\Support\PanelConfirmPrompt;
@@ -13,6 +12,7 @@ use Design\Support\PanelSelectPrompt;
 use Design\Support\PanelTextPrompt;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
+use Laravel\Prompts\Themes\Default\ConfirmPromptRenderer;
 use Laravel\Prompts\Themes\Default\SelectPromptRenderer;
 use Laravel\Prompts\Themes\Default\TextPromptRenderer;
 use PhpTui\Term\Actions;
@@ -709,7 +709,7 @@ final class TopFlowCommand extends GatewayCommand
     private function openForm(): void
     {
         // The theme finds a renderer by concrete class, so the panel subclasses reuse the CLI's renderers.
-        TableTheme::extend([PanelTextPrompt::class => TextPromptRenderer::class, PanelSelectPrompt::class => SelectPromptRenderer::class, PanelConfirmPrompt::class => ConfirmRenderer::class]);
+        TableTheme::extend([PanelTextPrompt::class => TextPromptRenderer::class, PanelSelectPrompt::class => SelectPromptRenderer::class, PanelConfirmPrompt::class => ConfirmPromptRenderer::class]);
         Prompt::addTheme('orbit-cli', TableTheme::renderers());
         Prompt::theme('orbit-cli');
         $this->form = ['prompts' => [], 'values' => [], 'stage' => 'prompt', 'step' => 0, 'stepAt' => 0, 'fingerprint' => 'SHA256:Qm3fL9xTz1a8YhVw2pR7dKcN4bE6sJ0uGiXo5mHt2Ac', 'confirm' => null];
