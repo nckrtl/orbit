@@ -8,13 +8,13 @@ use App\Commands\GatewayCommand;
 use App\Support\Console\Renderers\TableTheme;
 use Design\Support\AnsiLine;
 use Design\Support\PanelConfirmPrompt;
+use Design\Support\PanelConfirmPromptRenderer;
 use Design\Support\PanelSelectPrompt;
+use Design\Support\PanelSelectPromptRenderer;
 use Design\Support\PanelTextPrompt;
+use Design\Support\PanelTextPromptRenderer;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
-use Laravel\Prompts\Themes\Default\ConfirmPromptRenderer;
-use Laravel\Prompts\Themes\Default\SelectPromptRenderer;
-use Laravel\Prompts\Themes\Default\TextPromptRenderer;
 use PhpTui\Term\Actions;
 use PhpTui\Term\Event\CharKeyEvent;
 use PhpTui\Term\Event\CodedKeyEvent;
@@ -152,7 +152,7 @@ final class TopFlowCommand extends GatewayCommand
      * The node create form: the Laravel Prompts asked so far (the last one active), the answers,
      * and how far the creation got.
      *
-     * @var array{prompts: list<array{string, PanelTextPrompt|PanelSelectPrompt}>, values: array<string, string>}|null
+     * @var array{prompts: list<array{string, PanelTextPrompt|PanelSelectPrompt}>, active: int}|null
      */
     private ?array $form = null;
 
@@ -732,35 +732,25 @@ final class TopFlowCommand extends GatewayCommand
     private function openForm(): void
     {
         // The theme finds a renderer by concrete class, so the panel subclasses reuse the CLI's renderers.
-        TableTheme::extend([PanelTextPrompt::class => TextPromptRenderer::class, PanelSelectPrompt::class => SelectPromptRenderer::class, PanelConfirmPrompt::class => ConfirmPromptRenderer::class]);
+        TableTheme::extend([PanelTextPrompt::class => PanelTextPromptRenderer::class, PanelSelectPrompt::class => PanelSelectPromptRenderer::class, PanelConfirmPrompt::class => PanelConfirmPromptRenderer::class]);
         Prompt::addTheme('orbit-cli', TableTheme::renderers());
         Prompt::theme('orbit-cli');
-        $this->form = ['prompts' => [], 'values' => []];
+        $this->form = ['prompts' => array_map(fn (string $key): array => [$key, $this->formPrompt($key)], self::FORM_PROMPTS), 'active' => 0];
         $this->focus = null;
-        $this->askNext();
     }
 
-    /** Builds the next prompt, with the same labels, defaults, and validation node:add uses. */
-    private function askNext(): void
+    /** One of the node:add prompts, with the same label, default, and validation the command uses. */
+    private function formPrompt(string $key): PanelTextPrompt|PanelSelectPrompt
     {
-        if ($this->form === null) {
-            return;
-        }
-        $key = self::FORM_PROMPTS[count($this->form['prompts'])] ?? null;
-        if ($key === null) {
-            $this->startProvisioning();
-
-            return;
-        }
-        $prompt = match ($key) {
+        return match ($key) {
             'name' => PanelTextPrompt::make(label: 'Node name', placeholder: 'beast', required: true, validate: fn (string $v): ?string => preg_match('/^[a-z0-9-]+$/', $v) === 1 ? null : 'Use lowercase letters, digits, and dashes.'),
             'host' => PanelTextPrompt::make(label: 'SSH host', placeholder: '10.0.0.12 or beast.example.test', required: true, validate: fn (string $v): ?string => filter_var($v, FILTER_VALIDATE_IP) !== false || preg_match('/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i', $v) === 1 ? null : 'Enter an IP address or a host name such as beast.example.test.'),
             'port' => PanelTextPrompt::make(label: 'SSH port', default: '22', required: true, validate: fn (string $v): ?string => ctype_digit($v) && (int) $v > 0 && (int) $v < 65536 ? null : 'A port is a number from 1 to 65535.'),
             'user' => PanelTextPrompt::make(label: 'SSH user', default: 'root', required: true),
             'roles' => PanelSelectPrompt::make(label: 'Role', options: ['app-dev' => 'app-dev · runs App instances', 'gateway' => 'gateway · runs the Gateway and the VPN hub', 'app-prod' => 'app-prod · runs production App instances'], default: 'app-dev'),
             'tld' => PanelTextPrompt::make(label: 'TLD for its domains', default: 'test', required: true),
+            default => throw new RuntimeException("No prompt for {$key}."),
         };
-        $this->form['prompts'][] = [$key, $prompt];
     }
 
     private function typeInForm(string $char): void
@@ -775,6 +765,21 @@ final class TopFlowCommand extends GatewayCommand
         }
         if ($code === KeyCode::Esc) {
             $this->form = null;
+
+            return;
+        }
+        // Tab and Shift+Tab move between fields; so do the arrows, except inside the role select,
+        // where they pick an option.
+        $select = $this->form['prompts'][$this->form['active']][1] instanceof PanelSelectPrompt;
+        $step = match ($code) {
+            KeyCode::Tab => 1,
+            KeyCode::BackTab => -1,
+            KeyCode::Down => $select ? 0 : 1,
+            KeyCode::Up => $select ? 0 : -1,
+            default => 0,
+        };
+        if ($step !== 0) {
+            $this->focusField($this->form['active'] + $step);
 
             return;
         }
@@ -795,18 +800,59 @@ final class TopFlowCommand extends GatewayCommand
         }
     }
 
-    /** Keys go to the active prompt; a submitted prompt records its answer and the next one is asked. */
+    /**
+     * Keys go to the active field. Enter confirms it (the prompt validates itself) and moves on;
+     * Enter on the last field confirms every field, and the first invalid one takes the focus.
+     */
     private function pressInForm(string $key): void
     {
         if ($this->form === null) {
             return;
         }
-        [$name, $prompt] = $this->form['prompts'][count($this->form['prompts']) - 1];
+        $active = $this->form['active'];
+        $prompt = $this->form['prompts'][$active][1];
         $prompt->press($key);
-        if ($prompt->done()) {
-            $this->form['values'][$name] = (string) $prompt->value();
-            $this->askNext();
+        if ($key !== Key::ENTER || ! $prompt->done()) {
+            return;
         }
+        if ($active < count($this->form['prompts']) - 1) {
+            $this->focusField($active + 1);
+
+            return;
+        }
+        foreach ($this->form['prompts'] as $index => [$name, $field]) {
+            if (! $field->done()) {
+                $field->press(Key::ENTER);
+            }
+            if (! $field->done()) {
+                $this->focusField($index);
+
+                return;
+            }
+        }
+        $this->startProvisioning();
+    }
+
+    /** A field takes the focus in its editable state; a field left behind keeps whatever it holds. */
+    private function focusField(int $index): void
+    {
+        if ($this->form === null) {
+            return;
+        }
+        $index = max(0, min(count($this->form['prompts']) - 1, $index));
+        $this->form['active'] = $index;
+        $this->form['prompts'][$index][1]->state = 'active';
+    }
+
+    /** @return array<string, string> */
+    private function formValues(): array
+    {
+        $values = [];
+        foreach ($this->form['prompts'] ?? [] as [$name, $prompt]) {
+            $values[$name] = (string) $prompt->value();
+        }
+
+        return $values;
     }
 
     /** The answered prompts become a node in provisioning; its page opens and shows the steps as they run. */
@@ -815,7 +861,7 @@ final class TopFlowCommand extends GatewayCommand
         if ($this->form === null) {
             return;
         }
-        $values = $this->form['values'];
+        $values = $this->formValues();
         $node = [
             'id' => count($this->nodes) + 1,
             'name' => $values['name'],
@@ -848,6 +894,7 @@ final class TopFlowCommand extends GatewayCommand
         if ($next === 1) {
             $this->provisioning['stage'] = 'fingerprint';
             $short = substr($p['fingerprint'], 0, 15).'…'.substr($p['fingerprint'], -6);
+            PanelConfirmPromptRenderer::$width = 60;
             $this->provisioning['confirm'] = PanelConfirmPrompt::make(label: "Trust {$p['host']} with host key {$short}?", default: true, yes: 'Trust', no: 'Abort');
 
             return;
@@ -1112,7 +1159,7 @@ final class TopFlowCommand extends GatewayCommand
 
         $footer = ParagraphWidget::fromString(match (true) {
             $this->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
-            $this->form !== null => '  answer the prompt · Enter confirms · Esc cancels',
+            $this->form !== null => '  ↑↓ or Tab move between fields · Enter confirms a field, on the last one the node · Esc cancels',
             $this->provisioning !== null && $this->provisioning['stage'] === 'fingerprint' => '  ←→ or y/n · Enter confirms · Esc aborts the add',
             $this->page() !== null && $this->focus === null => '  ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions · q leave',
             $this->focus === null => '  ↑↓ sections · → into the page · 1-7 jump · '.($this->section === 'nodes' ? 'c or + create · ' : '').($this->hasFilters() ? 'n/p filters · ' : '').'q leave',
@@ -1725,9 +1772,16 @@ final class TopFlowCommand extends GatewayCommand
         $form = $this->form ?? throw new RuntimeException('No form is open.');
         $this->drawn['back'] = ['area' => Area::fromScalars($area->left(), $area->top(), 10, 1), 'header' => false];
 
+        // Boxes fill the panel; only the focused field shows its cursor.
+        PanelTextPromptRenderer::$width = $area->width - 6;
+        PanelSelectPromptRenderer::$width = $area->width - 6;
         $lines = [];
-        foreach ($form['prompts'] as [$key, $prompt]) {
-            foreach (explode("\n", rtrim($prompt->frame(), "\n")) as $text) {
+        foreach ($form['prompts'] as $index => [$key, $prompt]) {
+            $frame = rtrim($prompt->frame(), "\n");
+            if ($index !== $form['active']) {
+                $frame = preg_replace('/\e\[7m(.*?)\e\[27m/', '$1', $frame) ?? $frame;
+            }
+            foreach (explode("\n", $frame) as $text) {
                 $lines[] = AnsiLine::parse($text);
             }
         }
