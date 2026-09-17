@@ -6,6 +6,8 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressState;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 
@@ -27,18 +29,26 @@ abstract class ToolActionCommand extends ToolCommand
             return self::FAILURE;
         }
 
-        $tool = $this->sendWithProgress($connector, $this->request($toolId), ToolResponse::class, $this->progressLabels());
+        $tool = $this->sendWithProgress(
+            $connector,
+            $this->request($toolId),
+            ToolResponse::class,
+            $this->progressLabels(),
+            function (object $response): ProgressState {
+                if (! $response instanceof ToolResponse || ! $this->accepts($response)) {
+                    throw new GatewayApiException(
+                        'Gateway response is invalid.',
+                        'gateway.invalid_response',
+                        requestId: $response instanceof ToolResponse ? $response->requestId : null,
+                    );
+                }
+
+                return $this->resultState($response);
+            },
+        );
 
         if (! $tool instanceof ToolResponse) {
             return self::FAILURE;
-        }
-
-        if (! $this->accepts($tool)) {
-            return $this->renderGatewayFailure(
-                'gateway.invalid_response',
-                'Gateway response is invalid.',
-                $tool->requestId,
-            );
         }
 
         return $this->renderTool($tool, $this->message($tool));
@@ -52,4 +62,10 @@ abstract class ToolActionCommand extends ToolCommand
 
     /** @return array{0: string, 1: string, 2: string} */
     abstract protected function progressLabels(): array;
+
+    /** The response already passed accepts(); classify how truthfully the progress settles. */
+    protected function resultState(ToolResponse $tool): ProgressState
+    {
+        return ProgressState::Success;
+    }
 }

@@ -28,20 +28,26 @@ abstract class MetricsCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
+        $fields = [
+            'Node ID' => $response->nodeId,
+            'Status' => $response->status,
+        ];
+
+        if ($response->publication !== null) {
+            $fields['Publication'] = $response->publication;
+        }
+
+        $fields['Request ID'] = $response->requestId;
+
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail(
             "Metrics operation completed for node #{$response->nodeId}.",
-            [
-                'Node ID' => $response->nodeId,
-                'Status' => $response->status,
-                'Publication' => $response->publication,
-                'Request ID' => $response->requestId,
-            ],
+            $fields,
         ));
 
         if ($response->publication === 'uncleaned') {
-            $this->writeHumanMessage(
+            ConsoleWriter::write($this->output, $this->humanRenderer()->warning(
                 'Publication not cleaned: no single active Gateway. The metrics.orbit route, certificate, and DNS record remain on the Gateway.',
-            );
+            ));
         }
 
         return self::SUCCESS;

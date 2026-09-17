@@ -10,6 +10,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
+use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
+use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -121,10 +123,33 @@ it('renders unchanged human output with its request ID', function (): void {
         '--manager' => 'vp',
     ], ['interactive' => false]);
     $output = $tester->getDisplay(true);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('Tool [@openai/codex] is already installed with [vp].')
-        ->and($output)->toContain($id);
+        ->and($flat)->toContain("Request ID {$id}");
+});
+
+it('does not settle the row as installed before an invalid outcome fails', function (): void {
+    $id = '55555555-5555-4555-8555-555555555555';
+    MockClient::global([
+        InstallToolRequest::class => MockResponse::make([
+            'data' => install_payload('blocked_by_constraint'),
+            'meta' => ['request_id' => $id],
+        ]),
+    ]);
+
+    $tester = new CommandTester(app(Kernel::class)->all()['tool:install']);
+    $exit = $tester->execute([
+        'package' => '@openai/codex',
+        '--node' => 12,
+        '--manager' => 'vp',
+    ], ['interactive' => false]);
+    $output = $tester->getDisplay(true);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('Gateway response is invalid.')
+        ->and($output)->not->toContain('Installed Tool.');
 });
 
 it('rejects missing inputs invalid packages and nodes before HTTP', function (): void {
@@ -267,3 +292,42 @@ it('renders both constraint failures as one line JSON envelopes', function (stri
     ['tool.constraint_invalid',         'Tool version constraint is invalid.'],
     ['tool.version_constraint_blocked', 'Tool install blocked by the version constraint.'],
 ]);
+
+it('excludes a failed manager from the install data list', function (): void {
+    $managers = new ToolManagersResponse([
+        tool_manager_response('apt', 'active'),
+        tool_manager_response('composer', 'uninstalled'),
+        tool_manager_response('brew', 'failed'),
+    ], '11111111-1111-4111-8111-111111111111');
+
+    $method = new ReflectionMethod(InstallToolCommand::class, 'eligibleManagerRows');
+    $rows = $method->invoke(null, $managers);
+
+    expect($rows)->toHaveKeys(['apt', 'composer'])
+        ->and($rows)->not->toHaveKey('brew');
+});
+
+it('reports no supported manager when every manager is ineligible', function (): void {
+    $managers = new ToolManagersResponse([
+        tool_manager_response('brew', 'failed'),
+    ], '11111111-1111-4111-8111-111111111111');
+
+    $method = new ReflectionMethod(InstallToolCommand::class, 'eligibleManagerRows');
+    $rows = $method->invoke(null, $managers);
+
+    expect($rows)->toBe([]);
+});
+
+function tool_manager_response(string $name, string $status): ToolManagerResponse
+{
+    return new ToolManagerResponse(
+        id: 1,
+        nodeId: 12,
+        name: $name,
+        status: $status,
+        installedVersion: null,
+        failedStep: $status === 'failed' ? 'install' : null,
+        errorCode: null,
+        requestId: '11111111-1111-4111-8111-111111111111',
+    );
+}

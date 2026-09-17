@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Commands\Tools\RemoveToolCommand;
+use App\Commands\Tools\UpdateToolCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\Console\ProgressState;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
+use Orbit\Sdk\Responses\Tools\ToolResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -49,6 +53,7 @@ it('rejects a blocked update with no constraint as an invalid response', functio
         ->artisan('tool:update', ['tool' => '41'])
         ->expectsOutput('Gateway response is invalid.')
         ->expectsOutput('Request ID: 77777777-7777-4777-8777-777777777777')
+        ->doesntExpectOutputToContain('Updated Tool.')
         ->assertExitCode(1);
 });
 
@@ -257,11 +262,33 @@ it('renders unchanged and constraint-blocked update outcomes exactly', function 
         ]);
 
         [$exit, $output] = tool_action_cli_display('tool:update', ['tool' => '41']);
+        $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
 
         expect($exit)->toBe(0)
             ->and($output)->toContain($message)
-            ->and($output)->toContain($requestId);
+            ->and($flat)->toContain("Request ID {$requestId}");
     }
+});
+
+it('classifies Tool action outcomes into truthful progress states', function (): void {
+    $update = app(UpdateToolCommand::class);
+    $remove = app(RemoveToolCommand::class);
+    $updateState = new ReflectionMethod($update, 'resultState');
+    $removeState = new ReflectionMethod($remove, 'resultState');
+
+    $tool = static fn (array $overrides): ToolResponse => ToolResponse::fromGatewayData(
+        tool_action_data($overrides),
+        '11111111-1111-4111-8111-111111111111',
+    );
+
+    expect($updateState->invoke($update, $tool(['outcome' => 'applied'])))
+        ->toBe(ProgressState::Success)
+        ->and($updateState->invoke($update, $tool(['outcome' => 'unchanged'])))
+        ->toBe(ProgressState::Skipped)
+        ->and($updateState->invoke($update, $tool(['outcome' => 'blocked_by_constraint', 'version_constraint' => '^8'])))
+        ->toBe(ProgressState::Warning)
+        ->and($removeState->invoke($remove, $tool(['outcome' => 'applied'])))
+        ->toBe(ProgressState::Success);
 });
 
 it('renders a successful remove of a failed version-probe tool', function (string $failedOperation): void {

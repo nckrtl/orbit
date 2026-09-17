@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\Metrics\EnableMetricsCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
@@ -16,6 +17,8 @@ use Orbit\Sdk\Requests\Metrics\ResetMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -218,26 +221,15 @@ it('enables Metrics on an explicit node and sends the node payload', function ()
     expect($exit)->toBe(0)
         ->and($output)->toContain('Metrics operation completed for node #7.')
         ->and($flat)->toContain('Status active')
-        ->and($output)->toContain('66666666-6666-4666-8666-666666666666');
+        ->and($flat)->toContain('Request ID 66666666-6666-4666-8666-666666666666')
+        ->and($output)->not->toContain('Publication');
 
     $mock->assertSentCount(1);
     expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
 });
 
-it('requires explicit force consent for non-interactive disable', function (): void {
-    $mock = MockClient::global([
-        ShowMetricsStatusRequest::class => MockResponse::make([
-            'data' => metrics_cli_status_payload([
-                'id' => 9,
-                'node_id' => 7,
-                'node_name' => 'metrics-node',
-                'status' => 'active',
-                'failed_step' => null,
-                'error_code' => null,
-            ]),
-            'meta' => ['request_id' => metrics_cli_request_id()],
-        ]),
-    ]);
+it('refuses non-interactive disable without --force before reading status', function (): void {
+    $mock = MockClient::global();
 
     $exitCode = Artisan::call('metrics:disable', ['--json' => true]);
 
@@ -247,12 +239,13 @@ it('requires explicit force consent for non-interactive disable', function (): v
         ->toBe([
             'error' => [
                 'code' => 'metrics.force_required',
-                'message' => 'Use --force to confirm Metrics disable.',
+                'message' => 'Non-interactive Metrics disable requires --force.',
                 'request_id' => null,
             ],
         ]);
 
-    $mock->assertSent(ShowMetricsStatusRequest::class);
+    $mock->assertNothingSent();
+    $mock->assertNotSent(ShowMetricsStatusRequest::class);
     $mock->assertNotSent(DisableMetricsRequest::class);
 });
 
@@ -314,6 +307,38 @@ it('returns field=node when non-interactive enable omits the node', function ():
     expect($mock->getLastPendingRequest())->toBeNull();
 });
 
+it('treats an empty node argument like a missing node', function (): void {
+    $mock = MockClient::global();
+
+    $this
+        ->artisan('metrics:enable', ['node' => '', '--json' => true])
+        ->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'metrics.node_required',
+                'message' => 'Node ID or name is required.',
+                'details' => ['field' => 'node'],
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(SymfonyCommand::FAILURE);
+
+    expect($mock->getLastPendingRequest())->toBeNull();
+});
+
+it('excludes an inactive node from the enable data list', function (): void {
+    $requestId = metrics_cli_request_id();
+    $nodes = new NodesResponse([
+        NodeResponse::fromGatewayData(metrics_cli_node_payload(3, 'app-dev', 'active', ['app-dev']), $requestId),
+        NodeResponse::fromGatewayData(metrics_cli_node_payload(4, 'stale-node', 'inactive', ['app-dev']), $requestId),
+    ], $requestId);
+
+    $method = new ReflectionMethod(EnableMetricsCommand::class, 'eligibleNodeRows');
+    $rows = $method->invoke(null, $nodes);
+
+    expect($rows)->toHaveKey(3)
+        ->and($rows)->not->toHaveKey(4);
+});
+
 it('warns when a Metrics disable leaves the Gateway publication uncleaned', function (): void {
     $mock = MockClient::global([
         DisableMetricsRequest::class => MockResponse::make([
@@ -331,9 +356,25 @@ it('warns when a Metrics disable leaves the Gateway publication uncleaned', func
         ->and($output)->toContain(
             'Publication not cleaned: no single active Gateway. The metrics.orbit route, certificate, and DNS record remain on the Gateway.',
         )
-        ->and($output)->toContain(metrics_cli_request_id());
+        ->and($flat)->toContain('Request ID '.metrics_cli_request_id());
 
     $mock->assertNotSent(ShowMetricsStatusRequest::class);
+});
+
+it('renders no uncleaned warning for a cleaned Metrics disable', function (): void {
+    MockClient::global([
+        DisableMetricsRequest::class => MockResponse::make([
+            'data' => ['node_id' => 7, 'status' => 'removed', 'publication' => 'cleaned'],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    [$exit, $output] = metrics_cli_display('metrics:disable', ['--force' => true]);
+    $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
+
+    expect($exit)->toBe(0)
+        ->and($flat)->toContain('Publication cleaned')
+        ->and($output)->not->toContain('Publication not cleaned');
 });
 
 it('resets credentials through the focused request and renders exact JSON', function (): void {
@@ -516,7 +557,7 @@ it('renders complete human status tables', function (): void {
         ->and($output)->toContain('DEGRADED')
         ->and($flat)->toContain('│ 7 │ orbit-ops │ yes │ active │ explicit_enabled │ — │')
         ->and($flat)->toContain('│ 9 │ unreachable-node │ yes │ unknown │ role_default │ unreachable │')
-        ->and($output)->toContain(metrics_cli_request_id());
+        ->and($flat)->toContain('Request ID: '.metrics_cli_request_id());
 });
 
 it('renders the failed step and error code for a failed assignment in human status output', function (): void {
@@ -545,7 +586,7 @@ it('renders the failed step and error code for a failed assignment in human stat
         ->and($flat)->toContain('Prometheus unknown')
         ->and($flat)->toContain('Grafana unknown')
         ->and($output)->toContain('No Metrics exporters configured.')
-        ->and($output)->toContain(metrics_cli_request_id());
+        ->and($flat)->toContain('Request ID: '.metrics_cli_request_id());
 });
 
 it('renders structured secret-safe failures for every Metrics command', function (
@@ -586,7 +627,7 @@ it('renders structured secret-safe failures for every Metrics command', function
     $mock->assertSent($requestClass);
 })->with([
     'enable' => ['metrics:enable', ['node' => '3'], EnableMetricsRequest::class],
-    'disable preflight' => ['metrics:disable', [], ShowMetricsStatusRequest::class],
+    'disable' => ['metrics:disable', ['--force' => true], DisableMetricsRequest::class],
     'status' => ['metrics:status', [], ShowMetricsStatusRequest::class],
     'credentials' => ['metrics:credentials', [], ShowMetricsCredentialsRequest::class],
     'credential reset' => ['metrics:credentials', ['--reset' => true], ResetMetricsCredentialsRequest::class],

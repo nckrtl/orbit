@@ -133,6 +133,21 @@ final readonly class HumanRenderer
         return $output;
     }
 
+    public function warning(string $safeMessage): string
+    {
+        if ($this->mode->machine) {
+            return '';
+        }
+
+        $output = '';
+
+        foreach (TerminalText::wrap(TerminalText::safe($safeMessage), $this->mode->columns) as $line) {
+            $output .= TerminalText::style($line, 'orange', $this->mode->decorated).PHP_EOL;
+        }
+
+        return $output;
+    }
+
     /** @param array<string, string|list<string>> $safeFields */
     public function failure(string $safeMessage, array $safeFields = [], ?string $requestId = null, ?string $code = null): string
     {

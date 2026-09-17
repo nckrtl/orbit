@@ -6,7 +6,9 @@ namespace App\Commands\Tools;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressState;
 use Laravel\Prompts\TextPrompt;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
@@ -59,24 +61,25 @@ final class InstallToolCommand extends ToolCommand
             new InstallToolRequest($nodeId, $manager, $package, $this->stringOption('constraint')),
             ToolResponse::class,
             ['Install Tool', 'Installing Tool', 'Installed Tool'],
+            static function (object $response): ProgressState {
+                if (! $response instanceof ToolResponse || ! in_array($response->outcome, ['applied', 'unchanged'], strict: true)) {
+                    throw new GatewayApiException(
+                        'Gateway response is invalid.',
+                        'gateway.invalid_response',
+                        requestId: $response instanceof ToolResponse ? $response->requestId : null,
+                    );
+                }
+
+                return $response->outcome === 'unchanged' ? ProgressState::Skipped : ProgressState::Success;
+            },
         );
         if (! $response instanceof ToolResponse) {
             return self::FAILURE;
         }
 
-        $message = match ($response->outcome) {
-            'applied' => "Tool [{$response->package}] installed with [{$response->manager}].",
-            'unchanged' => "Tool [{$response->package}] is already installed with [{$response->manager}].",
-            default => null,
-        };
-
-        if ($message === null) {
-            return $this->renderGatewayFailure(
-                'gateway.invalid_response',
-                'Gateway response is invalid.',
-                $response->requestId,
-            );
-        }
+        $message = $response->outcome === 'applied'
+            ? "Tool [{$response->package}] installed with [{$response->manager}]."
+            : "Tool [{$response->package}] is already installed with [{$response->manager}].";
 
         return $this->renderTool($response, $message);
     }
@@ -89,6 +92,23 @@ final class InstallToolCommand extends ToolCommand
             return null;
         }
 
+        $rows = $this->resolveManagerRows($connector, $nodeId);
+
+        if ($rows === null) {
+            return null;
+        }
+
+        return (string) $this->commandPrompts()->selectEntity('Tool manager', ['Name', 'Status'], $rows);
+    }
+
+    /**
+     * Loads the manager data list for the prompt: eligible managers, sorted by name.
+     * Renders the "no manager" failure and returns null when none are eligible.
+     *
+     * @return array<string, array{0: string, 1: string}>|null
+     */
+    protected function resolveManagerRows(GatewayConnector $connector, int $nodeId): ?array
+    {
         $managers = $this->sendWithProgress(
             $connector,
             new ListToolManagersRequest($nodeId),
@@ -99,19 +119,32 @@ final class InstallToolCommand extends ToolCommand
             return null;
         }
 
-        $eligible = array_values(array_filter(
+        $rows = self::eligibleManagerRows($managers);
+
+        if ($rows === []) {
+            $this->renderGatewayFailure('tool.manager_required', 'No supported tool manager is available.');
+
+            return null;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Eligible means the manager can run an install: already active, or provisionable from uninstalled.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    private static function eligibleManagerRows(ToolManagersResponse $managers): array
+    {
+        $eligible = array_filter(
             $managers->managers,
             static fn (ToolManagerResponse $item): bool => in_array(
                 $item->status,
                 ['active', 'uninstalled'],
                 strict: true,
             ),
-        ));
-        if ($eligible === []) {
-            $this->renderGatewayFailure('tool.manager_required', 'No supported tool manager is available.');
-
-            return null;
-        }
+        );
 
         $rows = [];
         foreach ($eligible as $item) {
@@ -119,7 +152,7 @@ final class InstallToolCommand extends ToolCommand
         }
         ksort($rows);
 
-        return (string) $this->commandPrompts()->selectEntity('Tool manager', ['Name', 'Status'], $rows);
+        return $rows;
     }
 
     private function resolvePackage(): ?string

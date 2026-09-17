@@ -30,7 +30,7 @@ final class EnableMetricsCommand extends MetricsCommand
 
         $value = $this->argument('node');
 
-        if ($value === null) {
+        if ($value === null || $value === '') {
             $nodeId = $this->promptForNode($connector);
         } else {
             $nodeId = $this->resolveNodeId($connector, $value);
@@ -68,10 +68,22 @@ final class EnableMetricsCommand extends MetricsCommand
             return null;
         }
 
-        $eligible = array_values(array_filter(
+        $selected = $this->commandPrompts()->selectEntity('Node', ['ID', 'Name', 'Roles'], self::eligibleNodeRows($nodes));
+
+        return is_int($selected) ? $selected : null;
+    }
+
+    /**
+     * Eligible means the node can accept the Metrics role: active.
+     *
+     * @return array<int, array{0: string, 1: string, 2: string}>
+     */
+    private static function eligibleNodeRows(NodesResponse $nodes): array
+    {
+        $eligible = array_filter(
             $nodes->nodes,
             static fn (NodeResponse $node): bool => $node->status === 'active',
-        ));
+        );
 
         $rows = [];
         foreach ($eligible as $node) {
@@ -82,8 +94,6 @@ final class EnableMetricsCommand extends MetricsCommand
             ];
         }
 
-        $selected = $this->commandPrompts()->selectEntity('Node', ['ID', 'Name', 'Roles'], $rows);
-
-        return is_int($selected) ? $selected : null;
+        return $rows;
     }
 }

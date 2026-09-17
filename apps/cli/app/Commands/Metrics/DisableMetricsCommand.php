@@ -6,6 +6,7 @@ namespace App\Commands\Metrics;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\Requests\Metrics\DisableMetricsRequest;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsMutationResponse;
@@ -26,6 +27,13 @@ final class DisableMetricsCommand extends MetricsCommand
 
         if ($purge && ! $force) {
             return $this->renderGatewayFailure('metrics.force_required', '--purge-data requires --force.');
+        }
+
+        if (! $force && ! $this->consoleMode()->mayPrompt) {
+            return $this->renderGatewayFailure(
+                'metrics.force_required',
+                'Non-interactive Metrics disable requires --force.',
+            );
         }
 
         $connector = $this->connector($repository, $factory);
@@ -49,7 +57,7 @@ final class DisableMetricsCommand extends MetricsCommand
                 'Metrics disable cancelled.',
                 option: 'force',
                 requiredCode: 'metrics.force_required',
-                requiredMessage: 'Use --force to confirm Metrics disable.',
+                requiredMessage: 'Non-interactive Metrics disable requires --force.',
             )) {
                 return self::FAILURE;
             }
@@ -60,6 +68,10 @@ final class DisableMetricsCommand extends MetricsCommand
             new DisableMetricsRequest(force: true, purgeData: $purge),
             MetricsMutationResponse::class,
             ['Disable Metrics', 'Disabling Metrics', 'Disabled Metrics'],
+            static fn (object $response): ProgressState => $response instanceof MetricsMutationResponse
+                && $response->publication === 'uncleaned'
+                ? ProgressState::Warning
+                : ProgressState::Success,
         );
 
         return $response instanceof MetricsMutationResponse ? $this->mutationOutput($response) : self::FAILURE;

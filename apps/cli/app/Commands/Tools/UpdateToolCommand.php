@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Tools;
 
+use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
@@ -48,5 +49,15 @@ final class UpdateToolCommand extends ToolActionCommand
     protected function progressLabels(): array
     {
         return ['Update Tool', 'Updating Tool', 'Updated Tool'];
+    }
+
+    #[\Override]
+    protected function resultState(ToolResponse $tool): ProgressState
+    {
+        return match ($tool->outcome) {
+            'applied' => ProgressState::Success,
+            'unchanged' => ProgressState::Skipped,
+            default => ProgressState::Warning,
+        };
     }
 }
