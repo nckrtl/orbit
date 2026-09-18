@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\AddNodeRequest",
+    "route": "POST /api/v1/nodes",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "node.tld_required",
+            "message": "An app-dev TLD is required for node [app-dev].",
+            "details": {}
+        }
+    }
+}

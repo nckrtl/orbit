@@ -29,7 +29,9 @@ final readonly class ListAppsAction
                     ),
                 ),
             )
-            ->latest('id')
+            // Alphabetical by name so a list reads as a directory and a picker stays predictable.
+            ->orderBy('name')
+            ->orderBy('id')
             ->get();
     }
 }

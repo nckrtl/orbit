@@ -2654,6 +2654,8 @@
             ],
             "concepts": [
                 "App",
+                "Gateway",
+                "Node",
                 "Process"
             ],
             "governing_adrs": [
@@ -2765,6 +2767,24 @@
                 "Node",
                 "Process",
                 "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-response-fixtures.md",
+            "title": "Gateway response fixtures",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Route"
             ],
             "governing_adrs": []
         },

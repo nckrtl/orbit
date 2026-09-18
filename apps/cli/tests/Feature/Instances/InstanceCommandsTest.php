@@ -17,6 +17,7 @@ use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
+use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -479,9 +480,8 @@ describe('instance:create', function (): void {
             'Selected branch dev',
             'Branch override —',
             'Migration required no',
-            'Route domain dev.orbit.test',
+            'Domain dev.orbit.test',
             'URL https://dev.orbit.test',
-            'Request ID '.instance_request_id(),
         );
     });
 
@@ -602,7 +602,7 @@ describe('instance:update', function (): void {
 
 describe('instance:show', function (): void {
     it('shows an AppInstance as JSON', function (): void {
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response()]);
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
 
         $this
             ->artisan('instance:show', ['instance' => '5', '--json' => true])
@@ -611,13 +611,13 @@ describe('instance:show', function (): void {
     });
 
     it('shows AppInstance source details for humans', function (): void {
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response()]);
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: dev ID 5 App 3 Node 2 Status active',
-            'App 3',
-            'Node 2',
+            'App instance: dev ID 5 App orbit-docs Node beast Status active',
+            'App orbit-docs',
+            'Node beast',
             'Source layout checkout',
             'Checkout /home/orbit/apps/orbit-docs/dev',
             'Root override —',
@@ -625,10 +625,9 @@ describe('instance:show', function (): void {
             'Selected branch dev',
             'Branch override —',
             'Migration required no',
-            'Starting commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            'Route domain dev.orbit.test',
+            'Domain dev.orbit.test',
             'URL https://dev.orbit.test',
-            'No deploy steps found.',
+            'No Processes.',
         );
     });
 
@@ -640,7 +639,7 @@ describe('instance:show', function (): void {
             'command' => 'php artisan migrate --force',
             'timeout_seconds' => 300,
         ]];
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -654,11 +653,11 @@ describe('instance:show', function (): void {
     it('shows bounded unfinished removal progress for humans', function (): void {
         $payload = instance_payload(removal: removal_progress_payload(force: true));
         MockClient::destroyGlobal();
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: dev ID 5 App 3 Node 2 Status removing',
+            'App instance: dev ID 5 App orbit-docs Node beast Status removing',
             'Removal mode forced',
             'Removal progress 0/1 completed; 1 remaining',
             'Removal step runtime_cleanup',
@@ -669,7 +668,7 @@ describe('instance:show', function (): void {
 
     it('shows bounded unfinished removal progress as JSON', function (): void {
         $payload = instance_payload(removal: removal_progress_payload(force: true));
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         $expected = json_encode([
             ...$payload,
@@ -788,3 +787,8 @@ it('rejects invalid parent IDs before creating an AppInstance', function (
     'invalid app' => ['0', '2', 'App ID must be a positive integer.'],
     'invalid node' => ['3', '-1', 'Node ID must be a positive integer.'],
 ]);
+
+function no_processes_response(): MockResponse
+{
+    return MockResponse::make(['data' => [], 'meta' => ['request_id' => instance_request_id()]]);
+}

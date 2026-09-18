@@ -360,8 +360,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/App"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -957,6 +979,28 @@
         "responses": {
           "201": {
             "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1630,6 +1674,28 @@
               }
             }
           },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
             "content": {
@@ -2196,6 +2262,28 @@
         "responses": {
           "201": {
             "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Cluster"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3075,6 +3163,28 @@
         "responses": {
           "201": {
             "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseConnection"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4159,8 +4269,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/HerdrSession"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4273,8 +4405,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/HerdrSession"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4624,6 +4778,28 @@
               }
             }
           },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ObservationGrant"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
             "content": {
@@ -4909,8 +5085,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppInstance"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5043,8 +5241,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppInstanceRegistration"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5175,8 +5395,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppInstance"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6129,6 +6371,28 @@
         "responses": {
           "201": {
             "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DeploymentStep"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7134,7 +7398,7 @@
             "description": "Numeric App instance ID."
           }
         ],
-        "description": "Transfer a development App instance to another app-dev Node.\n\nTransfer moves one active development App instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.\n\nOrbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.\n\nUse --name when the destination path or generated domain must change. --json confirms the transfer and disables prompts.",
+        "description": "Transfer a development App instance to another app-dev Node.\n\nTransfer moves one active development App instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.\n\nOrbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.\n\nUse --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7168,8 +7432,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppInstance"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7371,6 +7657,28 @@
         "responses": {
           "201": {
             "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MetricsMutation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8050,6 +8358,28 @@
               }
             }
           },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Node"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
             "content": {
@@ -8481,8 +8811,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FirewallRule"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8619,8 +8971,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FirewallRule"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8926,8 +9300,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9567,6 +9963,10 @@
                     "maxLength": 63,
                     "description": "Process name"
                   },
+                  "preset": {
+                    "type": "string",
+                    "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
+                  },
                   "runtime": {
                     "type": "string",
                     "enum": [
@@ -9674,8 +10074,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Process"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9736,7 +10158,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\CreateProcessRequest;\nuse Orbit\\Sdk\\Requests\\Processes\\AppInstanceProcessTarget;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProcessRequest(\n    target: new AppInstanceProcessTarget(12),\n    name: 'vite',\n    runtime: 'systemd',\n    command: ['/usr/bin/php', 'artisan', 'queue:work'],\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\CreateProcessRequest;\nuse Orbit\\Sdk\\Requests\\Processes\\AppInstanceProcessTarget;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProcessRequest(target: new AppInstanceProcessTarget(12), name: 'vite'))->dto();\n"
           }
         ]
       }
@@ -9894,6 +10316,28 @@
         "responses": {
           "201": {
             "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseConnection"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10419,9 +10863,6 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "app_id": {
-                    "type": "integer"
-                  },
                   "domain": {
                     "type": "string",
                     "maxLength": 253,
@@ -10435,20 +10876,21 @@
                     ],
                     "description": "Publication intent"
                   },
-                  "app_instance_id": {
-                    "type": "integer"
-                  },
                   "node_id": {
                     "type": "integer"
                   },
-                  "cluster_id": {
+                  "upstream": {
+                    "type": "string",
+                    "maxLength": 253,
+                    "description": "Loopback HTTP URL for a custom proxy Route"
+                  },
+                  "process_id": {
                     "type": "integer"
                   }
                 },
                 "required": [
-                  "app_id",
                   "domain",
-                  "publication"
+                  "node_id"
                 ],
                 "additionalProperties": false
               }
@@ -10456,8 +10898,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Route"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10513,7 +10977,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/routes\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app_id\": 4, \"domain\": \"app.example.test\", \"publication\": \"private\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/routes\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"domain\": \"app.example.test\", \"node_id\": 7}'\n"
           },
           {
             "lang": "php",
@@ -11269,8 +11733,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Schedule"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12095,8 +12581,30 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Tool"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
           "200": {
-            "description": "The request succeeded.",
+            "description": "The request succeeded; an exact retry returned the existing record.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12956,6 +13464,12 @@
           "node_id": {
             "type": "integer"
           },
+          "app": {
+            "$ref": "#/components/schemas/AppIdentity"
+          },
+          "node": {
+            "$ref": "#/components/schemas/NodeIdentity"
+          },
           "name": {
             "type": "string"
           },
@@ -13062,8 +13576,41 @@
             ]
           },
           "deploy_steps": {
-            "type": "object",
-            "additionalProperties": true
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentStep"
+            }
+          },
+          "vite_port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "AppIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "NodeIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -13073,8 +13620,14 @@
           "id": {
             "type": "integer"
           },
+          "kind": {
+            "type": "string"
+          },
           "app_id": {
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "node_id": {
             "type": [
@@ -13156,8 +13709,22 @@
             ]
           },
           "targets": {
-            "type": "object",
-            "additionalProperties": true
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTarget"
+            }
+          },
+          "process_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -13282,6 +13849,23 @@
           }
         }
       },
+      "DeploymentStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          }
+        }
+      },
       "AppInstanceRegistration": {
         "type": "object",
         "properties": {
@@ -13345,23 +13929,6 @@
             "type": "boolean"
           },
           "key_count": {
-            "type": "integer"
-          }
-        }
-      },
-      "DeploymentStep": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "phase": {
-            "type": "string"
-          },
-          "command": {
-            "type": "string"
-          },
-          "timeout_seconds": {
             "type": "integer"
           }
         }

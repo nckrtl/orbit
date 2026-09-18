@@ -28,6 +28,7 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
+require_once __DIR__.'/Support/ResponseFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {

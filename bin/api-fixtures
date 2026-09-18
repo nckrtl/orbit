@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Check the recorded Gateway response fixtures against docs/openapi.json.
+
+Run from any directory:
+
+    bin/api-fixtures --check
+
+Every file under packages/php-sdk/fixtures names its route and status. The check finds the response schema
+for that route and status in the generated OpenAPI document and validates the recorded body against it, so
+a fixture, the Gateway code it was recorded from, and the API reference cannot drift apart silently.
+"""
+
+import json
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+FIXTURES = ROOT / 'packages/php-sdk/fixtures'
+OPENAPI = ROOT / 'docs/openapi.json'
+
+TYPES = {
+    'object': dict, 'array': list, 'string': str, 'integer': int, 'number': (int, float), 'boolean': bool, 'null': type(None),
+}
+
+
+def resolve(schema, spec):
+    while '$ref' in schema:
+        node = spec
+        for part in schema['$ref'].removeprefix('#/').split('/'):
+            node = node[part]
+        schema = node
+    return schema
+
+
+def problems(value, schema, spec, path='body'):
+    schema = resolve(schema, spec)
+    if 'oneOf' in schema or 'anyOf' in schema:
+        options = schema.get('oneOf') or schema.get('anyOf')
+        attempts = [problems(value, option, spec, path) for option in options]
+        if any(not attempt for attempt in attempts):
+            return []
+        # Report the closest alternative so the mismatch is actionable.
+        closest = min(attempts, key=len)
+        return [f'{path} matches none of the {len(options)} alternatives; closest: ' + '; '.join(closest)]
+    found = []
+    types = schema.get('type')
+    if types is not None:
+        allowed = tuple(TYPES[t] for t in ([types] if isinstance(types, str) else types))
+        if isinstance(value, bool) and bool not in allowed:
+            found.append(f'{path} is a boolean, expected {types}')
+        elif not isinstance(value, allowed):
+            found.append(f'{path} is {type(value).__name__}, expected {types}')
+            return found
+    if isinstance(value, dict):
+        for key in schema.get('required', []):
+            if key not in value:
+                found.append(f'{path}.{key} is required')
+        for key, child in schema.get('properties', {}).items():
+            if key in value:
+                found += problems(value[key], child, spec, f'{path}.{key}')
+    if isinstance(value, list) and 'items' in schema:
+        for index, item in enumerate(value):
+            found += problems(item, schema['items'], spec, f'{path}[{index}]')
+    if 'enum' in schema and value not in schema['enum']:
+        found.append(f'{path} is {value!r}, expected one of {schema["enum"]}')
+    return found
+
+
+def response_schema(spec, route, status):
+    method, _, path = route.partition(' ')
+    operation = spec['paths'].get(path, {}).get(method.lower())
+    if operation is None:
+        return None, f'route {route} is not in docs/openapi.json'
+    response = operation['responses'].get(str(status)) or operation['responses'].get('default')
+    if response is None:
+        return None, f'route {route} has no {status} response in docs/openapi.json'
+    return response['content']['application/json']['schema'], None
+
+
+def main():
+    spec = json.loads(OPENAPI.read_text(encoding='utf-8'))
+    files = sorted(FIXTURES.rglob('*.json'))
+    if not files:
+        sys.exit('packages/php-sdk/fixtures holds no fixtures.')
+    failures = []
+    for file in files:
+        name = file.relative_to(FIXTURES).with_suffix('').as_posix()
+        fixture = json.loads(file.read_text(encoding='utf-8'))
+        if not re.fullmatch(r'(GET|POST|PUT|PATCH|DELETE) /api/v1/\S+', fixture.get('route', '')):
+            failures.append(f'{name}: route {fixture.get("route")!r} is not METHOD /api/v1/path')
+            continue
+        schema, error = response_schema(spec, fixture['route'], fixture['status'])
+        if error:
+            failures.append(f'{name}: {error}')
+            continue
+        failures += [f'{name}: {problem}' for problem in problems(fixture['body'], schema, spec)]
+    if failures:
+        sys.exit('\n'.join(failures))
+    print(f'{len(files)} fixtures match docs/openapi.json.')
+
+
+if __name__ == '__main__':
+    main()

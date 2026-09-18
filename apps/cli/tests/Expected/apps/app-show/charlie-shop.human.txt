@@ -1,0 +1,22 @@
+Fetching App...
+Fetching App instances...
+
+┌  App: charlie-shop
+│
+├  ID               3
+│
+├  Name             Charlie shop
+│
+├  Repository       git@github.com:charlie/shop.git
+│
+├  Default branch   release
+│
+└  Web root         web/public
+
+ ┌────┬──────────────────┬─────────────┬─────────┬────────────────────────────────────┬────────┐
+ │ ID │ NAME             │ ENVIRONMENT │ NODE    │ DOMAIN                             │ STATUS │
+ ├────┼──────────────────┼─────────────┼─────────┼────────────────────────────────────┼────────┤
+ │ 1  │ dev              │ development │ app-dev │ dev.charlie-shop.test              │ active │
+ │ 3  │ feature-checkout │ development │ app-dev │ feature-checkout.charlie-shop.test │ active │
+ │ 2  │ staging          │ development │ app-dev │ staging.charlie-shop.test          │ active │
+ └────┴──────────────────┴─────────────┴─────────┴────────────────────────────────────┴────────┘

@@ -1,0 +1,29 @@
+{
+  "sketch": "design:node-add",
+  "title": "Add a node with every input prompted, including one invalid name",
+  "arguments": ["--pace=0.3"],
+  "columns": 100,
+  "rows": 40,
+  "steps": [
+    {"wait_for": "Node name", "send": "Demo Node<enter>", "expect": "Use 1 to 63 lowercase letters, digits, or hyphens"},
+    {"wait_for": "Use 1 to 63", "send": "<backspace><backspace><backspace><backspace><backspace><backspace><backspace><backspace><backspace>demo<enter>", "expect": "SSH host"},
+    {"wait_for": "SSH host", "send": "203.0.113.10<enter>", "expect": "Space selects, enter confirms"},
+    {"wait_for": "Space selects", "send": "<down>", "expect": "app-prod"},
+    {"wait_for": "app-prod", "send": "<down>", "expect": "router"},
+    {"wait_for": "app-prod", "send": "<down>", "expect": "ingress"},
+    {"wait_for": "app-prod", "send": "<down>", "expect": "database"},
+    {"wait_for": "app-prod", "send": "<space>", "expect": "2 selected"},
+    {"wait_for": "2 selected", "send": "<enter>", "expect": "Development TLD"},
+    {"wait_for": "Development TLD", "send": "<enter>", "expect": "Bootstrap SSH user"},
+    {"wait_for": "Bootstrap SSH user", "send": "<enter>", "expect": "Trust this host key for 203.0.113.10?"},
+    {"wait_for": "Trust this host key", "send": "y", "expect": "Yes"},
+    {"wait_for": "Yes", "send": "<enter>", "expect": "Add Node demo"}
+  ],
+  "exit_code": 0,
+  "expect_final": [
+    "Converged the app-dev role",
+    "Converged the database role",
+    "Added Node demo.",
+    "WireGuard IP"
+  ]
+}

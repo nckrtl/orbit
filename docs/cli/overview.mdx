@@ -64,7 +64,7 @@ orbit gateway:status
 
 ## Name the record you mean
 
-Use the arguments and selectors documented for the command. A numeric ID, name, slug, UUID, or Route domain is accepted only where that command permits it. A command that requires an explicit target refuses an omitted target.
+Use the arguments and selectors documented for the command. A numeric ID, name, slug, UUID, or Route domain is accepted only where that command permits it. In a terminal, a command prompts for a required target or value you omit and offers a default where one exists. With `--json` or `--no-interaction`, it refuses the omitted input with its documented error code.
 
 When a command permits a prompt, enter a value or select from its admitted choices. Invalid prompted input is checked before the command continues. Cancelling before work begins selects no target and starts no mutation. An interruption after work starts may leave partial work; inspect the reported result before retrying.
 

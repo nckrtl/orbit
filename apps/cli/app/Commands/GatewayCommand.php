@@ -272,6 +272,7 @@ abstract class GatewayCommand extends Command
      *                                                                              ProgressOutcome to replace it for a non-success
      *                                                                              state whose completed label would misstate the
      *                                                                              result.
+     * @param  bool  $dismiss  Remove the tree once the result arrives, for a command whose result replaces it.
      */
     protected function sendWithProgress(
         GatewayConnector $connector,
@@ -279,6 +280,7 @@ abstract class GatewayCommand extends Command
         string $responseClass,
         array $labels,
         ?Closure $resultState = null,
+        bool $dismiss = false,
     ): ?object {
         [$waiting, $running, $completed] = $labels;
         $progress = $this->progressDisplay($waiting);
@@ -304,7 +306,11 @@ abstract class GatewayCommand extends Command
         }
 
         $progress->complete('request', $outcome->state);
-        $progress->finish($outcome->footer.'.');
+        if ($dismiss) {
+            $progress->dismiss();
+        } else {
+            $progress->finish($outcome->footer.'.');
+        }
 
         return $response;
     }

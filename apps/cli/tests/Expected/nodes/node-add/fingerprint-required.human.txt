@@ -1,0 +1,9 @@
+Adding Node...
+
+┌  Add Node
+│
+├  ● Adding Node
+│
+└  Operation failed.
+
+An expected SSH host fingerprint is required for node [app-dev].

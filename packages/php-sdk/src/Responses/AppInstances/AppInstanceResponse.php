@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\AppInstances;
 
+use Orbit\Sdk\Responses\Apps\AppIdentityResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
+use Orbit\Sdk\Responses\Nodes\NodeIdentityResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
@@ -14,6 +16,8 @@ final readonly class AppInstanceResponse
         public int $id,
         public int $appId,
         public int $nodeId,
+        public ?AppIdentityResponse $app,
+        public ?NodeIdentityResponse $node,
         public string $name,
         public string $environment,
         public string $sourceLayout,
@@ -50,6 +54,8 @@ final readonly class AppInstanceResponse
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
+            app: AppIdentityResponse::tryFromGatewayData($data['app'] ?? null),
+            node: NodeIdentityResponse::tryFromGatewayData($data['node'] ?? null),
             vitePort: is_int($data['vite_port'] ?? null) && $data['vite_port'] >= 1024 && $data['vite_port'] <= 65535 ? $data['vite_port'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             environment: is_string($data['environment'] ?? null) ? $data['environment'] : '',
@@ -82,6 +88,8 @@ final readonly class AppInstanceResponse
             'id' => $this->id,
             'app_id' => $this->appId,
             'node_id' => $this->nodeId,
+            'app' => $this->app?->toArray(),
+            'node' => $this->node?->toArray(),
             'vite_port' => $this->vitePort,
             'name' => $this->name,
             'environment' => $this->environment,
