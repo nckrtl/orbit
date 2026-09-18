@@ -259,11 +259,7 @@ final class State
     /** @return array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null */
     public function nodeMetrics(int $nodeId): ?array
     {
-        if (isset($this->nodeSamples[$nodeId])) {
-            return $this->nodeSamples[$nodeId];
-        }
-
-        return $this->polled($this->nodeMetricsPolled, $nodeId, fn (): ?array => $this->nodeMetrics->forNode($nodeId));
+        return $this->nodeSamples[$nodeId] ?? $this->polled($this->nodeMetricsPolled, $nodeId, fn (): ?array => $this->nodeMetrics->forNode($nodeId));
     }
 
     /** @return list<array<string, mixed>>|null */
@@ -285,6 +281,7 @@ final class State
      * often would be wasteful and would swamp it with redundant requests.
      *
      * @template TValue
+     *
      * @param  array<array-key, array{at: float, value: TValue}>  $cache
      * @param  Closure(): TValue  $fetch
      * @return TValue

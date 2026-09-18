@@ -31,7 +31,7 @@ The sidebar lists seven sections: Dashboard, Nodes, Apps, Instances, Processes, 
 
 - **Dashboard** shows a count per family (yellow when something in it needs attention), a compact CPU/memory/disk line per Node, and a "Needs attention" list gathering every row that is off across every family.
 - **Nodes** lists registered Nodes. `+ create` opens a form with the same fields `node:add` accepts (name, host, SSH port, user, roles, TLD); submitting it sends the same `AddNodeRequest` the command sends. A Node's own page adds its instances, its Node-owned processes, and its firewall rules to its properties.
-- **Apps**, **Instances**, **Processes**, **Schedules**, **Databases** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployments; a Database connection's tables and users).
+- **Apps**, **Instances**, **Processes**, **Schedules**, **Databases** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployment history; a Database connection's tables and users). Enter or a click on a row in the Deployments pane opens that deployment's own record page: its properties (including a failed step, when it has one) and its recorded log.
 
 ## Keys and mouse
 
@@ -60,6 +60,4 @@ At startup, `orbit top` asks the Gateway for its realtime endpoint. When the Gat
 
 When realtime is not configured on the Gateway, `orbit top` falls back to the active profile's own `realtime_url`/`realtime_key`, or to `ORBIT_REALTIME_URL`/`ORBIT_REALTIME_KEY` (see [realtime](/cli/realtime)). When none of those resolve a socket, or the socket drops, `orbit top` reloads every list on the `--tick` interval instead. The header names the current mode: `live`, `reconnecting`, or `polling every Ns`.
 
-## Panes not every Gateway can fill yet
-
-Deployment history on an App instance's page, the users recorded on a Database connection, and a Node's CPU/memory/disk metrics (outside of a `node.sample` realtime event) depend on Gateway endpoints a parallel effort is still adding. Until a Gateway exposes them, those panes show "Not available on this Gateway yet." instead of a table; every other pane on the same page still renders normally.
+Deployment history on an App instance's page, the users recorded on a Database connection, and a Node's CPU/memory/disk metrics (outside of a `node.sample` realtime event) come from their own Gateway requests, polled on a short interval independent of `--tick` while their pane is open. If a Gateway does not answer one of those requests, its pane shows "Not available on this Gateway yet." instead of a table; every other pane on the same page still renders normally.

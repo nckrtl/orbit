@@ -298,6 +298,7 @@ final class Screen
             'schedules' => 'Schedule',
             'databases' => 'Database',
             'firewall' => 'Firewall rule',
+            'deployments' => 'Deployment',
             default => '',
         };
         $crumbs = ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(
@@ -336,6 +337,7 @@ final class Screen
             'databases' => $this->databasePage($state, $ui, $row, $properties, $propertiesHeight, $body),
             'processes' => $this->logPage($properties, $propertiesHeight, ' Log · process:logs ', $state->processLogs[$row['id']] ?? [], $body),
             'schedules' => $this->logPage($properties, $propertiesHeight, ' Log · schedule:logs ', $state->scheduleLogs[$row['id']] ?? [], $body),
+            'deployments' => $this->logPage($properties, $propertiesHeight, ' Log · instance:deployment:show ', $state->deploymentLogs[$row['id']] ?? [], $body),
             default => $this->logPage($properties, $propertiesHeight, ' Detail ', [], $body),
         };
 
@@ -528,6 +530,7 @@ final class Screen
             'processes' => ['Name' => $row['name'], 'Owner' => $state->processOwner($row), 'Node' => $state->processNodeName($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
             'schedules' => ['Name' => $row['name'], 'Instance' => $state->instanceName($row['target_id']), 'Node' => $state->instanceNodeName($row['target_id']), 'Calendar' => $row['calendar'], 'Timeout' => "{$row['timeout_seconds']} s", 'Desired timer' => $row['desired_timer_state'], 'Status' => $row['status'], 'Last run' => $row['last_run_at'] ?? 'never', 'Last run status' => $row['last_run_status'] ?? '—'],
             'firewall' => ['Name' => $row['name'], 'Port' => $row['port'], 'Protocol' => $row['protocol'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
+            'deployments' => ['Release' => $row['release'], 'Branch' => $row['branch'], 'Commit' => $row['commit'], 'Started' => $row['started'], 'Finished' => $row['finished'], 'Duration' => $row['duration'], 'Status' => $row['status'], 'Failed step' => $row['failed_step'], 'Error code' => $row['error_code'], 'Selected release' => $row['selected_release'], 'Triggered by' => $row['by']],
             default => [],
         };
 
@@ -544,6 +547,7 @@ final class Screen
             'processes', 'schedules' => $row['name'],
             'databases' => $row['slug'],
             'firewall' => "{$row['port']}/{$row['protocol']} {$row['action']} {$row['source']}",
+            'deployments' => "release {$row['release']}",
             default => '',
         };
     }
