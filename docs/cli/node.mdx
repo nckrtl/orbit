@@ -82,7 +82,7 @@ orbit node:add beast --role=app-dev --role=database
 A production Node that receives clones needs `--tld`; the [instance:clone](/cli/instance#orbit-instanceclone) command derives its preview domain from that value.
 </Note>
 
-The roles you can assign are `app-dev`, `app-prod`, `router`, `ingress`, `database`, `metrics`, `gateway`, and `vpn`. The [Database role](/reference/database-role) and [Metrics](/reference/metrics) references list which roles may share one Node.
+The roles you can assign are `app-dev`, `app-prod`, `router`, `ingress`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. The [Database role](/reference/database-role) and [Metrics](/reference/metrics) references list which roles may share one Node. The `websocket` role runs Reverb for realtime events and has no role conflicts, so it combines with `gateway` today; it can move to a dedicated Node later. See [Realtime events with Reverb](/solutions/realtime-reverb).
 
 ## orbit node:list
 
@@ -195,7 +195,7 @@ orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--jso
 | Option | Meaning |
 | --- | --- |
 | `--force` | Confirm destructive role removal and dependent cleanup. |
-| `--purge-data` | Request supported role-owned data cleanup. For `metrics`, this deletes the Prometheus and Grafana volumes and stored credentials. |
+| `--purge-data` | Request supported role-owned data cleanup. For `metrics`, this deletes the Prometheus and Grafana volumes and stored credentials. For `websocket`, this deletes the Reverb checkout at its install path. |
 | `--offline` | Remove the role from a Node the Gateway cannot reach. |
 
 ```bash

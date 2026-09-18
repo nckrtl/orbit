@@ -42,6 +42,15 @@ it('names what each app role leaves behind', function (RoleName $role, string $e
     'metrics containers' => [RoleName::Metrics, 'Prometheus and Grafana containers and their named volumes'],
     'metrics marker' => [RoleName::Metrics, '/etc/orbit/metrics including the Orbit ownership marker'],
     'metrics firewall' => [RoleName::Metrics, 'Grafana upstream firewall rule'],
+    'websocket checkout' => [
+        RoleName::WebSocket,
+        'Reverb checkout, its systemd unit and its Caddy site for the websocket role',
+    ],
+    'websocket firewall' => [RoleName::WebSocket, 'Orbit firewall rule for the websocket role'],
+    'websocket credentials' => [
+        RoleName::WebSocket,
+        'Stored Reverb application credentials and generated APP_KEY',
+    ],
 ]);
 
 it('merges several roles into one sorted list without repeating the exporter', function (): void {

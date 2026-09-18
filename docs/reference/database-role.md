@@ -21,7 +21,7 @@ The node is a numeric ID or a registered node name. Retry a failed or active ass
 
 The Gateway installs the Ubuntu `docker.io` package when Docker CE is not already healthy on the Node. It does not create a Tool row for Docker.
 
-The role may share a Node with `app-dev`, `metrics`, or `router`. Either assignment order is accepted. Add, converge, and remove still only ensure Docker; they do not rewrite Router configuration, change existing Docker services, or take Node Process ownership.
+The role may share a Node with `app-dev`, `metrics`, `router`, or `websocket`. Either assignment order is accepted. Add, converge, and remove still only ensure Docker; they do not rewrite Router configuration, change existing Docker services, or take Node Process ownership.
 
 The Gateway refuses the assignment when the Node already carries one of these roles:
 

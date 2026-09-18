@@ -50,6 +50,9 @@ final readonly class NodeFirewallRuleCatalog
                 ]
                 : [],
             RoleName::Metrics, RoleName::Database => [],
+            RoleName::WebSocket => [
+                $this->rule('orbit:websocket-https', '443', $this->wireguardIp($node), 'orbit'),
+            ],
         };
     }
 

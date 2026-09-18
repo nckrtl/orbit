@@ -120,6 +120,40 @@ it('keeps gateway.orbit and metrics.orbit on the Gateway WireGuard address', fun
         ->toContain('host-record=gateway.orbit,10.44.0.1');
 });
 
+it('keeps reverb.orbit on the websocket role own node, not the Gateway', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.1',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $websocket = Node::query()->create([
+        'name' => 'websocket-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.9',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.9',
+    ]);
+    $websocket->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)
+        ->toContain('host-record=reverb.orbit,10.44.0.9')
+        ->not
+        ->toContain('host-record=reverb.orbit,10.44.0.1');
+});
+
+it('omits reverb.orbit when no websocket role is active', function (): void {
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)->not->toContain('reverb.orbit');
+});
+
 it('projects an active Cluster TLD to the Router WireGuard address', function (): void {
     $route = orb258_cluster_route();
     $route->cluster->update(['tld' => 'cluster.test']);

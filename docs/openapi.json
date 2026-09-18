@@ -8573,7 +8573,8 @@
                         "app-dev",
                         "app-prod",
                         "metrics",
-                        "database"
+                        "database",
+                        "websocket"
                       ]
                     }
                   },
@@ -9655,7 +9656,8 @@
                       "app-dev",
                       "app-prod",
                       "metrics",
-                      "database"
+                      "database",
+                      "websocket"
                     ],
                     "description": "Role name"
                   },
@@ -9817,7 +9819,8 @@
                       "app-dev",
                       "app-prod",
                       "metrics",
-                      "database"
+                      "database",
+                      "websocket"
                     ],
                     "description": "Role name"
                   },

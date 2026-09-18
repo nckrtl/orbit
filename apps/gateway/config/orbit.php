@@ -25,6 +25,12 @@ return [
         characters: '.',
     ),
     'command_timeout' => 900.0,
+    'websocket' => [
+        'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/nckrtl/orbit-reverb.git'),
+        'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),
+        'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
+        'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
+    ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
         'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),

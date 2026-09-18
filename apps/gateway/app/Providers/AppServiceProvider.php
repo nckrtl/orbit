@@ -56,6 +56,7 @@ use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateSourceMutator;
+use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
@@ -126,6 +127,9 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
+use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Domain\WebSocket\WebSocketPublicationManager;
+use App\Domain\WebSocket\WebSocketRuntimeLifecycle;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
@@ -262,6 +266,9 @@ use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\VpToolManager;
+use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
+use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
+use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
@@ -377,6 +384,9 @@ final class AppServiceProvider extends ServiceProvider
         ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
         ToolOperationLock::class => NativeToolOperationLock::class,
+        WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
+        WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
+        WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
     ];
 
     public function register(): void
@@ -464,6 +474,15 @@ final class AppServiceProvider extends ServiceProvider
         // Shared for one request so the Metrics baseline's removal outcome
         // reaches the disable response instead of being inferred a second time.
         $this->app->scoped(MetricsPublicationReport::class);
+        // Scoped so the websocket role lookup it performs happens at most
+        // once per request, and only when something actually asks for it.
+        $this->app->scoped(
+            RealtimeConnection::class,
+            static fn ($app): RealtimeConnection => new RealtimeConnection(
+                credentials: $app->make(WebSocketCredentialManager::class),
+                orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+            ),
+        );
 
         if (class_exists(GuidelineComposer::class)) {
             $this->app->singleton(GuidelineComposer::class, GatewayGuidelineComposer::class);
