@@ -134,6 +134,7 @@ final class TopCommand extends GatewayCommand
         $terminal->execute(Actions::alternateScreenEnable(), Actions::cursorHide(), Actions::enableMouseCapture());
 
         $lastPoll = microtime(true);
+        $drawnFrames = 0;
 
         try {
             while (true) {
@@ -161,7 +162,24 @@ final class TopCommand extends GatewayCommand
                 [$visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs] = $this->visibleRefreshKeys($ui, $state);
                 $scheduler->tick($state, $visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs);
 
+                // The fetch above can take seconds against a real fleet, and so can the batch
+                // below, which asks the Gateway for a Process's live status over SSH. Reading
+                // input after both, rather than before, is what keeps an arrow key responsive: a
+                // key waits only for the fetch already running, never for one yet to start.
+                if (! $state->processesLoaded && $drawnFrames > 0) {
+                    try {
+                        $state->loadNextProcesses($send, $sendMany);
+                    } catch (GatewayApiException $exception) {
+                        $state->processesLoaded = true;
+                        $ui->message = $exception->getMessage();
+                    }
+                }
+
+                $handledInput = false;
+
                 while (($event = $terminal->events()->next()) !== null) {
+                    $handledInput = true;
+
                     if ($event instanceof CharKeyEvent) {
                         if ($event->char === 'c' && $event->modifiers === KeyModifiers::CONTROL) {
                             break 2;
@@ -190,20 +208,14 @@ final class TopCommand extends GatewayCommand
 
                 $display->draw($screen->screen($state, $ui, $this->header($profile, $state, $lastPoll, $tick), $this->footer($ui), $display->viewportArea()));
 
-                // Only now that a frame is on screen: the Gateway answers each of these by
-                // checking a Process's live status over SSH, so draining the whole queue in one
-                // call would hold the first frame back and freeze the keyboard while it ran.
-                // One batch per frame keeps the screen up and fills "Needs attention" as the
-                // answers arrive.
-                if (! $state->processesLoaded) {
-                    try {
-                        $state->loadNextProcesses($send, $sendMany);
-                    } catch (GatewayApiException $exception) {
-                        $state->processesLoaded = true;
-                        $ui->message = $exception->getMessage();
-                    }
+                $drawnFrames++;
+
+                // A key that arrived during the fetches above is drawn by the time we get here,
+                // so the next one should be read at once rather than after another idle sleep.
+                // Holding an arrow key then moves at the speed of the screen, not of this timer.
+                if (! $handledInput) {
+                    usleep(50_000);
                 }
-                usleep(50_000);
             }
         } finally {
             $terminal->execute(Actions::disableMouseCapture(), Actions::cursorShow(), Actions::alternateScreenDisable());
