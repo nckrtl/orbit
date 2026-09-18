@@ -27,6 +27,10 @@ final readonly class ProcessResponse
         public ?string $failedStep,
         public ?string $errorCode,
         public string $requestId,
+        /** Ratio of one core (0..1, matching `NodeMetricsResponse::$cores`), null when unavailable. */
+        public ?float $cpu = null,
+        /** Resident memory in bytes, null when unavailable — never zero for "not running". */
+        public ?int $memoryBytes = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -56,6 +60,8 @@ final readonly class ProcessResponse
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             requestId: $requestId,
+            cpu: is_numeric($data['cpu'] ?? null) ? (float) $data['cpu'] : null,
+            memoryBytes: is_int($data['memory_bytes'] ?? null) ? $data['memory_bytes'] : null,
         );
     }
 
@@ -77,6 +83,8 @@ final readonly class ProcessResponse
             'runtime_status' => $this->runtimeStatus,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
+            'cpu' => $this->cpu,
+            'memory_bytes' => $this->memoryBytes,
             'request_id' => $this->requestId,
         ];
     }
