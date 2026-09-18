@@ -2363,6 +2363,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0089-index-appinstance-dependencies.md",
+            "title": "ADR 0089: Index App instance dependencies",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0046",
+                "0071",
+                "0075",
+                "0089"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2478,7 +2504,9 @@
                 "0084",
                 "0085",
                 "0086",
-                "0087"
+                "0087",
+                "0088",
+                "0089"
             ]
         },
         {
@@ -3051,6 +3079,45 @@
                 "0040",
                 "0049",
                 "0056"
+            ]
+        },
+        {
+            "path": "docs/reference/instance-dependencies.md",
+            "title": "App instance dependencies",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Runtime hibernation",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0089"
+            ]
+        },
+        {
+            "path": "docs/reference/instance-dependency-contracts.md",
+            "title": "Gateway dependency contracts",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule",
+                "Web root"
+            ],
+            "governing_adrs": [
+                "0089"
             ]
         },
         {

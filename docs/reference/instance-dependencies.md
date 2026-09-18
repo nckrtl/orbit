@@ -5,7 +5,7 @@ description: "Index resolved dependencies and update development instances withi
 
 # App instance dependencies
 
-Scan an App instance to record its resolved Composer and JavaScript dependencies in the Gateway. Update a development instance to resolve newer versions within its declared constraints, then refresh its inventory. [ADR 0078](/decisions/0078-index-appinstance-dependencies) owns the inventory and update boundaries.
+Scan an App instance to record its resolved Composer and JavaScript dependencies in the Gateway. Update a development instance to resolve newer versions within its declared constraints, then refresh its inventory. [ADR 0089](/decisions/0089-index-appinstance-dependencies) owns the inventory and update boundaries.
 
 ## What the inventory describes
 

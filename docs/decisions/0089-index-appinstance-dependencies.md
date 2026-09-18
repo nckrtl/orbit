@@ -1,9 +1,9 @@
 ---
-title: "ADR 0078: Index App instance dependencies"
+title: "ADR 0089: Index App instance dependencies"
 description: "Proposed instance-owned lockfile inventory and development-only dependency updates."
 ---
 
-# ADR 0078: Index App instance dependencies
+# ADR 0089: Index App instance dependencies
 
 Orbit records dependencies from each App instance's manifests and lockfiles, shares package identities across instances, and limits package updates to development source within its declared constraints.
 
