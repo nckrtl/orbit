@@ -10,7 +10,7 @@ use App\Domain\WebSocket\WebSocketHostname;
 final class ReservedPrivateHostname
 {
     /** @var list<string> */
-    public const array NAMES = ['gateway.orbit', 'metrics.orbit', WebSocketHostname::Value];
+    public const array NAMES = ['gateway.orbit', 'metrics.orbit', 'prometheus.orbit', WebSocketHostname::Value];
 
     public static function assertAvailable(string $domain): void
     {

@@ -147,7 +147,8 @@ it('removes only Metrics-owned local publication state', function (): void {
         ->and($processes->invocations[1]->input)
         ->toContain('orbit-metrics-cert-current')
         ->toContain('orbit-metrics-cert-versions')
-        ->toContain('test "$(cat -- "$owner")" = metrics-certificate');
+        ->toContain('test "$(cat -- "$owner")" = "$owner_marker"')
+        ->toContain('owner_marker=metrics-certificate');
 });
 
 it('returns a stable error when local Caddy activation fails', function (): void {

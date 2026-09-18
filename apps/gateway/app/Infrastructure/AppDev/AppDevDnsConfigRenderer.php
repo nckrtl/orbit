@@ -131,6 +131,9 @@ final readonly class AppDevDnsConfigRenderer
                 ->first();
             if ($metrics instanceof Node) {
                 $records->push("host-record=metrics.orbit,{$gateway->wireguard_ip}");
+                // Prometheus is published the same way as Grafana: a Caddy site on the Gateway
+                // reverse-proxies to the Metrics Node, so this resolves to the Gateway too.
+                $records->push("host-record=prometheus.orbit,{$gateway->wireguard_ip}");
             }
         }
 
