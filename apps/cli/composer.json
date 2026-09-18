@@ -12,6 +12,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.5",
+        "illuminate/http": "^13.0",
         "laravel-zero/foundation": "^13.0",
         "laravel-zero/framework": "^13.0",
         "nckrtl/orbit-php-sdk": "dev-main",

@@ -17,6 +17,8 @@ use App\Support\Console\StandardInputReader;
 use App\Support\Realtime\StreamWebSocketTransport;
 use App\Support\Realtime\WebSocketTransport;
 use Design\Support\FixtureReplay;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
 
 final class AppServiceProvider extends ServiceProvider
@@ -38,6 +40,10 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(
+            HttpFactory::class,
+            fn (): HttpFactory => new HttpFactory($this->app->bound('events') ? $this->app->make(Dispatcher::class) : null),
+        );
         $this->app->singleton(StandardInputReader::class, StandardInput::class);
         $this->app->singleton(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
         $this->app->bind(WebSocketTransport::class, StreamWebSocketTransport::class);
