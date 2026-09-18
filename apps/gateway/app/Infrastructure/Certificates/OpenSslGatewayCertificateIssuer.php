@@ -7,6 +7,7 @@ namespace App\Infrastructure\Certificates;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\WebSocket\WebSocketHostname;
 use App\Infrastructure\Files\AtomicSymlinkPublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -29,7 +30,11 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
     {
         $this->guardIdentity($hostname, $wireguardIp);
         $directory = rtrim(string: $this->orbitHome, characters: '/').'/ca';
-        $scope = $hostname === 'metrics.orbit' ? 'metrics' : 'gateway';
+        $scope = match ($hostname) {
+            'metrics.orbit' => 'metrics',
+            WebSocketHostname::Value => 'websocket',
+            default => 'gateway',
+        };
         $versionsDirectory = $directory.'/'.$scope.'-versions';
         $currentDirectory = $directory.'/'.$scope.'-current';
         $resolvedDirectory = realpath($currentDirectory);

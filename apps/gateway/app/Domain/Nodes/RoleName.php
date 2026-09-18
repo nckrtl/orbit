@@ -14,4 +14,5 @@ enum RoleName: string
     case AppProd = 'app-prod';
     case Metrics = 'metrics';
     case Database = 'database';
+    case WebSocket = 'websocket';
 }

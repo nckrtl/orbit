@@ -28,6 +28,9 @@ use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Domain\WebSocket\WebSocketCredentials;
+use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
@@ -40,6 +43,7 @@ use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Nodes\Roles\RouterRoleBaseline;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
+use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -47,6 +51,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -476,7 +481,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(6);
+    $metricsFleet->shouldReceive('reconcile')->times(7);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline($firewall),
         new VpnRoleBaseline(
@@ -503,6 +508,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             baseline_known_hosts(),
         ),
         database: database_role_baseline($events),
+        websocket: websocket_role_baseline($events),
     );
 
     foreach (role_baseline_roles() as $role) {
@@ -525,6 +531,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:app-dev',
         'ssh:app-prod',
         'ssh:database',
+        'ssh:websocket',
     );
 });
 
@@ -681,6 +688,7 @@ it('checks the remote operating system before every role convergence', function 
             baseline_known_hosts(),
         ),
         database: database_role_baseline($events),
+        websocket: websocket_role_baseline($events),
     );
 
     foreach (role_baseline_roles() as $role) {
@@ -709,6 +717,9 @@ it('checks the remote operating system before every role convergence', function 
         'guard:unknown',
         'guard:database',
         'ssh:database',
+        'guard:unknown',
+        'ssh:websocket',
+        'ssh:orbit',
     ]);
 });
 
@@ -840,6 +851,30 @@ function database_role_baseline(array &$events): DatabaseRoleBaseline
         baseline_keys(),
         baseline_known_hosts(),
         baseline_account_resolver(),
+    );
+}
+
+/** @param list<string> $events */
+function websocket_role_baseline(array &$events): WebSocketRoleBaseline
+{
+    $credentials = Mockery::mock(WebSocketCredentialManager::class);
+    $credentials->shouldReceive('ensure')->andReturn(
+        new WebSocketCredentials('id', 'key', 'secret', 'base64:'.base64_encode('k')),
+    );
+    $credentials->shouldReceive('purge');
+
+    return new WebSocketRoleBaseline(
+        runtime: new NativeWebSocketRuntimeLifecycle(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_account_resolver(),
+        ),
+        // The publication step reaches real local certificate issuance and DNS
+        // convergence, which this dispatch-only suite does not exercise.
+        publication: Mockery::mock(WebSocketPublicationManager::class)->shouldIgnoreMissing(),
+        credentials: $credentials,
     );
 }
 

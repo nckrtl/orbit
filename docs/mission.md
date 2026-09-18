@@ -21,6 +21,6 @@ Commands return readable output for people and structured data for automation. A
 
 ## What Orbit manages
 
-Orbit manages applications, development environments, production servers, routes, processes, tools, settings, metrics, networking, and certificates. You choose the infrastructure. Orbit manages only the machines and resources you add.
+Orbit manages applications, development environments, production servers, routes, processes, tools, settings, metrics, realtime events, networking, and certificates. You choose the infrastructure. Orbit manages only the machines and resources you add.
 
 See [Architecture](/architecture) for how these parts work together.

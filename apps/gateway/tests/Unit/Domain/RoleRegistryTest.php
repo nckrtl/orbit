@@ -20,6 +20,7 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::AppProd,
                 RoleName::Metrics,
                 RoleName::Database,
+                RoleName::WebSocket,
             ])
             ->and($registry->definition(RoleName::Gateway)->singleton)
             ->toBeTrue()
@@ -68,6 +69,12 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::Database)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Database)->mutable)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::WebSocket)->singleton)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::WebSocket)->assignableDuringProvisioning)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::WebSocket)->mutable)
             ->toBeTrue();
     });
 
@@ -123,6 +130,23 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->conflicts(RoleName::Database, RoleName::AppDev))
             ->toBeFalse()
             ->and($registry->conflicts(RoleName::Database, RoleName::Metrics))
+            ->toBeFalse();
+    });
+
+    it('lets the websocket role combine with gateway and vpn today, and stand alone later', function (): void {
+        $registry = new RoleRegistry;
+
+        expect($registry->conflicts(RoleName::WebSocket, RoleName::Gateway))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::WebSocket, RoleName::Vpn))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::WebSocket, RoleName::AppDev))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::WebSocket, RoleName::AppProd))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::WebSocket, RoleName::Metrics))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::WebSocket, RoleName::Database))
             ->toBeFalse();
     });
 });

@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Support\Tui;
 
 use App\Support\Realtime\RealtimeEvent;
-use App\Support\Tui\Sources\DatabaseUsersSource;
-use App\Support\Tui\Sources\DeploymentsSource;
-use App\Support\Tui\Sources\NodeMetricsSource;
 use Closure;
+use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
@@ -80,32 +78,42 @@ final class State
 
     public string $liveness = 'polling';
 
-    /** Minimum seconds between polls of a deployments, database users, or node metrics source for the same id; Screen calls these accessors on every drawn frame, and a Gateway request is far from free. */
-    private const float SOURCE_POLL_SECONDS = 5.0;
+    /**
+     * Node metrics fetched by RefreshScheduler, keyed by node id. Screen only ever reads this
+     * cache; it never triggers the Gateway request itself (see RefreshScheduler's class doc for
+     * why: the request that fills it can take seconds, and Screen draws every frame).
+     *
+     * @var array<int, array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null>
+     */
+    private array $nodeMetricsCache = [];
 
-    /** @var array<int, array{at: float, value: array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null}> */
-    private array $nodeMetricsPolled = [];
+    /** @var array<int, list<array<string, mixed>>|null> */
+    private array $deploymentsCache = [];
 
-    /** @var array<int, array{at: float, value: list<array<string, mixed>>|null}> */
-    private array $deploymentsPolled = [];
-
-    /** @var array<string, array{at: float, value: list<array<string, mixed>>|null}> */
-    private array $databaseUsersPolled = [];
-
-    public function __construct(
-        private readonly DeploymentsSource $deployments,
-        private readonly DatabaseUsersSource $databaseUsers,
-        private readonly NodeMetricsSource $nodeMetrics,
-    ) {}
+    /** @var array<string, list<array<string, mixed>>|null> */
+    private array $databaseUsersCache = [];
 
     /**
      * Loads every list once, using $send to perform each typed SDK request. $send has the same
      * shape as GatewayCommand::sendOrThrow(): it throws GatewayApiException on failure.
      *
+     * No Gateway route lists processes or firewall rules fleet-wide; both are scoped per Node
+     * (firewall) or per Node/AppInstance (processes), so a real fleet needs one request per
+     * target for each — nine-plus for firewall, dozens for processes. $sendMany, when given,
+     * runs each of those two batches concurrently through GatewayCommand::poolSend() instead of
+     * one at a time; omitting it (as the Tui unit tests do) falls back to calling $send once per
+     * request, in the same order, so callers that only need correctness need not provide it.
+     *
      * @param  Closure(object, string): object  $send
+     * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
      */
-    public function load(Closure $send): void
+    public function load(Closure $send, ?Closure $sendMany = null): void
     {
+        $sendMany ??= static fn (array $requests, string $responseClass): array => array_map(
+            static fn (GatewayRequest $request): object => $send($request, $responseClass),
+            $requests,
+        );
+
         $nodes = $send(new ListNodesRequest, NodesResponse::class);
         $apps = $send(new ListAppsRequest, AppsResponse::class);
         $instances = $send(new ListAppInstancesRequest, AppInstancesResponse::class);
@@ -117,16 +125,13 @@ final class State
         $this->apps = array_map(self::appRow(...), $apps->apps);
         $this->instances = array_map(self::instanceRow(...), $instances->appInstances);
 
+        $processRequests = [
+            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
+            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
+        ];
         $processes = [];
 
-        foreach ($this->nodes as $node) {
-            $response = $send(new ListProcessesRequest(new NodeProcessTarget($node['id'])), ProcessesResponse::class);
-            assert($response instanceof ProcessesResponse);
-            array_push($processes, ...array_map(self::processRow(...), $response->processes));
-        }
-
-        foreach ($this->instances as $instance) {
-            $response = $send(new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), ProcessesResponse::class);
+        foreach ($sendMany($processRequests, ProcessesResponse::class) as $response) {
             assert($response instanceof ProcessesResponse);
             array_push($processes, ...array_map(self::processRow(...), $response->processes));
         }
@@ -137,10 +142,10 @@ final class State
         assert($schedules instanceof SchedulesResponse);
         $this->schedules = array_map(self::scheduleRow(...), $schedules->schedules);
 
+        $firewallRequests = array_map(static fn (array $node): GatewayRequest => new ListFirewallRulesRequest($node['id']), $this->nodes);
         $firewall = [];
 
-        foreach ($this->nodes as $node) {
-            $response = $send(new ListFirewallRulesRequest($node['id']), FirewallRulesResponse::class);
+        foreach ($sendMany($firewallRequests, FirewallRulesResponse::class) as $response) {
             assert($response instanceof FirewallRulesResponse);
             array_push($firewall, ...array_map(self::firewallRow(...), $response->rules));
         }
@@ -256,46 +261,68 @@ final class State
         $this->{$collection} = $rows;
     }
 
-    /** @return array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null */
+    /**
+     * The last node metrics RefreshScheduler fetched for this node (or a live `node.sample`
+     * event, if one arrived), or null when none has landed yet. A pure cache read: Screen calls
+     * this on every drawn frame and must never trigger the Gateway request that fills it.
+     *
+     * @return array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null
+     */
     public function nodeMetrics(int $nodeId): ?array
     {
-        return $this->nodeSamples[$nodeId] ?? $this->polled($this->nodeMetricsPolled, $nodeId, fn (): ?array => $this->nodeMetrics->forNode($nodeId));
-    }
-
-    /** @return list<array<string, mixed>>|null */
-    public function deploymentsFor(int $instanceId): ?array
-    {
-        return $this->polled($this->deploymentsPolled, $instanceId, fn (): ?array => $this->deployments->forInstance($instanceId));
-    }
-
-    /** @return list<array<string, mixed>>|null */
-    public function databaseUsersFor(string $slug): ?array
-    {
-        return $this->polled($this->databaseUsersPolled, $slug, fn (): ?array => $this->databaseUsers->forConnection($slug));
+        return $this->nodeSamples[$nodeId] ?? $this->nodeMetricsCache[$nodeId] ?? null;
     }
 
     /**
-     * Runs $fetch at most once every SOURCE_POLL_SECONDS per key, returning the last result in
-     * between. Screen re-reads deploymentsFor(), databaseUsersFor(), and nodeMetrics() on every
-     * drawn frame (several times a second while a page is open), so calling the Gateway that
-     * often would be wasteful and would swamp it with redundant requests.
+     * RefreshScheduler calls this after it fetches (or fails to fetch) one node's metrics.
      *
-     * @template TValue
-     *
-     * @param  array<array-key, array{at: float, value: TValue}>  $cache
-     * @param  Closure(): TValue  $fetch
-     * @return TValue
+     * @param  array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null  $metrics
      */
-    private function polled(array &$cache, int|string $key, Closure $fetch): mixed
+    public function setNodeMetrics(int $nodeId, ?array $metrics): void
     {
-        $now = microtime(true);
-        $entry = $cache[$key] ?? null;
+        $this->nodeMetricsCache[$nodeId] = $metrics;
+    }
 
-        if ($entry === null || $now - $entry['at'] >= self::SOURCE_POLL_SECONDS) {
-            $cache[$key] = ['at' => $now, 'value' => $fetch()];
-        }
+    /**
+     * The last deployment history RefreshScheduler fetched for this AppInstance, or null when
+     * none has landed yet. A pure cache read; see nodeMetrics().
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function deploymentsFor(int $instanceId): ?array
+    {
+        return $this->deploymentsCache[$instanceId] ?? null;
+    }
 
-        return $cache[$key]['value'];
+    /**
+     * RefreshScheduler calls this after it fetches (or fails to fetch) one instance's deployments.
+     *
+     * @param  list<array<string, mixed>>|null  $deployments
+     */
+    public function setDeployments(int $instanceId, ?array $deployments): void
+    {
+        $this->deploymentsCache[$instanceId] = $deployments;
+    }
+
+    /**
+     * The last Database connection users RefreshScheduler fetched for this connection, or null
+     * when none has landed yet. A pure cache read; see nodeMetrics().
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function databaseUsersFor(string $slug): ?array
+    {
+        return $this->databaseUsersCache[$slug] ?? null;
+    }
+
+    /**
+     * RefreshScheduler calls this after it fetches (or fails to fetch) one connection's users.
+     *
+     * @param  list<array<string, mixed>>|null  $users
+     */
+    public function setDatabaseUsers(string $slug, ?array $users): void
+    {
+        $this->databaseUsersCache[$slug] = $users;
     }
 
     public function instanceName(int $id): string
@@ -446,31 +473,31 @@ final class State
         $rows = [];
 
         foreach ($this->nodes as $node) {
-            if ($node['status'] !== 'active') {
+            if (! self::nodeHealthy($node)) {
                 $rows[] = ['kind' => 'nodes', 'record' => $node, 'label' => 'Node', 'name' => $node['name'], 'where' => '—', 'state' => $node['status']];
             }
         }
 
         foreach ($this->instances as $instance) {
-            if ($instance['status'] !== 'active') {
+            if (! self::instanceHealthy($instance)) {
                 $rows[] = ['kind' => 'instances', 'record' => $instance, 'label' => 'Instance', 'name' => "{$instance['app']['slug']}/{$instance['name']}", 'where' => $instance['node']['name'], 'state' => $instance['status']];
             }
         }
 
         foreach ($this->processes as $process) {
-            if ($process['runtime_status'] !== $process['desired_state']) {
+            if (! self::processHealthy($process)) {
                 $rows[] = ['kind' => 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->processOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
             }
         }
 
         foreach ($this->schedules as $schedule) {
-            if ($schedule['desired_timer_state'] !== 'enabled' || $schedule['status'] === 'failed') {
+            if (! self::scheduleHealthy($schedule)) {
                 $rows[] = ['kind' => 'schedules', 'record' => $schedule, 'label' => 'Schedule', 'name' => $schedule['name'], 'where' => $this->instanceName($schedule['target_id']), 'state' => $schedule['status'] === 'failed' ? 'failed' : $schedule['desired_timer_state']];
             }
         }
 
         foreach ($this->firewall as $rule) {
-            if ($rule['status'] !== 'applied') {
+            if (! self::firewallHealthy($rule)) {
                 $rows[] = ['kind' => 'firewall', 'record' => $rule, 'label' => 'Firewall', 'name' => "{$rule['port']}/{$rule['protocol']} {$rule['action']} {$rule['source']}", 'where' => $rule['node'], 'state' => $rule['status']];
             }
         }
@@ -484,13 +511,125 @@ final class State
         $off = static fn (array $rows, callable $ok): int => count(array_filter($rows, static fn (array $row): bool => ! $ok($row)));
 
         return [
-            'Nodes' => [count($this->nodes), $off($this->nodes, static fn (array $n): bool => $n['status'] === 'active')],
+            'Nodes' => [count($this->nodes), $off($this->nodes, self::nodeHealthy(...))],
             'Apps' => [count($this->apps), 0],
-            'Instances' => [count($this->instances), $off($this->instances, static fn (array $i): bool => $i['status'] === 'active')],
-            'Processes' => [count($this->processes), $off($this->processes, static fn (array $p): bool => $p['runtime_status'] === $p['desired_state'])],
-            'Schedules' => [count($this->schedules), $off($this->schedules, static fn (array $s): bool => $s['desired_timer_state'] === 'enabled')],
-            'Firewall' => [count($this->firewall), $off($this->firewall, static fn (array $f): bool => $f['status'] === 'applied')],
+            'Instances' => [count($this->instances), $off($this->instances, self::instanceHealthy(...))],
+            'Processes' => [count($this->processes), $off($this->processes, self::processHealthy(...))],
+            'Schedules' => [count($this->schedules), $off($this->schedules, self::scheduleHealthy(...))],
+            'Firewall' => [count($this->firewall), $off($this->firewall, self::firewallHealthy(...))],
         ];
+    }
+
+    // ---- health: whether a row is "yellow" (needs a look), in the Gateway's own vocabulary ----
+    //
+    // A record's provisioning `status` and, where it exists, its separate runtime/desired state
+    // use different enums (see apps/gateway/app/Domain/**): comparing them literally, or against
+    // a value from the wrong enum, produces false positives. These are the one place that decides
+    // "needs attention" per family; Screen and attentionRows()/counts() above all call through
+    // them instead of repeating the comparison.
+
+    /**
+     * A Node's `status` is LifecycleStatus: provisioning, active, failed, removing.
+     *
+     * @param  array<string, mixed>  $node
+     */
+    public static function nodeHealthy(array $node): bool
+    {
+        return $node['status'] === 'active';
+    }
+
+    /**
+     * An AppInstance's `status` is AppInstanceState; active is the only settled, healthy state.
+     *
+     * @param  array<string, mixed>  $instance
+     */
+    public static function instanceHealthy(array $instance): bool
+    {
+        return $instance['status'] === 'active';
+    }
+
+    /**
+     * A Process's `desired_state` is DesiredProcessState (running, stopped); its `runtime_status`
+     * is not the same vocabulary, and — confirmed against a live fleet — is not even one fixed
+     * vocabulary: it is whatever the process's own `runtime` reports verbatim. A systemd process
+     * reports `systemctl is-active` (active, inactive, failed, activating, deactivating,
+     * maintenance, absent, ...); a Docker process reports `docker container inspect`'s
+     * `.State.Status` (running, exited, created, paused, restarting, removing, dead, ...) — a
+     * running Docker container's healthy value is literally "running", never "active". A running
+     * process is healthy when its runtime reports its own active value; a stopped one is healthy
+     * when its runtime reports its own inactive value. Anything else (still settling, failed, or
+     * an unrecognized runtime) needs a look.
+     *
+     * @param  array<string, mixed>  $process
+     */
+    public static function processHealthy(array $process): bool
+    {
+        [$activeValue, $inactiveValue] = self::processRuntimeVocabulary($process);
+
+        return match ($process['desired_state']) {
+            'running' => $process['runtime_status'] === $activeValue,
+            'stopped' => $process['runtime_status'] === $inactiveValue,
+            default => false,
+        };
+    }
+
+    /**
+     * Whether a Process is currently running, regardless of its desired_state — the systemd
+     * "active"/Docker "running" runtime_status value, in whichever vocabulary its own runtime
+     * reports. Used to offer "stop" instead of "start" in the record actions menu, and by
+     * processHealthy() above for a process whose desired_state is "running".
+     *
+     * @param  array<string, mixed>  $process
+     */
+    public static function processRuntimeIsActive(array $process): bool
+    {
+        [$activeValue] = self::processRuntimeVocabulary($process);
+
+        return $process['runtime_status'] === $activeValue;
+    }
+
+    /**
+     * @param  array<string, mixed>  $process
+     * @return array{string, string} The [active, inactive] runtime_status values this process's
+     *                               own runtime reports, e.g. ['active', 'inactive'] for systemd
+     *                               or ['running', 'exited'] for Docker.
+     */
+    private static function processRuntimeVocabulary(array $process): array
+    {
+        return ($process['runtime'] ?? null) === 'docker' ? ['running', 'exited'] : ['active', 'inactive'];
+    }
+
+    /**
+     * A Schedule's `desired_timer_state` is DesiredTimerState (enabled, disabled); its `status`
+     * is a separate LifecycleStatus-shaped provisioning status (provisioning, active, failed,
+     * removing). Healthy means the timer is enabled and provisioning did not fail.
+     *
+     * @param  array<string, mixed>  $schedule
+     */
+    public static function scheduleHealthy(array $schedule): bool
+    {
+        return $schedule['desired_timer_state'] === 'enabled' && $schedule['status'] !== 'failed';
+    }
+
+    /**
+     * A Firewall rule's `status` is LifecycleStatus; active is its healthy, applied state.
+     *
+     * @param  array<string, mixed>  $rule
+     */
+    public static function firewallHealthy(array $rule): bool
+    {
+        return $rule['status'] === 'active';
+    }
+
+    /**
+     * A deployment's `status` is running, succeeded, or failed; succeeded is the settled,
+     * healthy state.
+     *
+     * @param  array<string, mixed>  $deployment
+     */
+    public static function deploymentHealthy(array $deployment): bool
+    {
+        return $deployment['status'] === 'succeeded';
     }
 
     /**

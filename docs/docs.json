@@ -518,7 +518,8 @@
               "decisions/0083-default-sqlite-journal-mode-to-wal",
               "decisions/0084-broadcast-record-changes-through-reverb",
               "decisions/0085-build-orbit-top-as-a-thin-tui-client",
-              "decisions/0086-offer-the-api-as-mcp-tools"
+              "decisions/0086-offer-the-api-as-mcp-tools",
+              "decisions/0087-run-reverb-through-a-websocket-role"
             ]
           }
         ]

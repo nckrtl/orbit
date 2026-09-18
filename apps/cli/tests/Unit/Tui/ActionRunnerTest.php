@@ -12,7 +12,7 @@ describe(ActionRunner::class, function (): void {
         $runner = new ActionRunner(fn (): never => throw new RuntimeException('not used'));
 
         $running = tui_test_state()->processes[0];
-        $stopped = [...$running, 'runtime_status' => 'stopped'];
+        $stopped = [...$running, 'runtime_status' => 'inactive'];
 
         expect(array_keys($runner->actionsFor('processes', $running)))->toBe(['restart', 'stop'])
             ->and(array_keys($runner->actionsFor('processes', $stopped)))->toBe(['restart', 'start']);
@@ -53,7 +53,7 @@ describe(ActionRunner::class, function (): void {
                 'keep_alive' => true,
                 'desired_state' => 'running',
                 'status' => 'active',
-                'runtime_status' => 'running',
+                'runtime_status' => 'active',
                 'failed_step' => null,
                 'error_code' => null,
             ], '0198e15d-16c4-7855-8eb2-182b53ad28ba');
@@ -63,7 +63,7 @@ describe(ActionRunner::class, function (): void {
 
         expect($sent)->not->toBeNull()
             ->and($result['message'])->toBe('Process [horizon] restarted.')
-            ->and($result['row']['runtime_status'])->toBe('running');
+            ->and($result['row']['runtime_status'])->toBe('active');
     });
 
     it('marks a destructive action so the caller confirms before running it', function (): void {

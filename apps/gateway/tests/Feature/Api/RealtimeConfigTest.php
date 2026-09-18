@@ -18,24 +18,18 @@ beforeEach(function (): void {
 });
 
 describe('GET /api/v1/realtime', function (): void {
-    it('returns the Reverb connection details when broadcasting is configured', function (): void {
-        config([
-            'broadcasting.default' => 'reverb',
-            'broadcasting.connections.reverb.key' => 'test-key',
-            'broadcasting.connections.reverb.options.host' => 'reverb.orbit',
-        ]);
+    it('returns the Reverb connection details from the active websocket role', function (): void {
+        [, $credentials] = activate_websocket_role();
 
         $this->getJson('/api/v1/realtime')
             ->assertOk()
             ->assertJsonPath('data.url', 'wss://reverb.orbit')
-            ->assertJsonPath('data.key', 'test-key')
+            ->assertJsonPath('data.key', $credentials->appKey)
             ->assertJsonPath('data.channel', 'orbit')
             ->assertJsonStructure(['meta' => ['request_id']]);
     });
 
-    it('returns null connection details when broadcasting is not configured', function (): void {
-        config(['broadcasting.default' => 'null']);
-
+    it('returns null connection details when no websocket role is active', function (): void {
         $this->getJson('/api/v1/realtime')
             ->assertOk()
             ->assertJsonPath('data.url', null)
@@ -43,17 +37,14 @@ describe('GET /api/v1/realtime', function (): void {
             ->assertJsonPath('data.channel', 'orbit');
     });
 
-    it('returns null connection details when the Reverb host or key is missing', function (): void {
-        config([
-            'broadcasting.default' => 'reverb',
-            'broadcasting.connections.reverb.key' => null,
-            'broadcasting.connections.reverb.options.host' => 'reverb.orbit',
-        ]);
+    it('never leaks the Reverb secret or the generated APP_KEY', function (): void {
+        activate_websocket_role();
 
-        $this->getJson('/api/v1/realtime')
-            ->assertOk()
-            ->assertJsonPath('data.url', null)
-            ->assertJsonPath('data.key', null);
+        $response = $this->getJson('/api/v1/realtime')->assertOk();
+
+        expect($response->getContent())
+            ->not->toContain('REVERB_APP_SECRET')
+            ->not->toContain('base64:');
     });
 
     it('refuses an unauthenticated caller with 403', function (): void {

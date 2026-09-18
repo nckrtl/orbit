@@ -18,6 +18,7 @@ final readonly class RoleRegistry
             RoleName::AppProd,
             RoleName::Metrics,
             RoleName::Database,
+            RoleName::WebSocket,
         ];
     }
 
@@ -82,6 +83,12 @@ final readonly class RoleRegistry
                     RoleName::Ingress,
                     RoleName::AppProd,
                 ],
+            ),
+            RoleName::WebSocket => new RoleDefinition(
+                name: $role,
+                singleton: true,
+                assignableDuringProvisioning: true,
+                mutable: true,
             ),
         };
     }
