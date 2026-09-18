@@ -812,18 +812,24 @@ it('records node role commands against the node with bounded inputs and stable f
     {
         public function converge(?Node $pendingNode = null): void {}
     });
+    $relocateTarget = Node::query()->create([
+        'name' => 'role-activity-relocate-target',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.22',
+        'wireguard_ip' => '10.44.0.22',
+    ]);
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $relocateRequestId)
-        ->postJson("/api/v1/nodes/{$node->id}/roles/gateway/relocate", ['force' => true])
+        ->postJson("/api/v1/nodes/{$relocateTarget->id}/roles/gateway/relocate", ['force' => true])
         ->assertOk();
 
     $relocate = Activity::query()->where('request_id', $relocateRequestId)->sole();
     expect($relocate)
         ->command->toBe('node:role:relocate')
         ->subject_type->toBe(Node::class)
-        ->subject_id->toBe($node->id)
-        ->target_node_id->toBe($node->id)
+        ->subject_id->toBe($relocateTarget->id)
+        ->target_node_id->toBe($relocateTarget->id)
         ->status->toBe('succeeded')->and($relocate->properties?->get('input'))->toBe([
             'force' => true,
             'role' => 'gateway',

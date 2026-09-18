@@ -599,7 +599,7 @@ it('requires force before relocating the gateway role', function (): void {
     $assignment = $this->caller->roles()->where('role', RoleName::Gateway)->sole();
 
     $this
-        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate")
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => false])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.message', 'Use --force to relocate this node role.')

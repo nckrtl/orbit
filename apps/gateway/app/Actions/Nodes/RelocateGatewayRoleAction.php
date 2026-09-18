@@ -94,7 +94,7 @@ final readonly class RelocateGatewayRoleAction
             ->where('role', RoleName::Gateway)
             ->first();
 
-        if (! $assignment instanceof NodeRole || ! $assignment->node instanceof Node) {
+        if (! $assignment instanceof NodeRole) {
             throw new NodeRoleValidationException(
                 message: 'Role [gateway] is not assigned.',
                 details: ['field' => 'role', 'role' => RoleName::Gateway->value],

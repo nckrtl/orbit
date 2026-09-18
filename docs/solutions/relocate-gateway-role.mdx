@@ -17,7 +17,7 @@ Bootstrap assigns both `gateway` and `vpn` to one Node. `vpn` stays immutable. T
 
 ### Preferred: one relocate command
 
-Provision the target as an ordinary Node first. Install PHP-FPM and Caddy there, and copy the serving checkout, `ORBIT_HOME` (CA and Gateway SSH keys), and Gateway `.env`. Relocate updates the live SQLite on the current process host, so copy that database onto the target after relocate (or copy it again if you staged one earlier). Then transfer the singleton assignment:
+Provision the target as an ordinary Node first. It must not already hold `app-dev`, `app-prod`, or `database`; those roles conflict with `gateway`. Install PHP-FPM and Caddy there, and copy the serving checkout, `ORBIT_HOME` (CA and Gateway SSH keys), and Gateway `.env`. Relocate updates the live SQLite on the process host that runs the command, so copy that database onto the target after relocate (or copy it again if you staged one earlier). Then transfer the singleton assignment:
 
 ```bash
 orbit node:role:relocate <new-node> gateway --force
