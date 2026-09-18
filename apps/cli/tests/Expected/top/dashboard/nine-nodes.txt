@@ -12,8 +12,8 @@
 │                  ││node-9        failed    —                     —                    —                          —   │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Apps ──────────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
-│                  ││  Slug                  Branch         Instances││  App           Name        Node         Status │
-│                  ││› charlie-shop          main                  1 ││› charlie-shop  dev         beast        active │
+│                  ││  Slug                  Branch         Instances││  Name         App          Node         Status │
+│                  ││› charlie-shop          main                  1 ││› dev          charlie-shop beast        active │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │

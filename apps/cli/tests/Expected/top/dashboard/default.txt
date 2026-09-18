@@ -4,8 +4,8 @@
 │  Nodes         1 ││beast         active    —                     —                    —                          —   │
 │  Apps          1 │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │  Instances     1 │╭ Apps ──────────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
-│  Processes     1 ││  Slug                  Branch         Instances││  App           Name        Node         Status │
-│  Schedules     1 ││› charlie-shop          main                  1 ││› charlie-shop  dev         beast        active │
+│  Processes     1 ││  Slug                  Branch         Instances││  Name         App          Node         Status │
+│  Schedules     1 ││› charlie-shop          main                  1 ││› dev          charlie-shop beast        active │
 │  Databases     1 ││                                                ││                                                │
 │  Firewall      1 ││                                                ││                                                │
 │                  ││                                                ││                                                │

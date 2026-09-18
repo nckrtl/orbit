@@ -252,7 +252,7 @@ final class Screen
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
                         $this->pane($ui, 'apps', ' Apps ', ['Slug', 'Branch', 'Instances'], [Constraint::percentage(44), Constraint::percentage(30), Constraint::percentage(26)], array_map(fn (array $a): TableRow => $this->row([$a['slug'], $a['default_branch'] ?? 'main'], (string) count($state->instancesForApp($a['slug'])), false), $state->apps), 'No apps.'),
-                        $this->pane($ui, 'instances', ' Instances ', ['App', 'Name', 'Node', 'Status'], [Constraint::percentage(28), Constraint::percentage(24), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['node']['name']], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
+                        $this->pane($ui, 'instances', ' Instances ', ['Name', 'App', 'Node', 'Status'], [Constraint::percentage(26), Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['app']['slug'], $i['node']['name']], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
                     ),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
