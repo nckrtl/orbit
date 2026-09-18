@@ -14,7 +14,7 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
     #[\Override]
     protected $signature = 'database:update
         {slug : Database connection slug}
-        {--driver= : Driver: mysql, pgsql, or sqlite}
+        {--driver= : Driver: mysql, pgsql, sqlite, or redis}
         {--node= : Node ID or registered name; empty clears the association}
         {--host= : Hostname or IP for mysql and pgsql}
         {--port= : TCP port for mysql and pgsql}
@@ -63,7 +63,7 @@ final class UpdateDatabaseConnectionCommand extends DatabaseCommand
         if ($hasDriver && (! is_string($driver) || ! in_array($driver, self::DRIVERS, true))) {
             return $this->renderGatewayFailure(
                 'database.driver_invalid',
-                'Driver must be mysql, pgsql, or sqlite.',
+                'Driver must be mysql, pgsql, sqlite, or redis.',
             );
         }
 

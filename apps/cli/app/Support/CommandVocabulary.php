@@ -49,12 +49,14 @@ final readonly class CommandVocabulary
     /** @var list<string> */
     public const array NOUN_ENDING_COMMANDS = [
         'metrics:credentials',
+        'node:metrics',
         'node:settings',
     ];
 
     /** @var list<string> */
     public const array INTERNAL_COMMANDS = [
         'internal:database-local',
+        'internal:node-metrics',
     ];
 
     public static function lastSegment(string $name): string

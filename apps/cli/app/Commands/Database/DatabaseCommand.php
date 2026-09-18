@@ -15,7 +15,7 @@ abstract class DatabaseCommand extends GatewayCommand
     public const string PREFIX_PATTERN = '/\A[A-Z][A-Z0-9_]{0,31}\z/D';
 
     /** @var list<string> */
-    protected const array DRIVERS = ['mysql', 'pgsql', 'sqlite'];
+    protected const array DRIVERS = ['mysql', 'pgsql', 'sqlite', 'redis'];
 
     protected function slug(): ?string
     {
@@ -42,7 +42,7 @@ abstract class DatabaseCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
+        $fields = [
             'ID' => $connection->id,
             'Slug' => $connection->slug,
             'Driver' => $connection->driver,
@@ -53,8 +53,15 @@ abstract class DatabaseCommand extends GatewayCommand
             'Path' => $connection->path,
             'Username' => $connection->username,
             'Password' => $connection->hasPassword ? 'stored' : null,
-            'Request ID' => $connection->requestId,
-        ]));
+        ];
+
+        if ($connection->usersCount !== null) {
+            $fields['Users'] = $connection->usersCount;
+        }
+
+        $fields['Request ID'] = $connection->requestId;
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, $fields));
 
         return self::SUCCESS;
     }
