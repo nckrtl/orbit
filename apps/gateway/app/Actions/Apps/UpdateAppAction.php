@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
+use App\Data\Apps\AppData;
 use App\Data\Apps\UpdateAppData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Apps\AppDefaultBranchInheritance;
@@ -11,6 +12,8 @@ use App\Domain\Apps\AppRepositoryUpdatePlanner;
 use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Apps\AppUpdateStatus;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -32,6 +35,7 @@ final readonly class UpdateAppAction
         private AppUpdateSourceMutator $sources,
         private AppUpdateProjectionMutator $projections,
         private RepositoryDefaultBranchResolver $branches,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(OrbitApp $app, UpdateAppData $data): OrbitApp
@@ -51,10 +55,18 @@ final readonly class UpdateAppAction
             ->values()
             ->all();
 
-        return $this->operations->run(
+        $result = $this->operations->run(
             $instanceIds,
             fn (): OrbitApp => $this->executeOwned($app->fresh() ?? $app, $data),
         );
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::AppUpdated,
+            $result->id,
+            AppData::fromModel($result)->toArray(),
+        );
+
+        return $result;
     }
 
     private function executeOwned(OrbitApp $app, UpdateAppData $data): OrbitApp

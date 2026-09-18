@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Data\Nodes\NodeData;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
@@ -66,6 +69,7 @@ final readonly class ProvisionNodeAction
         private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
         private ?ClusterRouterDnsSelectionReconciler $dnsSelection = null,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -75,6 +79,28 @@ final readonly class ProvisionNodeAction
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
         }
+    }
+
+    private function announceCreated(Node $node): Node
+    {
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeCreated,
+            $node->id,
+            NodeData::fromModel($node)->toArray(),
+        );
+
+        return $node;
+    }
+
+    private function announceUpdated(Node $node): Node
+    {
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeUpdated,
+            $node->id,
+            NodeData::fromModel($node)->toArray(),
+        );
+
+        return $node;
     }
 
     private function provision(ProvisionNodeData $data): Node
@@ -97,6 +123,7 @@ final readonly class ProvisionNodeAction
         }
 
         $node = Node::query()->firstOrNew(['name' => $data->name]);
+        $wasNew = ! $node->exists;
 
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
         $lanIp = $data->lanIpProvided
@@ -188,7 +215,9 @@ final readonly class ProvisionNodeAction
 
         if ($node->exists && $node->appInstances()->exists()) {
             if ($this->isTldOnlyChange($node, $data, $tld, $clusterId) && $this->hasActiveAppDevRole($node)) {
-                return $this->changeNodeTld($node, $tld, $previousTld, $clusterId, $previousClusterId);
+                return $this->announceUpdated(
+                    $this->changeNodeTld($node, $tld, $previousTld, $clusterId, $previousClusterId),
+                );
             }
 
             throw new ResourceOperationException(
@@ -454,7 +483,9 @@ final readonly class ProvisionNodeAction
             throw $failure;
         }
 
-        return $node->refresh()->load('roles');
+        $result = $node->refresh()->load('roles');
+
+        return $wasNew ? $this->announceCreated($result) : $this->announceUpdated($result);
     }
 
     /** @param list<RoleName> $roles */

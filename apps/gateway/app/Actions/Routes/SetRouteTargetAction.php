@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Routes;
 
+use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -24,6 +27,7 @@ final readonly class SetRouteTargetAction
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(Route $route, int $appInstanceId): Route
@@ -45,10 +49,18 @@ final readonly class SetRouteTargetAction
             ->values()
             ->all();
 
-        return $this->environmentOperations->run(
+        $result = $this->environmentOperations->run(
             [...$expectedTargetIds, $appInstanceId],
             fn (): Route => $this->executeOwned($route, $appInstanceId, $expectedTargetIds),
         );
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::RouteUpdated,
+            $result->id,
+            RouteData::fromModel($result)->toArray(),
+        );
+
+        return $result;
     }
 
     /** @param list<int> $expectedTargetIds */

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Schedules;
 
 use App\Data\Schedules\AddScheduleData;
+use App\Data\Schedules\ScheduleData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
@@ -29,6 +32,7 @@ final readonly class AddScheduleAction
         private ScheduleTargetResolver $targets,
         private ScheduleRuntimeManager $runtime,
         private ProcessAdmissionLock $admissions,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /** @return array{schedule: Schedule, created: bool} */
@@ -136,7 +140,17 @@ final readonly class AddScheduleAction
             'error_code' => null,
         ]);
 
-        return ['schedule' => $schedule->refresh(), 'created' => $admission['created']];
+        $result = $schedule->refresh();
+
+        if ($admission['created']) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::ScheduleCreated,
+                $result->id,
+                ScheduleData::fromModel($result)->toArray(),
+            );
+        }
+
+        return ['schedule' => $result, 'created' => $admission['created']];
     }
 
     private function matches(Schedule $schedule, #[SensitiveParameter] AddScheduleData $data): bool

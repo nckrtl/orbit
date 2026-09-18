@@ -2750,6 +2750,25 @@
             ]
         },
         {
+            "path": "docs/reference/events.mdx",
+            "title": "Realtime events",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Runtime hibernation",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/gateway-recovery.md",
             "title": "Update and recover a Gateway",
             "kind": "reference",

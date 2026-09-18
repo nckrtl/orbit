@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\AppInstances;
 
+use App\Data\AppInstances\DeploymentStepData;
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Models\AppInstance;
 
 final readonly class DestroyAppInstanceDeployStepAction
@@ -15,15 +18,24 @@ final readonly class DestroyAppInstanceDeployStepAction
         private AppInstanceDeploymentConfigResolver $resolver,
         private AppInstanceDeployStepStore $steps,
         private AppInstanceEnvironmentOperationLock $operations,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(AppInstance $instance, string $name): DeploymentStep
     {
-        return $this->operations->run([$instance->id], function () use ($instance, $name): DeploymentStep {
+        $result = $this->operations->run([$instance->id], function () use ($instance, $name): DeploymentStep {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
 
             return $this->steps->destroy($locked, $name);
         });
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::DeployStepDeleted,
+            $result->name,
+            DeploymentStepData::fromDomain($result)->toArray(),
+        );
+
+        return $result;
     }
 }

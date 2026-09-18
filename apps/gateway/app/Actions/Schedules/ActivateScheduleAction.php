@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
+use App\Data\Schedules\ScheduleData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleRuntimeManager;
@@ -15,7 +18,10 @@ use SensitiveParameter;
 
 final readonly class ActivateScheduleAction
 {
-    public function __construct(private ScheduleRuntimeManager $runtime) {}
+    public function __construct(
+        private ScheduleRuntimeManager $runtime,
+        private ?RecordEventBroadcaster $broadcaster = null,
+    ) {}
 
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
     {
@@ -36,11 +42,22 @@ final readonly class ActivateScheduleAction
         }
 
         $this->runtime->activate($schedule);
+        $changed = $schedule->desired_timer_state !== DesiredTimerState::Enabled;
 
-        if ($schedule->desired_timer_state !== DesiredTimerState::Enabled) {
+        if ($changed) {
             $schedule->update(['desired_timer_state' => DesiredTimerState::Enabled]);
         }
 
-        return $schedule->refresh();
+        $result = $schedule->refresh();
+
+        if ($changed) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::ScheduleUpdated,
+                $result->id,
+                ScheduleData::fromModel($result)->toArray(),
+            );
+        }
+
+        return $result;
     }
 }

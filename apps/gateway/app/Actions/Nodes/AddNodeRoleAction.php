@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Data\Nodes\NodeData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\DatabaseRoleSettings;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -32,6 +35,7 @@ final readonly class AddNodeRoleAction
         private RoleBaselineConverger $baselines,
         private ToolManagerMaterializer $toolManagers,
         private ToolManagerScopeLock $managerScope,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /**
@@ -46,7 +50,7 @@ final readonly class AddNodeRoleAction
             throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
         }
 
-        return $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting): array {
+        $result = $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting): array {
             $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
 
             if ($role === RoleName::Ingress && ! $convergeExisting && ! $claim['created']) {
@@ -58,6 +62,14 @@ final readonly class AddNodeRoleAction
 
             return $this->convergeClaim($node, $role, $claim);
         });
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeUpdated,
+            $node->id,
+            NodeData::fromModel($node->refresh())->toArray(),
+        );
+
+        return $result;
     }
 
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole

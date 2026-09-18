@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances;
 
 use App\Actions\Apps\CreateAppAction;
+use App\Data\AppInstances\AppInstanceData;
 use App\Data\AppInstances\RegisterAppInstanceData;
 use App\Data\Apps\CreateAppData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -16,6 +17,8 @@ use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\Registration\RegistrationSourceFacts;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -50,10 +53,27 @@ final readonly class RegisterAppInstanceAction
         private DevelopmentProjectionOperationLock $projectionLock,
         private DevelopmentAppInstanceProvisioner $provisioner,
         private DevelopmentAppInstanceConfigurator $configuration,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /** @return array{app: OrbitApp, primary: AppInstance, instances: list<AppInstance>, created: bool} */
     public function execute(Node $caller, RegisterAppInstanceData $data): array
+    {
+        $result = $this->performRegistration($caller, $data);
+
+        if ($result['created']) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::InstanceCreated,
+                $result['primary']->id,
+                AppInstanceData::fromModel($result['primary'])->toArray(),
+            );
+        }
+
+        return $result;
+    }
+
+    /** @return array{app: OrbitApp, primary: AppInstance, instances: list<AppInstance>, created: bool} */
+    private function performRegistration(Node $caller, RegisterAppInstanceData $data): array
     {
         $this->assertPlacement($caller);
 

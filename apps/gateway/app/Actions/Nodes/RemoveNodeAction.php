@@ -6,6 +6,8 @@ namespace App\Actions\Nodes;
 
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -44,6 +46,7 @@ final readonly class RemoveNodeAction
         private ?RouteRemovalGuard $routes = null,
         private ?ScheduleTargetUseGuard $schedules = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(
@@ -308,6 +311,12 @@ final readonly class RemoveNodeAction
                 previous: $exception,
             );
         }
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeDeleted,
+            $result->id,
+            ['id' => $result->id, 'name' => $result->name],
+        );
 
         return $result;
     }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
+use App\Data\Schedules\ScheduleData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleRunStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -14,9 +17,11 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class CompleteScheduleAction
 {
+    public function __construct(private ?RecordEventBroadcaster $broadcaster = null) {}
+
     public function execute(string $scheduleId, ScheduleRunStatus $status, Node $caller): ?Schedule
     {
-        return DB::transaction(function () use ($scheduleId, $status, $caller): ?Schedule {
+        $schedule = DB::transaction(function () use ($scheduleId, $status, $caller): ?Schedule {
             $schedule = Schedule::query()->lockForUpdate()->find($scheduleId);
 
             if (! $schedule instanceof Schedule) {
@@ -42,5 +47,15 @@ final readonly class CompleteScheduleAction
 
             return $schedule->refresh();
         });
+
+        if ($schedule instanceof Schedule && $schedule->status !== LifecycleStatus::Removing) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::ScheduleUpdated,
+                $schedule->id,
+                ScheduleData::fromModel($schedule)->toArray(),
+            );
+        }
+
+        return $schedule;
     }
 }

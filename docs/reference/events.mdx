@@ -1,0 +1,148 @@
+---
+title: "Realtime events"
+description: "The envelope, channel, and full catalogue of record-change events the Gateway broadcasts to Reverb, and the env contract that turns it on."
+---
+
+# Realtime events
+
+The Gateway broadcasts one realtime event for every record it changes, so a client such as `orbit top` can stay live without polling. This page defines the envelope, the channel and its authorization, the full catalogue of event types, and the environment variables that configure delivery.
+
+## Transport
+
+The Gateway never runs a broadcast server. It only broadcasts, as a Pusher-protocol client, to an external Laravel Reverb server reachable at `wss://reverb.orbit`. A client that wants realtime updates connects to that Reverb server directly and subscribes to the `orbit` channel; it does not connect to the Gateway for the WebSocket itself.
+
+Every broadcast happens synchronously, inside the same request that changed the record. The Gateway does not use a queue for broadcasting, matching its no-queues rule. A Reverb outage never fails the request that changed the record: the Gateway logs a warning (`Failed to broadcast a record event.`) and continues. A client cannot tell from an API response whether its change was also broadcast; it can only tell whether the change itself succeeded.
+
+## Channel and authorization
+
+Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. Any authenticated Gateway API caller may subscribe; there is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`.
+
+## Envelope
+
+Every event shares the same shape. The broadcast name equals `type`.
+
+| Field | Contract |
+| --- | --- |
+| `type` | `<family>.<verb>`, for example `node.created`. Also the broadcast name a client subscribes to. |
+| `id` | The changed record's id. A numeric id for every family except deploy steps, which use the step's name. |
+| `at` | ISO 8601 timestamp of the broadcast, in the Gateway's timezone. |
+| `data` | The record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
+
+```json
+{
+  "type": "process.status",
+  "id": 42,
+  "at": "2026-09-18T10:15:00+00:00",
+  "data": { "id": 42, "name": "web", "status": "active", "runtime_status": "running", "...": "..." }
+}
+```
+
+## Verbs
+
+Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and AppInstance runtime state changes are not currently broadcast; see [Limits](#limits).
+
+## Event catalogue
+
+### Node
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `node.created` | A Node is provisioned for the first time. | `NodeData` |
+| `node.updated` | An existing Node is reprovisioned, its settings change, it is retargeted to a new public SSH host, or a role is added or removed. | `NodeData` |
+| `node.deleted` | A Node is removed from the fleet. | `{ id, name }` |
+
+### App
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `app.created` | A new App is created. | `AppData` |
+| `app.updated` | An App's slug, repository, default branch, or root changes. | `AppData` |
+| `app.deleted` | An App is removed. | `{ id, name, slug }` |
+
+### AppInstance (`instance`)
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `instance.created` | An AppInstance is created or registered for the first time. | `AppInstanceData` |
+| `instance.updated` | An AppInstance's deployment branch changes, or its removal begins but has not yet deleted the record. | `AppInstanceData` |
+| `instance.deleted` | An AppInstance is fully removed. | `{ id, name }` |
+
+### Process
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `process.created` | A new Process is added. | `ProcessData` |
+| `process.status` | A Process is started, stopped, or restarted. | `ProcessData` |
+| `process.deleted` | A Process is removed. | `{ id, name }` |
+
+### Schedule
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `schedule.created` | A new Schedule is added. | `ScheduleData` |
+| `schedule.updated` | A Schedule is activated, records a completed run, or begins removal without finishing it in the same request. | `ScheduleData` |
+| `schedule.deleted` | A Schedule is fully removed. | `{ id, name }` |
+
+### Database connection (`database`)
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `database.created` | A new database connection is registered. | `DatabaseConnectionData` |
+| `database.updated` | A database connection's fields change. | `DatabaseConnectionData` |
+| `database.deleted` | A database connection is removed. | `{ id, slug }` |
+
+### Firewall rule (`firewall`)
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `firewall.created` | A new firewall rule is stored. | `FirewallRuleData` |
+| `firewall.deleted` | A firewall rule is removed. | `{ id, name }` |
+
+There is no `firewall.updated`. Storing a rule under a name that already exists requires the same action, source, protocol, and port as the stored rule; any difference is refused as a conflict, so there is no path that changes a stored rule's fields.
+
+### Route
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `route.created` | A new Route is created directly through the routes API. | `RouteData` |
+| `route.updated` | A Route's domain or publication changes, or its target is set or cleared. | `RouteData` |
+| `route.deleted` | A Route is removed. | `{ id, domain }` |
+
+A Route that Orbit creates implicitly while provisioning an AppInstance does not emit its own `route.created`; only a Route created directly through the routes API does.
+
+### Deploy step (`deploy_step`)
+
+| Type | Fires when | Data |
+| --- | --- | --- |
+| `deploy_step.created` | A deploy step is added to an AppInstance's deployment recipe. | `DeploymentStepData` |
+| `deploy_step.updated` | A deploy step's command, phase, timeout, or position changes. | `DeploymentStepData` |
+| `deploy_step.deleted` | A deploy step is removed. | `DeploymentStepData` (the removed step's last known fields) |
+
+A deploy step has no numeric id in its API shape, so `id` carries the step's name instead. `data` matches the deploy-step list and show endpoints exactly, so it does not include the owning AppInstance's id.
+
+## Limits
+
+An event broadcasts only when its triggering action returns successfully. An operation that fails after it already wrote failure evidence onto a record, such as a `failed_step` or `error_code`, does not broadcast that write: the action throws before it reaches the broadcast call, and the HTTP response already reports the failure.
+
+An idempotent create call, such as adding a Process, Schedule, or firewall rule that already exists with identical configuration, returns the existing record without change and does not broadcast. Only a call that creates a genuinely new record broadcasts a `created` event.
+
+`node.status` and `instance.status` are not currently emitted, even though they exist for parity with `process.status`:
+
+- A Node's own recorded status only changes as a side effect of provisioning, removal, or a role change, and each of those is already covered by `node.created`, `node.updated`, or `node.deleted`. No Gateway action flips only a Node's status field.
+- AppInstance dev-runtime hibernation (wake and sleep) tracks "awake" and "asleep" through a marker store outside the AppInstance and Process rows. It never writes a field either record's list or show endpoint returns, so the Gateway has nothing on the record to broadcast.
+
+`process.status` carries the Process's own persisted lifecycle status and desired state, not the live runtime string its show endpoint also reports (the state a process manager observes right now, such as whether the OS process is currently running). That live string is polled at read time, not recorded anywhere, so a change in it alone cannot be broadcast.
+
+Repairing a Node's DNS resolver (`orbit node:dns-repair` and similar recovery paths) re-pushes already-stored WireGuard and DNS configuration to the peer. It does not change the Node record, so it does not broadcast.
+
+## Environment
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `BROADCAST_CONNECTION` | Set to `reverb` to enable broadcasting. Unset or any other value broadcasts nowhere. | unset |
+| `REVERB_APP_ID` | The Reverb application id. | none |
+| `REVERB_APP_KEY` | The Reverb application key. | none |
+| `REVERB_APP_SECRET` | The Reverb application secret. | none |
+| `REVERB_HOST` | The Reverb server's hostname. | `reverb.orbit` |
+| `REVERB_PORT` | The Reverb server's port. | `443` |
+| `REVERB_SCHEME` | `https` or `http`. Also selects TLS for the connection. | `https` |

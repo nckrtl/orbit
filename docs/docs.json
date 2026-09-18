@@ -100,7 +100,8 @@
               "reference/metrics",
               "reference/herdr-sessions",
               "reference/local-resolver-overrides",
-              "reference/cli-binaries"
+              "reference/cli-binaries",
+              "reference/events"
             ]
           },
           {
