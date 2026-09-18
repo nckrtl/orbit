@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
 
 describe(GatewayServingHost::class, function (): void {
     it('records and recognizes the bootstrap serving node', function (): void {
