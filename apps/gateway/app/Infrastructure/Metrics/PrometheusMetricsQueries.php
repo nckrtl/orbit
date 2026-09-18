@@ -13,6 +13,9 @@ namespace App\Infrastructure\Metrics;
  */
 final readonly class PrometheusMetricsQueries
 {
+    /** The label `pressure()` writes its kind into, and the mapper groups by. */
+    public const string PRESSURE_KIND_LABEL = 'orbit_pressure';
+
     private const string SCALAR_NAMES = 'node_memory_MemTotal_bytes|node_memory_MemAvailable_bytes'
         .'|node_memory_SwapTotal_bytes|node_memory_SwapFree_bytes|node_memory_total_bytes|node_memory_free_bytes'
         .'|node_memory_active_bytes|node_memory_inactive_bytes|node_memory_wired_bytes|node_memory_compressed_bytes'
@@ -29,9 +32,22 @@ final readonly class PrometheusMetricsQueries
         return '1 - rate(node_cpu_seconds_total{mode="idle"'.self::instanceClause($instance).'}[1m])';
     }
 
+    /**
+     * PromQL drops `__name__` in a binary operation and set operators match on the labels that
+     * remain, so a union of the three rates would collapse to whichever came first. Each rate
+     * therefore carries its kind in a label of its own, which keeps the three label sets distinct
+     * and gives the mapper something to group by.
+     */
     public static function pressure(?string $instance = null): string
     {
-        return 'rate({__name__=~"node_pressure_(cpu|memory|io)_waiting_seconds_total"'.self::instanceClause($instance).'}[1m]) * 100';
+        $clause = self::instanceClause($instance);
+
+        return implode(' or ', array_map(
+            static fn (string $kind): string => 'label_replace(rate(node_pressure_'.$kind
+                .'_waiting_seconds_total{'.ltrim($clause, ',').'}[1m]) * 100,"'
+                .self::PRESSURE_KIND_LABEL.'","'.$kind.'","","")',
+            ['cpu', 'memory', 'io'],
+        ));
     }
 
     public static function disks(?string $instance = null): string

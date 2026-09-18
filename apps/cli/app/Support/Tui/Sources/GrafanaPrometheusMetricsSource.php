@@ -8,6 +8,7 @@ use App\Support\Metrics\PrometheusMetricsQueries;
 use App\Support\Metrics\PrometheusNodeMetricsMapper;
 use App\Support\Tui\Sources\Concerns\LimitsBackgroundRequestTime;
 use Closure;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsCredentialsRequest;
@@ -48,8 +49,15 @@ final class GrafanaPrometheusMetricsSource implements FleetNodeMetricsSource, No
     /** @var array<int, string>|null Node id to WireGuard address. */
     private ?array $addresses = null;
 
-    /** @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow(). */
-    public function __construct(private readonly Closure $send) {}
+    /**
+     * @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow().
+     * @param  string|null  $caPath  The active profile's Orbit root certificate. `metrics.orbit`
+     *                               presents an Orbit CA leaf, and PHP verifies against its own
+     *                               bundle rather than the operating system trust store, so
+     *                               without this every Grafana call fails its TLS handshake and
+     *                               the screen shows "No metrics." for every node.
+     */
+    public function __construct(private readonly Closure $send, private readonly ?string $caPath = null) {}
 
     #[\Override]
     public function forNode(int $nodeId): ?array
@@ -102,14 +110,27 @@ final class GrafanaPrometheusMetricsSource implements FleetNodeMetricsSource, No
 
         try {
             $scalars = $this->query($credentials, $uid, PrometheusMetricsQueries::scalars($instance));
-            $cores = $this->query($credentials, $uid, PrometheusMetricsQueries::cores($instance));
-            $pressure = $this->query($credentials, $uid, PrometheusMetricsQueries::pressure($instance));
-            $disks = $this->query($credentials, $uid, PrometheusMetricsQueries::disks($instance));
         } catch (Throwable) {
             return [];
         }
 
+        // Only the scalars decide whether a Node has metrics at all. The rest enrich the blocks,
+        // so one query a Prometheus rejects must not blank the dashboard for every Node.
+        $cores = $this->optional(PrometheusMetricsQueries::cores($instance), $credentials, $uid);
+        $pressure = $this->optional(PrometheusMetricsQueries::pressure($instance), $credentials, $uid);
+        $disks = $this->optional(PrometheusMetricsQueries::disks($instance), $credentials, $uid);
+
         return PrometheusNodeMetricsMapper::map($scalars, $cores, $pressure, $disks, time());
+    }
+
+    /** @return array<string, mixed> An enriching query's result, or nothing when Prometheus refuses it. */
+    private function optional(string $promql, MetricsCredentialsResponse $credentials, string $uid): array
+    {
+        try {
+            return $this->query($credentials, $uid, $promql);
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     private function credentials(): ?MetricsCredentialsResponse
@@ -142,8 +163,7 @@ final class GrafanaPrometheusMetricsSource implements FleetNodeMetricsSource, No
         }
 
         try {
-            $datasources = Http::withBasicAuth($credentials->username, $credentials->password)
-                ->timeout(self::REQUEST_TIMEOUT_SECONDS)
+            $datasources = $this->client($credentials)
                 ->get("{$credentials->url}/api/datasources")
                 ->throw()
                 ->json();
@@ -160,11 +180,19 @@ final class GrafanaPrometheusMetricsSource implements FleetNodeMetricsSource, No
         return null;
     }
 
+    /** Verifies Grafana's Orbit CA leaf against the profile's root, the way the Gateway API is verified. */
+    private function client(MetricsCredentialsResponse $credentials): PendingRequest
+    {
+        $client = Http::withBasicAuth($credentials->username, $credentials->password)
+            ->timeout(self::REQUEST_TIMEOUT_SECONDS);
+
+        return $this->caPath === null ? $client : $client->withOptions(['verify' => $this->caPath]);
+    }
+
     /** @return array<string, mixed> */
     private function query(MetricsCredentialsResponse $credentials, string $uid, string $promql): array
     {
-        $decoded = Http::withBasicAuth($credentials->username, $credentials->password)
-            ->timeout(self::REQUEST_TIMEOUT_SECONDS)
+        $decoded = $this->client($credentials)
             ->get("{$credentials->url}/api/datasources/proxy/uid/{$uid}/api/v1/query", ['query' => $promql])
             ->throw()
             ->json();

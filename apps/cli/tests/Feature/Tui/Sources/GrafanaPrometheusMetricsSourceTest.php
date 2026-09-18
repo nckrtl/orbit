@@ -65,6 +65,70 @@ function grafana_empty_vector_response(): array
 }
 
 describe(GrafanaPrometheusMetricsSource::class, function (): void {
+    it('verifies Grafana against the profile root certificate', function (): void {
+        // `metrics.orbit` presents an Orbit CA leaf and PHP verifies against its own bundle, not
+        // the operating system trust store, so without this every call failed its TLS handshake
+        // and the screen showed "No metrics." for every node.
+        $source = new GrafanaPrometheusMetricsSource(
+            grafana_metrics_send(grafana_metrics_credentials(), []),
+            '/home/orbit/.orbit/ca/root.pem',
+        );
+
+        $client = new ReflectionMethod($source, 'client');
+
+        expect($client->invoke($source, grafana_metrics_credentials())->getOptions())
+            ->toHaveKey('verify', '/home/orbit/.orbit/ca/root.pem');
+    });
+
+    it('leaves verification alone when the profile pins no certificate', function (): void {
+        $source = new GrafanaPrometheusMetricsSource(grafana_metrics_send(grafana_metrics_credentials(), []));
+
+        $client = new ReflectionMethod($source, 'client');
+
+        expect($client->invoke($source, grafana_metrics_credentials())->getOptions())
+            ->not->toHaveKey('verify');
+    });
+
+    it('still reports a snapshot when Prometheus refuses an enriching query', function (): void {
+        $instance = '10.44.0.3:9100';
+        Http::fake([
+            'https://metrics.orbit/api/datasources' => Http::response([
+                ['uid' => 'orbit-prometheus', 'type' => 'prometheus'],
+            ]),
+            'https://metrics.orbit/api/datasources/proxy/uid/orbit-prometheus/api/v1/query*' => function ($request) use ($instance) {
+                $query = $request['query'] ?? '';
+
+                // A Prometheus that rejects one query must not blank every Node's metrics.
+                if (str_contains($query, 'node_pressure_')) {
+                    return Http::response([
+                        'status' => 'error',
+                        'errorType' => 'execution',
+                        'error' => 'vector cannot contain metrics with the same labelset',
+                    ], 422);
+                }
+
+                if (str_contains($query, 'node_memory_MemTotal_bytes')) {
+                    return Http::response(grafana_vector_response([
+                        ['metric' => ['__name__' => 'node_memory_MemTotal_bytes', 'instance' => $instance], 'value' => [1.0, '4294967296']],
+                        ['metric' => ['__name__' => 'node_memory_MemAvailable_bytes', 'instance' => $instance], 'value' => [1.0, '1073741824']],
+                        ['metric' => ['__name__' => 'node_boot_time_seconds', 'instance' => $instance], 'value' => [1.0, '1000']],
+                    ]));
+                }
+
+                return Http::response(grafana_empty_vector_response());
+            },
+        ]);
+        $source = new GrafanaPrometheusMetricsSource(grafana_metrics_send(
+            grafana_metrics_credentials(),
+            [grafana_metrics_node(3, 'beast', '10.44.0.3')],
+        ));
+
+        $snapshot = $source->forNode(3);
+
+        expect($snapshot)->not->toBeNull()
+            ->and($snapshot['mem'][1])->toBe(4.0);
+    });
+
     it('answers null and an empty fleet when Metrics is not assigned', function (): void {
         $source = new GrafanaPrometheusMetricsSource(grafana_metrics_send(null, []));
 

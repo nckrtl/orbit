@@ -98,7 +98,7 @@ final class TopCommand extends GatewayCommand
         $sendMany = fn (array $requests, string $responseClass): array => $this->poolSend($connector, $requests, $responseClass, concurrency: 16);
 
         $state = new State;
-        $metricsSource = new GrafanaPrometheusMetricsSource($send);
+        $metricsSource = new GrafanaPrometheusMetricsSource($send, $profile->caPath);
         $scheduler = new RefreshScheduler($metricsSource, $metricsSource, new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
 
         $progress = $this->progressDisplay('Load fleet data');

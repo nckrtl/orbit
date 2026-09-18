@@ -204,20 +204,9 @@ final readonly class PrometheusNodeMetricsMapper
 
         foreach (self::vector($response) as $sample) {
             $instance = self::instanceAddress($sample);
-            $name = self::label($sample, '__name__');
+            $kind = self::label($sample, PrometheusMetricsQueries::PRESSURE_KIND_LABEL);
 
-            if ($instance === null || $name === null) {
-                continue;
-            }
-
-            $kind = match (true) {
-                str_starts_with($name, 'node_pressure_cpu_') => 'cpu',
-                str_starts_with($name, 'node_pressure_memory_') => 'memory',
-                str_starts_with($name, 'node_pressure_io_') => 'io',
-                default => null,
-            };
-
-            if ($kind === null) {
+            if ($instance === null || ! in_array($kind, ['cpu', 'memory', 'io'], strict: true)) {
                 continue;
             }
 

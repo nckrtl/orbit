@@ -43,9 +43,9 @@ describe(PrometheusNodeMetricsMapper::class, function (): void {
             sample(['instance' => '10.44.0.3:9100', 'cpu' => '3'], 0.21),
         ]);
         $pressure = vector([
-            sample(['__name__' => 'node_pressure_cpu_waiting_seconds_total', 'instance' => '10.44.0.3:9100'], 0.4),
-            sample(['__name__' => 'node_pressure_memory_waiting_seconds_total', 'instance' => '10.44.0.3:9100'], 0.0),
-            sample(['__name__' => 'node_pressure_io_waiting_seconds_total', 'instance' => '10.44.0.3:9100'], 1.1),
+            sample(['orbit_pressure' => 'cpu', 'instance' => '10.44.0.3:9100'], 0.4),
+            sample(['orbit_pressure' => 'memory', 'instance' => '10.44.0.3:9100'], 0.0),
+            sample(['orbit_pressure' => 'io', 'instance' => '10.44.0.3:9100'], 1.1),
         ]);
         $disks = vector([
             sample(['__name__' => 'node_filesystem_size_bytes', 'instance' => '10.44.0.3:9100', 'mountpoint' => '/', 'fstype' => 'ext4'], 85_899_345_920),

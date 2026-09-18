@@ -50,9 +50,11 @@ final readonly class GrafanaPrometheusNodeMetricsReader implements NodeMetricsRe
         try {
             $uid = $this->prometheusDatasourceUid($base, $credentials->username, $credentials->password);
             $scalars = $this->query($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::scalars($instance));
-            $cores = $this->query($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::cores($instance));
-            $pressure = $this->query($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::pressure($instance));
-            $disks = $this->query($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::disks($instance));
+            // Only the scalars decide whether the Node has metrics. The rest enrich the snapshot,
+            // so one query this Prometheus refuses must not fail the whole read.
+            $cores = $this->optional($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::cores($instance));
+            $pressure = $this->optional($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::pressure($instance));
+            $disks = $this->optional($base, $credentials->username, $credentials->password, $uid, PrometheusMetricsQueries::disks($instance));
         } catch (Throwable) {
             $this->fail($node);
         }
@@ -97,6 +99,16 @@ final readonly class GrafanaPrometheusNodeMetricsReader implements NodeMetricsRe
         }
 
         throw new \RuntimeException('Grafana has no Prometheus datasource configured.');
+    }
+
+    /** @return array<string, mixed> An enriching query's result, or nothing when Prometheus refuses it. */
+    private function optional(string $base, string $username, #[\SensitiveParameter] string $password, string $uid, string $promql): array
+    {
+        try {
+            return $this->query($base, $username, $password, $uid, $promql);
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     /** @return array<string, mixed> */
