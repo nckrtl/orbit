@@ -1,0 +1,4170 @@
+{
+  "tools": [
+    {
+      "name": "activity-list",
+      "title": "List Activities",
+      "description": "List recent gateway command activity.",
+      "method": "GET",
+      "path": "/api/v1/activities",
+      "path_inputs": [],
+      "query_inputs": [
+        "limit",
+        "request_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "activity-show",
+      "title": "Show an Activity",
+      "description": "Show one gateway command activity attempt.",
+      "method": "GET",
+      "path": "/api/v1/activities/{activity}",
+      "path_inputs": [
+        "activity"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "activity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Activity ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "activity"
+        ]
+      }
+    },
+    {
+      "name": "app-create",
+      "title": "Create an App",
+      "description": "Create an app.",
+      "method": "POST",
+      "path": "/api/v1/apps",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Optional display name"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "Unique app slug"
+          },
+          "repository_url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "default_branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Stored default branch; resolve the remote default when omitted"
+          },
+          "root": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Relative web root"
+          },
+          "defaults": {
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "repository_url",
+          "root"
+        ]
+      }
+    },
+    {
+      "name": "app-destroy",
+      "title": "Remove an App",
+      "description": "Remove an app.",
+      "method": "DELETE",
+      "path": "/api/v1/apps/{app}",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "app-list",
+      "title": "List Apps",
+      "description": "List apps.",
+      "method": "GET",
+      "path": "/api/v1/apps",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "app-process-create-definition",
+      "title": "Create a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "POST",
+      "path": "/api/v1/apps/{app}/process-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Process name"
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "systemd",
+                  "docker"
+                ]
+              },
+              "command": {
+                "type": "array",
+                "maxItems": 64,
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "maxLength": 255,
+                "description": "Conditionally required."
+              },
+              "working_directory": {
+                "type": "string",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "maxLength": 4096
+              },
+              "environment": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "ports": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                }
+              },
+              "volumes": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "maxLength": 4096
+                    },
+                    "target": {
+                      "type": "string",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "maxLength": 4096
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target"
+                  ]
+                }
+              },
+              "restart_policy": {
+                "type": "string",
+                "enum": [
+                  "never",
+                  "on-failure",
+                  "always",
+                  "unless-stopped"
+                ]
+              },
+              "keep_alive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "command"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-process-destroy-definition",
+      "title": "Remove a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "DELETE",
+      "path": "/api/v1/apps/{app}/process-definitions/{process_definition}",
+      "path_inputs": [
+        "app",
+        "process_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "process_definition": {
+            "type": "string",
+            "description": "Process definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "process_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-process-list-definition",
+      "title": "List process definitions",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/apps/{app}/process-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "app-process-show-definition",
+      "title": "Show a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/apps/{app}/process-definitions/{process_definition}",
+      "path_inputs": [
+        "app",
+        "process_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "process_definition": {
+            "type": "string",
+            "description": "Process definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "process_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-process-update-definition",
+      "title": "Replace a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "PUT",
+      "path": "/api/v1/apps/{app}/process-definitions/{process_definition}",
+      "path_inputs": [
+        "app",
+        "process_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "process_definition": {
+            "type": "string",
+            "description": "Process definition name, unique within the App."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Process definition name"
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "systemd",
+                  "docker"
+                ]
+              },
+              "command": {
+                "type": "array",
+                "maxItems": 64,
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "maxLength": 255,
+                "description": "Conditionally required."
+              },
+              "working_directory": {
+                "type": "string",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "maxLength": 4096
+              },
+              "environment": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "ports": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                }
+              },
+              "volumes": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "maxLength": 4096
+                    },
+                    "target": {
+                      "type": "string",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "maxLength": 4096
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target"
+                  ]
+                }
+              },
+              "restart_policy": {
+                "type": "string",
+                "enum": [
+                  "never",
+                  "on-failure",
+                  "always",
+                  "unless-stopped"
+                ]
+              },
+              "keep_alive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "command"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "process_definition",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-schedule-create-definition",
+      "title": "Create a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "POST",
+      "path": "/api/v1/apps/{app}/schedule-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Schedule name"
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "calendar": {
+                "type": "string",
+                "pattern": "^[\\x20-\\x7E]+$",
+                "maxLength": 255
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "maximum": 86400,
+                "minimum": 1
+              }
+            },
+            "required": [
+              "command",
+              "calendar",
+              "timeout_seconds"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-schedule-destroy-definition",
+      "title": "Remove a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "DELETE",
+      "path": "/api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
+      "path_inputs": [
+        "app",
+        "schedule_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "schedule_definition": {
+            "type": "string",
+            "description": "Schedule definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "schedule_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-schedule-list-definition",
+      "title": "List Schedule definitions",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/apps/{app}/schedule-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "app-schedule-show-definition",
+      "title": "Show a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
+      "path_inputs": [
+        "app",
+        "schedule_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "schedule_definition": {
+            "type": "string",
+            "description": "Schedule definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "schedule_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-schedule-update-definition",
+      "title": "Replace a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "PUT",
+      "path": "/api/v1/apps/{app}/schedule-definitions/{schedule_definition}",
+      "path_inputs": [
+        "app",
+        "schedule_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "schedule_definition": {
+            "type": "string",
+            "description": "Schedule definition name, unique within the App."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Schedule definition name"
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "calendar": {
+                "type": "string",
+                "pattern": "^[\\x20-\\x7E]+$",
+                "maxLength": 255
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "maximum": 86400,
+                "minimum": 1
+              }
+            },
+            "required": [
+              "command",
+              "calendar",
+              "timeout_seconds"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "schedule_definition",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-show",
+      "title": "Show an App",
+      "description": "Show an app.",
+      "method": "GET",
+      "path": "/api/v1/apps/{app}",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "app-update",
+      "title": "Update an App",
+      "description": "Update an app.",
+      "method": "PATCH",
+      "path": "/api/v1/apps/{app}",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "New App slug"
+          },
+          "repository_url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "default_branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New stored default branch"
+          },
+          "root": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New relative web root"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "slug",
+          "repository_url",
+          "default_branch",
+          "root"
+        ]
+      }
+    },
+    {
+      "name": "cluster-create",
+      "title": "Create a Cluster",
+      "description": "Create a Cluster.",
+      "method": "POST",
+      "path": "/api/v1/clusters",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Unique Cluster name"
+          },
+          "tld": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Optional development TLD"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "cluster-destroy",
+      "title": "Remove a Cluster",
+      "description": "Remove an empty Cluster.",
+      "method": "DELETE",
+      "path": "/api/v1/clusters/{cluster}",
+      "path_inputs": [
+        "cluster"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster"
+        ]
+      }
+    },
+    {
+      "name": "cluster-list",
+      "title": "List Clusters",
+      "description": "List Clusters.",
+      "method": "GET",
+      "path": "/api/v1/clusters",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cluster-node-add",
+      "title": "Attach a Node to a Cluster",
+      "description": "Attach a Node to a Cluster.",
+      "method": "PUT",
+      "path": "/api/v1/clusters/{cluster}/nodes/{node}",
+      "path_inputs": [
+        "cluster",
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          },
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster",
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "cluster-node-remove",
+      "title": "Detach a Node from a Cluster",
+      "description": "Detach a Node from a Cluster.",
+      "method": "DELETE",
+      "path": "/api/v1/clusters/{cluster}/nodes/{node}",
+      "path_inputs": [
+        "cluster",
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          },
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "force": {
+            "type": "string",
+            "description": "Skip the destructive confirmation prompt"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster",
+          "node",
+          "force"
+        ]
+      }
+    },
+    {
+      "name": "cluster-router-set",
+      "title": "Set the Cluster Router",
+      "description": "Set or replace a Cluster Router.",
+      "method": "PUT",
+      "path": "/api/v1/clusters/{cluster}/router/{node}",
+      "path_inputs": [
+        "cluster",
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          },
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster",
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "cluster-router-unset",
+      "title": "Clear the Cluster Router",
+      "description": "Clear the Router from an inactive Cluster.",
+      "method": "DELETE",
+      "path": "/api/v1/clusters/{cluster}/router",
+      "path_inputs": [
+        "cluster"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          },
+          "force": {
+            "type": "string",
+            "description": "Skip the destructive confirmation prompt"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster",
+          "force"
+        ]
+      }
+    },
+    {
+      "name": "cluster-show",
+      "title": "Show a Cluster",
+      "description": "Show a Cluster.",
+      "method": "GET",
+      "path": "/api/v1/clusters/{cluster}",
+      "path_inputs": [
+        "cluster"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster"
+        ]
+      }
+    },
+    {
+      "name": "cluster-update",
+      "title": "Update a Cluster",
+      "description": "Update a Cluster.",
+      "method": "PATCH",
+      "path": "/api/v1/clusters/{cluster}",
+      "path_inputs": [
+        "cluster"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cluster": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Cluster ID."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New Cluster name"
+          },
+          "tld": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "New development TLD; empty unsets it"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "inactive",
+              "active"
+            ],
+            "description": "New state: inactive or active"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cluster"
+        ]
+      }
+    },
+    {
+      "name": "database-create",
+      "title": "Create a Database connection",
+      "description": "Create a Database connection through the Gateway.",
+      "method": "POST",
+      "path": "/api/v1/database-connections",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "database-describe",
+      "title": "Describe a Database table",
+      "description": "Shows columns for one table on a registered Database connection. An unknown table returns database.table_missing.",
+      "method": "GET",
+      "path": "/api/v1/database-connections/{database_connection}/describe/{table}",
+      "path_inputs": [
+        "database_connection",
+        "table"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          },
+          "table": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "maxLength": 64,
+            "description": "Table name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection",
+          "table"
+        ]
+      }
+    },
+    {
+      "name": "database-destroy",
+      "title": "Remove a Database connection",
+      "description": "Destroy a Database connection.",
+      "method": "DELETE",
+      "path": "/api/v1/database-connections/{database_connection}",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "database-list",
+      "title": "List Database connections",
+      "description": "List registered Database connections.",
+      "method": "GET",
+      "path": "/api/v1/database-connections",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "database-query",
+      "title": "Query a Database connection",
+      "description": "Runs one SQL statement against a registered Database connection. Query is read-only unless the body sets write to true. SQLite runs on the associated Node. Responses omit passwords and replace a password-shaped value with [REDACTED].",
+      "method": "POST",
+      "path": "/api/v1/database-connections/{database_connection}/query",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          },
+          "sql": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SQL statement"
+          },
+          "write": {
+            "type": "boolean",
+            "description": "Allow a write statement"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection",
+          "sql"
+        ]
+      }
+    },
+    {
+      "name": "database-schema",
+      "title": "Show a Database connection schema",
+      "description": "Shows columns for every table on a registered Database connection. SQLite inspection runs on the associated Node.",
+      "method": "GET",
+      "path": "/api/v1/database-connections/{database_connection}/schema",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "database-show",
+      "title": "Show a Database connection",
+      "description": "Show one Database connection.",
+      "method": "GET",
+      "path": "/api/v1/database-connections/{database_connection}",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "database-tables",
+      "title": "List Database connection tables",
+      "description": "Lists tables on a registered Database connection. SQLite inspection runs on the associated Node.",
+      "method": "GET",
+      "path": "/api/v1/database-connections/{database_connection}/tables",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "database-update",
+      "title": "Update a Database connection",
+      "description": "Update a Database connection.",
+      "method": "PATCH",
+      "path": "/api/v1/database-connections/{database_connection}",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "database-user-create",
+      "title": "Create a managed MySQL user",
+      "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
+      "method": "POST",
+      "path": "/api/v1/processes/{process}/database-users",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63,
+            "description": "Database connection slug"
+          },
+          "database": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 32,
+            "description": "Database name to create"
+          },
+          "username": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 32,
+            "description": "Username to create"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Password for the created user"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process",
+          "slug",
+          "database",
+          "username",
+          "password"
+        ]
+      }
+    },
+    {
+      "name": "database-user-list",
+      "title": "database:user:list",
+      "description": "List the recorded users for a registered Database connection.",
+      "method": "GET",
+      "path": "/api/v1/database-connections/{database_connection}/users",
+      "path_inputs": [
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "doctor",
+      "title": "Run Doctor",
+      "description": "Verify registered node state without making repairs.",
+      "method": "POST",
+      "path": "/api/v1/doctor",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "families": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "node",
+                "role",
+                "app",
+                "instance",
+                "schedule",
+                "tool",
+                "process",
+                "firewall",
+                "herdr",
+                "database_connection",
+                "route"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "env-import",
+      "title": "Import the environment file",
+      "description": "Import the workload environment file into stored App instance configuration.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/environment/import",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive App instance ID or the exact Route domain of the App instance."
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Replace stored-key conflicts while retaining other stored keys"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "env-sync",
+      "title": "Synchronize the environment file",
+      "description": "Synchronize stored App instance configuration to the workload environment file.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/environment/sync",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive App instance ID or the exact Route domain of the App instance."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "env-update",
+      "title": "Update an environment value",
+      "description": "Update one stored App instance environment value without changing the workload file.",
+      "method": "PUT",
+      "path": "/api/v1/instances/{instance}/environment/{key}",
+      "path_inputs": [
+        "instance",
+        "key"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive App instance ID or the exact Route domain of the App instance."
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,254}$",
+            "description": "Environment key."
+          },
+          "value": {
+            "type": "string",
+            "description": "Exact string value; quote empty, multiline, or placeholder values for the shell"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "firewall-allow",
+      "title": "Allow a firewall rule",
+      "description": "Allow one named UFW rule through the gateway.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/firewall-rules/allow",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Stable firewall rule name"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "tcp",
+              "udp"
+            ],
+            "description": "Optional tcp or udp protocol"
+          },
+          "port": {
+            "type": "string",
+            "maxLength": 11,
+            "description": "Destination port or ordered range"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "name",
+          "port"
+        ]
+      }
+    },
+    {
+      "name": "firewall-deny",
+      "title": "Deny a firewall rule",
+      "description": "Deny one named UFW rule through the gateway.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/firewall-rules/deny",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Stable firewall rule name"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "tcp",
+              "udp"
+            ],
+            "description": "Optional tcp or udp protocol"
+          },
+          "port": {
+            "type": "string",
+            "maxLength": 11,
+            "description": "Destination port or ordered range"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "name",
+          "port"
+        ]
+      }
+    },
+    {
+      "name": "firewall-list",
+      "title": "List firewall rules",
+      "description": "List named firewall rules for one node.",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}/firewall-rules",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "firewall-remove",
+      "title": "Remove a firewall rule",
+      "description": "Remove one named UFW rule through the gateway.",
+      "method": "DELETE",
+      "path": "/api/v1/nodes/{node}/firewall-rules/{firewall_rule}",
+      "path_inputs": [
+        "node",
+        "firewall_rule"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "firewall_rule": {
+            "type": "string",
+            "description": "Firewall rule name, unique on the Node."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "firewall_rule"
+        ]
+      }
+    },
+    {
+      "name": "gateway-status",
+      "title": "Show Gateway status",
+      "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.",
+      "method": "GET",
+      "path": "/api/v1/gateway/status",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-trust",
+      "title": "Fetch the root CA certificate",
+      "description": "Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.",
+      "method": "GET",
+      "path": "/api/v1/ca/root",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "herdr-observe",
+      "title": "Issue an observation grant",
+      "description": "Issue one short-lived receive-only Herdr observation grant.",
+      "method": "POST",
+      "path": "/api/v1/herdr/sessions/{session}/observation-grants",
+      "path_inputs": [
+        "session"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Herdr session ID."
+          },
+          "pane": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "maxLength": 64,
+            "description": "Recorded pane identity"
+          },
+          "terminal": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "maxLength": 64,
+            "description": "Expected terminal identity"
+          },
+          "cols": {
+            "type": "integer",
+            "maximum": 400,
+            "minimum": 20,
+            "description": "Viewport columns"
+          },
+          "rows": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 5,
+            "description": "Viewport rows"
+          },
+          "origin": {
+            "type": "string",
+            "pattern": "^https:\\/\\/[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[1-9][0-9]{0,4})?$",
+            "maxLength": 255,
+            "description": "HTTPS browser origin allowed to use the grant"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "session",
+          "pane",
+          "terminal",
+          "cols",
+          "rows",
+          "origin"
+        ]
+      }
+    },
+    {
+      "name": "herdr-session-adopt",
+      "title": "herdr:session:adopt",
+      "description": "Adopt an existing Herdr session for observation without taking over its service lifecycle.",
+      "method": "POST",
+      "path": "/api/v1/herdr/sessions/adopt",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 48,
+            "description": "Existing named Herdr session"
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]*$",
+            "maxLength": 32,
+            "description": "Unix user that owns the Herdr session and socket"
+          },
+          "publish_observer": {
+            "type": "boolean",
+            "description": "Publish the private receive-only observer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "session",
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "herdr-session-create",
+      "title": "Create a Herdr session",
+      "description": "Create or ensure one named Herdr session on a managed Node.",
+      "method": "POST",
+      "path": "/api/v1/herdr/sessions",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "session": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 48,
+            "description": "Named Herdr session"
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]*$",
+            "maxLength": 32,
+            "description": "Unix user that owns the Herdr session and socket"
+          },
+          "publish_observer": {
+            "type": "boolean",
+            "description": "Publish the private receive-only observer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "session",
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "herdr-session-destroy",
+      "title": "Remove a Herdr session",
+      "description": "Remove one Herdr session from Orbit and destroy its Process only when Orbit manages it.",
+      "method": "DELETE",
+      "path": "/api/v1/herdr/sessions/{session}",
+      "path_inputs": [
+        "session"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Herdr session ID."
+          },
+          "accept_termination": {
+            "type": "boolean",
+            "description": "Accept termination of live panes"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "session"
+        ]
+      }
+    },
+    {
+      "name": "herdr-session-list",
+      "title": "List Herdr sessions",
+      "description": "List named Herdr sessions on one managed Node.",
+      "method": "GET",
+      "path": "/api/v1/herdr/sessions",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "herdr-session-restart",
+      "title": "Restart a Herdr session",
+      "description": "Restart one named Herdr session on a managed Node.",
+      "method": "POST",
+      "path": "/api/v1/herdr/sessions/{session}/restart",
+      "path_inputs": [
+        "session"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Herdr session ID."
+          },
+          "handoff": {
+            "type": "boolean",
+            "description": "Use Herdr live handoff when the inspected server reports support"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "session"
+        ]
+      }
+    },
+    {
+      "name": "herdr-session-show",
+      "title": "Show a Herdr session",
+      "description": "Show one named Herdr session on a managed Node.",
+      "method": "GET",
+      "path": "/api/v1/herdr/sessions/{session}",
+      "path_inputs": [
+        "session"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Herdr session ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "session"
+        ]
+      }
+    },
+    {
+      "name": "instance-clone",
+      "title": "Clone an App instance",
+      "description": "Clone a candidate into a prepared production App instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
+      "method": "POST",
+      "path": "/api/v1/instances/{candidate}/clone",
+      "path_inputs": [
+        "candidate"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "candidate": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric ID of the candidate App instance."
+          },
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Target production AppInstance name"
+          },
+          "preview_name": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Required preview name to combine with the production Node TLD"
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Optional target branch; omission inherits the candidate branch"
+          },
+          "sqlite_source_path": {
+            "type": "string",
+            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+            "maxLength": 4096,
+            "description": "Optional SQLite database path on the candidate"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "candidate",
+          "node_id",
+          "name",
+          "preview_name"
+        ]
+      }
+    },
+    {
+      "name": "instance-create",
+      "title": "Create an App instance",
+      "description": "Create a development App instance on an app-dev Node.\n\nCreates a development App instance. New production App instances require a candidate. Use instance:clone.",
+      "method": "POST",
+      "path": "/api/v1/instances",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "AppInstance name; default is reserved for the default development source"
+          },
+          "root": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Optional relative web-root override"
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Optional explicit Route domain"
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Optional explicit source branch"
+          },
+          "recover_source_profile": {
+            "type": "boolean",
+            "description": "Adopt complete source evidence for a legacy incomplete checkpoint"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app_id",
+          "node_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "instance-database-add",
+      "title": "Attach a Database connection",
+      "description": "Add a Database connection on an App instance and write stored environment keys.",
+      "method": "PUT",
+      "path": "/api/v1/instances/{instance}/database-connections/{database_connection}",
+      "path_inputs": [
+        "instance",
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive App instance ID or the exact Route domain of the App instance."
+          },
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          },
+          "prefix": {
+            "type": "string",
+            "pattern": "",
+            "description": "Environment key prefix; defaults to DB"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "instance-database-remove",
+      "title": "Detach a Database connection",
+      "description": "Remove a Database connection from an App instance and clear stored environment keys.",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}/database-connections/{database_connection}",
+      "path_inputs": [
+        "instance",
+        "database_connection"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "string",
+            "description": "Positive App instance ID or the exact Route domain of the App instance."
+          },
+          "database_connection": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
+          },
+          "prefix": {
+            "type": "string",
+            "pattern": "",
+            "description": "Environment key prefix; defaults to DB"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "database_connection"
+        ]
+      }
+    },
+    {
+      "name": "instance-deploy",
+      "title": "Deploy an App instance",
+      "description": "Deploy the configured branch of a production App instance.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/deploy",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-deploy-step-create",
+      "title": "Create a deploy step",
+      "description": "Create a named deploy step on a production App instance.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/deploy-steps",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-deploy-step-destroy",
+      "title": "Remove a deploy step",
+      "description": "Destroy a named deploy step on a production App instance.",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}/deploy-steps/{step}",
+      "path_inputs": [
+        "instance",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "step"
+        ]
+      }
+    },
+    {
+      "name": "instance-deploy-step-list",
+      "title": "List deploy steps",
+      "description": "List deploy steps on a production App instance.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/deploy-steps",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-deploy-step-update",
+      "title": "Update a deploy step",
+      "description": "Update a named deploy step on a production App instance.",
+      "method": "PATCH",
+      "path": "/api/v1/instances/{instance}/deploy-steps/{step}",
+      "path_inputs": [
+        "instance",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "step"
+        ]
+      }
+    },
+    {
+      "name": "instance-deployment-list",
+      "title": "instance:deployment:list",
+      "description": "List recorded deployment history for a production App instance, newest first.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/deployments",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-deployment-show",
+      "title": "instance:deployment:show",
+      "description": "Show one recorded deployment, its phases and steps, and its log.",
+      "method": "GET",
+      "path": "/api/v1/deployments/{deployment}",
+      "path_inputs": [
+        "deployment"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "deployment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "deployment"
+        ]
+      }
+    },
+    {
+      "name": "instance-destroy",
+      "title": "Remove an App instance",
+      "description": "Destroy an App instance.",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "force": {
+            "type": "string",
+            "description": "Delete dirty or unpublished source after identity checks"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-list",
+      "title": "List App instances",
+      "description": "List instances.",
+      "method": "GET",
+      "path": "/api/v1/instances",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "instance-register",
+      "title": "Register an App instance",
+      "description": "Adopt the current Git source as a managed App instance.",
+      "method": "POST",
+      "path": "/api/v1/instances/register",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source_path": {
+            "type": "string",
+            "pattern": "^\\/[^\\x00-\\x1f]*$",
+            "maxLength": 4096
+          },
+          "include_worktrees": {
+            "type": "boolean",
+            "description": "Adopt the checkout and every linked worktree"
+          },
+          "app_id": {
+            "type": "integer"
+          },
+          "app_name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Confirmed App display name"
+          },
+          "app_slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "Confirmed App slug"
+          },
+          "default_branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Confirmed App default branch"
+          },
+          "instance_name": {
+            "type": "string",
+            "maxLength": 63
+          },
+          "root": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Confirmed App root or existing-App root override"
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Optional explicit Route domain"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "source_path"
+        ]
+      }
+    },
+    {
+      "name": "instance-release-list",
+      "title": "List retained releases",
+      "description": "List retained production App instance releases.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/releases",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-rollback",
+      "title": "Roll back an App instance",
+      "description": "Select one retained production App instance release.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/rollback",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": true,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "release": {
+            "type": "string",
+            "description": "Retained release name to select"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "release"
+        ]
+      }
+    },
+    {
+      "name": "instance-show",
+      "title": "Show an App instance",
+      "description": "Show an instance.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-transfer",
+      "title": "Transfer an App instance",
+      "description": "Transfer a development App instance to another app-dev Node.\n\nTransfer moves one active development App instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.\n\nOrbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.\n\nUse --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/transfer",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Optional destination AppInstance name"
+          },
+          "sqlite_source_path": {
+            "type": "string",
+            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+            "maxLength": 4096,
+            "description": "Optional SQLite database path on the source"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "instance-update",
+      "title": "Update the deployment branch",
+      "description": "Update a production App instance deployment branch.",
+      "method": "PATCH",
+      "path": "/api/v1/instances/{instance}",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "metrics-credentials",
+      "title": "Show Metrics credentials",
+      "description": "Show Metrics credentials.",
+      "method": "GET",
+      "path": "/api/v1/metrics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "metrics-credentials-reset",
+      "title": "Reset Metrics credentials",
+      "description": "Reset Metrics credentials",
+      "method": "POST",
+      "path": "/api/v1/metrics/credentials/reset",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "metrics-disable",
+      "title": "Disable Metrics",
+      "description": "Disable Metrics.",
+      "method": "DELETE",
+      "path": "/api/v1/metrics",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "string",
+            "description": "Skip confirmation"
+          },
+          "purge_data": {
+            "type": "string",
+            "description": "Delete Metrics data"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "metrics-enable",
+      "title": "Enable Metrics",
+      "description": "Enable Metrics on one node.",
+      "method": "POST",
+      "path": "/api/v1/metrics",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "metrics-exporter-disable",
+      "title": "Disable an exporter",
+      "description": "Disable the Metrics exporter on a node.",
+      "method": "DELETE",
+      "path": "/api/v1/metrics/exporters/{node}",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "metrics-exporter-enable",
+      "title": "Enable an exporter",
+      "description": "Enable the Metrics exporter on a node.",
+      "method": "PUT",
+      "path": "/api/v1/metrics/exporters/{node}",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "metrics-status",
+      "title": "Show Metrics status",
+      "description": "Show Metrics status.",
+      "method": "GET",
+      "path": "/api/v1/metrics/status",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "node-access-add",
+      "title": "Grant Node access",
+      "description": "Allow one node to run commands on another node.",
+      "method": "PUT",
+      "path": "/api/v1/nodes/{serving_node}/access/{consumer_node}",
+      "path_inputs": [
+        "serving_node",
+        "consumer_node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "serving_node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric ID of the Node that receives commands."
+          },
+          "consumer_node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric ID of the Node that sends commands."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "serving_node",
+          "consumer_node"
+        ]
+      }
+    },
+    {
+      "name": "node-access-remove",
+      "title": "Revoke Node access",
+      "description": "Remove one node access edge from the active gateway.",
+      "method": "DELETE",
+      "path": "/api/v1/nodes/{serving_node}/access/{consumer_node}",
+      "path_inputs": [
+        "serving_node",
+        "consumer_node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "serving_node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric ID of the Node that receives commands."
+          },
+          "consumer_node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric ID of the Node that sends commands."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "serving_node",
+          "consumer_node"
+        ]
+      }
+    },
+    {
+      "name": "node-add",
+      "title": "Add a Node",
+      "description": "Add a node to the fleet: provision a new machine or converge an existing one.",
+      "method": "POST",
+      "path": "/api/v1/nodes",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "Node name"
+          },
+          "public_ssh_host": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Conditionally required."
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "linux"
+            ],
+            "description": "Node platform (linux only)"
+          },
+          "architecture": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Node machine architecture; defaults to the architecture observed on the machine and must match it when given"
+          },
+          "tld": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$",
+            "maxLength": 253,
+            "description": "Node TLD; required for production clone preview domains"
+          },
+          "public_ssh_port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "user": {
+            "type": "string",
+            "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+          },
+          "orbit_user": {
+            "type": "string",
+            "description": "Orbit-managed system user; defaults to orbit for a new node"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "gateway",
+                "vpn",
+                "router",
+                "ingress",
+                "app-dev",
+                "app-prod",
+                "metrics",
+                "database"
+              ]
+            }
+          },
+          "cluster_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "wireguard_ip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable WireGuard IP address"
+          },
+          "lan_ip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "ipv4",
+            "description": "Optional Cluster-local LAN IPv4 address"
+          },
+          "wireguard_endpoint_override": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "dns_server_override": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host_key_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+            "description": "Approved SSH SHA256 host key fingerprint"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "node-list",
+      "title": "List Nodes",
+      "description": "List nodes registered with the active gateway.",
+      "method": "GET",
+      "path": "/api/v1/nodes",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "node-metrics",
+      "title": "node:metrics",
+      "description": "Show one synchronous metrics snapshot for a node: cores, memory, swap, load, uptime, pressure, and disks.",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}/metrics",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "node-remove",
+      "title": "Remove a Node",
+      "description": "Remove a node registered with the active gateway.",
+      "method": "DELETE",
+      "path": "/api/v1/nodes/{node}",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "force": {
+            "type": "string",
+            "description": "Skip the destructive confirmation prompt"
+          },
+          "offline": {
+            "type": "string",
+            "description": "Shed roles and remove a node Orbit cannot reach"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "node-role-add",
+      "title": "Add a role to a Node",
+      "description": "Add one role assignment to a node.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/roles",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "vpn",
+              "router",
+              "ingress",
+              "app-dev",
+              "app-prod",
+              "metrics",
+              "database"
+            ],
+            "description": "Role name"
+          },
+          "converge_existing": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "role"
+        ]
+      }
+    },
+    {
+      "name": "node-role-list",
+      "title": "List the roles of a Node",
+      "description": "List role assignments for one node.",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}/roles",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "node-role-remove",
+      "title": "Remove a role from a Node",
+      "description": "Remove one role assignment from a node.",
+      "method": "DELETE",
+      "path": "/api/v1/nodes/{node}/roles/{role}",
+      "path_inputs": [
+        "node",
+        "role"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "vpn",
+              "router",
+              "ingress",
+              "app-dev",
+              "app-prod",
+              "metrics",
+              "database"
+            ],
+            "description": "Role name"
+          },
+          "force": {
+            "type": "string",
+            "description": "Confirm destructive role removal and dependent cleanup"
+          },
+          "purge_data": {
+            "type": "string",
+            "description": "Request supported role-owned data cleanup"
+          },
+          "offline": {
+            "type": "string",
+            "description": "Remove the role from a node Orbit cannot reach"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "role"
+        ]
+      }
+    },
+    {
+      "name": "node-settings",
+      "title": "Update Node settings",
+      "description": "Update typed storage settings on a node.",
+      "method": "PATCH",
+      "path": "/api/v1/nodes/{node}/settings",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "node-show",
+      "title": "Show a Node",
+      "description": "Show a node registered with the active gateway.",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "process-create",
+      "title": "Create a Process",
+      "description": "Create one systemd service, Docker container process, or App process definition.",
+      "method": "POST",
+      "path": "/api/v1/processes",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "node"
+            ]
+          },
+          "target_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63,
+            "description": "Process name"
+          },
+          "preset": {
+            "type": "string",
+            "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "systemd",
+              "docker"
+            ],
+            "description": "systemd or docker"
+          },
+          "command": {
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "description": "One command argument; repeat for each argv item"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+            "maxLength": 255,
+            "description": "Conditionally required."
+          },
+          "working_directory": {
+            "type": "string",
+            "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+            "maxLength": 4096,
+            "description": "Runtime working directory"
+          },
+          "environment": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "description": "Docker NAME=VALUE; repeat as needed"
+          },
+          "ports": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+            }
+          },
+          "volumes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                  "maxLength": 4096
+                },
+                "target": {
+                  "type": "string",
+                  "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                  "maxLength": 4096
+                },
+                "read_only": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "source",
+                "target"
+              ]
+            }
+          },
+          "restart_policy": {
+            "type": "string",
+            "enum": [
+              "never",
+              "on-failure",
+              "always",
+              "unless-stopped"
+            ]
+          },
+          "start": {
+            "type": "boolean",
+            "description": "Start after adding"
+          },
+          "keep_alive": {
+            "type": "boolean",
+            "description": "Keep running through app-dev idle hibernation"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target_type",
+          "target_id",
+          "name",
+          "runtime",
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "process-destroy",
+      "title": "Remove a Process",
+      "description": "Destroy one process or App process definition.",
+      "method": "DELETE",
+      "path": "/api/v1/processes/{process}",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process"
+        ]
+      }
+    },
+    {
+      "name": "process-list",
+      "title": "List Processes",
+      "description": "List processes for one App instance or Node, or process definitions for one App.",
+      "method": "GET",
+      "path": "/api/v1/processes",
+      "path_inputs": [],
+      "query_inputs": [
+        "target_type",
+        "target_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "node"
+            ]
+          },
+          "target_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target_type",
+          "target_id"
+        ]
+      }
+    },
+    {
+      "name": "process-logs",
+      "title": "Read Process logs",
+      "description": "Return one bounded process log tail.",
+      "method": "GET",
+      "path": "/api/v1/processes/{process}/logs",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [
+        "lines",
+        "follow"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          },
+          "lines": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "follow": {
+            "type": "string",
+            "description": "Must be absent."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process"
+        ]
+      }
+    },
+    {
+      "name": "process-restart",
+      "title": "Restart a Process",
+      "description": "Restart one process.",
+      "method": "POST",
+      "path": "/api/v1/processes/{process}/restart",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process"
+        ]
+      }
+    },
+    {
+      "name": "process-start",
+      "title": "Start a Process",
+      "description": "Start one process.",
+      "method": "POST",
+      "path": "/api/v1/processes/{process}/start",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process"
+        ]
+      }
+    },
+    {
+      "name": "process-stop",
+      "title": "Stop a Process",
+      "description": "Stop one process.",
+      "method": "POST",
+      "path": "/api/v1/processes/{process}/stop",
+      "path_inputs": [
+        "process"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "process": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Process ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "process"
+        ]
+      }
+    },
+    {
+      "name": "realtime-show",
+      "title": "Show the Reverb connection",
+      "description": "Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.",
+      "method": "GET",
+      "path": "/api/v1/realtime",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "route-create",
+      "title": "Create a Route",
+      "description": "Create an explicit Route.",
+      "method": "POST",
+      "path": "/api/v1/routes",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Route domain"
+          },
+          "publication": {
+            "type": "string",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "description": "Publication intent"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "upstream": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "Loopback HTTP URL for a custom proxy Route"
+          },
+          "process_id": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "domain",
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "route-destroy",
+      "title": "Remove a Route",
+      "description": "Remove a Route.",
+      "method": "DELETE",
+      "path": "/api/v1/routes/{route}",
+      "path_inputs": [
+        "route"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Route ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "route"
+        ]
+      }
+    },
+    {
+      "name": "route-list",
+      "title": "List Routes",
+      "description": "List Routes.",
+      "method": "GET",
+      "path": "/api/v1/routes",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "route-show",
+      "title": "Show a Route",
+      "description": "Show a Route.",
+      "method": "GET",
+      "path": "/api/v1/routes/{route}",
+      "path_inputs": [
+        "route"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Route ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "route"
+        ]
+      }
+    },
+    {
+      "name": "route-target-set",
+      "title": "Set the Route target",
+      "description": "Set the configured Route target or a complete production target set.",
+      "method": "PUT",
+      "path": "/api/v1/routes/{route}/target",
+      "path_inputs": [
+        "route"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Route ID."
+          },
+          "app_instance_id": {
+            "type": "integer",
+            "description": "Required when `targets` is absent."
+          },
+          "targets": {
+            "type": "array",
+            "description": "Required when `app_instance_id` is absent.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "dispositions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "app_instance_id": {
+                  "type": "integer"
+                },
+                "route_id": {
+                  "type": "integer"
+                },
+                "remove": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "app_instance_id"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "route"
+        ]
+      }
+    },
+    {
+      "name": "route-target-unset",
+      "title": "Clear the Route target",
+      "description": "Clear the configured Route target.",
+      "method": "DELETE",
+      "path": "/api/v1/routes/{route}/target",
+      "path_inputs": [
+        "route"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Route ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "route"
+        ]
+      }
+    },
+    {
+      "name": "route-update",
+      "title": "Update a Route",
+      "description": "Update a Route.",
+      "method": "PATCH",
+      "path": "/api/v1/routes/{route}",
+      "path_inputs": [
+        "route"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Route ID."
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 253,
+            "description": "New explicit domain"
+          },
+          "publication": {
+            "type": "string",
+            "enum": [
+              "private",
+              "public"
+            ],
+            "description": "New publication intent"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "route",
+          "domain",
+          "publication"
+        ]
+      }
+    },
+    {
+      "name": "schedule-create",
+      "title": "Create a Schedule",
+      "description": "Create one Node or App instance Schedule, or an App Schedule definition.",
+      "method": "POST",
+      "path": "/api/v1/schedules",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "node",
+              "instance"
+            ]
+          },
+          "target_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63,
+            "description": "Schedule name"
+          },
+          "calendar": {
+            "type": "string",
+            "pattern": "^[\\x20-\\x7E]+$",
+            "maxLength": 255,
+            "description": "Native systemd calendar expression"
+          },
+          "command": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Command to run"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 86400,
+            "minimum": 1
+          },
+          "start": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "target_type",
+          "target_id",
+          "name",
+          "calendar",
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "schedule-destroy",
+      "title": "Remove a Schedule",
+      "description": "Destroy one Schedule or App Schedule definition through the Gateway.",
+      "method": "DELETE",
+      "path": "/api/v1/schedules/{schedule}",
+      "path_inputs": [
+        "schedule"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Schedule UUID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schedule"
+        ]
+      }
+    },
+    {
+      "name": "schedule-enable",
+      "title": "Enable a Schedule",
+      "description": "Enable and start one installed App instance Schedule timer.",
+      "method": "POST",
+      "path": "/api/v1/schedules/{schedule}/activate",
+      "path_inputs": [
+        "schedule"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Schedule UUID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schedule"
+        ]
+      }
+    },
+    {
+      "name": "schedule-list",
+      "title": "List Schedules",
+      "description": "List authorized Schedules or App Schedule definitions.",
+      "method": "GET",
+      "path": "/api/v1/schedules",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "schedule-logs",
+      "title": "Read Schedule logs",
+      "description": "Return one bounded Schedule log tail.",
+      "method": "GET",
+      "path": "/api/v1/schedules/{schedule}/logs",
+      "path_inputs": [
+        "schedule"
+      ],
+      "query_inputs": [
+        "lines"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Schedule UUID."
+          },
+          "lines": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schedule"
+        ]
+      }
+    },
+    {
+      "name": "schedule-run",
+      "title": "Run a Schedule",
+      "description": "Run one Schedule without changing its timer state.",
+      "method": "POST",
+      "path": "/api/v1/schedules/{schedule}/run",
+      "path_inputs": [
+        "schedule"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Schedule UUID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schedule"
+        ]
+      }
+    },
+    {
+      "name": "schedule-show",
+      "title": "Show a Schedule",
+      "description": "Show one authorized Schedule or App Schedule definition.",
+      "method": "GET",
+      "path": "/api/v1/schedules/{schedule}",
+      "path_inputs": [
+        "schedule"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Schedule UUID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "schedule"
+        ]
+      }
+    },
+    {
+      "name": "tool-install",
+      "title": "Install a Tool",
+      "description": "Install a tool through the gateway.",
+      "method": "POST",
+      "path": "/api/v1/tools",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "manager": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Tool manager name"
+          },
+          "package": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Manager-native package coordinate"
+          },
+          "version_constraint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "manager",
+          "package"
+        ]
+      }
+    },
+    {
+      "name": "tool-list",
+      "title": "List Tools",
+      "description": "List tools for a node.",
+      "method": "GET",
+      "path": "/api/v1/tools",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "tool-manager-list",
+      "title": "List Tool Managers",
+      "description": "List tool managers for a node.",
+      "method": "GET",
+      "path": "/api/v1/tool-managers",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "tool-remove",
+      "title": "Remove a Tool",
+      "description": "Remove one tool.",
+      "method": "DELETE",
+      "path": "/api/v1/tools/{tool}",
+      "path_inputs": [
+        "tool"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Tool ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "tool"
+        ]
+      }
+    },
+    {
+      "name": "tool-show",
+      "title": "Show a Tool",
+      "description": "Show a tool.",
+      "method": "GET",
+      "path": "/api/v1/tools/{tool}",
+      "path_inputs": [
+        "tool"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Tool ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "tool"
+        ]
+      }
+    },
+    {
+      "name": "tool-update",
+      "title": "Update a Tool",
+      "description": "Update one tool.",
+      "method": "POST",
+      "path": "/api/v1/tools/{tool}/update",
+      "path_inputs": [
+        "tool"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Tool ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "tool"
+        ]
+      }
+    }
+  ]
+}

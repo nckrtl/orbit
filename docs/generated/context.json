@@ -2290,6 +2290,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0086-offer-the-api-as-mcp-tools.md",
+            "title": "ADR 0086: Offer the API as MCP tools",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0085",
+                "0086"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2403,7 +2426,8 @@
                 "0082",
                 "0083",
                 "0084",
-                "0085"
+                "0085",
+                "0086"
             ]
         },
         {
@@ -2996,6 +3020,25 @@
             "governing_adrs": [
                 "0009"
             ]
+        },
+        {
+            "path": "docs/reference/mcp.mdx",
+            "title": "MCP server",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/metrics.md",
