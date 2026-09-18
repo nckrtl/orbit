@@ -8386,6 +8386,175 @@
         ]
       }
     },
+    "/api/v1/metrics/nodes": {
+      "get": {
+        "operationId": "metrics-node-list",
+        "summary": "List Node metrics",
+        "tags": [
+          "Metrics"
+        ],
+        "description": "List one metrics snapshot per Node, read from the Metrics role Prometheus.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "node_id": {
+                            "type": "integer"
+                          },
+                          "node_name": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Why an unavailable Node has no metrics, such as `no_exporter` or `no_samples`. Null when `available` is true."
+                          },
+                          "cores": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "description": "Per-core busy ratio from 0 to 1. Empty when unavailable."
+                          },
+                          "memory": {
+                            "type": "object",
+                            "properties": {
+                              "used": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "swap": {
+                            "type": "object",
+                            "properties": {
+                              "used": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "load": {
+                            "type": "object",
+                            "properties": {
+                              "one": {
+                                "type": "number"
+                              },
+                              "five": {
+                                "type": "number"
+                              },
+                              "fifteen": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "uptime_seconds": {
+                            "type": "integer"
+                          },
+                          "pressure": {
+                            "type": "object",
+                            "properties": {
+                              "cpu": {
+                                "type": "object",
+                                "properties": {
+                                  "some_avg10": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              "memory": {
+                                "type": "object",
+                                "properties": {
+                                  "some_avg10": {
+                                    "type": "number"
+                                  }
+                                }
+                              },
+                              "io": {
+                                "type": "object",
+                                "properties": {
+                                  "some_avg10": {
+                                    "type": "number"
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "disks": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "mount": {
+                                  "type": "string"
+                                },
+                                "used": {
+                                  "type": "integer"
+                                },
+                                "total": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/metrics/nodes\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Metrics\\ListMetricsNodesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListMetricsNodesRequest())->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/metrics/status": {
       "get": {
         "operationId": "metrics-status",

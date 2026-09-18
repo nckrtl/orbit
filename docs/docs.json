@@ -262,6 +262,7 @@
               "POST /api/v1/metrics/credentials/reset",
               "DELETE /api/v1/metrics/exporters/{node}",
               "PUT /api/v1/metrics/exporters/{node}",
+              "GET /api/v1/metrics/nodes",
               "GET /api/v1/metrics/status"
             ]
           },
