@@ -9,7 +9,8 @@ use App\Models\Node;
 interface NodeMetricsReader
 {
     /**
-     * Reads one metrics snapshot for the Node from the Metrics role's Prometheus.
+     * Captures one synchronous metrics snapshot from the Node, decoded from
+     * its `orbit internal:node-metrics` JSON output.
      *
      * @return array<string, mixed>
      */

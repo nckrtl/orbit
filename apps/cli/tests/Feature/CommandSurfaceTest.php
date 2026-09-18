@@ -128,7 +128,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'metrics:enable',
         'metrics:exporter:disable',
         'metrics:exporter:enable',
-        'metrics:node:list',
         'metrics:status',
         'node:access:add',
         'node:access:remove',
@@ -305,6 +304,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
             'herdr:session:restart',
             'herdr:session:show',
             'internal:database-local',
+            'internal:node-metrics',
         ]);
 });
 
