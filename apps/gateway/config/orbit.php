@@ -25,9 +25,11 @@ return [
         characters: '.',
     ),
     'command_timeout' => 900.0,
-    'agentation' => [
-        // Absolute path of a wrapper the antigravity-watch preset runs instead of Antigravity print mode.
-        'watch_command' => env('ORBIT_AGENTATION_WATCH_COMMAND'),
+    'websocket' => [
+        'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/nckrtl/orbit-reverb.git'),
+        'ref' => env(key: 'ORBIT_WEBSOCKET_REF', default: 'main'),
+        'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
+        'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
     ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),

@@ -16,9 +16,6 @@ use InvalidArgumentException;
 
 final readonly class SystemdProcessRenderer
 {
-    /** @param string|null $antigravityWatchCommand Wrapper the antigravity-watch preset runs instead of Antigravity print mode. */
-    public function __construct(private ?string $antigravityWatchCommand = null) {}
-
     public static function viteEnvironmentPath(int $instanceId): string
     {
         if ($instanceId < 1) {
@@ -65,7 +62,7 @@ final readonly class SystemdProcessRenderer
         } elseif ($process->isAgentationMcp()) {
             $command = AgentationMcpPreset::command();
         } elseif ($process->isAntigravityWatch()) {
-            $command = AntigravityWatchPreset::command($this->antigravityWatchCommand);
+            $command = AntigravityWatchPreset::command();
         }
         $environmentFileLine = is_string($environmentFile) && $environmentFile !== ''
             ? ['EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile)]

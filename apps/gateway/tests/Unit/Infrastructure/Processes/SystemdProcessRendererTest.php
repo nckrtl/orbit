@@ -304,27 +304,6 @@ it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): 
         ->toContain('"--port=${ORBIT_AGENTATION_PORT}"');
 });
 
-it('runs the configured wrapper as the Antigravity watcher command', function (): void {
-    $process = new Process([
-        'name' => 'watch',
-        'runtime_config' => ['preset' => 'antigravity-watch', 'command' => ['/usr/local/bin/agy']],
-        'working_directory' => '/apps/commander',
-        'restart_policy' => 'always',
-    ]);
-    $process->id = 24;
-    $target = new ProcessTarget(
-        node: new Node(['name' => 'beast']),
-        user: 'orbit',
-        checkoutPath: '/apps/commander',
-        appInstance: new AppInstance(['agentation_port' => 4747]),
-        routeDomain: 'commander.test',
-    );
-
-    expect(new SystemdProcessRenderer('/usr/local/bin/orbit-agentation-watch')->render($process, $target))
-        ->toContain('"/usr/local/bin/orbit-agentation-watch"')
-        ->not->toContain('"/usr/local/bin/agy"');
-});
-
 it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): void {
     $instance = new AppInstance(['agentation_port' => 4747]);
     $process = new Process([
