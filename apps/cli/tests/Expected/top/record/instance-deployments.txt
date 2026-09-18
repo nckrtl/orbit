@@ -1,8 +1,8 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮  ‹ back  App instance: charlie-shop/dev                                                            
 │  Dashboard       │╭ Properties ──────────────────────────╮╭ Processes ─────────────╮╭ Schedules ─────────────────────╮
-│  Nodes         1 ││ Name               dev               ││  Name        Runtim Sta││  Name      Calendar       Last │
-│  Apps          1 ││ App                charlie-shop      ││› horizon     system act││› backup    0 3 * * *      never│
+│  Nodes         1 ││ Name               dev               ││  Name        Status CPU││  Name      Calendar       Last │
+│  Apps          1 ││ App                charlie-shop      ││› horizon     active  — ││› backup    0 3 * * *      never│
 │› Instances     1 ││ Node               beast             ││                        ││                                │
 │  Processes     1 ││ Environment        production        ││                        ││                                │
 │  Schedules     1 ││ Domain             charlie-shop.test ││                        ││                                │
