@@ -56,6 +56,23 @@ final readonly class DatabaseConnectionEnvProjection
         [$host, $port] = $this->resolveEndpoint($connection, $instance);
         $values[$this->key($prefix, 'HOST')] = $host;
         $values[$this->key($prefix, 'PORT')] = (string) $port;
+
+        if (! $connection->driver->requiresCredentials()) {
+            if (is_string($connection->database)) {
+                $values[$this->key($prefix, 'DATABASE')] = $connection->database;
+            }
+
+            if (is_string($connection->username)) {
+                $values[$this->key($prefix, 'USERNAME')] = $connection->username;
+            }
+
+            if (is_string($connection->password)) {
+                $values[$this->key($prefix, 'PASSWORD')] = $connection->password;
+            }
+
+            return $this->result($values, $managed, $host, $port);
+        }
+
         $values[$this->key($prefix, 'DATABASE')] = (string) $connection->database;
         $values[$this->key($prefix, 'USERNAME')] = (string) $connection->username;
         $values[$this->key($prefix, 'PASSWORD')] = (string) $connection->password;

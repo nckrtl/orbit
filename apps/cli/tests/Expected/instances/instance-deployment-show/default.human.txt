@@ -1,0 +1,45 @@
+Loading deployment...
+
+┌  Show deployment
+│
+├  ● Loaded deployment
+│
+└  Loaded deployment.
+
+
+┌  Deployment: 1
+│
+├  Instance ID        1
+│
+├  Release            20260101000000
+│
+├  Branch             main
+│
+├  Commit             aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│
+├  Started            2026-01-01T00:00:00+00:00
+│
+├  Finished           2026-01-01T00:00:42+00:00
+│
+├  Duration           42s
+│
+├  Status             succeeded
+│
+├  Failed step        —
+│
+├  Error code         —
+│
+├  Selected release   20260101000000
+│
+├  Triggered by       gateway
+│
+└  Request ID         0198e15c-bf97-7c23-8f1f-61b8fe67a844
+
+ ┌────────────────────┬─────────┐
+ │ PHASE              │ STEP    │
+ ├────────────────────┼─────────┤
+ │ source preparation │ —       │
+ │ before activation  │ prepare │
+ │ activation         │ —       │
+ └────────────────────┴─────────┘
+stdout: Running composer install

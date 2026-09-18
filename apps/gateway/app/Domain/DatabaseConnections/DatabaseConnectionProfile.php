@@ -39,7 +39,7 @@ final readonly class DatabaseConnectionProfile
             portProvided: $data->port !== null,
             databaseProvided: $data->database !== null,
             pathProvided: $data->path !== null,
-            passwordRequired: $data->driver->usesNetworkEndpoint(),
+            passwordRequired: $data->driver->requiresCredentials(),
         );
     }
 
@@ -63,7 +63,7 @@ final readonly class DatabaseConnectionProfile
             portProvided: $data->portProvided,
             databaseProvided: $data->databaseProvided,
             pathProvided: $data->pathProvided,
-            passwordRequired: $driver->usesNetworkEndpoint() && $connection->password === null && ! $data->passwordProvided,
+            passwordRequired: $driver->requiresCredentials() && $connection->password === null && ! $data->passwordProvided,
         );
     }
 
@@ -101,15 +101,19 @@ final readonly class DatabaseConnectionProfile
     ): self {
         if ($driver->usesNetworkEndpoint()) {
             if ($pathProvided && $path !== null) {
-                self::fail('A mysql or pgsql connection does not accept a sqlite path.');
+                self::fail('A mysql, pgsql, or redis connection does not accept a sqlite path.');
             }
 
-            if ($host === null || $database === null || $username === null) {
-                self::fail('A mysql or pgsql connection requires host, database, and username.');
-            }
+            if ($driver->requiresCredentials()) {
+                if ($host === null || $database === null || $username === null) {
+                    self::fail('A mysql or pgsql connection requires host, database, and username.');
+                }
 
-            if ($passwordRequired && $password === null) {
-                self::fail('A mysql or pgsql connection requires a password.');
+                if ($passwordRequired && $password === null) {
+                    self::fail('A mysql or pgsql connection requires a password.');
+                }
+            } elseif ($host === null) {
+                self::fail('A redis connection requires a host.');
             }
 
             $profile = new self(

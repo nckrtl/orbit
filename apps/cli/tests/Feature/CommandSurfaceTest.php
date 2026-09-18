@@ -86,6 +86,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'database:tables',
         'database:update',
         'database:user:create',
+        'database:user:list',
         'dns:resolve',
         'doctor',
         'env:import',
@@ -112,6 +113,8 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:deploy-step:destroy',
         'instance:deploy-step:list',
         'instance:deploy-step:update',
+        'instance:deployment:list',
+        'instance:deployment:show',
         'instance:destroy',
         'instance:list',
         'instance:register',
@@ -130,6 +133,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:access:remove',
         'node:add',
         'node:list',
+        'node:metrics',
         'node:remove',
         'node:role:add',
         'node:role:list',
@@ -285,7 +289,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(118);
+    expect($orbitCommands)->toHaveCount(123);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -300,6 +304,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
             'herdr:session:restart',
             'herdr:session:show',
             'internal:database-local',
+            'internal:node-metrics',
         ]);
 });
 
@@ -546,6 +551,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'database:user:list' => [['slug'], ['json' => false]],
         'dns:resolve' => [['tld', 'target'], ['reset' => false, 'json' => false]],
         'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
         'env:import' => [[], ['instance' => null, 'replace' => false, 'json' => false]],
@@ -646,6 +652,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'instance:deployment:list' => [['instance'], ['json' => false]],
+        'instance:deployment:show' => [['deployment'], ['json' => false]],
         'instance:destroy' => [['instance'], ['yes' => false, 'force' => false, 'json' => false]],
         'instance:list' => [[], ['json' => false]],
         'instance:register' => [
@@ -702,6 +710,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ],
         ],
         'node:list' => [[], ['json' => false]],
+        'node:metrics' => [['node'], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
@@ -948,6 +957,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--username' => 'app',
             '--password' => 'secret',
         ], ...$profileMissing],
+        'database:user:list' => [['slug' => 'app'], ...$profileMissing],
         'dns:resolve' => [
             ['tld' => '.validation-secret', 'target' => '127.0.0.1'],
             'code' => 'dns.tld_invalid',
@@ -1010,6 +1020,8 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:deploy-step:destroy' => [['instance' => '1', 'name' => 'migrate'], ...$profileMissing],
         'instance:deploy-step:list' => [['instance' => '1'], ...$profileMissing],
         'instance:deploy-step:update' => [['instance' => '1', 'name' => 'migrate', '--command' => 'true'], ...$profileMissing],
+        'instance:deployment:list' => [['instance' => '1'], ...$profileMissing],
+        'instance:deployment:show' => [['deployment' => '1'], ...$profileMissing],
         'instance:destroy' => [['instance' => '1'], ...$profileMissing],
         'instance:list' => [[], ...$profileMissing],
         'instance:register' => [
@@ -1035,6 +1047,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
         'node:add' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:list' => [[], ...$profileMissing],
+        'node:metrics' => [['node' => '1'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],

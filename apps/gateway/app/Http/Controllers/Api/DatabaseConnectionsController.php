@@ -8,11 +8,13 @@ use App\Actions\DatabaseConnections\AddDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\DescribeDatabaseTableAction;
 use App\Actions\DatabaseConnections\ListDatabaseConnectionsAction;
 use App\Actions\DatabaseConnections\ListDatabaseTablesAction;
+use App\Actions\DatabaseConnections\ListDatabaseUsersAction;
 use App\Actions\DatabaseConnections\QueryDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\RemoveDatabaseConnectionAction;
 use App\Actions\DatabaseConnections\ShowDatabaseSchemaAction;
 use App\Actions\DatabaseConnections\UpdateDatabaseConnectionAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
+use App\Data\DatabaseConnections\DatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseSchemaTable;
 use App\Domain\DatabaseConnections\DatabaseTableColumn;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -23,6 +25,7 @@ use App\Http\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\StoreDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -54,7 +57,24 @@ final class DatabaseConnectionsController extends Controller
     public function show(Request $request, DatabaseConnection $databaseConnection): JsonResponse
     {
         return response()->json([
-            'data' => DatabaseConnectionData::fromModel($databaseConnection)->toArray(),
+            'data' => [
+                ...DatabaseConnectionData::fromModel($databaseConnection)->toArray(),
+                'users_count' => $databaseConnection->users()->count(),
+            ],
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    public function users(
+        Request $request,
+        DatabaseConnection $databaseConnection,
+        ListDatabaseUsersAction $action,
+    ): JsonResponse {
+        return response()->json([
+            'data' => $action->execute($databaseConnection)
+                ->map(static fn (DatabaseUser $user): array => DatabaseUserData::fromModel($user)->toArray())
+                ->values()
+                ->all(),
             'meta' => $this->meta($request),
         ]);
     }

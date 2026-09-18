@@ -70,11 +70,22 @@ An authorized client starts a deployment or code rollback synchronously and can 
 | --- | --- |
 | `POST /api/v1/instances/{instance}/deploy` | Accepts only an empty JSON object and returns deployment events as `application/x-ndjson`. |
 | `POST /api/v1/instances/{instance}/rollback` | Accepts only `release`, the retained release name to select, and returns rollback events as `application/x-ndjson`. |
-| `GET /api/v1/instances/{instance}/releases` | Returns the present retained release names as `releases` and the nullable current selection as `selected_release`. It returns no deployment history. |
+| `GET /api/v1/instances/{instance}/releases` | Returns the present retained release names as `releases` and the nullable current selection as `selected_release`. Retained releases are not deployment history; see [Deployment history](#deployment-history) for that record. |
+
+## Deployment history
+
+The Gateway records one deployment row per `instance:deploy` or `instance:rollback` run: a write when the run starts and a write when it finishes. It keeps the last 50 rows per App instance and drops older ones.
+
+Each row holds `app_instance_id`, `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name), and `events` (the phase and output lines the run streamed, capped so one noisy step cannot grow a row without bound).
+
+| Request | Result |
+| --- | --- |
+| `GET /api/v1/instances/{instance}/deployments` | Returns recorded deployments for that App instance, newest first, without `events`. |
+| `GET /api/v1/deployments/{deployment}` | Returns one recorded deployment with `events`. |
 
 ## Use the PHP SDK
 
-The PHP software development kit (SDK) exposes typed create, list, update, and destroy operations for deploy steps on these same routes. It also exposes an App instance update for the branch, deploy, rollback, and retained-release list. Deploy-step, branch, and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A step create omits `timeout_seconds` when the caller does not supply it. A deployment sends an empty JSON object. A rollback sends only `release`. List and show reads remain bodyless.
+The PHP software development kit (SDK) exposes typed create, list, update, and destroy operations for deploy steps on these same routes. It also exposes an App instance update for the branch, deploy, rollback, retained-release list, and deployment-history list and show. Deploy-step, branch, and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A step create omits `timeout_seconds` when the caller does not supply it. A deployment sends an empty JSON object. A rollback sends only `release`. List and show reads remain bodyless.
 
 Deploy and rollback return a closeable stream of typed phase, output, and result events. The SDK reads newline-delimited JSON (NDJSON) as the caller advances the stream and handles lines split across arbitrary HTTP chunks. Before it yields an event, it validates the event fields, encoded and decoded limits, continuous sequence, matching request identity, and base64 output encoding. It reports success only when one successful result is the final event, and it rejects malformed or truncated streams without reporting success.
 

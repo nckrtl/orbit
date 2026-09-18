@@ -4050,6 +4050,164 @@
         ]
       }
     },
+    "/api/v1/database-connections/{database_connection}/users": {
+      "get": {
+        "operationId": "database-user-list",
+        "summary": "database:user:list",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database connection slug."
+          }
+        ],
+        "description": "List the recorded users for a registered Database connection.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DatabaseUser"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/database-connections/app/users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\ListDatabaseUsersRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListDatabaseUsersRequest(slug: 'acme'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment}": {
+      "get": {
+        "operationId": "instance-deployment-show",
+        "summary": "instance:deployment:show",
+        "tags": [
+          "App instances"
+        ],
+        "parameters": [
+          {
+            "name": "deployment",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Show one recorded deployment, its phases and steps, and its log.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AppInstanceDeployment"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/deployments/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ShowAppInstanceDeploymentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowAppInstanceDeploymentRequest(deploymentId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/doctor": {
       "post": {
         "operationId": "doctor",
@@ -6738,6 +6896,87 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/deployments": {
+      "get": {
+        "operationId": "instance-deployment-list",
+        "summary": "instance:deployment:list",
+        "tags": [
+          "App instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric App instance ID."
+          }
+        ],
+        "description": "List recorded deployment history for a production App instance, newest first.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AppInstanceDeployment"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/deployments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListAppInstanceDeploymentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListAppInstanceDeploymentsRequest(appInstanceId: 12))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/environment/import": {
       "post": {
         "operationId": "env-import",
@@ -9218,6 +9457,84 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Firewall\\RemoveFirewallRuleRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveFirewallRuleRequest(nodeId: 7, name: 'office-postgres'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{node}/metrics": {
+      "get": {
+        "operationId": "node-metrics",
+        "summary": "node:metrics",
+        "tags": [
+          "Nodes"
+        ],
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Node ID."
+          }
+        ],
+        "description": "Show one synchronous metrics snapshot for a node: cores, memory, swap, load, uptime, pressure, and disks.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/NodeMetrics"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/nodes/7/metrics\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Nodes\\ShowNodeMetricsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowNodeMetricsRequest(nodeId: 7))->dto();\n"
           }
         ]
       }
@@ -13330,6 +13647,103 @@
           }
         }
       },
+      "DatabaseUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "database_connection_id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "privileges": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      },
+      "AppInstanceDeployment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "app_instance_id": {
+            "type": "integer"
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "selected_release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "triggered_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "DoctorReport": {
         "type": "object",
         "properties": {
@@ -14411,6 +14825,42 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "NodeMetrics": {
+        "type": "object",
+        "properties": {
+          "cores": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "memory": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "swap": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "load": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "uptime_seconds": {
+            "type": "integer"
+          },
+          "pressure": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "disks": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
           }
         }
       },

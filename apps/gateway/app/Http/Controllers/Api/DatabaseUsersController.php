@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\DatabaseConnections\CreateManagedMysqlUserAction;
 use App\Data\DatabaseConnections\DatabaseConnectionData;
+use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -23,7 +24,8 @@ final class DatabaseUsersController extends Controller
         Process $process,
         CreateManagedMysqlUserAction $action,
     ): JsonResponse {
-        $connection = $action->execute($process, $request->payload());
+        $createdBy = CallerName::fromRequest($request);
+        $connection = $action->execute($process, $request->payload(), $createdBy);
         $payload = [
             'data' => DatabaseConnectionData::fromModel($connection)->toArray(),
             'meta' => $this->meta($request),

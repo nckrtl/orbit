@@ -1,6 +1,6 @@
 ---
 title: "database"
-description: "Register, inspect, update, and destroy the mysql, pgsql, and sqlite connections that App instances can attach, and create a MySQL user through a Node Process."
+description: "Register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that App instances can attach, and create a MySQL user through a Node Process."
 ---
 
 A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry and inspects a registered connection. It does not start or stop a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it. `database:user:create` creates a MySQL user and database through that Process, then registers or refreshes the connection.
@@ -16,6 +16,7 @@ The [Database connections reference](/reference/database-connections) owns the d
 | [`database:show`](#orbit-databaseshow) | Show one connection. |
 | [`database:update`](#orbit-databaseupdate) | Replace the supplied fields on one connection. |
 | [`database:user:create`](#orbit-databaseusercreate) | Create a MySQL user and database through a Node Docker Process, then register or refresh the connection. |
+| [`database:user:list`](#orbit-databaseuserlist) | List the recorded users for a connection. |
 | [`database:destroy`](#orbit-databasedestroy) | Destroy one connection record. |
 | [`database:query`](#orbit-databasequery) | Run one SQL statement against a registered connection. |
 | [`database:tables`](#orbit-databasetables) | List tables on a registered connection. |
@@ -40,28 +41,34 @@ orbit database:create <slug> --driver=DRIVER [options]
 
 | Option | Meaning |
 | --- | --- |
-| `--driver=DRIVER` | `mysql`, `pgsql`, or `sqlite`. |
+| `--driver=DRIVER` | `mysql`, `pgsql`, `sqlite`, or `redis`. |
 | `--node=NODE` | Numeric Node ID or registered Node name to associate. The `database` role is not required. |
-| `--host=HOST` | Hostname or IP address for mysql and pgsql, without userinfo or port. |
-| `--port=PORT` | TCP port for mysql and pgsql. Defaults to `3306` for mysql and `5432` for pgsql. |
-| `--database=NAME` | Database name for mysql and pgsql. |
+| `--host=HOST` | Hostname or IP address for mysql, pgsql, and redis, without userinfo or port. |
+| `--port=PORT` | TCP port for mysql, pgsql, and redis. Defaults to `3306` for mysql, `5432` for pgsql, and `6379` for redis. |
+| `--database=NAME` | Database name for mysql and pgsql, or the numeric database index for redis. |
 | `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
-| `--username=USER` | Username. Required for mysql and pgsql. |
-| `--password=SECRET` | Password. Required for mysql and pgsql. |
+| `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
+| `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
 
 | Driver | Required fields | Optional fields |
 | --- | --- | --- |
 | `mysql` | `--host`, `--database`, `--username`, `--password` | `--node`, `--port` |
 | `pgsql` | `--host`, `--database`, `--username`, `--password` | `--node`, `--port` |
 | `sqlite` | `--path` | `--node`, `--username`, `--password` |
+| `redis` | `--host` | `--node`, `--port`, `--database`, `--username`, `--password` |
 
 ```bash
 orbit database:create app --driver=mysql --host=db.example.test --database=app --username=app --password=secret
 orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
 orbit database:create postgres --driver=pgsql --node=beast --host=127.0.0.1 --database=app --username=app --password=secret
+orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
 ```
 
-The Gateway answers `validation.failed` when a mysql or pgsql record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
+The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
+
+<Note>
+`database:query`, `database:tables`, `database:schema`, and `database:describe` refuse a redis connection with `database.driver_unsupported`. Redis is not a relational store and has no PDO inspector.
+</Note>
 
 <Note>
 A connection with `--node` can align with a Node-owned Docker Process on that Node. When an App instance on the same Node attaches it, the Gateway writes `127.0.0.1` and the published host port instead of the stored host and port.
@@ -77,7 +84,7 @@ orbit database:list [--json]
 
 ## orbit database:show
 
-Show one connection with its driver, Node association, host, port, database, path, username, and `has_password`.
+Show one connection with its driver, Node association, host, port, database, path, username, `has_password`, and the recorded user count.
 
 ```bash
 orbit database:show <slug> [--json]
@@ -97,11 +104,11 @@ orbit database:update <slug> [options]
 
 | Option | Meaning |
 | --- | --- |
-| `--driver=DRIVER` | `mysql`, `pgsql`, or `sqlite`. |
+| `--driver=DRIVER` | `mysql`, `pgsql`, `sqlite`, or `redis`. |
 | `--node=NODE` | Node ID or registered name. An empty value, `--node=`, clears the association. |
-| `--host=HOST` | Hostname or IP for mysql and pgsql. |
-| `--port=PORT` | TCP port for mysql and pgsql. |
-| `--database=NAME` | Database name for mysql and pgsql. |
+| `--host=HOST` | Hostname or IP for mysql, pgsql, and redis. |
+| `--port=PORT` | TCP port for mysql, pgsql, and redis. |
+| `--database=NAME` | Database name for mysql and pgsql, or the numeric database index for redis. |
 | `--path=PATH` | Unix absolute sqlite path. |
 | `--username=USER` | Username. |
 | `--password=SECRET` | Password. |
@@ -139,6 +146,24 @@ orbit database:user:create app --process=12 --database=app --username=app --pass
 The Process must be Node-owned and Docker, use a `mysql` or `mysql-server` image, publish container port `3306`, and store `MYSQL_ROOT_PASSWORD`. The Gateway creates the user through that Process. The CLI does not open SSH. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.
 
 The [Database connections reference](/reference/database-connections#create-a-managed-mysql-user) owns the Process checks, stored host and port, and failure codes.
+
+## orbit database:user:list
+
+List the users the Gateway recorded for a connection. `database:user:create` records one row per username, each with its granted privileges and who created it.
+
+```bash
+orbit database:user:list <slug> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug. |
+
+The table shows Username, Privileges, Created by, and Created. `Created by` is the calling Node's name, since the Gateway authorizes every command as a Node.
+
+```bash
+orbit database:user:list app
+```
 
 ## orbit database:destroy
 

@@ -69,11 +69,12 @@ Some families expose actions that are not the pairs above. Those last segments b
 
 ## Noun-ending commands
 
-Two commands keep a noun as their last segment.
+Three commands keep a noun as their last segment.
 
 | Command | Result |
 | --- | --- |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
+| `node:metrics` | The CLI shows one synchronous Node metrics snapshot. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
 
 ## Gateway route names

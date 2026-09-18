@@ -278,3 +278,29 @@ it('refuses sqlite inspection without an associated node and unknown slugs', fun
 
     expect(DatabaseConnection::query()->where('slug', 'missing')->exists())->toBeFalse();
 });
+
+it('refuses query, tables, schema, and describe against a redis connection', function (): void {
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'cache',
+        'driver' => 'redis',
+        'host' => 'redis.example.test',
+    ])->assertCreated();
+
+    $this->postJson('/api/v1/database-connections/cache/query', [
+        'sql' => 'SELECT 1',
+    ])
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'database.driver_unsupported');
+
+    $this->getJson('/api/v1/database-connections/cache/tables')
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'database.driver_unsupported');
+
+    $this->getJson('/api/v1/database-connections/cache/schema')
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'database.driver_unsupported');
+
+    $this->getJson('/api/v1/database-connections/cache/describe/users')
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'database.driver_unsupported');
+});

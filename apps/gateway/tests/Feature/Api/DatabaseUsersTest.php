@@ -11,6 +11,7 @@ use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseUser;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
@@ -113,6 +114,42 @@ it('creates a MySQL user through a Node Docker Process and registers the connect
         ->not->toContain(DATABASE_ROOT_SECRET)
         ->and($activity->properties?->get('input'))
         ->toMatchArray(['password' => '[REDACTED]']);
+
+    $recordedUser = DatabaseUser::query()->where('database_connection_id', $connection->id)->sole();
+
+    expect($recordedUser->username)->toBe('app')
+        ->and($recordedUser->privileges)->toBe('ALL PRIVILEGES ON `app`.*')
+        ->and($recordedUser->created_by)->toBe($this->node->name);
+
+    $usersList = $this->getJson('/api/v1/database-connections/app/users');
+    $usersList->assertOk()
+        ->assertJsonPath('data.0.username', 'app')
+        ->assertJsonPath('data.0.created_by', $this->node->name)
+        ->assertJsonMissingPath('data.0.password');
+
+    $this->getJson('/api/v1/database-connections/app')
+        ->assertOk()
+        ->assertJsonPath('data.users_count', 1);
+});
+
+it('refreshing an existing MySQL user keeps one recorded row and updates who created it', function (): void {
+    $this->postJson("/api/v1/processes/{$this->process->id}/database-users", [
+        'slug' => 'app',
+        'database' => 'app',
+        'username' => 'app',
+        'password' => DATABASE_USER_SECRET,
+    ])->assertCreated();
+
+    $this->postJson("/api/v1/processes/{$this->process->id}/database-users", [
+        'slug' => 'app',
+        'database' => 'app',
+        'username' => 'app',
+        'password' => 'rotated-'.DATABASE_USER_SECRET,
+    ])->assertOk();
+
+    $connection = DatabaseConnection::query()->where('slug', 'app')->sole();
+
+    expect(DatabaseUser::query()->where('database_connection_id', $connection->id)->count())->toBe(1);
 });
 
 it('refreshes an existing mysql connection for the same slug', function (): void {

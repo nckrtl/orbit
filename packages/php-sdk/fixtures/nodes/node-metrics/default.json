@@ -1,0 +1,53 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\ShowNodeMetricsRequest",
+    "route": "GET /api/v1/nodes/{node}/metrics",
+    "status": 200,
+    "body": {
+        "data": {
+            "node_id": 1,
+            "node_name": "app-dev",
+            "cores": [
+                0.12,
+                0.34,
+                0.08,
+                0.21
+            ],
+            "memory": {
+                "used": 3435973836,
+                "total": 8589934592
+            },
+            "swap": {
+                "used": 0,
+                "total": 2147483648
+            },
+            "load": {
+                "one": 0.52,
+                "five": 0.61,
+                "fifteen": 0.58
+            },
+            "uptime_seconds": 1053784,
+            "pressure": {
+                "cpu": {
+                    "some_avg10": 0.4
+                },
+                "memory": {
+                    "some_avg10": 0
+                },
+                "io": {
+                    "some_avg10": 1.1
+                }
+            },
+            "disks": [
+                {
+                    "mount": "/",
+                    "used": 6442450944,
+                    "total": 85899345920
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

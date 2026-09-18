@@ -838,6 +838,7 @@ CTRL_DATA_OVERRIDES = {
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
     'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
     'HerdrSessionsController@storeGrant': ('ObservationGrantData', False),
+    'DatabaseConnectionsController@users': ('DatabaseUserData', True),
 }
 SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'AppInstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'AppInstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'AppInstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
 NDJSON_SCHEMA = {'oneOf': [

@@ -14,7 +14,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
     #[\Override]
     protected $signature = 'database:create
         {slug : Database connection slug}
-        {--driver= : Driver: mysql, pgsql, or sqlite}
+        {--driver= : Driver: mysql, pgsql, sqlite, or redis}
         {--node= : Optional Node ID or registered name}
         {--host= : Hostname or IP for mysql and pgsql}
         {--port= : TCP port for mysql and pgsql}
@@ -39,7 +39,7 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
         if (! is_string($driver) || ! in_array($driver, self::DRIVERS, true)) {
             return $this->renderGatewayFailure(
                 'database.driver_invalid',
-                'Driver must be mysql, pgsql, or sqlite.',
+                'Driver must be mysql, pgsql, sqlite, or redis.',
             );
         }
 

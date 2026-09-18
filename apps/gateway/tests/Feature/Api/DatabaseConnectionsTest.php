@@ -245,3 +245,47 @@ it('updates a password independently and clears an optional node association', f
         ->assertStatus(422)
         ->assertJsonPath('error.code', 'validation.failed');
 });
+
+it('registers a redis connection with only a host required and defaults its port', function (): void {
+    $create = $this->postJson('/api/v1/database-connections', [
+        'slug' => 'cache',
+        'driver' => 'redis',
+        'host' => 'redis.example.test',
+    ]);
+
+    $create
+        ->assertCreated()
+        ->assertJsonPath('data.slug', 'cache')
+        ->assertJsonPath('data.driver', 'redis')
+        ->assertJsonPath('data.host', 'redis.example.test')
+        ->assertJsonPath('data.port', 6379)
+        ->assertJsonPath('data.database', null)
+        ->assertJsonPath('data.username', null)
+        ->assertJsonPath('data.has_password', false);
+
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'cache-with-index',
+        'driver' => 'redis',
+        'host' => 'redis.example.test',
+        'port' => 6380,
+        'database' => '2',
+        'username' => 'app',
+        'password' => 'redis-secret',
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.port', 6380)
+        ->assertJsonPath('data.database', '2')
+        ->assertJsonPath('data.username', 'app')
+        ->assertJsonPath('data.has_password', true);
+
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'broken-redis',
+        'driver' => 'redis',
+        'path' => '/tmp/redis.sqlite',
+    ])->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+
+    $this->postJson('/api/v1/database-connections', [
+        'slug' => 'no-host-redis',
+        'driver' => 'redis',
+    ])->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+});
