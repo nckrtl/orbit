@@ -13,6 +13,14 @@ namespace App\Support\Metrics;
  */
 final readonly class PrometheusMetricsQueries
 {
+    /**
+     * The window every rate() covers. Prometheus needs several samples inside it to produce a
+     * rate at all, and it smooths whatever it covers, so this tracks the scrape interval: at a
+     * five-second scrape this holds six samples, which reacts to a spike within seconds instead
+     * of averaging it away over a minute.
+     */
+    public const string RateWindow = '30s';
+
     /** The label `pressure()` writes its kind into, and the mapper groups by. */
     public const string PRESSURE_KIND_LABEL = 'orbit_pressure';
 
@@ -29,7 +37,7 @@ final readonly class PrometheusMetricsQueries
 
     public static function cores(?string $instance = null): string
     {
-        return '1 - rate(node_cpu_seconds_total{mode="idle"'.self::instanceClause($instance).'}[1m])';
+        return '1 - rate(node_cpu_seconds_total{mode="idle"'.self::instanceClause($instance).'}['.self::RateWindow.'])';
     }
 
     /**
@@ -44,7 +52,7 @@ final readonly class PrometheusMetricsQueries
 
         return implode(' or ', array_map(
             static fn (string $kind): string => 'label_replace(rate(node_pressure_'.$kind
-                .'_waiting_seconds_total{'.ltrim($clause, ',').'}[1m]) * 100,"'
+                .'_waiting_seconds_total{'.ltrim($clause, ',').'}['.self::RateWindow.']) * 100,"'
                 .self::PRESSURE_KIND_LABEL.'","'.$kind.'","","")',
             ['cpu', 'memory', 'io'],
         ));

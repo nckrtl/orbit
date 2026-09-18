@@ -122,6 +122,8 @@ A removal that the Gateway authorized and that finds no single active Gateway wh
 
 [`orbit node:metrics`](/cli/node#orbit-node-metrics) reads a Node's CPU, memory, swap, load, uptime, pressure, and disk snapshot from the Metrics role's own Prometheus. It reads through Grafana's datasource proxy, not from Prometheus directly. The Gateway authenticates with the stored Grafana credential, resolves the Prometheus datasource, and runs four instant PromQL queries filtered to that Node's exporter instance.
 
+Prometheus scrapes every selected exporter every five seconds and keeps samples for seven days, so a reading is at most five seconds old. Each rate the queries compute covers a thirty-second window, wide enough to survive a dropped scrape and short enough to show a spike rather than average it away. A scrape costs the Node one read of `/proc` and `/sys`, measured between 0.08 and 0.18 seconds depending on how many cores and filesystems it has.
+
 No orbit software runs on the Node beyond the exporter this role already manages. The command does not depend on what CLI build the Node was provisioned with. A Node with no active exporter selection or no Prometheus samples yet answers `node.metrics_unreachable` instead of failing.
 
 [`orbit top`](/cli/top) reads the same way, directly from the CLI: one set of queries covers every Node for the dashboard, and a filtered set covers one Node for its page. See [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana) for why the CLI reads this way instead of through a Gateway endpoint.

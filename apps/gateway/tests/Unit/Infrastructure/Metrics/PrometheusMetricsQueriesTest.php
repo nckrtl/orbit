@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\PrometheusMetricsQueries;
 
 describe(PrometheusMetricsQueries::class, function (): void {
@@ -46,4 +47,17 @@ describe(PrometheusMetricsQueries::class, function (): void {
             expect($query)->not->toContain('instance=');
         }
     });
+});
+
+it('keeps every rate window wide enough for the scrape interval to fill it', function (): void {
+    $window = (int) rtrim(PrometheusMetricsQueries::RateWindow, 's');
+    $scrape = (int) rtrim(PrometheusConfigRenderer::ScrapeInterval, 's');
+
+    // Prometheus needs at least two samples inside a window to produce a rate at all, and treats
+    // a series as stale well before four are missing; four keeps a rate honest when one scrape
+    // is dropped. Widening the scrape interval without widening the window blanks every bar.
+    expect(intdiv($window, $scrape))->toBeGreaterThanOrEqual(4);
+
+    expect(PrometheusMetricsQueries::cores())->toContain("[{$window}s]");
+    expect(PrometheusMetricsQueries::pressure())->toContain("[{$window}s]");
 });

@@ -22,7 +22,7 @@ it('renders owned pinned runtime specifications', function (): void {
         ->and($prometheus->image)
         ->toBe(MetricsRuntimeSpec::PrometheusImage)
         ->and($prometheus->command)
-        ->toContain('--storage.tsdb.retention.time=15d')
+        ->toContain('--storage.tsdb.retention.time=7d')
         ->and($grafana->labels['com.orbit.managed'])
         ->toBe('metrics');
 });
@@ -32,7 +32,7 @@ it('renders stable prometheus targets and labels', function (): void {
         ['name' => 'alpha', 'address' => '10.0.0.1'],
     ]);
     expect($config)
-        ->toContain('retention.time: 15d')
+        ->toContain('retention.time: 7d')
         ->and(strpos($config, '"alpha"'))
         ->toBeLessThan(strpos($config, '"zulu"'));
 });
