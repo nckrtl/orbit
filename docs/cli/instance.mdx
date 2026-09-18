@@ -35,6 +35,8 @@ Release commands prepare and operate a production App instance.
 | [`instance:deploy`](#orbit-instancedeploy) | Deploy the configured branch as a fresh release. |
 | [`instance:release:list`](#orbit-instancereleaselist) | List retained releases and the current selection. |
 | [`instance:rollback`](#orbit-instancerollback) | Select one retained release. |
+| [`instance:deployment:list`](#orbit-instancedeploymentlist) | List recorded deployment history, newest first. |
+| [`instance:deployment:show`](#orbit-instancedeploymentshow) | Show one recorded deployment, its phases and steps, and its log. |
 
 Attachment commands write a registered Database connection into stored App instance configuration.
 
@@ -331,7 +333,7 @@ A development App instance cannot be deployed. With `--json` the stream ends wit
 
 ## orbit instance:release:list
 
-List retained release names and the current selection. It returns no deployment history.
+List retained release names and the current selection. See [`instance:deployment:list`](#orbit-instancedeploymentlist) for the recorded run history behind those releases.
 
 ```bash
 orbit instance:release:list <instance> [--json]
@@ -363,6 +365,42 @@ orbit instance:rollback 15 --release=20260914T101500Z
 <Warning>
 Orbit selects the older code only. You own any data or application recovery that the switch needs.
 </Warning>
+
+## orbit instance:deployment:list
+
+List the deployment history the Gateway recorded for a production App instance, newest first. The Gateway writes one row when `instance:deploy` or `instance:rollback` starts and fills it in when the run finishes, and keeps the last 50 rows per App instance.
+
+```bash
+orbit instance:deployment:list <instance> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric App instance ID. |
+
+The table shows Started, Release, Branch, Commit, By, Duration, and Status. `By` is the calling Node's name, since the Gateway authorizes every command as a Node. A row still running when read shows `running` and an empty Finished, Duration, and Release until the run completes.
+
+```bash
+orbit instance:deployment:list 15
+```
+
+## orbit instance:deployment:show
+
+Show one recorded deployment: a detail tree of its identity and outcome, then the phases and steps it went through as a table, then its log.
+
+```bash
+orbit instance:deployment:show <deployment> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `deployment` | yes | Numeric deployment ID from `instance:deployment:list`. |
+
+The detail tree shows the App instance ID, release, branch, commit, started and finished times, duration, status, failed step, error code, selected release, and who triggered it. The phases table repeats the `phase` and `step_name` values the run streamed. The log reproduces the run's standard output and standard error lines in order.
+
+```bash
+orbit instance:deployment:show 42
+```
 
 ## orbit instance:database:add
 

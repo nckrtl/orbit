@@ -204,6 +204,7 @@
               "POST /api/v1/nodes",
               "DELETE /api/v1/nodes/{node}",
               "GET /api/v1/nodes/{node}",
+              "GET /api/v1/nodes/{node}/metrics",
               "GET /api/v1/nodes/{node}/roles",
               "POST /api/v1/nodes/{node}/roles",
               "DELETE /api/v1/nodes/{node}/roles/{role}",
@@ -277,6 +278,7 @@
             "group": "App instances",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/deployments/{deployment}",
               "GET /api/v1/instances",
               "POST /api/v1/instances",
               "POST /api/v1/instances/register",
@@ -291,6 +293,7 @@
               "POST /api/v1/instances/{instance}/deploy-steps",
               "DELETE /api/v1/instances/{instance}/deploy-steps/{step}",
               "PATCH /api/v1/instances/{instance}/deploy-steps/{step}",
+              "GET /api/v1/instances/{instance}/deployments",
               "GET /api/v1/instances/{instance}/releases",
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/transfer"
@@ -331,6 +334,7 @@
               "POST /api/v1/database-connections/{database_connection}/query",
               "GET /api/v1/database-connections/{database_connection}/schema",
               "GET /api/v1/database-connections/{database_connection}/tables",
+              "GET /api/v1/database-connections/{database_connection}/users",
               "POST /api/v1/processes/{process}/database-users"
             ]
           },

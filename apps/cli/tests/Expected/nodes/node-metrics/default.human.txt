@@ -1,0 +1,33 @@
+Loading Node metrics...
+
+┌  Show Node metrics
+│
+├  ● Loaded Node metrics
+│
+└  Loaded Node metrics.
+
+
+┌  Node metrics: app-dev
+│
+├  Node ID           1
+│
+├  Cores             12%, 34%, 8%, 21%
+│
+├  Memory            3.2 GiB / 8.0 GiB
+│
+├  Swap              0 B / 2.0 GiB
+│
+├  Load              0.52, 0.61, 0.58
+│
+├  Uptime            12d 4h 43m
+│
+├  CPU pressure      0.4%
+│
+├  Memory pressure   0.0%
+│
+├  IO pressure       1.1%
+│
+├  Disks             /: 6.0 GiB / 80.0 GiB
+│
+└  Request ID        0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

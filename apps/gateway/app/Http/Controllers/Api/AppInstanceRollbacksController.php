@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\AppInstances\RollbackAppInstanceAction;
+use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -23,8 +24,9 @@ final class AppInstanceRollbacksController extends Controller
         DeploymentStreamResponse $stream,
     ): StreamedResponse {
         $release = $request->release();
+        $triggeredBy = CallerName::fromRequest($request);
 
-        return $stream->make($request, static fn ($deploymentRequest) => $action->execute(
+        return $stream->make($request, $instance, $triggeredBy, static fn ($deploymentRequest) => $action->execute(
             $instance,
             $release,
             $deploymentRequest,

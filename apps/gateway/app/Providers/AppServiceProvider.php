@@ -101,6 +101,7 @@ use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -223,6 +224,7 @@ use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
+use App\Infrastructure\Nodes\Metrics\NodeMetricsSshReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
@@ -344,6 +346,7 @@ final class AppServiceProvider extends ServiceProvider
         NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
+        NodeMetricsReader::class => NodeMetricsSshReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,

@@ -14,7 +14,7 @@ final readonly class DatabaseConnectionFieldRules
 
     public const string HOST_PATTERN = '/\A[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?\z/D';
 
-    public const string DATABASE_PATTERN = '/\A[A-Za-z_][A-Za-z0-9_$]{0,63}\z/D';
+    public const string DATABASE_PATTERN = '/\A(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})\z/D';
 
     public const string USERNAME_PATTERN = '/\A[\x21-\x7E]{1,128}\z/D';
 

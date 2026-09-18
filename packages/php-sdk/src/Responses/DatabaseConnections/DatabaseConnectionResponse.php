@@ -25,7 +25,7 @@ final readonly class DatabaseConnectionResponse
 
     private const string SLUG_PATTERN = '/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D';
 
-    private const string DRIVER_PATTERN = '/\A(?:mysql|pgsql|sqlite)\z/D';
+    private const string DRIVER_PATTERN = '/\A(?:mysql|pgsql|sqlite|redis)\z/D';
 
     public function __construct(
         public int $id,
@@ -39,6 +39,7 @@ final readonly class DatabaseConnectionResponse
         public ?string $username,
         public bool $hasPassword,
         public string $requestId,
+        public ?int $usersCount = null,
     ) {
         if ($id < 1 || ($nodeId !== null && $nodeId < 1)) {
             throw new InvalidArgumentException('Invalid Database connection response identifier.');
@@ -46,6 +47,10 @@ final readonly class DatabaseConnectionResponse
 
         if ($port !== null && ($port < 1 || $port > 65535)) {
             throw new InvalidArgumentException('Invalid Database connection response field [port].');
+        }
+
+        if ($usersCount !== null && $usersCount < 0) {
+            throw new InvalidArgumentException('Invalid Database connection response field [users_count].');
         }
     }
 
@@ -70,13 +75,14 @@ final readonly class DatabaseConnectionResponse
             username: self::nullableText($data, 'username', self::USERNAME_MAX_LENGTH, $redactor),
             hasPassword: self::requiredBoolean($data, 'has_password'),
             requestId: GatewayRequestId::fromTransport($requestId) ?? '',
+            usersCount: self::nullableInteger($data, 'users_count'),
         );
     }
 
     /** @return array<string, bool|int|string|null> */
     public function toArray(): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'slug' => $this->slug,
             'driver' => $this->driver,
@@ -89,6 +95,12 @@ final readonly class DatabaseConnectionResponse
             'has_password' => $this->hasPassword,
             'request_id' => $this->requestId,
         ];
+
+        if ($this->usersCount !== null) {
+            $data['users_count'] = $this->usersCount;
+        }
+
+        return $data;
     }
 
     /** @param array<string, mixed> $data */

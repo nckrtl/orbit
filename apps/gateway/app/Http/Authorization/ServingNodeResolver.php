@@ -9,6 +9,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceDeployment;
 use App\Models\Cluster;
 use App\Models\HerdrSession;
 use App\Models\Node;
@@ -29,6 +30,7 @@ final readonly class ServingNodeResolver
             ServingNode::Target => $this->target($request),
             ServingNode::AppOwning => $this->appOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
+            ServingNode::DeploymentOwning => $this->deploymentOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::InstanceTransfer => $this->instanceTransfer($request),
             ServingNode::EnvironmentInstanceOwning => $this->environmentInstanceOwning($request),
@@ -136,6 +138,18 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($nodeId)];
+    }
+
+    /** @return list<Node> */
+    private function deploymentOwning(Request $request): array
+    {
+        $deployment = $request->route('deployment');
+
+        if (! $deployment instanceof AppInstanceDeployment) {
+            return [];
+        }
+
+        return [Node::query()->findOrFail($deployment->appInstance->node_id)];
     }
 
     /** @return list<Node> */

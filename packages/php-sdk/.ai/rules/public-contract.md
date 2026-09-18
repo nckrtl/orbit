@@ -1,14 +1,14 @@
 # Public contract
 
-The SDK models exactly 115 concrete public Gateway API operations:
+The SDK models exactly 119 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
-- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.
+- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, role remove, and metrics.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, update, and remove.
 - App runtime definition: process and Schedule list, create, show, update, and destroy.
-- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.
+- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, and environment synchronization through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
@@ -16,7 +16,7 @@ The SDK models exactly 115 concrete public Gateway API operations:
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Herdr: session list, add, adopt, show, restart, remove, and observation-grant.
-- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create.
+- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
 The four abstract request bases are implementation details, not extra Gateway
