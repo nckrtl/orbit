@@ -54,7 +54,7 @@ final readonly class NativeWebSocketPublicationManager implements WebSocketPubli
         $configuration = $this->site->render($this->resolvedPort());
         $caddyResult = $this->ssh->execute(
             $this->connection($node, $address),
-            $this->caddy->command($configuration, (string) $this->resolvedPort()),
+            $this->caddy->command($configuration, (string) $this->resolvedPort(), $address),
         );
 
         if (! $caddyResult->succeeded()) {
