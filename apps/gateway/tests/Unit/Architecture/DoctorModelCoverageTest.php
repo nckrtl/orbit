@@ -6,6 +6,7 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
+use App\Models\AppInstanceDeployment;
 use App\Models\AppInstanceDeployStep;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
@@ -15,6 +16,7 @@ use App\Models\AppUpdate;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseUser;
 use App\Models\FirewallRule;
 use App\Models\HerdrObservationNonce;
 use App\Models\HerdrSession;
@@ -62,11 +64,13 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $excluded = [
         NodeAccess::class,
         Activity::class,
+        AppInstanceDeployment::class,
         AppInstanceDeployStep::class,
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         AppInstanceTransfer::class,
         AppUpdate::class,
+        DatabaseUser::class,
         HerdrObservationNonce::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();

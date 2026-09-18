@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\HerdrSessionsController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
+use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
@@ -117,6 +118,8 @@ Route::prefix('v1')->group(function (): void {
             ->name('node:role:remove');
         Route::get('nodes/{node}/firewall-rules', [FirewallRulesController::class, 'index'])
             ->name('firewall:list');
+        Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
+            ->name('node:metrics');
         Route::get('activities', [ActivitiesController::class, 'index'])
             ->name('activity:list');
         Route::get('activities/{activity}', [ActivitiesController::class, 'show'])
@@ -218,6 +221,14 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/releases',
             [AppInstanceReleasesController::class, 'index'],
         )->name('instance:release:list');
+        Route::get(
+            'instances/{instance}/deployments',
+            [AppInstanceDeploymentsController::class, 'index'],
+        )->name('instance:deployment:list');
+        Route::get(
+            'deployments/{deployment}',
+            [AppInstanceDeploymentsController::class, 'show'],
+        )->name('instance:deployment:show');
         Route::post(
             'instances/{instance}/environment/import',
             [AppInstanceEnvironmentImportsController::class, 'store'],
@@ -301,6 +312,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'show'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:show');
+        Route::get('database-connections/{database_connection}/users', [DatabaseConnectionsController::class, 'users'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:user:list');
         Route::patch('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'update'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:update');

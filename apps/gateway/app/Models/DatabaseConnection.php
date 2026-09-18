@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $password
  * @property-read Node|null $node
  * @property-read Collection<int, DatabaseConnectionTarget> $targets
+ * @property-read Collection<int, DatabaseUser> $users
  */
 final class DatabaseConnection extends Model
 {
@@ -67,6 +68,12 @@ final class DatabaseConnection extends Model
     public function targets(): HasMany
     {
         return $this->hasMany(DatabaseConnectionTarget::class);
+    }
+
+    /** @return HasMany<DatabaseUser, $this> */
+    public function users(): HasMany
+    {
+        return $this->hasMany(DatabaseUser::class);
     }
 
     /** @return array<string, string> */

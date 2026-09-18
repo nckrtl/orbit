@@ -79,6 +79,11 @@ final readonly class PdoDatabaseInspector
             DatabaseDriver::Mysql => 'SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = \'BASE TABLE\' ORDER BY TABLE_NAME',
             DatabaseDriver::Pgsql => 'SELECT tablename AS name FROM pg_catalog.pg_tables WHERE schemaname = current_schema() ORDER BY tablename',
             DatabaseDriver::Sqlite => 'SELECT name FROM sqlite_master WHERE type = \'table\' AND name NOT LIKE \'sqlite_%\' ORDER BY name',
+            DatabaseDriver::Redis => throw new ResourceOperationException(
+                errorCode: 'database.driver_unsupported',
+                message: 'The redis driver does not support this inspection.',
+                status: 422,
+            ),
         };
         $result = $this->query($connection, $sql, false);
         $tables = [];
@@ -113,6 +118,11 @@ final readonly class PdoDatabaseInspector
             DatabaseDriver::Mysql => $this->mysqlColumns($connection, $table),
             DatabaseDriver::Pgsql => $this->pgsqlColumns($connection, $table),
             DatabaseDriver::Sqlite => $this->sqliteColumns($connection, $table),
+            DatabaseDriver::Redis => throw new ResourceOperationException(
+                errorCode: 'database.driver_unsupported',
+                message: 'The redis driver does not support this inspection.',
+                status: 422,
+            ),
         };
 
         if ($columns === []) {
@@ -142,6 +152,11 @@ final readonly class PdoDatabaseInspector
                 $connection->database ?? '',
             ),
             DatabaseDriver::Sqlite => 'sqlite:'.$connection->path,
+            DatabaseDriver::Redis => throw new ResourceOperationException(
+                errorCode: 'database.driver_unsupported',
+                message: 'The redis driver does not support this inspection.',
+                status: 422,
+            ),
         };
     }
 

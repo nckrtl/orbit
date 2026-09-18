@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Streaming;
 
+use App\Domain\AppInstances\Deployment\AppInstanceDeploymentRecorder;
 use App\Domain\AppInstances\Deployment\DeploymentCancellation;
+use App\Domain\AppInstances\Deployment\DeploymentEvent;
+use App\Domain\AppInstances\Deployment\DeploymentEventCollector;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
+use App\Domain\AppInstances\Deployment\DeploymentProgressPhase;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
+use App\Models\AppInstance;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -15,22 +20,33 @@ use Throwable;
 
 final readonly class DeploymentStreamResponse
 {
-    public function __construct(private DeploymentStreamConnection $connection) {}
+    public function __construct(
+        private DeploymentStreamConnection $connection,
+        private AppInstanceDeploymentRecorder $recorder,
+    ) {}
 
     /** @param Closure(DeploymentRequest): DeploymentResult $operation */
-    public function make(Request $request, Closure $operation): StreamedResponse
+    public function make(Request $request, AppInstance $instance, string $triggeredBy, Closure $operation): StreamedResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
 
-        return response()->stream(function () use ($request, $requestId, $operation): void {
+        return response()->stream(function () use ($request, $requestId, $instance, $triggeredBy, $operation): void {
             $previousIgnoreUserAbort = ignore_user_abort(true);
 
             try {
+                $deployment = $this->recorder->start($instance, $triggeredBy);
+                $collector = new DeploymentEventCollector;
                 $stream = new DeploymentNdjsonStream($requestId, $this->connection);
                 $deploymentRequest = new DeploymentRequest(
-                    output: $stream->output(...),
+                    output: function (DeploymentEvent $event) use ($stream, $collector): void {
+                        $collector->output($event);
+                        $stream->output($event);
+                    },
                     cancellation: new DeploymentCancellation($this->connection->disconnected(...)),
-                    phase: $stream->phase(...),
+                    phase: function (DeploymentProgressPhase $phase, ?string $stepName) use ($stream, $collector): void {
+                        $collector->phase($phase, $stepName);
+                        $stream->phase($phase, $stepName);
+                    },
                 );
 
                 try {
@@ -43,6 +59,8 @@ final readonly class DeploymentStreamResponse
                         'deployment.interrupted',
                     );
                 }
+
+                $this->recorder->finish($deployment, $result, $collector->events());
 
                 $request->attributes->set('orbit.deployment_result', $result);
                 $activeRequest = app('request');

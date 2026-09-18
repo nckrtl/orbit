@@ -117,6 +117,10 @@ final readonly class DatabaseConnectionDoctorInspection
             return ! is_string($connection->path) || $connection->path === '';
         }
 
+        if (! $connection->driver->requiresCredentials()) {
+            return ! is_string($connection->host) || $connection->host === '' || $connection->port === null;
+        }
+
         return ! is_string($connection->host)
             || $connection->host === ''
             || $connection->port === null

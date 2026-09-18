@@ -194,6 +194,12 @@ final class AppInstance extends Model
         return $this->hasMany(AppInstanceDeployStep::class);
     }
 
+    /** @return HasMany<AppInstanceDeployment, $this> */
+    public function deployments(): HasMany
+    {
+        return $this->hasMany(AppInstanceDeployment::class);
+    }
+
     /** @return HasMany<AppInstanceEnvironmentValue, $this> */
     public function environmentValues(): HasMany
     {

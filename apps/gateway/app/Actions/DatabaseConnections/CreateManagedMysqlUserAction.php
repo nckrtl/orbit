@@ -10,6 +10,7 @@ use App\Domain\DatabaseConnections\ManagedMysqlProcess;
 use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
+use App\Models\DatabaseUser;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
@@ -24,6 +25,7 @@ final readonly class CreateManagedMysqlUserAction
         #[SensitiveParameter]
         Process $process,
         CreateManagedMysqlUserData $data,
+        string $createdBy,
     ): DatabaseConnection {
         $managed = ManagedMysqlProcess::from($process);
         $this->assertMysqlSlug($data->slug);
@@ -35,7 +37,7 @@ final readonly class CreateManagedMysqlUserAction
             $data->password,
         );
 
-        return DB::transaction(function () use ($managed, $data): DatabaseConnection {
+        return DB::transaction(function () use ($managed, $data, $createdBy): DatabaseConnection {
             $existing = DatabaseConnection::query()
                 ->where('slug', $data->slug)
                 ->lockForUpdate()
@@ -63,11 +65,23 @@ final readonly class CreateManagedMysqlUserAction
 
             if ($existing instanceof DatabaseConnection) {
                 $existing->update($attributes);
-
-                return $existing->refresh();
+                $connection = $existing->refresh();
+            } else {
+                $connection = DatabaseConnection::query()->create($attributes);
             }
 
-            return DatabaseConnection::query()->create($attributes);
+            DatabaseUser::query()->updateOrCreate(
+                [
+                    'database_connection_id' => $connection->id,
+                    'username' => $data->username,
+                ],
+                [
+                    'privileges' => "ALL PRIVILEGES ON `{$data->database}`.*",
+                    'created_by' => $createdBy,
+                ],
+            );
+
+            return $connection;
         });
     }
 
