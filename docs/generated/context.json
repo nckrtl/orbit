@@ -2237,6 +2237,58 @@
             ]
         },
         {
+            "path": "docs/decisions/0084-broadcast-record-changes-through-reverb.md",
+            "title": "ADR 0084: Broadcast record changes through Reverb",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0072",
+                "0080",
+                "0084",
+                "0085"
+            ]
+        },
+        {
+            "path": "docs/decisions/0085-build-orbit-top-as-a-thin-tui-client.md",
+            "title": "ADR 0085: Build orbit top as a thin TUI client",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0085"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2348,7 +2400,9 @@
                 "0080",
                 "0081",
                 "0082",
-                "0083"
+                "0083",
+                "0084",
+                "0085"
             ]
         },
         {
