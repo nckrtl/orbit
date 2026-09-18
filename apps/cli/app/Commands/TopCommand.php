@@ -98,7 +98,7 @@ final class TopCommand extends GatewayCommand
 
         $send = fn (GatewayRequest $request, string $responseClass): object => $this->sendOrThrow($connector, $request, $responseClass);
         /** @param  list<GatewayRequest>  $requests */
-        $sendMany = fn (array $requests, string $responseClass): array => $this->poolSend($connector, $requests, $responseClass);
+        $sendMany = fn (array $requests, string $responseClass): array => $this->poolSend($connector, $requests, $responseClass, concurrency: 16);
 
         $state = new State;
         $scheduler = new RefreshScheduler(new GatewayNodeMetricsSource($send), new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));

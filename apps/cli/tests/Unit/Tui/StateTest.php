@@ -134,16 +134,33 @@ describe(State::class, function (): void {
 });
 
 describe('State health vocabulary', function (): void {
-    it('treats a process as healthy only when its systemd/Docker runtime_status matches its desired_state, not when the strings are equal', function (): void {
-        expect(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'active']))->toBeTrue()
-            ->and(State::processHealthy(['desired_state' => 'stopped', 'runtime_status' => 'inactive']))->toBeTrue()
+    it('treats a systemd process as healthy only when runtime_status matches desired_state in systemd\'s own vocabulary, not when the strings are equal', function (): void {
+        expect(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'active']))->toBeTrue()
+            ->and(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'stopped', 'runtime_status' => 'inactive']))->toBeTrue()
             // The literal-comparison bug: runtime_status never equals desired_state's own
             // vocabulary, so a healthy stopped process must not be flagged.
-            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'running']))->toBeFalse()
-            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'inactive']))->toBeFalse()
-            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'activating']))->toBeFalse()
-            ->and(State::processHealthy(['desired_state' => 'stopped', 'runtime_status' => 'active']))->toBeFalse()
-            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'failed']))->toBeFalse();
+            ->and(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'running']))->toBeFalse()
+            ->and(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'inactive']))->toBeFalse()
+            ->and(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'activating']))->toBeFalse()
+            ->and(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'stopped', 'runtime_status' => 'active']))->toBeFalse()
+            ->and(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'failed']))->toBeFalse();
+    });
+
+    it('treats a Docker process as healthy in Docker\'s own vocabulary ("running"/"exited"), confirmed against a live fleet where a healthy running container reports runtime_status "running", never "active"', function (): void {
+        expect(State::processHealthy(['runtime' => 'docker', 'desired_state' => 'running', 'runtime_status' => 'running']))->toBeTrue()
+            ->and(State::processHealthy(['runtime' => 'docker', 'desired_state' => 'stopped', 'runtime_status' => 'exited']))->toBeTrue()
+            // Applying systemd's vocabulary to a Docker process would wrongly flag a healthy
+            // running container, since Docker never reports "active".
+            ->and(State::processHealthy(['runtime' => 'docker', 'desired_state' => 'running', 'runtime_status' => 'active']))->toBeFalse()
+            ->and(State::processHealthy(['runtime' => 'docker', 'desired_state' => 'stopped', 'runtime_status' => 'running']))->toBeFalse()
+            ->and(State::processHealthy(['runtime' => 'docker', 'desired_state' => 'running', 'runtime_status' => 'restarting']))->toBeFalse();
+    });
+
+    it('offers stop for a running process in its own runtime\'s vocabulary', function (): void {
+        expect(State::processRuntimeIsActive(['runtime' => 'systemd', 'runtime_status' => 'active']))->toBeTrue()
+            ->and(State::processRuntimeIsActive(['runtime' => 'systemd', 'runtime_status' => 'inactive']))->toBeFalse()
+            ->and(State::processRuntimeIsActive(['runtime' => 'docker', 'runtime_status' => 'running']))->toBeTrue()
+            ->and(State::processRuntimeIsActive(['runtime' => 'docker', 'runtime_status' => 'exited']))->toBeFalse();
     });
 
     it('treats a firewall rule as healthy at status active, never the nonexistent "applied"', function (): void {

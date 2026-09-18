@@ -550,20 +550,53 @@ final class State
 
     /**
      * A Process's `desired_state` is DesiredProcessState (running, stopped); its `runtime_status`
-     * is the systemd/Docker runtime state (active, inactive, failed, activating, deactivating,
-     * maintenance, absent, ...) reported by `systemctl is-active`/`docker container inspect`, not
-     * the same vocabulary as `desired_state`. A running process is healthy when active; a stopped
-     * one is healthy when inactive. Anything else (still settling, or failed) needs a look.
+     * is not the same vocabulary, and — confirmed against a live fleet — is not even one fixed
+     * vocabulary: it is whatever the process's own `runtime` reports verbatim. A systemd process
+     * reports `systemctl is-active` (active, inactive, failed, activating, deactivating,
+     * maintenance, absent, ...); a Docker process reports `docker container inspect`'s
+     * `.State.Status` (running, exited, created, paused, restarting, removing, dead, ...) — a
+     * running Docker container's healthy value is literally "running", never "active". A running
+     * process is healthy when its runtime reports its own active value; a stopped one is healthy
+     * when its runtime reports its own inactive value. Anything else (still settling, failed, or
+     * an unrecognized runtime) needs a look.
      *
      * @param  array<string, mixed>  $process
      */
     public static function processHealthy(array $process): bool
     {
+        [$activeValue, $inactiveValue] = self::processRuntimeVocabulary($process);
+
         return match ($process['desired_state']) {
-            'running' => $process['runtime_status'] === 'active',
-            'stopped' => $process['runtime_status'] === 'inactive',
+            'running' => $process['runtime_status'] === $activeValue,
+            'stopped' => $process['runtime_status'] === $inactiveValue,
             default => false,
         };
+    }
+
+    /**
+     * Whether a Process is currently running, regardless of its desired_state — the systemd
+     * "active"/Docker "running" runtime_status value, in whichever vocabulary its own runtime
+     * reports. Used to offer "stop" instead of "start" in the record actions menu, and by
+     * processHealthy() above for a process whose desired_state is "running".
+     *
+     * @param  array<string, mixed>  $process
+     */
+    public static function processRuntimeIsActive(array $process): bool
+    {
+        [$activeValue] = self::processRuntimeVocabulary($process);
+
+        return $process['runtime_status'] === $activeValue;
+    }
+
+    /**
+     * @param  array<string, mixed>  $process
+     * @return array{string, string} The [active, inactive] runtime_status values this process's
+     *                               own runtime reports, e.g. ['active', 'inactive'] for systemd
+     *                               or ['running', 'exited'] for Docker.
+     */
+    private static function processRuntimeVocabulary(array $process): array
+    {
+        return ($process['runtime'] ?? null) === 'docker' ? ['running', 'exited'] : ['active', 'inactive'];
     }
 
     /**
