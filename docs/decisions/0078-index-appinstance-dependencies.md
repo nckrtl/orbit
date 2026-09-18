@@ -51,6 +51,7 @@ An App identifies a repository, while its instances can select different source 
 - Package resolution graphs require more detail than one pivot row per instance and package.
 - Consumers can inspect when a snapshot was collected. They cannot infer that its packages are installed.
 - Lockfile adapters must reject unsupported formats and preserve package relationships without executing project code.
+- npm lockfile v2/v3 adapters treat bundled dependency names without separate package entries as optional unresolved edges, and they ignore transitive `workspaces` package metadata while still rejecting root workspace layouts.
 - A package update can partially succeed. Results and inventory must describe the resulting state.
 - The scan and update commands require Gateway, SDK, CLI, and Incus verification before feature completion.
 

@@ -46,7 +46,7 @@ Each parser reads data only. It does not load project code, run a package manage
 | Ecosystem | Root files | Supported format |
 | --- | --- | --- |
 | Composer | `composer.json`, `composer.lock` | Composer 1 and 2 JSON lock structure with `packages` and `packages-dev`; Composer has no lockfile format version field. Preserve aliases, source references, and platform or virtual requirements without inventing package resolutions. |
-| npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3, using the `packages` map and installation paths to distinguish resolutions. Shrinkwrap takes precedence over package-lock within npm. Version 1 is unsupported. |
+| npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3, using the `packages` map and installation paths to distinguish resolutions. Shrinkwrap takes precedence over package-lock within npm. Version 1 is unsupported. Bundled dependency names (`bundleDependencies` / `bundledDependencies`) may lack separate lock entries; those edges stay optional with a null target. `workspaces` metadata on transitive package records is ignored; only the project root / lock root rejects workspace layouts. |
 | pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0, one root importer (`.`), package records and snapshots, including peer context. Earlier versions are unsupported. |
 | Bun | `package.json`, `bun.lock` | Text JSONC lock with `lockfileVersion` 1 and only its root workspace. Binary `bun.lockb` is unsupported. |
 
@@ -183,9 +183,24 @@ orbit schedule:show SCHEDULE_UUID --json
 orbit schedule:logs SCHEDULE_UUID --json
 ```
 
-`schedule:run` starts the installed unit once. Readable logs retain the CLI JSON, including per-instance outcomes. A failed instance scan makes the Schedule command exit nonzero; the host records that as a failed unit result. After the host completion callback, `last_run_status` becomes `success` or `error`. Repeated runs reuse the same Schedule record and do not create additional Schedules.
+`schedule:run` starts the installed unit once. Readable logs retain the CLI JSON, including per-instance outcomes. A failed instance scan makes the Schedule command exit nonzero; the host records that as a failed unit result. The installed wrapper's `complete` handler POSTs run status to the Gateway. On the CMD-1 discovery Gateway that callback used curl with the Orbit CA only and no Node client certificate, so `last_run_at` / `last_run_status` stayed null even after successful unit invocation—the schedule, timer, command, and logs still verified. Operators and DevOps should confirm Node-authenticated completion before treating those fields as authoritative. Repeated runs reuse the same Schedule record and do not create additional Schedules.
 
 Nightly scanning refreshes inventory only. It does not check advisories, query registries for newer versions, or update packages. The update command refreshes inventory after its own package work. Changes made outside that command appear after an explicit scan or the next nightly run. Do not create this Schedule against live production outside the owned disposable Gateway.
+
+## Verified integrated recipe (CMD-1 discovery)
+
+On discovery attempt `b9cdb4c91b23cc25c4e89f8a8fd270e9` (gateway / app-dev / app-prod), after the npm reader fixes above:
+
+| Check | Result |
+| --- | --- |
+| Development scan (`orbit instance:dependencies:scan --app=e2e-dev.orbit`) | Composer and JavaScript inventories present (109 / 137 resolutions) with transitive and development scopes. |
+| Development update (`orbit instance:dependencies:update --app=e2e-dev.orbit`) | Composer and JavaScript steps succeeded within constraints; post-update inventory succeeded (`may_have_mutated: true`). |
+| Production update refusal (`--app=e2e-prod.orbit.test`) | `dependencies.production_update_forbidden` before mutation (`may_have_mutated: false`). |
+| Fleet `orbit instance:dependencies:scan --all` | Continues after individual failures; after the production fixture deploy, both instances succeeded (`attempted: 2`, `succeeded: 2`). |
+| Production fixture | Committed `composer.lock` + `package-lock.json` on the development sample, deployed selected release `20260918191015-79ad05e2f6d43639`, then scanned with that release `reference` and without production resolution. |
+| Nightly Schedule | Schedule `201c4a0b-5725-4cb1-b2f8-75793dbbcb5a` runs `orbit instance:dependencies:scan --all --json --no-interaction` on calendar `*-*-* 03:15:00 Europe/Amsterdam`. See `.loop/cmd-1-evidence/`. |
+
+Durable regression coverage for scan/update, stale retention, fleet continuation, and production refusal remains in Gateway Feature and CLI Pest suites. Evidence JSON under `.loop/cmd-1-evidence/` is gitignored and retained on the worktree for the reviewer.
 
 ## Limits
 

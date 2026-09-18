@@ -207,6 +207,33 @@ describe('npm dependency reader', function (): void {
         'explicit null root' => ['{}', '{"":null}'],
     ]);
 
+    it('accepts bundled dependency names without separate lock entries', function (): void {
+        $manifest = '{"dependencies":{"parent":"1.0.0"}}';
+        $lock = <<<'JSON'
+{"lockfileVersion":3,"packages":{"":{"dependencies":{"parent":"1.0.0"}},"node_modules/parent":{"version":"1.0.0","bundleDependencies":["nested"],"dependencies":{"nested":"1.0.0"}}}}
+JSON;
+
+        $graph = (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->resolutions)->toHaveCount(1);
+        expect($graph->requirements)->toEqualCanonicalizing([
+            new DependencyRequirement(null, 'node_modules/parent', 'parent', '1.0.0', DependencyRequirementKind::Dependency, DependencyScope::Regular, false),
+            new DependencyRequirement('node_modules/parent', null, 'nested', '1.0.0', DependencyRequirementKind::Dependency, DependencyScope::Regular, true),
+        ]);
+    });
+
+    it('ignores workspaces metadata on transitive package records', function (): void {
+        $manifest = '{"devDependencies":{"lib":"1.0.0"}}';
+        $lock = <<<'JSON'
+{"lockfileVersion":3,"packages":{"":{"devDependencies":{"lib":"1.0.0"}},"node_modules/lib":{"version":"1.0.0","workspaces":["docs"]}}}
+JSON;
+
+        $graph = (new ReadNpmDependencyGraphAction)->execute($manifest, $lock);
+
+        expect($graph->resolutions)->toHaveCount(1);
+        expect($graph->resolutions[0]->development)->toBeTrue();
+    });
+
     it('rejects unsupported format versions explicitly', function (string $version): void {
         expect(fn () => (new ReadNpmDependencyGraphAction)->execute('{}', '{"lockfileVersion":'.$version.',"packages":{"":{}}}'))
             ->toThrow(DependencyParseException::class, 'dependencies.unsupported_format');

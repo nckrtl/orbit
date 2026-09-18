@@ -85,8 +85,8 @@ final readonly class ReadNpmDependencyGraphAction
             $this->invalid();
         }
 
-        $this->validateRecord($manifest);
-        $this->validateRecord($root);
+        $this->validateRecord($manifest, projectRoot: true);
+        $this->validateRecord($root, projectRoot: true);
 
         foreach (['name', 'version'] as $field) {
             if (property_exists($manifest, $field) && property_exists($root, $field) && $manifest->{$field} !== $root->{$field}) {
@@ -142,9 +142,9 @@ final readonly class ReadNpmDependencyGraphAction
         return new DependencyGraph(DependencyEcosystem::Npm, $resolutions, $requirements);
     }
 
-    private function validateRecord(stdClass $record): void
+    private function validateRecord(stdClass $record, bool $projectRoot = false): void
     {
-        if (property_exists($record, 'workspaces') || ($record->link ?? false) === true) {
+        if (($projectRoot && property_exists($record, 'workspaces')) || ($record->link ?? false) === true) {
             throw new DependencyParseException('dependencies.unsupported_layout');
         }
 
@@ -197,6 +197,32 @@ final readonly class ReadNpmDependencyGraphAction
         return $links;
     }
 
+    /** @return array<string, true> */
+    private function bundledNames(stdClass $record): array
+    {
+        $names = [];
+
+        foreach (['bundleDependencies', 'bundledDependencies'] as $field) {
+            if (! property_exists($record, $field)) {
+                continue;
+            }
+
+            if (! is_array($record->{$field})) {
+                $this->invalid();
+            }
+
+            foreach ($record->{$field} as $name) {
+                if (! is_string($name)) {
+                    $this->invalid();
+                }
+
+                $names[$this->packageName($name)] = true;
+            }
+        }
+
+        return $names;
+    }
+
     /**
      * @param  array<string, mixed>  $packages
      * @return list<DependencyRequirement>
@@ -218,6 +244,7 @@ final readonly class ReadNpmDependencyGraphAction
             }
         }
 
+        $bundled = $this->bundledNames($record);
         $requirements = [];
         $sections = [
             [array_diff_key($this->links($record, 'dependencies'), $optional), DependencyScope::Regular, DependencyRequirementKind::Dependency, false],
@@ -232,7 +259,9 @@ final readonly class ReadNpmDependencyGraphAction
         foreach ($sections as [$links, $scope, $kind, $isOptional]) {
             foreach ($links as $name => $constraint) {
                 $name = (string) $name;
-                $optionalEdge = $isOptional || ($kind === DependencyRequirementKind::Peer && ($metadata->{$name}->optional ?? false));
+                $optionalEdge = $isOptional
+                    || isset($bundled[$name])
+                    || ($kind === DependencyRequirementKind::Peer && ($metadata->{$name}->optional ?? false));
                 $target = $this->resolve($from, $name, $kind, $packages);
 
                 if ($target === null && ! $optionalEdge && $kind !== DependencyRequirementKind::Peer) {
