@@ -109,6 +109,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:database:add',
         'instance:database:remove',
         'instance:dependencies:scan',
+        'instance:dependencies:update',
         'instance:deploy',
         'instance:deploy-step:create',
         'instance:deploy-step:destroy',
@@ -211,7 +212,8 @@ describe('command vocabulary', function (): void {
         expect($commands)->not->toContain('metrics:list');
         expect(CommandVocabulary::routeRequiresMatchingCommand('schedule:complete', $commands))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:show', ['instance:dependencies:scan']))->toBeFalse();
-        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:scan']))->toBeFalse();
+        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:update']))->toBeTrue();
+        expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:scan']))->toBeTrue();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:scan', ['instance:dependencies:scan']))->toBeTrue();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:deployment-config:show', $commands))->toBeFalse();
     });
@@ -293,7 +295,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(123);
+    expect($orbitCommands)->toHaveCount(124);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -678,6 +680,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:release:list' => [['instance'], ['json' => false]],
         'instance:rollback' => [['instance'], ['release' => null, 'json' => false]],
         'instance:dependencies:scan' => [[], ['app' => null, 'all' => false, 'json' => false]],
+        'instance:dependencies:update' => [[], ['app' => null, 'all' => false, 'latest' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'instance:transfer' => [
             ['instance', 'node'],
@@ -1036,6 +1039,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:release:list' => [['instance' => '1'], ...$profileMissing],
         'instance:rollback' => [['instance' => '1', '--release' => 'release-a'], ...$profileMissing],
         'instance:dependencies:scan' => [[], ...$profileMissing],
+        'instance:dependencies:update' => [[], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
         'instance:transfer' => [
             ['instance' => '1', 'node' => '2', '--force' => true],

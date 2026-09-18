@@ -114,7 +114,7 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
-        if (in_array($routeName, ['instance:dependencies:show', 'instance:dependencies:update'], true)) {
+        if (in_array($routeName, ['instance:dependencies:show'], true)) {
             return false;
         }
 

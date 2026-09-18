@@ -121,6 +121,8 @@ orbit instance:dependencies:update
 orbit instance:dependencies:update --app=commander.test
 ```
 
+`--all` and `--latest` are rejected before HTTP. Production targets return a typed refusal with no package mutation. Partial package or inventory failure exits nonzero and reports retained step and inventory outcomes without claiming rollback.
+
 Orbit runs `composer update` for a root Composer project, then `vp update` for a root JavaScript project, as the instance's runtime user. Vite+ selects the project's supported package manager: npm, pnpm, or Bun. Both regular and development dependencies are included. An absent ecosystem is skipped.
 
 The Composer step uses a fixed argv in the recorded project root, including roots that contain spaces. It includes `require-dev` and leaves declared constraints unchanged. It owns the remote Composer process group, enforces a remote deadline, terminates and waits for that owned work on cancellation or timeout, discards process text, and reports cancellation or failure without claiming rollback. Local cancellation still SIGKILLs the complete process group after a bounded grace period, even if the original process has already exited.
