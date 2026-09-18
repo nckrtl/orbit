@@ -3247,6 +3247,53 @@
       }
     },
     {
+      "name": "node-role-relocate",
+      "title": "node:role:relocate",
+      "description": "Move the singleton gateway role to another node.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/roles/{role}/relocate",
+      "path_inputs": [
+        "node",
+        "role"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "vpn",
+              "router",
+              "ingress",
+              "app-dev",
+              "app-prod",
+              "metrics",
+              "database",
+              "websocket"
+            ],
+            "description": "Role name"
+          },
+          "force": {
+            "type": "string",
+            "description": "Confirm the gateway role transfer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "role"
+        ]
+      }
+    },
+    {
       "name": "node-role-remove",
       "title": "Remove a role from a Node",
       "description": "Remove one role assignment from a node.",

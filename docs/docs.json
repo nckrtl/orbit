@@ -213,6 +213,7 @@
               "GET /api/v1/nodes/{node}/roles",
               "POST /api/v1/nodes/{node}/roles",
               "DELETE /api/v1/nodes/{node}/roles/{role}",
+              "POST /api/v1/nodes/{node}/roles/{role}/relocate",
               "PATCH /api/v1/nodes/{node}/settings",
               "DELETE /api/v1/nodes/{serving_node}/access/{consumer_node}",
               "PUT /api/v1/nodes/{serving_node}/access/{consumer_node}"

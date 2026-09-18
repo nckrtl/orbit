@@ -118,6 +118,11 @@ if (in_array("vpn", $target, true)) {
 }
 ' "$after_source" "$after_target"
 
-curl --fail --silent --show-error --max-time 10 "https://${source_ip}/up" >/dev/null
+ca=/home/orbit/.orbit/e2e-gateway-root-ca.pem
+[[ -f "$ca" ]] || ca=/home/orbit/.orbit/ca/root.pem
+curl --fail --silent --show-error --max-time 10 \
+  --cacert "$ca" \
+  --resolve "gateway.orbit:443:${source_ip}" \
+  https://gateway.orbit/up >/dev/null
 printf 'leftover serving stack answered /up on %s\n' "$source_ip"
 printf 'gateway role is on %s; vpn remains on %s\n' "$target_name" "$source_name"

@@ -16,19 +16,19 @@ This amends the lifecycle policy in `App\Domain\Nodes\RoleRegistry` for `gateway
 
 ## Context
 
-Bootstrap assigns `gateway` and `vpn` to the same Node. `RoleRegistry` marked both `mutable: false`, so `node:role:remove` and `node:role:add` refused them. The `websocket` role later proved that a singleton, mutable, node-owned service can move: add and remove work because the Gateway process stays up.
+Bootstrap assigns `gateway` and `vpn` to the same Node. `RoleRegistry` marked both `mutable: false`, so `node:role:remove` and `node:role:add` refused them. After `websocket` became a mutable singleton, operators moved that role with add and remove because the Gateway process stays up.
 
 Live intent is different. Operators want `vpn` and private DNS to stay on the current Node (`gateway` at `10.44.0.1`) and to run the Laravel/FPM control plane on a new VPS. `websocket` relocate cannot be copied blindly:
 
 - `GatewayRoleBaseline` only opened the `orbit:gateway-https` firewall and refused removal.
 - `NativeGatewayWebConverger` writes Caddy, PHP-FPM, certificates, and checkout access on the machine that is already running the Gateway process. It is not a remote installer.
-- Private DNS answers `gateway.orbit` from the Node that currently holds an active `gateway` role.
+- Private DNS answers `gateway.orbit` from the Node that holds an active `gateway` role.
 - `NodeAccessAuthorizer` grants fleet-wide implicit authority to the Node that holds that active role. `ServingNodeResolver` also requires exactly one active Gateway for several families.
 - After a last-gateway remove, the next `node:role:add` is refused as `node_access.required`, and `gateway.orbit` disappears from the published catalog.
 
 Mutability alone therefore opens a hole: the assignment can move, but the request that would add it again cannot run, and clients that use the hostname lose the control plane. A dedicated relocate keeps one active assignment for the whole operation.
 
-The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on the machine that currently runs PHP. Relocate does not rsync those secrets. The operator copies them, or accepts that `gateway.orbit` will point at a Node that does not yet serve `/up` until that work is done. The old Caddy and PHP-FPM stay running so a CLI profile that still uses the old WireGuard address keeps working.
+The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on the machine that runs the Gateway PHP process. Relocate does not rsync those secrets. The operator copies them, or accepts that `gateway.orbit` will point at a Node that does not yet serve `/up` until that work is done. The old Caddy and PHP-FPM stay running so a CLI profile that still uses the old WireGuard address keeps working.
 
 ## Decision
 
@@ -37,7 +37,7 @@ The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on th
 - Relocate preflights the target (active Linux Node, no role conflicts, not the current holder), opens `orbit:gateway-https` on the target, transfers the existing `node_roles` row to that Node inside the singleton claim lock, republishes private DNS, and retracts the gateway HTTPS firewall on the source. It does not stop Caddy, PHP-FPM, the serving checkout, SQLite, the Orbit CA, or VPN on the source.
 - `GatewayRoleBaseline.remove` and `removeUnreachable` stop refusing. Reachable remove retracts the role-owned firewall and republishes DNS. Unreachable remove republishes DNS only. Converge opens the firewall and republishes DNS.
 - Record `gateway.serving_node_id` during bootstrap. `NodeAccessAuthorizer` treats that Node as implicit control-plane authority even when the `gateway` role is briefly unassigned, so a documented remove-then-add fallback can still call the API. Relocate does not change the serving-host setting; the process still runs on the source until the operator moves it.
-- Generic `node:role:add` and `node:role:remove` for `gateway` follow the same mutable singleton rules as `websocket`. Operators should prefer relocate. Remove-then-add has a window with no `gateway.orbit` record; clients that still use the stored WireGuard address reach the leftover serving stack.
+- Generic `node:role:add` and `node:role:remove` for `gateway` follow the same mutable singleton rules as `websocket`. Relocate is the supported path. Remove-then-add has a window with no `gateway.orbit` record; clients that still use the stored WireGuard address reach the leftover serving stack.
 - MCP role enums include `websocket` next to the other roles so Ops can assign that role without the PHP CLI.
 
 ## Rejected alternatives
