@@ -45,6 +45,7 @@ final readonly class CommandVocabulary
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
+        'top' => ['top'],
     ];
 
     /** @var list<string> */

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Design\Flows\InstanceShowFlowCommand;
 use Design\Flows\NodeAddFlowCommand;
-use Design\Flows\TopFlowCommand;
 use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
 use Illuminate\Console\Scheduling\ScheduleRunCommand;
@@ -74,7 +73,6 @@ return [
         // Design sketches of intended command experiences; dev-only, see design/README.md.
         env('ORBIT_DESIGN') === '1' && class_exists(NodeAddFlowCommand::class) ? NodeAddFlowCommand::class : null,
         env('ORBIT_DESIGN') === '1' && class_exists(InstanceShowFlowCommand::class) ? InstanceShowFlowCommand::class : null,
-        env('ORBIT_DESIGN') === '1' && class_exists(TopFlowCommand::class) ? TopFlowCommand::class : null,
     ])),
 
     /*

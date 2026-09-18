@@ -429,6 +429,24 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/top.mdx",
+            "title": "top",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/workspace.mdx",
             "title": "Git worktrees",
             "kind": "product",
