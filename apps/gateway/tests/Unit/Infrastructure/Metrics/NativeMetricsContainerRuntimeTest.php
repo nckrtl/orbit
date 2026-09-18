@@ -68,7 +68,7 @@ describe(NativeMetricsContainerRuntime::class, function (): void {
         [$node, $assignment] = metricsRuntimeModels();
 
         $runtime->converge($node, $assignment);
-        $configuration = new MetricsConfigurationRenderer()->render($exporters->targets, 'runtime-admin-password', '10.44.0.3');
+        $configuration = new MetricsConfigurationRenderer()->render($exporters->targets, 'runtime-admin-password');
         $spec = new MetricsRuntimeSpec;
 
         expect($configuration->prometheusHash)

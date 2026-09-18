@@ -65,7 +65,7 @@ final readonly class MetricsRuntimeSpec
         }
 
         $definition = match ($service) {
-            MetricsService::Prometheus => $this->prometheusDefinition($wireguardIp),
+            MetricsService::Prometheus => $this->prometheusDefinition(),
             MetricsService::Grafana => $this->grafanaDefinition($wireguardIp),
         };
         $publicSpec = [
@@ -116,12 +116,7 @@ final readonly class MetricsRuntimeSpec
     }
 
     /** @return array{image: string, name: string, volume: string, command: list<string>, mounts: list<string>, environment: array<string, string>, health_command: non-empty-list<string>} */
-    /**
-     * Binds Prometheus on the Metrics Node's WireGuard address, not loopback, so the Gateway can
-     * reach it directly (pinned by that address) instead of needing an SSH round trip. Grafana's
-     * datasource follows it there too; see MetricsConfigurationRenderer.
-     */
-    private function prometheusDefinition(string $wireguardIp): array
+    private function prometheusDefinition(): array
     {
         return [
             'image' => self::PrometheusImage,
@@ -131,7 +126,7 @@ final readonly class MetricsRuntimeSpec
                 '--config.file=/etc/prometheus/prometheus.yml',
                 '--storage.tsdb.path=/prometheus',
                 '--storage.tsdb.retention.time=15d',
-                "--web.listen-address={$wireguardIp}:9090",
+                '--web.listen-address=127.0.0.1:9090',
             ],
             'mounts' => [
                 '/etc/orbit/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro',
@@ -143,7 +138,7 @@ final readonly class MetricsRuntimeSpec
                 '--no-verbose',
                 '--tries=1',
                 '--spider',
-                'http://'.$wireguardIp.':9090/-/ready',
+                'http://127.0.0.1:9090/-/ready',
             ],
         ];
     }

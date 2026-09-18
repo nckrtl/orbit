@@ -25,7 +25,7 @@ final readonly class NativeMetricsContainerRuntime implements MetricsRuntimeLife
     public function converge(Node $node, NodeRole $assignment): void
     {
         $password = $this->credentials->passwordForConvergence($node);
-        $configuration = $this->configurations->render($this->exporters->targets($node), $password, (string) $node->wireguard_ip);
+        $configuration = $this->configurations->render($this->exporters->targets($node), $password);
         $specs = $this->specs(
             $node,
             $assignment,

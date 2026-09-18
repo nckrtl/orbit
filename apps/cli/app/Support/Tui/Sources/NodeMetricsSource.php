@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Support\Tui\Sources;
 
 /**
- * The compact CPU, memory, swap, and disk snapshot `orbit top`'s dashboard and Node page draw
- * per node.
+ * The compact CPU, memory, swap, and disk snapshot `orbit top`'s Node page draws for one node.
  *
- * `Sources\GatewayNodeMetricsSource` calls `GET /nodes/{node}/metrics`. `forNode()` returns
- * `null` when the request fails or times out (an unreachable Node, for example), and the
- * metrics blocks render "No metrics." instead of the bars. `State::nodeMetrics()` prefers a
- * live `node.sample` realtime event over this source, so a Gateway that streams samples but
- * does not answer the metrics endpoint still shows live numbers.
+ * `Sources\GrafanaPrometheusMetricsSource` reads it through the Metrics role's Grafana. `forNode()`
+ * returns `null` when Metrics is disabled, the credential is rejected, the Node has no WireGuard
+ * address, or Prometheus has no samples for it, and the metrics blocks render "No metrics."
+ * instead of the bars. `State::nodeMetrics()` prefers a live `node.sample` realtime event over
+ * this source, so a Gateway that streams samples still shows live numbers.
  */
 interface NodeMetricsSource
 {

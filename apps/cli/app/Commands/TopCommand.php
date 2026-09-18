@@ -17,8 +17,7 @@ use App\Support\Tui\RefreshScheduler;
 use App\Support\Tui\Screen;
 use App\Support\Tui\Sources\GatewayDatabaseUsersSource;
 use App\Support\Tui\Sources\GatewayDeploymentsSource;
-use App\Support\Tui\Sources\GatewayFleetNodeMetricsSource;
-use App\Support\Tui\Sources\GatewayNodeMetricsSource;
+use App\Support\Tui\Sources\GrafanaPrometheusMetricsSource;
 use App\Support\Tui\State;
 use App\Support\Tui\UiState;
 use Orbit\Sdk\GatewayApiException;
@@ -51,7 +50,7 @@ use PhpTui\Tui\DisplayBuilder;
  * `instance:logs`, `instance:profile`, and `database:query` (none of which have a synchronous
  * SDK request), print the equivalent command instead of running it. Deployment history,
  * per-connection database users, and node metrics come from `App\Support\Tui\Sources\
- * GatewayDeploymentsSource`, `GatewayDatabaseUsersSource`, and `GatewayNodeMetricsSource`, kept
+ * GatewayDeploymentsSource`, `GatewayDatabaseUsersSource`, and `GrafanaPrometheusMetricsSource`, kept
  * current by `App\Support\Tui\RefreshScheduler` (see its class doc) rather than by Screen or
  * State fetching on read; when a request fails or times out, its pane says so instead of
  * rendering a table.
@@ -99,7 +98,8 @@ final class TopCommand extends GatewayCommand
         $sendMany = fn (array $requests, string $responseClass): array => $this->poolSend($connector, $requests, $responseClass, concurrency: 16);
 
         $state = new State;
-        $scheduler = new RefreshScheduler(new GatewayNodeMetricsSource($send), new GatewayFleetNodeMetricsSource($send), new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
+        $metricsSource = new GrafanaPrometheusMetricsSource($send);
+        $scheduler = new RefreshScheduler($metricsSource, $metricsSource, new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
 
         $progress = $this->progressDisplay('Load fleet data');
         $progress->admit('load', 'Load fleet data', 'Loading fleet data', 'Loaded fleet data');

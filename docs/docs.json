@@ -262,7 +262,6 @@
               "POST /api/v1/metrics/credentials/reset",
               "DELETE /api/v1/metrics/exporters/{node}",
               "PUT /api/v1/metrics/exporters/{node}",
-              "GET /api/v1/metrics/nodes",
               "GET /api/v1/metrics/status"
             ]
           },
@@ -520,7 +519,8 @@
               "decisions/0084-broadcast-record-changes-through-reverb",
               "decisions/0085-build-orbit-top-as-a-thin-tui-client",
               "decisions/0086-offer-the-api-as-mcp-tools",
-              "decisions/0087-run-reverb-through-a-websocket-role"
+              "decisions/0087-run-reverb-through-a-websocket-role",
+              "decisions/0088-cli-reads-display-metrics-from-grafana"
             ]
           }
         ]

@@ -25,7 +25,6 @@ use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\HerdrSessionsController;
 use App\Http\Controllers\Api\MetricsController;
-use App\Http\Controllers\Api\MetricsNodesController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
@@ -135,8 +134,6 @@ Route::prefix('v1')->group(function (): void {
             ->name('firewall:list');
         Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
             ->name('node:metrics');
-        Route::get('metrics/nodes', [MetricsNodesController::class, 'index'])
-            ->name('metrics:node:list');
         Route::get('activities', [ActivitiesController::class, 'index'])
             ->name('activity:list');
         Route::get('activities/{activity}', [ActivitiesController::class, 'show'])

@@ -9,7 +9,8 @@ use App\Models\Node;
 interface NodeMetricsReader
 {
     /**
-     * Reads one metrics snapshot for the Node from the Metrics role's Prometheus.
+     * Reads one metrics snapshot for the Node from the Metrics role's Grafana (Prometheus
+     * datasource proxy).
      *
      * @return array<string, mixed>
      */

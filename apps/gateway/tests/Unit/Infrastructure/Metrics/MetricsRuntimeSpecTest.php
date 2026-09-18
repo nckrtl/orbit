@@ -29,7 +29,7 @@ describe(MetricsRuntimeSpec::class, function (): void {
             ->and($prometheus->volume)
             ->toBe('orbit-metrics-prometheus-data')
             ->and($prometheus->command)
-            ->toContain('--web.listen-address=10.44.0.3:9090')
+            ->toContain('--web.listen-address=127.0.0.1:9090')
             ->and($prometheus->labels)
             ->toMatchArray([
                 'com.orbit.managed' => 'metrics',

@@ -6,8 +6,9 @@ namespace App\Support\Tui\Sources;
 
 /**
  * The compact CPU, memory, swap, and disk snapshot `orbit top`'s dashboard draws for every Node
- * at once, from `GET /metrics/nodes`. One request refreshes the whole fleet instead of one
- * request per Node (see `Sources\NodeMetricsSource`, used for a single open Node page).
+ * at once. `Sources\GrafanaPrometheusMetricsSource` covers the whole fleet with one set of
+ * Prometheus queries through the Metrics role's Grafana, instead of one request per Node (see
+ * `Sources\NodeMetricsSource`, used for a single open Node page).
  */
 interface FleetNodeMetricsSource
 {

@@ -128,7 +128,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'metrics:enable',
         'metrics:exporter:disable',
         'metrics:exporter:enable',
-        'metrics:node:list',
         'metrics:status',
         'node:access:add',
         'node:access:remove',
@@ -290,7 +289,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(123);
+    expect($orbitCommands)->toHaveCount(122);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -685,7 +684,6 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'metrics:enable' => [['node'], ['json' => false]],
         'metrics:exporter:disable' => [['node'], ['json' => false]],
         'metrics:exporter:enable' => [['node'], ['json' => false]],
-        'metrics:node:list' => [[], ['json' => false]],
         'metrics:status' => [[], ['json' => false]],
         'node:access:add' => [['consumer', 'serving'], ['json' => false]],
         'node:access:remove' => [['consumer', 'serving'], ['force' => false, 'json' => false]],
@@ -1043,7 +1041,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'metrics:enable' => [['node' => '1'], ...$profileMissing],
         'metrics:exporter:disable' => [['node' => '1'], ...$profileMissing],
         'metrics:exporter:enable' => [['node' => '1'], ...$profileMissing],
-        'metrics:node:list' => [[], ...$profileMissing],
         'metrics:status' => [[], ...$profileMissing],
         'node:access:add' => [['consumer' => '2', 'serving' => '3'], ...$profileMissing],
         'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
