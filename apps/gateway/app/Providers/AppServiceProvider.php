@@ -114,6 +114,7 @@ use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -242,6 +243,7 @@ use App\Infrastructure\Processes\NativeProcessAdmissionLock;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\PrometheusProcessRuntimeStatusIndex;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
@@ -364,6 +366,7 @@ final class AppServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         VitePortRuntime::class => RemoteVitePortRuntime::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         AppInstanceCheckoutInspector::class => RemoteAppInstanceCheckoutInspector::class,
