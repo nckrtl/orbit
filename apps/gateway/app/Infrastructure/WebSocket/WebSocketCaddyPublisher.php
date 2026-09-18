@@ -94,7 +94,8 @@ final readonly class WebSocketCaddyPublisher
                     if [ -n "\$previous_target" ]; then
                         ln -s -- "\$previous_target" "\$candidate_link"
                         mv -fT -- "\$candidate_link" "\$live_caddyfile"
-                        systemctl reload-or-restart "\$caddy_service" || true
+                        # A rejected load can leave its listeners open beside the live ones; only a restart drops them.
+                        systemctl restart "\$caddy_service" || true
                     fi
                     rm -rf -- "\$published"
                     exit 1
@@ -159,7 +160,7 @@ final readonly class WebSocketCaddyPublisher
                     if [ -n "$previous_target" ]; then
                         ln -s -- "$previous_target" "$candidate_link"
                         mv -fT -- "$candidate_link" "$live_caddyfile"
-                        systemctl reload-or-restart "$caddy_service" || true
+                        systemctl restart "$caddy_service" || true
                     fi
                     rm -rf -- "$published"
                     exit 1

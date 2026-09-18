@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Saloon\Http\Faking\MockClient;
 
 beforeEach(function (): void {
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-realtime-tail-'.Str::uuid();
@@ -16,6 +17,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
@@ -36,13 +38,26 @@ describe('realtime:tail', function (): void {
             ->and(str_replace("\n", '', Artisan::output()))->toContain('requires an interactive terminal or --json');
     });
 
-    it('refuses when realtime is not configured for the active gateway', function (): void {
+    it('refuses when neither the profile nor the gateway has a realtime endpoint', function (): void {
         app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test'));
+        MockClient::global(gateway_fixture_mock('realtime/realtime-show/unconfigured'));
 
         $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
 
         expect($exitCode)->toBe(1)
             ->and(Artisan::output())->toContain('"code":"realtime.not_configured"');
+    });
+
+    it('asks the gateway for the realtime endpoint when the profile has none', function (): void {
+        app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test'));
+        MockClient::global(gateway_fixture_mock('realtime/realtime-show/configured'));
+        Http::fake(['*/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
+        app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
+
+        $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
+
+        expect($exitCode)->toBe(130)
+            ->and(Artisan::output())->toContain('"type":"node.created"');
     });
 
     it('rejects an invalid --types filter', function (): void {

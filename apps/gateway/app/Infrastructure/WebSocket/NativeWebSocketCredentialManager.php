@@ -77,7 +77,13 @@ final readonly class NativeWebSocketCredentialManager implements WebSocketCreden
             return null;
         }
 
-        return new WebSocketCredentials($appId, $appKey, $appSecret, $laravelAppKey);
+        return new WebSocketCredentials(
+            $appId,
+            $appKey,
+            $appSecret,
+            $laravelAppKey,
+            is_string($node->wireguard_ip) && $node->wireguard_ip !== '' ? $node->wireguard_ip : null,
+        );
     }
 
     public function purge(Node $node): void

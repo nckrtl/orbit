@@ -21,6 +21,8 @@ final readonly class WebSocketCredentials
         public string $appSecret,
         #[SensitiveParameter]
         public string $laravelAppKey,
+        /** WireGuard address of the node that serves Reverb, when read from an active assignment. */
+        public ?string $servingAddress = null,
     ) {}
 
     public function __debugInfo(): array

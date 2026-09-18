@@ -23,6 +23,11 @@ final readonly class RealtimeConnectionData
         #[SensitiveParameter]
         public string $secret,
         public string $caCertificatePath,
+        /**
+         * Address the Gateway connects to for `host`. The Gateway host does not use Orbit's
+         * private DNS, so it cannot resolve `reverb.orbit` by name.
+         */
+        public ?string $resolveAddress = null,
     ) {}
 
     public function url(): string

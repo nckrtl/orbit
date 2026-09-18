@@ -6,6 +6,7 @@ namespace App\Commands\Realtime;
 
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\InterruptIntent;
@@ -27,6 +28,7 @@ final class RealtimeTailCommand extends GatewayCommand
 
     public function handle(
         GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
         WebSocketTransport $transport,
     ): int {
         $json = $this->option('json') === true;
@@ -51,6 +53,20 @@ final class RealtimeTailCommand extends GatewayCommand
         }
 
         $subscriber = RealtimeSubscriber::forProfile($profile, app()->version(), $transport);
+
+        if ($subscriber->state() === RealtimeState::NotConfigured) {
+            $connector = $this->gatewayConnector($repository, $connectors);
+
+            if ($connector === null) {
+                return self::FAILURE;
+            }
+
+            $subscriber = RealtimeSubscriber::forProfile(
+                $this->discoveredRealtimeProfile($connector, $profile),
+                app()->version(),
+                $transport,
+            );
+        }
 
         if ($subscriber->state() === RealtimeState::NotConfigured) {
             return $this->renderGatewayFailure(
