@@ -14,6 +14,7 @@
         "docs-lint": "@php apps/docs/artisan orbit:docs-lint --format=agent --strict",
         "docs-openapi": "bin/docs-openapi",
         "api-fixtures": "bin/api-fixtures --check",
+        "mcp-tools": "bin/mcp-tools --check",
         "cli-contract": "bin/cli-contract",
         "test": "bin/test",
         "check": [
