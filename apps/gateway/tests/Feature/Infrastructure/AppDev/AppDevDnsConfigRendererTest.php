@@ -84,7 +84,7 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         ->toContain('address=/.solo.test/10.44.0.40');
 });
 
-it('keeps gateway.orbit, metrics.orbit, and prometheus.orbit on the Gateway WireGuard address', function (): void {
+it('keeps gateway.orbit and metrics.orbit on the Gateway WireGuard address', function (): void {
     $gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -117,7 +117,6 @@ it('keeps gateway.orbit, metrics.orbit, and prometheus.orbit on the Gateway Wire
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render($metrics);
 
     expect($configuration)->toContain('host-record=metrics.orbit,10.44.0.1')
-        ->toContain('host-record=prometheus.orbit,10.44.0.1')
         ->toContain('host-record=gateway.orbit,10.44.0.1');
 });
 
