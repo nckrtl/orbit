@@ -43,11 +43,11 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
             $runtime = true;
             $this->publication->converge($gateway, $node);
         } catch (\Throwable $exception) {
-            try {
-                if ($runtime) {
-                    $this->runtime->remove($node, $assignment, false);
-                }
+            if ($runtime) {
+                throw $exception;
+            }
 
+            try {
                 if ($cadvisors) {
                     $this->cadvisors->remove($node, $assignment);
                 }

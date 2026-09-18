@@ -3243,7 +3243,7 @@
             "description": "Role name"
           },
           "converge_existing": {
-            "type": "string"
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -3612,22 +3612,24 @@
         "type": "object",
         "properties": {
           "target_type": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "instance",
               "node"
             ]
           },
           "target_id": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 1
           }
         },
-        "additionalProperties": false,
-        "required": [
-          "target_type",
-          "target_id"
-        ]
+        "additionalProperties": false
       }
     },
     {

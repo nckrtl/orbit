@@ -898,7 +898,7 @@ spec = {
         'Error': {'type': 'object', 'properties': {'error': {'type': 'object', 'properties': {'code': {'type': 'string', 'description': 'Stable error code, namespaced by family, such as `node.not_active` or `route.target_conflict`.'}, 'message': {'type': 'string', 'description': 'Safe message without credentials, environment values, or remote output.'}, 'details': {'type': 'object', 'additionalProperties': True, 'description': 'Bounded, redacted details such as the conflicting record IDs or the failed validation rule.'}, 'request_id': {'type': 'string', 'format': 'uuid'}}, 'required': ['code', 'message']}}, 'required': ['error']},
     }},
 }
-BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'include_worktrees', 'start', 'keep_alive', 'write'}
+BOOLEAN_FIELDS = {'force', 'offline', 'replace', 'converge', 'converge_existing', 'purge_data', 'handoff', 'accept_termination', 'publish_observer', 'include_worktrees', 'start', 'keep_alive', 'write'}
 nav_pages = {t: [] for _, t, _ in TAGS}
 unmatched = []
 

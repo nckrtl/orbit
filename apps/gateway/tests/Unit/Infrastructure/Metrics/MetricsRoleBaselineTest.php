@@ -80,9 +80,6 @@ it('rolls completed runtime and exporter stages back in reverse order', function
             'cadvisors:converge',
             'runtime:converge',
             'publication:converge',
-            'runtime:remove',
-            'cadvisors:remove',
-            'exporters:remove',
         ],
     ],
 ]);

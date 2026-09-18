@@ -201,7 +201,7 @@ orbit node:role:add beast database
 orbit node:role:add beast metrics --converge
 ```
 
-`gateway` is mutable. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the singleton assignment already exists. `vpn` is refused.
+`gateway` is mutable. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the singleton assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
 
 ## orbit node:role:list
 
@@ -228,7 +228,7 @@ orbit node:role:relocate <node> gateway [--force] [--json]
 | --- | --- |
 | `--force` | Confirm the transfer. Required in JSON and other non-interactive modes. |
 
-The Gateway opens the gateway HTTPS firewall on the target, transfers the assignment, republishes private DNS, and retracts that firewall on the source. The target must not already hold `app-dev`, `app-prod`, or `database`. Relocate does not move `vpn`, stop Caddy or PHP-FPM on the source, or copy the serving checkout. [Relocate the gateway role](/solutions/relocate-gateway-role) owns ordering, the leftover serving stack, and CLI profile updates.
+The Gateway opens the gateway HTTPS firewall on the target, transfers the assignment, grants the new Gateway access to the `vpn` and `metrics` nodes, republishes private DNS on the `vpn` node, and retracts that firewall on the source. The target must not already hold `app-dev`, `app-prod`, or `database`. Relocate does not move `vpn`, stop Caddy or PHP-FPM on the source, or copy the serving checkout. [Relocate the gateway role](/solutions/relocate-gateway-role) owns ordering, the leftover serving stack, and CLI profile updates. The granted access set is `vpn` and `metrics`.
 
 ```bash
 orbit node:role:relocate beast gateway --force
@@ -256,7 +256,7 @@ A role that still hosts a Route target, such as `app-dev` or `app-prod` with act
 
 ## orbit node:access:add
 
-Allow one Node to run Gateway commands on another Node. Access edges authorize Orbit commands and Gateway API actions; they do not change private network reachability, which WireGuard membership already grants.
+Allow one Node to run Gateway commands on another Node. Access edges authorize Orbit commands and Gateway API actions; they do not change private network reachability, which WireGuard membership already grants. Adding or relocating the `gateway` role creates the Gateway → `vpn` and Gateway → `metrics` edges automatically.
 
 ```bash
 orbit node:access:add <consumer> <serving> [--json]

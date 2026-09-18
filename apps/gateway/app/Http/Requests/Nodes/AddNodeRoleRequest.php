@@ -19,7 +19,7 @@ final class AddNodeRoleRequest extends FormRequest
     {
         return [
             'role' => ['required', 'string', Rule::enum(RoleName::class)],
-            'converge_existing' => ['sometimes', $this->strictBoolean(...)],
+            'converge_existing' => ['sometimes', 'boolean', $this->strictBoolean(...)],
         ];
     }
 
