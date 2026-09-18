@@ -1,0 +1,7 @@
+{"event":"pusher:connection_established","data":"{\"socket_id\":\"555.777\",\"activity_timeout\":30}"}
+{"event":"pusher_internal:subscription_succeeded","channel":"private-orbit","data":"{}"}
+{"event":"node.created","channel":"private-orbit","data":"{\"type\":\"node.created\",\"id\":101,\"at\":\"2026-09-18T10:00:00+00:00\",\"data\":{\"id\":7,\"name\":\"beast\",\"status\":\"provisioning\"}}"}
+{"event":"process.status","channel":"private-orbit","data":"{\"type\":\"process.status\",\"id\":102,\"at\":\"2026-09-18T10:00:05+00:00\",\"data\":{\"id\":42,\"name\":\"queue-worker\",\"status\":\"running\"}}"}
+{"event":"pusher:ping","data":"{}"}
+{"event":"schedule.updated","channel":"private-orbit","data":"{\"type\":\"schedule.updated\",\"id\":103,\"at\":\"2026-09-18T10:00:10+00:00\",\"data\":{\"id\":9,\"name\":\"nightly-backup\"}}"}
+{"event":"deployment.log","channel":"private-orbit","data":"{\"type\":\"deployment.log\",\"id\":104,\"at\":\"2026-09-18T10:00:12+00:00\",\"data\":{\"line\":\"Composer install complete\"}}"}

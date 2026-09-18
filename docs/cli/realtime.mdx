@@ -1,0 +1,47 @@
+---
+title: "realtime"
+description: "Stream decoded realtime Gateway events as they arrive, or confirm realtime is not configured yet."
+---
+
+The Gateway can publish realtime events over a private WebSocket channel. `realtime:tail` connects to that channel, subscribes, and prints each decoded event as it arrives. Use it to watch fleet activity live, or to check whether realtime is reachable before relying on it from another tool.
+
+## Before you start
+
+Realtime needs a Reverb endpoint and app key on top of the usual gateway profile. Store them on the active profile as `realtime_url` and `realtime_key` in `$ORBIT_HOME/config.json`, alongside `url` and `ca_path`, or set `ORBIT_REALTIME_URL` and `ORBIT_REALTIME_KEY` in the environment to override them. `ORBIT_REALTIME_URL` looks like `wss://reverb.orbit`. When neither the profile nor the environment supplies both values, `realtime:tail` fails with `realtime.not_configured` and callers fall back to polling the affected commands instead.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`realtime:tail`](#orbit-realtimetail) | Stream decoded realtime Gateway events as they arrive. |
+
+The command accepts `--json`.
+
+## orbit realtime:tail
+
+Connect to the Gateway's realtime channel and print every event it carries until interrupted.
+
+```bash
+orbit realtime:tail [--types=FILTER,...] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--types=FILTER,...` | Comma-separated event type filters. Each filter is an exact type such as `process.status`, or a family prefix ending in `*` such as `node.*`. Omit the option to print every type. |
+| `--json` | Print each event's full envelope as one JSON line instead of a formatted line. |
+
+```bash
+orbit realtime:tail
+orbit realtime:tail --types=node.*,process.status
+orbit realtime:tail --json
+```
+
+Human output prints one line per event as `<at>  <type>  <summary>`, where `<summary>` lists the event's data fields as space-separated `key=value` pairs. JSON output prints the event's `{type, id, at, data}` envelope, one complete JSON object per line. The command keeps streaming until interrupted; press Ctrl-C to stop it, which exits with the interrupted-signal status.
+
+Event types follow `<family>.<verb>`, for example `node.created`, `instance.status`, `process.status`, `schedule.updated`, `database.created`, `firewall.updated`, `deploy_step.created`, and `deployment.log`.
+
+`realtime:tail` needs an interactive terminal unless `--json` is set; a noninteractive invocation without `--json` fails with `input.noninteractive_required`. An invalid `--types` filter fails with `input.invalid`.
+
+### Reconnection
+
+When the socket drops, the command reconnects automatically with increasing backoff: 1, 2, 4, 8, 16, then 30 seconds between attempts. It keeps retrying rather than exiting, so a long-running `orbit realtime:tail` survives a Gateway restart or a brief network interruption.

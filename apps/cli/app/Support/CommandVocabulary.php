@@ -43,6 +43,7 @@ final readonly class CommandVocabulary
         'metrics' => ['status'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'profile' => ['profile'],
+        'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
     ];
 

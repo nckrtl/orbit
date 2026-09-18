@@ -364,6 +364,22 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/realtime.mdx",
+            "title": "realtime",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/route.mdx",
             "title": "route",
             "kind": "product",

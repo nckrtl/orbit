@@ -14,6 +14,8 @@ use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileRequestProfiler;
 use App\Support\Console\StandardInput;
 use App\Support\Console\StandardInputReader;
+use App\Support\Realtime\StreamWebSocketTransport;
+use App\Support\Realtime\WebSocketTransport;
 use Design\Support\FixtureReplay;
 use Illuminate\Support\ServiceProvider;
 
@@ -38,6 +40,7 @@ final class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(StandardInputReader::class, StandardInput::class);
         $this->app->singleton(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
+        $this->app->bind(WebSocketTransport::class, StreamWebSocketTransport::class);
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);
         $this->app->singleton(
