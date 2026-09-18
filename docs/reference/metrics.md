@@ -118,6 +118,10 @@ A removal that the Gateway authorized and that finds no single active Gateway wh
 
 `orbit node:remove <node> --offline --force` resolves no Gateway, so it sheds the role from an unreachable Metrics node while the fleet has no single active Gateway; the route, certificate, and DNS record then stay on the Gateway host in the same way.
 
+## Reading Node metrics
+
+[`orbit node:metrics`](/cli/node#orbit-node-metrics) and [`orbit metrics:node:list`](/cli/metrics#orbit-metricsnodelist) read a Node's CPU, memory, swap, load, uptime, pressure, and disk snapshot from the Metrics role's own Prometheus: the Gateway makes one SSH round trip to the Metrics Node's loopback Prometheus, runs four instant PromQL queries covering every scraped Node at once, and maps the response into the snapshot shape. No orbit software runs on the Node whose metrics are read, and neither command depends on what CLI build a Node was provisioned with. A Node with no active exporter selection or with no Prometheus samples yet answers `node.metrics_unreachable` (single-Node) or `available: false` with a `reason` (fleet list) instead of failing.
+
 ## API surface
 
 The Metrics API exposes these routes on the active Gateway.
@@ -127,6 +131,7 @@ The Metrics API exposes these routes on the active Gateway.
 | `POST` | `/api/v1/metrics` | Enable the role. |
 | `DELETE` | `/api/v1/metrics` | Disable the role. |
 | `GET` | `/api/v1/metrics/status` | Read status. |
+| `GET` | `/api/v1/metrics/nodes` | List one metrics snapshot per Node the caller can access. |
 | `GET` | `/api/v1/metrics/credentials` | Read verified credentials. |
 | `POST` | `/api/v1/metrics/credentials/reset` | Reset credentials. |
 | `GET` | `/api/v1/metrics/grafana/authorize` | Authorize one Caddy Grafana request from its connection address. |

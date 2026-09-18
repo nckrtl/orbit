@@ -13,6 +13,7 @@ The [Metrics reference](/reference/metrics) owns placement, exporter eligibility
 | --- | --- |
 | [`metrics:enable`](#orbit-metricsenable) | Enable Metrics on one Node. |
 | [`metrics:status`](#orbit-metricsstatus) | Show the assignment, container health, and exporter state. |
+| [`metrics:node:list`](#orbit-metricsnodelist) | List one metrics snapshot per Node, read from Prometheus. |
 | [`metrics:credentials`](#orbit-metricscredentials) | Show or reset the verified Grafana administrator credential. |
 | [`metrics:exporter:enable`](#orbit-metricsexporterenable) | Select one Node as an exporter target. |
 | [`metrics:exporter:disable`](#orbit-metricsexporterdisable) | Exclude one Node from exporter selection. |
@@ -47,6 +48,16 @@ Show whether Metrics is enabled, the Grafana URL, the assignment with its Node a
 ```bash
 orbit metrics:status [--json]
 ```
+
+## orbit metrics:node:list
+
+List one metrics snapshot per Node the caller can access, read from the Metrics role's Prometheus in one Gateway round trip instead of one [`node:metrics`](/cli/node#orbit-node-metrics) request per Node.
+
+```bash
+orbit metrics:node:list [--json]
+```
+
+Each row carries the same `cores`, `memory`, `swap`, `load`, `uptime_seconds`, `pressure`, and `disks` fields as `node:metrics`, plus `available` and `reason`. A Node Prometheus has not scraped yet, or has no exporter selected, reports `available: false` with `reason` set to `no_samples` or `no_exporter` instead of failing the whole response or being left out; its metric fields are zeroed and must not be read. This is what `orbit top`'s dashboard uses to keep every Node's metrics current with one request per refresh.
 
 ## orbit metrics:credentials
 

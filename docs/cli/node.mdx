@@ -120,9 +120,11 @@ orbit node:metrics <node> [--json]
 orbit node:metrics beast
 ```
 
-The Gateway reads the snapshot straight from the Node over the same SSH path it already uses for other Node-executed work: it runs the hidden `orbit internal:node-metrics` command on the Node, which samples `/proc/stat` twice over a short internal window to compute each core's busy ratio, then reads `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/pressure/cpu`, `/proc/pressure/memory`, `/proc/pressure/io`, and `df` for disk usage. The whole call stays synchronous and under one second. The Gateway answers `node.metrics_unavailable` (HTTP 422) for a Node that is not active or has no WireGuard address, and `node.metrics_unreachable` (HTTP 502) when the Node could not be read.
+The Gateway reads the snapshot from the [Metrics role's](/reference/metrics) own Prometheus, which already scrapes a node exporter on every eligible Node every 15 seconds: one SSH round trip to the Metrics Node reads four Prometheus queries covering the whole fleet, and this command replays the entry for the requested Node. No software runs on the Node itself. The Gateway answers `node.metrics_unavailable` (HTTP 422) for a Node that is not active or has no WireGuard address, and `node.metrics_unreachable` (HTTP 502) when Metrics is not enabled, the Metrics Node could not be read, or Prometheus has no samples yet for this Node.
 
-The snapshot reports `cores` as a list of per-core busy ratios from 0 to 1, `memory` and `swap` as used and total bytes, `load` as the 1, 5, and 15-minute averages, `uptime_seconds`, `pressure` as the `some` `avg10` value from each of `/proc/pressure/cpu`, `/proc/pressure/memory`, and `/proc/pressure/io` (`0` when the kernel has no PSI support), and `disks` as a list of mount, used, and total bytes. Human output renders bytes and durations in readable units; JSON keeps the raw numbers.
+The snapshot reports `cores` as a list of per-core busy ratios from 0 to 1, `memory` and `swap` as used and total bytes, `load` as the 1, 5, and 15-minute averages, `uptime_seconds`, `pressure` as the `some` `avg10` value from each of CPU, memory, and I/O pressure (`0` when the Node's kernel has no PSI support), and `disks` as a list of mount, used, and total bytes, with pseudo filesystems (`tmpfs`, `proc`, `sysfs`, and similar) excluded and `/` listed first. Human output renders bytes and durations in readable units; JSON keeps the raw numbers.
+
+[`orbit metrics:node:list`](/cli/metrics) reads the same Prometheus data for every Node the caller can access in one request, which is what `orbit top`'s dashboard uses instead of one `node:metrics` request per Node.
 
 ## orbit node:remove
 
