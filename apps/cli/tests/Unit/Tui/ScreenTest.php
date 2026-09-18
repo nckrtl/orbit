@@ -277,8 +277,8 @@ describe(Screen::class, function (): void {
             ],
             range(1, 9),
         );
-        // node-3 has live metrics from a node.sample event; the rest have none yet, and show
-        // "No metrics." in dim text instead of bars.
+        // node-3 has live metrics from a node.sample event; the rest have none yet, and show a
+        // dim em dash in every metric column, uptime included.
         $state->nodeSamples[3] = [
             'cores' => [0.2, 0.4],
             'mem' => [2.0, 16.0],
@@ -292,7 +292,9 @@ describe(Screen::class, function (): void {
 
         expect($screen)->toContain('node-1')
             ->and($screen)->toContain('node-9')
-            ->and($screen)->toContain('No metrics.')
+            // The dashboard's own rows never say "No metrics."; that wording belongs to a Node
+            // page's metrics block, which has a whole panel to explain itself in.
+            ->and($screen)->not->toContain('No metrics.')
             ->and($screen)->toContain('Needs attention')
             ->and($screen)->toContain('Node')
             ->and($screen)->not->toContain('Metrics not available on this Gateway yet.');
