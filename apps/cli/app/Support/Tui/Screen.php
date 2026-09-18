@@ -210,25 +210,57 @@ final class Screen
     }
 
     /**
-     * The dashboard: one compact table row per node, and everything that needs a look. Fleet
-     * counts live in the sidebar (see nav()), not here. The node table is sized to its content
-     * (one line per node, plus its border and header) so "Needs attention" keeps the rest of the
-     * screen, with its own selection-following scroll, regardless of how many nodes the fleet has.
+     * The dashboard: one compact table row per node, a pane per family, and everything that
+     * needs a look. Fleet counts live in the sidebar (see nav()), not here. The node table is
+     * sized to its content; the family panes take a fixed slice each so the fleet's size cannot
+     * push "Needs attention" off the screen, and each pane scrolls its own rows.
      */
     private function dashboard(State $state, UiState $ui, Area $area): Widget
     {
-        $nodesHeight = count($state->nodes) + 3;
-        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($nodesHeight), Constraint::min(5)])->split($area);
-        $ui->drawn['attention'] = ['area' => $split->get(1), 'header' => true];
-        $ui->paneOrder = ['attention'];
+        $nodesHeight = min(count($state->nodes) + 3, max(6, intdiv($area->height, 3)));
+        $familyHeight = 8;
+        $constraints = [
+            Constraint::length($nodesHeight),
+            Constraint::length($familyHeight),
+            Constraint::length($familyHeight),
+            Constraint::min(4),
+        ];
+        $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($area);
+        $halves = static fn (Area $row): mixed => Layout::default()
+            ->direction(Direction::Horizontal)
+            ->constraints([Constraint::percentage(50), Constraint::percentage(50)])
+            ->split($row);
+        $upper = $halves($rows->get(1));
+        $lower = $halves($rows->get(2));
+
+        $ui->drawn['apps'] = ['area' => $upper->get(0), 'header' => true];
+        $ui->drawn['instances'] = ['area' => $upper->get(1), 'header' => true];
+        $ui->drawn['processes'] = ['area' => $lower->get(0), 'header' => true];
+        $ui->drawn['schedules'] = ['area' => $lower->get(1), 'header' => true];
+        $ui->drawn['attention'] = ['area' => $rows->get(3), 'header' => true];
+        $ui->paneOrder = ['apps', 'instances', 'processes', 'schedules', 'attention'];
 
         $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $state->attentionRows());
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length($nodesHeight), Constraint::min(5))
+            ->constraints(...$constraints)
             ->widgets(
-                $this->nodeSummaryTable($state, $split->get(0)),
+                $this->nodeSummaryTable($state, $rows->get(0)),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(50), Constraint::percentage(50))
+                    ->widgets(
+                        $this->pane($ui, 'apps', ' Apps ', ['Slug', 'Branch', 'Instances'], [Constraint::percentage(44), Constraint::percentage(30), Constraint::percentage(26)], array_map(fn (array $a): TableRow => $this->row([$a['slug'], $a['default_branch'] ?? 'main'], (string) count($state->instancesForApp($a['slug'])), false), $state->apps), 'No apps.'),
+                        $this->pane($ui, 'instances', ' Instances ', ['App', 'Name', 'Node', 'Status'], [Constraint::percentage(28), Constraint::percentage(24), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['node']['name']], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
+                    ),
+                GridWidget::default()
+                    ->direction(Direction::Horizontal)
+                    ->constraints(Constraint::percentage(50), Constraint::percentage(50))
+                    ->widgets(
+                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Where', 'Status'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(28)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p)], $p['runtime_status'], ! State::processHealthy($p)), $state->processes), $state->processesLoaded ? 'No processes.' : 'Checking processes…'),
+                        $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Where', 'Calendar', 'Last run'], [Constraint::percentage(22), Constraint::percentage(28), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $state->schedules), 'No schedules.'),
+                    ),
                 $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, $state->processesLoaded ? 'Nothing needs attention.' : 'Checking processes…'),
             );
     }
@@ -246,7 +278,7 @@ final class Screen
         $table->header($this->alignLast(TableRow::fromStrings('Name', 'Status', 'CPU', 'Mem', 'Disk', 'Uptime'), $lastWidth));
         $table->widths(...$widths)->rows(...array_map(fn (array $node): TableRow => $this->alignLast($this->nodeSummaryRow($state, $node, $columns), $lastWidth), $state->nodes));
 
-        return BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->widget($table);
+        return BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->titles(Title::fromString(' Nodes '))->widget($table);
     }
 
     /**

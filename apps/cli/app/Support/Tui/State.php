@@ -51,8 +51,11 @@ final class State
     /** @var list<array<string, mixed>> */
     public array $firewall = [];
 
-    /** False until loadProcesses() has answered once; the screen says so rather than "none". */
+    /** False until every pending Process request has answered; the screen says so rather than "none". */
     public bool $processesLoaded = false;
+
+    /** @var list<GatewayRequest> Process requests not sent yet, drained a few per frame. */
+    private array $pendingProcessRequests = [];
 
     /** @var list<array<string, mixed>> */
     public array $databases = [];
@@ -149,37 +152,74 @@ final class State
     }
 
     /**
-     * Every Process in the fleet, which `load()` deliberately leaves out.
+     * Queues every Process request the fleet needs, for `loadNextProcesses()` to drain.
      *
      * No Gateway route lists Processes fleet-wide, so this needs one request per Node and per
-     * AppInstance, and each of those asks the Gateway for every owned Process's live runtime
+     * AppInstance, and the Gateway answers each by checking every owned Process's live runtime
      * status one at a time over SSH. On a real fleet that is the whole cost of starting up
-     * (measured at 5s of a 5.2s load, against 0.14s for every other list combined), and nothing
-     * the dashboard draws first depends on it, so the command loads it after the first frame and
-     * the screen renders its "Needs attention" pane from whatever has arrived.
+     * (measured at 4.83s against 0.53s for every other list combined), and nothing the first
+     * frame draws depends on it.
+     */
+    public function queueProcesses(): void
+    {
+        $this->pendingProcessRequests = [
+            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
+            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
+        ];
+        $this->processes = [];
+        $this->processesLoaded = $this->pendingProcessRequests === [];
+    }
+
+    /**
+     * Sends the next few queued Process requests and merges what comes back.
+     *
+     * The command calls this once per drawn frame rather than draining the queue in one call, so
+     * a fleet whose Process status checks take seconds still redraws and answers a key press
+     * between batches, and "Needs attention" fills in as the answers arrive.
+     *
+     * @param  Closure(object, string): object  $send
+     * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
+     * @return bool Whether anything was sent; false once the queue is empty.
+     */
+    public function loadNextProcesses(Closure $send, ?Closure $sendMany = null, int $batch = 8): bool
+    {
+        if ($this->pendingProcessRequests === []) {
+            return false;
+        }
+
+        $sendMany ??= static fn (array $requests, string $responseClass): array => array_map(
+            static fn (GatewayRequest $request): object => $send($request, $responseClass),
+            $requests,
+        );
+
+        $requests = array_splice($this->pendingProcessRequests, 0, max(1, $batch));
+
+        foreach ($sendMany($requests, ProcessesResponse::class) as $response) {
+            assert($response instanceof ProcessesResponse);
+            array_push($this->processes, ...array_map(self::processRow(...), $response->processes));
+        }
+
+        $this->processesLoaded = $this->pendingProcessRequests === [];
+
+        return true;
+    }
+
+    /**
+     * Every Process in the fleet, in one call. The render loop drains the queue a batch at a
+     * time instead (see loadNextProcesses); this is for the polling fallback and for a test that
+     * wants a finished State.
      *
      * @param  Closure(object, string): object  $send
      * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
      */
     public function loadProcesses(Closure $send, ?Closure $sendMany = null): void
     {
-        $sendMany ??= static fn (array $requests, string $responseClass): array => array_map(
-            static fn (GatewayRequest $request): object => $send($request, $responseClass),
-            $requests,
-        );
+        $this->queueProcesses();
 
-        $requests = [
-            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
-            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
-        ];
-        $processes = [];
-
-        foreach ($sendMany($requests, ProcessesResponse::class) as $response) {
-            assert($response instanceof ProcessesResponse);
-            array_push($processes, ...array_map(self::processRow(...), $response->processes));
+        while ($this->loadNextProcesses($send, $sendMany, PHP_INT_MAX)) {
+            // Drains in one batch.
         }
 
-        $this->processes = $processes;
         $this->processesLoaded = true;
     }
 
