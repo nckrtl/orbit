@@ -175,10 +175,11 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
             chmod 0600 "\$env_candidate"
             mv -fT -- "\$env_candidate" "\$install_path/.env"
             unit_candidate=/etc/systemd/system/.orbit-websocket.service.orbit-candidate
-            printf '%s' '{$unitEncoded}' | base64 --decode > "\$unit_candidate"
-            chown root:root "\$unit_candidate"
-            chmod 0644 "\$unit_candidate"
-            systemd-analyze verify "\$unit_candidate"
+            verify_directory=\$(mktemp -d)
+            trap 'rm -rf -- "\$verify_directory"; rm -f -- "\$unit_candidate"' EXIT
+            printf '%s' '{$unitEncoded}' | base64 --decode > "\$verify_directory/orbit-websocket.service"
+            systemd-analyze verify "\$verify_directory/orbit-websocket.service"
+            install -o root -g root -m 0644 -- "\$verify_directory/orbit-websocket.service" "\$unit_candidate"
             mv -fT -- "\$unit_candidate" /etc/systemd/system/orbit-websocket.service
             systemctl daemon-reload
             systemctl enable --now orbit-websocket

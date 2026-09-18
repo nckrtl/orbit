@@ -53,7 +53,7 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
         ->toContain('git clone')
         ->toContain('fetch --quiet origin "$ref"')
         ->toContain('composer install')
-        ->toContain('systemd-analyze verify')
+        ->toContain('systemd-analyze verify "$verify_directory/orbit-websocket.service"')
         ->toContain('systemctl enable --now orbit-websocket')
         ->not
         ->toContain('app-secret')
