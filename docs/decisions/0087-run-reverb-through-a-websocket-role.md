@@ -1,10 +1,10 @@
 ---
-title: "ADR 0086: Run Reverb through a websocket role"
-sidebarTitle: "0086 Run Reverb through a websocket role"
+title: "ADR 0087: Run Reverb through a websocket role"
+sidebarTitle: "0087 Run Reverb through a websocket role"
 description: "Proposed. Reverb runs as a new websocket role that a Node owns, instead of an App instance behind a custom proxy Route, so it never conflicts with the Gateway role and needs one command to set up."
 ---
 
-# ADR 0086: Run Reverb through a websocket role
+# ADR 0087: Run Reverb through a websocket role
 
 The Gateway installs and runs Laravel Reverb itself, as a new singleton, mutable `websocket` node role, instead of deploying it as an App instance behind a node-owned custom proxy Route. `orbit node:role:add <node> websocket` is the one command that makes realtime work end to end: no App, App instance, deploy step, custom proxy Route, or hand-edited Gateway `.env` is involved.
 

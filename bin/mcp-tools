@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Generate the Gateway's MCP tool manifest from docs/openapi.json.
+
+Run from any directory:
+
+    bin/mcp-tools            write apps/gateway/resources/mcp/tools.json
+    bin/mcp-tools --check    exit 1 when the manifest differs from what the OpenAPI document produces
+
+Every Gateway API operation becomes one MCP tool named after its operationId. The tool's input schema is the
+operation's path parameters, query parameters, and JSON body properties flattened into one object; the manifest
+records which inputs travel in the path and the query, and the rest form the body. Run bin/docs-openapi first
+when routes, form requests, or data classes changed.
+"""
+
+import json
+import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+OPENAPI = ROOT / 'docs/openapi.json'
+OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
+
+# Machine callbacks, not operator actions: Pusher channel signatures, Caddy forward-auth, the wake page a
+# browser receives, and the completion report a Node's schedule timer posts.
+EXCLUDED = {
+    'realtime-auth',
+    'metrics-grafana-authorize',
+    'runtime-activation-app-instance',
+    'schedule-complete',
+}
+
+METHODS = ('get', 'post', 'put', 'patch', 'delete')
+
+
+def resolve(node, components, seen=()):
+    """Inline every $ref so a tool's input schema stands alone."""
+    if isinstance(node, list):
+        return [resolve(item, components, seen) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if '$ref' in node:
+        name = node['$ref'].rsplit('/', 1)[-1]
+        if name in seen:
+            return {'type': 'object'}
+        return resolve(components[name], components, (*seen, name))
+    return {key: resolve(value, components, seen) for key, value in node.items()}
+
+
+def tool(method, path, operation, components):
+    name = operation['operationId']
+    properties, required, path_inputs, query_inputs = {}, [], [], []
+
+    for parameter in operation.get('parameters', []):
+        parameter = resolve(parameter, components)
+        schema = dict(parameter.get('schema', {'type': 'string'}))
+        if parameter.get('description'):
+            schema['description'] = parameter['description']
+        properties[parameter['name']] = schema
+        (path_inputs if parameter['in'] == 'path' else query_inputs).append(parameter['name'])
+        if parameter.get('required') or parameter['in'] == 'path':
+            required.append(parameter['name'])
+
+    body = operation.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema')
+    if body is not None:
+        body = resolve(body, components)
+        if body.get('type') != 'object':
+            sys.exit(f'{name}: request body is not an object')
+        for key, schema in body.get('properties', {}).items():
+            if key in properties:
+                # A form request that validates a route parameter repeats it in the body. The value still
+                # travels in the path; the body rule only adds detail such as an enum.
+                properties[key] = {**schema, **properties[key]}
+                continue
+            properties[key] = schema
+        required += [key for key in body.get('required', []) if key not in required]
+
+    summary = operation.get('summary', name).strip()
+    description = operation.get('description', '').strip()
+    responses = operation.get('responses', {})
+    streams = any('application/x-ndjson' in (response.get('content') or {}) for response in responses.values())
+
+    schema = {'type': 'object', 'properties': properties, 'additionalProperties': False}
+    if required:
+        schema['required'] = required
+
+    return {
+        'name': name,
+        'title': summary,
+        'description': description or summary,
+        'method': method.upper(),
+        'path': path,
+        'path_inputs': path_inputs,
+        'query_inputs': query_inputs,
+        'streams': streams,
+        'input_schema': schema,
+    }
+
+
+def manifest():
+    document = json.loads(OPENAPI.read_text())
+    components = document.get('components', {}).get('schemas', {})
+    tools = [
+        tool(method, path, operation, components)
+        for path, item in document['paths'].items()
+        for method, operation in item.items()
+        if method in METHODS and operation.get('operationId') not in EXCLUDED
+    ]
+    tools.sort(key=lambda entry: entry['name'])
+    names = [entry['name'] for entry in tools]
+    duplicates = {name for name in names if names.count(name) > 1}
+    if duplicates:
+        sys.exit(f'duplicate operationIds: {sorted(duplicates)}')
+    return json.dumps({'tools': tools}, indent=2, ensure_ascii=False) + '\n', len(tools)
+
+
+def main():
+    expected, count = manifest()
+    if '--check' in sys.argv[1:]:
+        current = OUTPUT.read_text() if OUTPUT.exists() else ''
+        if current != expected:
+            sys.exit('apps/gateway/resources/mcp/tools.json is stale. Run bin/mcp-tools.')
+        print(f'{OUTPUT.relative_to(ROOT)} matches docs/openapi.json.')
+        return
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_text(expected)
+    print(f'Wrote {OUTPUT.relative_to(ROOT)} ({count} tools).')
+
+
+if __name__ == '__main__':
+    main()

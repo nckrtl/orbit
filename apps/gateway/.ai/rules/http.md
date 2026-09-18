@@ -18,3 +18,7 @@ Tool install input is limited to node_id, manager, package, and version_constrai
 Do not expose manager argv, scripts, repositories, environment variables, or options.
 Keep manager policy in the Gateway; the SDK and CLI only transport and render
 the typed contract.
+
+## Keep MCP a view of the API
+
+The MCP server under `app/Http/Mcp` offers each API operation as a tool and runs it as an internal API request with the caller's WireGuard address. Do not add identity, access, validation, or redaction logic to MCP code, and do not hand-write a tool for an API operation. Regenerate `resources/mcp/tools.json` with `bin/docs-openapi` and `bin/mcp-tools` when the API changes.

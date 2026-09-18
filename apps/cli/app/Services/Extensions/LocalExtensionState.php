@@ -6,6 +6,7 @@ namespace App\Services\Extensions;
 
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigLock;
+use App\Support\EffectiveUser;
 use JsonException;
 
 final readonly class LocalExtensionState
@@ -114,7 +115,7 @@ final readonly class LocalExtensionState
         }
 
         $handleStat = fstat($handle);
-        $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
+        $effectiveUserId = EffectiveUser::id();
 
         if (
             is_link($this->path)

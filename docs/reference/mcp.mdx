@@ -1,0 +1,68 @@
+---
+title: "MCP server"
+description: "The Gateway's Model Context Protocol server: every API operation as a tool, identified by WireGuard address, with a search variant for small contexts."
+---
+
+# MCP server
+
+The Gateway serves a Model Context Protocol (MCP) server so an agent can operate Orbit without the CLI. Every Gateway API operation is one tool. The tool runs the same request the matching CLI command sends, so validation, node access, redaction, and command activity behave the same on both paths.
+
+## Endpoints
+
+Both endpoints speak MCP over streamable HTTP with `POST`, and both offer the same catalogue.
+
+| Endpoint | Tools it lists | Use it when |
+| --- | --- | --- |
+| `https://gateway.orbit/mcp` | One tool for every API operation. | The client loads tool definitions on demand, or the context has room for the full catalogue. |
+| `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. The agent searches the catalogue, then runs up to 25 calls in one request. |
+
+`search_tools` returns exact tool names with their complete input schemas; an empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs the calls in order, and stops at the first error.
+
+## Identity and access
+
+The caller is the Node whose WireGuard address the connection comes from, the same identity the API uses. There is no token and no login.
+
+- A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown` before it can list tools.
+- Each tool call repeats that check and applies directed node access ([`node:access:add`](/cli/node#orbit-nodeaccessadd)) inside the API request it runs. A Node without an access edge to the serving Node receives the API's `403` as the tool error.
+- The Gateway certificate chains to the Orbit root certificate authority (CA). A Node that Orbit manages already trusts it. On another machine, run `orbit gateway:trust` first.
+
+## Tools
+
+A tool's name is the operation's identifier in the [API reference](/api/overview), `<family>-<verb>`: `node-list`, `instance-show`, `process-restart`, `route-create`. Its input is one object that holds the operation's path parameters, query parameters, and JSON body fields together; the server places each value where the operation expects it. Its annotations mark a `GET` as read-only and a `DELETE` as destructive.
+
+A successful call returns the API's JSON document as text, usually `{"data": ..., "meta": {"request_id": ...}}`. A failed call returns an MCP tool error whose text is the API error envelope with the HTTP status added:
+
+```json
+{"status": 422, "error": {"code": "validation.failed", "message": "...", "details": {"slug": ["..."]}}}
+```
+
+`instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return every progress event in order under `events`; the last event carries the result.
+
+Four operations are machine callbacks and have no tool: the realtime channel signature, the Grafana access check, the App instance wake page, and the schedule completion report.
+
+## Connect a client
+
+Claude Code, from a Node or a WireGuard peer that trusts the Orbit CA:
+
+```bash
+claude mcp add --transport http orbit https://gateway.orbit/mcp
+```
+
+Any client that takes a JSON server entry:
+
+```json
+{"mcpServers": {"orbit": {"type": "http", "url": "https://gateway.orbit/mcp/search"}}}
+```
+
+A client built on Node.js reads extra CAs from `NODE_EXTRA_CA_CERTS`; point it at the Orbit root CA file when the system store is not used.
+
+## Keep the catalogue current
+
+`apps/gateway/resources/mcp/tools.json` is generated from `docs/openapi.json`. After a change to a route, form request, or data class, regenerate both:
+
+```bash
+bin/docs-openapi
+bin/mcp-tools
+```
+
+`bin/mcp-tools --check` and `composer mcp-tools` report a stale manifest. The Gateway test suite fails when an API route has no tool or a tool has no route, so the MCP catalogue cannot trail the API.

@@ -54,6 +54,6 @@ Orbit already has a way to run an arbitrary Laravel app on a managed Node ([ADR 
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: builds on [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) for the WebSocket-capable Route Reverb runs behind; depended on by [ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client); its deployment decision is amended by [ADR 0086](/decisions/0086-run-reverb-through-a-websocket-role)
+- ADRs: builds on [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) for the WebSocket-capable Route Reverb runs behind; depended on by [ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client); its deployment decision is amended by [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)
 - Detail: [Realtime events](/reference/events), [Realtime events with Reverb](/solutions/realtime-reverb), [`realtime`](/cli/realtime)
 - Verify: Gateway broadcasting tests for `RecordBroadcast`'s envelope and channel, `routes/channels.php` authorization, `RealtimeConfigController` and `RealtimeAuthController`; CLI `realtime:show` and `realtime:tail` contract tests
