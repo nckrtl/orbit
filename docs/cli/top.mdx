@@ -1,6 +1,6 @@
 ---
 title: "top"
-description: "Show the fleet as a live, sectioned screen: Dashboard, Nodes, Apps, Instances, Processes, Schedules, and Databases."
+description: "Show the fleet as a live, sectioned screen: Dashboard, Nodes, Apps, Instances, Processes, Schedules, Databases, and Firewall."
 ---
 
 `orbit top` is one live screen. It loads every Node, App, App instance, Process, Schedule, Firewall rule, and Database connection once, then keeps that data current from realtime Gateway events or, when realtime is not available, by reloading on a fixed tick. Use it to watch the fleet, drill into one record, and run a small set of safe actions without leaving the screen.
@@ -27,11 +27,11 @@ orbit top [--tick=SECONDS]
 
 ## Sections and pages
 
-The sidebar lists seven sections: Dashboard, Nodes, Apps, Instances, Processes, Schedules, and Databases. Each record family's section is its list; Enter or a click on a row opens that record's page. Pages stack, so Esc or the `‹ back` link returns one step at a time. Instances, Processes, and Schedules carry a Node and App filter bar.
+The sidebar lists eight sections: Dashboard, Nodes, Apps, Instances, Processes, Schedules, Databases, and Firewall. Each section's count for its own family sits right-aligned next to its label (yellow when something in it needs attention); Dashboard has no family of its own, so its row carries no count. Each record family's section is its list; Enter or a click on a row opens that record's page. Pages stack, so Esc or the `‹ back` link returns one step at a time. Instances, Processes, and Schedules carry a Node and App filter bar.
 
-- **Dashboard** shows a count per family (yellow when something in it needs attention), a compact CPU/memory/disk line per Node, and a "Needs attention" list gathering every row that is off across every family.
+- **Dashboard** shows a compact CPU/memory/disk line per Node and a "Needs attention" list gathering every row that is off across every family.
 - **Nodes** lists registered Nodes. `+ create` opens a form with the same fields `node:add` accepts (name, host, SSH port, user, roles, TLD); submitting it sends the same `AddNodeRequest` the command sends. A Node's own page adds its instances, its Node-owned processes, and its firewall rules to its properties.
-- **Apps**, **Instances**, **Processes**, **Schedules**, **Databases** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployment history; a Database connection's tables and users). Enter or a click on a row in the Deployments pane opens that deployment's own record page: its properties (including a failed step, when it has one) and its recorded log.
+- **Apps**, **Instances**, **Processes**, **Schedules**, **Databases**, **Firewall** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployment history; a Database connection's tables and users). Enter or a click on a row in the Deployments pane opens that deployment's own record page: its properties (including a failed step, when it has one) and its recorded log. Firewall's fleet-wide list carries no filter bar or create link; the same rows and record page are also reachable from a Node's own Firewall pane.
 
 ## Keys and mouse
 
@@ -40,7 +40,7 @@ The sidebar lists seven sections: Dashboard, Nodes, Apps, Instances, Processes, 
 | `↑` `↓` | Move the sidebar selection, or the selection within the focused pane. |
 | `→` / `Enter` | Move from the sidebar into the page, or focus a hovered pane. |
 | `←` / `Esc` | Move focus back out, or go back one page. |
-| `1`-`7` | Jump straight to a section. |
+| `1`-`8` | Jump straight to a section. |
 | `c` | On the Nodes list, open the create-Node form. |
 | `n` / `p` | On a list with a filter bar, cycle the Node or App filter. |
 | `a` | Open the actions menu for the focused or selected row. |
