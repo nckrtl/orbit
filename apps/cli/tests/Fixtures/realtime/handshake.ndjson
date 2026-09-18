@@ -1,0 +1,2 @@
+{"event":"pusher:connection_established","data":"{\"socket_id\":\"123.456\",\"activity_timeout\":30}"}
+{"event":"pusher_internal:subscription_succeeded","channel":"private-orbit","data":"{}"}

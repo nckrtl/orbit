@@ -167,6 +167,7 @@
               "cli/doctor",
               "cli/profile",
               "cli/activity",
+              "cli/realtime",
               "cli/extension",
               "cli/herdr",
               "cli/workspace"
