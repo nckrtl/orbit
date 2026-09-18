@@ -46,9 +46,11 @@ Each parser reads data only. It does not load project code, run a package manage
 | Ecosystem | Root files | Supported format |
 | --- | --- | --- |
 | Composer | `composer.json`, `composer.lock` | Composer 1 and 2 JSON lock structure with `packages` and `packages-dev`; Composer has no lockfile format version field. Preserve aliases, source references, and platform or virtual requirements without inventing package resolutions. |
-| npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3, using the `packages` map and installation paths to distinguish resolutions. Shrinkwrap takes precedence over package-lock within npm. Version 1 is unsupported. Bundled dependency names (`bundleDependencies` / `bundledDependencies`) may lack separate lock entries; those edges stay optional with a null target. `workspaces` metadata on transitive package records is ignored; only the project root / lock root rejects workspace layouts. |
+| npm | `package.json`, `package-lock.json` or `npm-shrinkwrap.json` | `lockfileVersion` 2 and 3 using the `packages` map. Shrinkwrap takes precedence. Version 1 is unsupported. |
 | pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0, one root importer (`.`), package records and snapshots, including peer context. Earlier versions are unsupported. |
 | Bun | `package.json`, `bun.lock` | Text JSONC lock with `lockfileVersion` 1 and only its root workspace. Binary `bun.lockb` is unsupported. |
+
+npm bundled dependency names (`bundleDependencies` / `bundledDependencies`) may lack separate lock entries. Those edges stay optional with a null target. The reader ignores `workspaces` metadata on transitive package records. Only the project root or lock root rejects workspace layouts.
 
 JavaScript file selection follows the project's Vite+ package-manager selection signals, limited to npm, pnpm, and Bun. Yarn Classic and modern Yarn are unsupported for both scans and updates. Yarn manager or lockfile selection produces an explicit failure; it never becomes an empty successful inventory or a fallback to another manager.
 
@@ -159,7 +161,7 @@ Test the development changes, commit the updated manifests and lockfiles, and ma
 
 Create **one** Node [Schedule](/reference/schedules) on the Gateway host. The Schedule runs as that Node's Orbit-managed user with the Gateway CLI profile already configured on the host.
 
-Verified recipe on the disposable Gateway (adjust calendar, timezone, timeout, and name as needed):
+Verified recipe on the disposable Gateway. Set the calendar, timezone, timeout, and name for the operator's Gateway Node:
 
 ```bash
 orbit schedule:create dependency-nightly-scan \
@@ -170,8 +172,11 @@ orbit schedule:create dependency-nightly-scan \
   --json
 ```
 
-- `--calendar` is a native systemd calendar expression; include the timezone in the expression when the host timezone must stay fixed.
-- `--timeout` bounds the whole fleet scan (1–86400 seconds). Size it for the fleet; a timeout must not appear as a completed fleet scan.
+- `--calendar` is a native systemd calendar expression.
+- Include the timezone in the expression when the host timezone must stay fixed.
+- `--timeout` bounds the whole fleet scan (1–86400 seconds).
+- Size the timeout for the fleet.
+- A timeout must not appear as a completed fleet scan.
 - The command must be noninteractive (`--json --no-interaction`) so timer runs do not block on prompts.
 - Do not create per-instance Schedules. One Node Schedule rediscovers the authorized instance set on every run.
 
@@ -183,7 +188,11 @@ orbit schedule:show SCHEDULE_UUID --json
 orbit schedule:logs SCHEDULE_UUID --json
 ```
 
-`schedule:run` starts the installed unit once. Readable logs retain the CLI JSON, including per-instance outcomes. A failed instance scan makes the Schedule command exit nonzero; the host records that as a failed unit result. The installed wrapper's `complete` handler POSTs run status to the Gateway. On the CMD-1 discovery Gateway that callback used curl with the Orbit CA only and no Node client certificate, so `last_run_at` / `last_run_status` stayed null even after successful unit invocation—the schedule, timer, command, and logs still verified. Operators and DevOps should confirm Node-authenticated completion before treating those fields as authoritative. Repeated runs reuse the same Schedule record and do not create additional Schedules.
+`schedule:run` starts the installed unit once. Readable logs retain the CLI JSON, including per-instance outcomes. A failed instance scan makes the Schedule command exit nonzero, and the host records that as a failed unit result.
+
+The installed wrapper's `complete` handler POSTs run status to the Gateway. On the CMD-1 discovery Gateway that callback used curl with the Orbit CA only and no Node client certificate, so `last_run_at` / `last_run_status` stayed null even after successful unit invocation. The schedule, timer, command, and logs still verified.
+
+Operators and DevOps should confirm Node-authenticated completion before treating those fields as authoritative. Repeated runs reuse the same Schedule record and do not create additional Schedules.
 
 Nightly scanning refreshes inventory only. It does not check advisories, query registries for newer versions, or update packages. The update command refreshes inventory after its own package work. Changes made outside that command appear after an explicit scan or the next nightly run. Do not create this Schedule against live production outside the owned disposable Gateway.
 
