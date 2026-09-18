@@ -1,11 +1,11 @@
 ---
 title: "Database connections"
-description: "The Gateway-owned registry of mysql, pgsql, and sqlite connections and how an operator attaches one to an App instance."
+description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections and how an operator attaches one to an App instance."
 ---
 
 # Database connections
 
-This page tells an operator how the Gateway stores named mysql, pgsql, and sqlite connection records and which fields each driver requires. It also covers list, show, create, update, destroy, managed user create, add, remove, query, tables, schema, describe, and Doctor inspection. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
+This page tells an operator how the Gateway stores named mysql, pgsql, sqlite, and redis connection records and which fields each driver requires. It also covers list, show, create, update, destroy, managed user create, managed user list, add, remove, query, tables, schema, describe, and Doctor inspection. [ADR 0069](/decisions/0069-allow-node-process-targets) owns Node Process targets for shared Docker database servers, and [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline) owns the `database` role as a Docker baseline; this page owns the connection registry.
 
 A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start or stop a database. The Gateway can create a MySQL user and database through an existing Node-targeted Docker MySQL Process and then register or refresh the connection. Query, tables, schema, and describe run against a registered connection only.
 
@@ -40,8 +40,11 @@ Each driver stores one complete connection profile.
 | `mysql` | `host`, `database`, `username`, `password` | `node_id`, `port` | `3306` |
 | `pgsql` | `host`, `database`, `username`, `password` | `node_id`, `port` | `5432` |
 | `sqlite` | `path` | `node_id`, `username`, `password` | none |
+| `redis` | `host` | `node_id`, `port`, `database`, `username`, `password` | `6379` |
 
-The Gateway answers `validation.failed` when a mysql or pgsql record includes `path`, when a sqlite record includes `host`, `port`, or `database`, or when the request includes an unsupported key. A sqlite `path` is a nonempty Unix absolute path of at most 1024 characters. A `host` is a hostname or IP address without userinfo or a port. A `port` is an integer from 1 through 65535. `database` and `username` are bounded printable names.
+The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `path`, when a sqlite record includes `host`, `port`, or `database`, when a redis record omits `host`, or when the request includes an unsupported key. A sqlite `path` is a nonempty Unix absolute path of at most 1024 characters. A `host` is a hostname or IP address without userinfo or a port. A `port` is an integer from 1 through 65535. `database` and `username` are bounded printable names; a redis `database` is its numeric database index, stored as a 1-3 digit string. Redis stores a `username` or `password` only when the caller supplies one; it never requires either.
+
+Redis has no PDO inspector. `query`, `tables`, `schema`, and `describe` refuse a redis connection with `database.driver_unsupported` (HTTP 422) before they touch the connection.
 
 The API and PHP software development kit (SDK) return this identity for each record.
 
@@ -49,14 +52,15 @@ The API and PHP software development kit (SDK) return this identity for each rec
 | --- | --- |
 | `id` | Numeric registry ID |
 | `slug` | Unique connection name |
-| `driver` | `mysql`, `pgsql`, or `sqlite` |
+| `driver` | `mysql`, `pgsql`, `sqlite`, or `redis` |
 | `node_id` | Optional associated Node ID |
-| `host` | Hostname or IP for mysql and pgsql |
-| `port` | TCP port for mysql and pgsql |
-| `database` | Database name for mysql and pgsql |
+| `host` | Hostname or IP for mysql, pgsql, and redis |
+| `port` | TCP port for mysql, pgsql, and redis |
+| `database` | Database name for mysql and pgsql, or the database index for redis |
 | `path` | Unix absolute sqlite path |
 | `username` | Stored username, or null |
 | `has_password` | Whether a password is stored |
+| `users_count` | Recorded user count. Present only on `database:show`. |
 
 Item and collection responses never include the password.
 
@@ -71,6 +75,7 @@ The CLI sends each operation through the Gateway.
 | `orbit database:create SLUG --driver=DRIVER` | Create one connection and encrypt the supplied password. |
 | `orbit database:update SLUG` | Replace the supplied fields on one connection. |
 | `orbit database:user:create SLUG --process=ID` | Create a MySQL user and database through a Node Docker Process, then register or refresh the connection. |
+| `orbit database:user:list SLUG` | List the users the Gateway recorded for the connection. |
 | `orbit database:destroy SLUG --force` | Destroy the connection record. |
 | `orbit database:query SLUG SQL` | Run one SQL statement against the registered connection. |
 | `orbit database:tables SLUG` | List tables on the registered connection. |
@@ -111,6 +116,14 @@ The Gateway answers these process refusals before it writes a connection.
 
 Responses, activity records, errors, and debug output omit the user password and the Process root password.
 
+## List recorded users
+
+`database:user:create` records one row per username on a connection: `username`, `privileges` (the granted SQL privileges as a description, such as `` ALL PRIVILEGES ON `app`.* ``), `created_by` (the calling Node's name, since the Gateway authorizes every command as a Node), and `created_at`. Recreating a user through `database:user:create` updates that row's `privileges` and `created_by` instead of adding a second one. `database:show` reports the row count as `users_count`.
+
+```text
+orbit database:user:list app
+```
+
 ## API
 
 The Gateway exposes the registry at `/api/v1/database-connections`. Access to those registry routes is fleet-wide. Managed user create uses the Process owning Node at `/api/v1/processes/{process}/database-users`.
@@ -120,7 +133,8 @@ The Gateway exposes the registry at `/api/v1/database-connections`. Access to th
 | `GET` | `/api/v1/database-connections` | List records ordered by slug |
 | `POST` | `/api/v1/database-connections` | Create one record |
 | `POST` | `/api/v1/processes/{process}/database-users` | Create a MySQL user and database through that Process, then register or refresh the connection |
-| `GET` | `/api/v1/database-connections/{slug}` | Show one record |
+| `GET` | `/api/v1/database-connections/{slug}` | Show one record, with `users_count` |
+| `GET` | `/api/v1/database-connections/{slug}/users` | List the connection's recorded users |
 | `PATCH` | `/api/v1/database-connections/{slug}` | Update supplied fields |
 | `DELETE` | `/api/v1/database-connections/{slug}` | Destroy the record |
 | `POST` | `/api/v1/database-connections/{slug}/query` | Run one SQL statement |

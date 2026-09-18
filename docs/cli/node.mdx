@@ -14,6 +14,7 @@ The [Node provisioning](/reference/node-provisioning), [Node settings](/referenc
 | [`node:add`](#orbit-nodeadd) | Provision a new machine or converge an existing Node. |
 | [`node:list`](#orbit-nodelist) | List Nodes registered with the active Gateway. |
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
+| [`node:metrics`](#orbit-nodemetrics) | Show one synchronous metrics snapshot for a Node. |
 | [`node:remove`](#orbit-noderemove) | Remove a Node and restore its public SSH recovery rule. |
 | [`node:role:add`](#orbit-noderoleadd) | Add or converge one role assignment. |
 | [`node:role:list`](#orbit-noderolelist) | List the role assignments of one Node. |
@@ -102,6 +103,26 @@ orbit node:show <node> [--json]
 | Argument | Required | Meaning |
 | --- | --- | --- |
 | `node` | yes | Numeric Node ID. |
+
+## orbit node:metrics
+
+Show one synchronous metrics snapshot for a Node: per-core CPU, memory, swap, load averages, uptime, pressure, and disks.
+
+```bash
+orbit node:metrics <node> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Numeric Node ID or registered Node name. |
+
+```bash
+orbit node:metrics beast
+```
+
+The Gateway reads the snapshot straight from the Node over the same SSH path it already uses for other Node-executed work: it runs the hidden `orbit internal:node-metrics` command on the Node, which samples `/proc/stat` twice over a short internal window to compute each core's busy ratio, then reads `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/pressure/cpu`, `/proc/pressure/memory`, `/proc/pressure/io`, and `df` for disk usage. The whole call stays synchronous and under one second. The Gateway answers `node.metrics_unavailable` (HTTP 422) for a Node that is not active or has no WireGuard address, and `node.metrics_unreachable` (HTTP 502) when the Node could not be read.
+
+The snapshot reports `cores` as a list of per-core busy ratios from 0 to 1, `memory` and `swap` as used and total bytes, `load` as the 1, 5, and 15-minute averages, `uptime_seconds`, `pressure` as the `some` `avg10` value from each of `/proc/pressure/cpu`, `/proc/pressure/memory`, and `/proc/pressure/io` (`0` when the kernel has no PSI support), and `disks` as a list of mount, used, and total bytes. Human output renders bytes and durations in readable units; JSON keeps the raw numbers.
 
 ## orbit node:remove
 
