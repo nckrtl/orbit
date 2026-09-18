@@ -166,7 +166,7 @@ final class State
         // AppInstance would be dozens of round trips for one table.
         $this->pendingProcessRequests = [new ListProcessesRequest];
         $this->processes = [];
-        $this->processesLoaded = $this->pendingProcessRequests === [];
+        $this->processesLoaded = false;
     }
 
     /**
