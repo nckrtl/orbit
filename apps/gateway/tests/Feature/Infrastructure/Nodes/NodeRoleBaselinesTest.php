@@ -697,6 +697,7 @@ it('propagates the VPN removeUnreachable rejection through the dispatcher', func
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
