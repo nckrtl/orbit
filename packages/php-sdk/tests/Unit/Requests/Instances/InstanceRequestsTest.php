@@ -461,8 +461,19 @@ function removal_gateway_data(): array
 /** @return array<string, mixed> */
 function instance_sdk_data(): array
 {
+    $data = instance_gateway_data();
+    $withIdentities = [];
+    foreach ($data as $key => $value) {
+        $withIdentities[$key] = $value;
+        if ($key === 'node_id') {
+            // The SDK carries the App and Node identities the Gateway names beside an instance.
+            $withIdentities['app'] = null;
+            $withIdentities['node'] = null;
+        }
+    }
+
     return [
-        ...instance_gateway_data(),
+        ...$withIdentities,
         'route' => [
             ...instance_gateway_route_data(),
             'request_id' => instance_request_id(),

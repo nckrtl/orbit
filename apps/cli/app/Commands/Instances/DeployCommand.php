@@ -40,7 +40,7 @@ final class DeployCommand extends DeploymentCommand
         );
 
         return $stream instanceof DeploymentStream
-            ? $this->renderDeploymentStream($stream)
+            ? $this->renderDeploymentStream($stream, "Deploy AppInstance [{$instanceId}]", 'source_preparation', 'Deployment')
             : self::FAILURE;
     }
 }

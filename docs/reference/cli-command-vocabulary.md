@@ -61,6 +61,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
+| `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 
 `doctor` and `profile` are one-segment commands. Each family name is the command.

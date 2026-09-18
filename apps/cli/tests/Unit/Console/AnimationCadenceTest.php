@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Console\Animation;
+use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\TerminalRegion;
 use Symfony\Component\Console\Output\StreamOutput;
@@ -137,6 +138,195 @@ describe('animation composition cadence', function (): void {
 
         expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
     });
+
+    it('prints a renderer line and its current frame in one write, tick cadence untouched (F4)', function (): void {
+        $process = proc_open([PHP_BINARY, __DIR__.'/../../../app/Support/Console/Renderers/animate.php'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w'], 3 => ['pipe', 'w']], $pipes);
+        expect(is_resource($process))->toBeTrue();
+        $send = static function (array $message) use ($pipes): void {
+            $payload = json_encode($message, JSON_THROW_ON_ERROR)."\n";
+            expect(fwrite($pipes[0], $payload))->toBe(strlen($payload));
+            fflush($pipes[0]);
+        };
+        $frames = ["@tick:0@\n", "@tick:1@\n"];
+        $buffer = '';
+        $changes = [];
+
+        try {
+            stream_set_blocking($pipes[1], false);
+            $send(['frames' => $frames]);
+            $deadline = microtime(true) + 3;
+            $linesSent = 0;
+
+            while (microtime(true) < $deadline) {
+                $read = [$pipes[1]];
+                $write = $except = [];
+                $selected = stream_select($read, $write, $except, 0, 10000);
+                expect($selected)->not->toBeFalse();
+
+                if ($selected > 0) {
+                    $chunk = fread($pipes[1], 8192);
+
+                    if ($chunk === '' && feof($pipes[1])) {
+                        break;
+                    }
+
+                    $buffer .= $chunk;
+
+                    if ($linesSent < 3 && str_contains($buffer, '@tick:')) {
+                        $send(['line' => "LINE-{$linesSent}\n"]);
+                        $linesSent++;
+                    }
+
+                    while (($end = strpos($buffer, "\n")) !== false) {
+                        $line = substr($buffer, 0, $end);
+                        $buffer = substr($buffer, $end + 1);
+                        $observed = microtime(true);
+
+                        // A line-print reprints the same (unchanged) glyph; only count an
+                        // actual toggle, the same tick loop the real ticks produce.
+                        if (preg_match('/@tick:([01])@/', $line, $match) === 1
+                            && ($changes === [] || $changes[count($changes) - 1]['g'] !== $match[1])) {
+                            $changes[] = ['t' => $observed, 'g' => $match[1]];
+                        }
+                    }
+                }
+
+                if ($linesSent >= 3 && count($changes) >= 5) {
+                    break;
+                }
+            }
+
+            expect($linesSent)->toBe(3)->and(count($changes))->toBeGreaterThanOrEqual(5);
+            $intervals = [];
+
+            for ($i = 1; $i < count($changes); $i++) {
+                $intervals[] = $changes[$i]['t'] - $changes[$i - 1]['t'];
+            }
+
+            // The tick loop is untouched by line printing: no hold near 0.9s, no burst near 0s.
+            foreach ($intervals as $interval) {
+                expect($interval)->toBeGreaterThan(0.15)->toBeLessThan(0.65);
+            }
+
+            $send(['final' => ["Finished.\n", "Finished.\n"]]);
+            fclose($pipes[0]);
+            unset($pipes[0]);
+            stream_set_blocking($pipes[1], true);
+            $tail = stream_get_contents($pipes[1]);
+            expect($tail)->toContain('Finished.', "\e[?25h");
+            expect(stream_get_contents($pipes[2]))->toBe('');
+        } finally {
+            foreach ($pipes as $pipe) {
+                fclose($pipe);
+            }
+
+            $status = proc_get_status($process);
+
+            if ($status['running']) {
+                proc_terminate($process);
+            }
+
+            $exitCode = proc_close($process);
+        }
+
+        expect($status['exitcode'] >= 0 ? $status['exitcode'] : $exitCode)->toBe(0);
+    });
+
+    it('shows every printed line above the tree in order, with escaping preserved, and no absent-tree frame (F4)', function (): void {
+        $stream = tmpfile();
+        $output = new StreamOutput($stream);
+        $mode = new ConsoleMode(false, false, true, true, 80);
+        $animation = new Animation($mode, $output, ["@frame:0@\n", "@frame:1@\n"]);
+
+        try {
+            $animation->during(function () use ($output): int {
+                Animation::printLine($output, "first line\n");
+                Animation::printLine($output, "second \e[31mline\e[0m\n");
+                Animation::printLine($output, "third line\n");
+
+                return 1;
+            });
+
+            rewind($stream);
+            $bytes = stream_get_contents($stream);
+
+            // Every printed line is immediately followed by the current frame, in one write
+            // each: the tree is never absent from the recorded output while lines stream.
+            expect($bytes)->toContain("first line\n@frame:")
+                ->and($bytes)->toContain("second \e[31mline\e[0m\n@frame:")
+                ->and($bytes)->toContain("third line\n@frame:");
+
+            $firstAt = strpos($bytes, 'first line');
+            $secondAt = strpos($bytes, 'second');
+            $thirdAt = strpos($bytes, 'third line');
+            expect($firstAt)->not->toBeFalse()->and($secondAt)->toBeGreaterThan($firstAt)
+                ->and($thirdAt)->toBeGreaterThan($secondAt);
+
+            // No line ever appears without a frame following the very next content: the two
+            // are always adjacent, never separated by a bare clear-and-restart cycle.
+            expect(substr_count($bytes, "\e[?25l"))->toBe(1)
+                ->and(substr_count($bytes, "\e[?25h"))->toBe(1);
+        } finally {
+            fclose($stream);
+        }
+    });
+
+    it('falls back to a plain write with no repeated frames outside an active renderer (F4)', function (): void {
+        $stream = tmpfile();
+        $output = new StreamOutput($stream);
+
+        Animation::printLine($output, "plain line one\n");
+        Animation::printLine($output, "plain line two\n");
+
+        rewind($stream);
+        $bytes = stream_get_contents($stream);
+
+        expect($bytes)->toBe("plain line one\nplain line two\n")
+            ->and($bytes)->not->toContain("\e[");
+    });
+
+    it('restores the terminal after printLine on success, product failure, and interrupt (F4)', function (bool $succeeds, bool $interrupted): void {
+        $stream = tmpfile();
+        $output = new StreamOutput($stream);
+        $mode = new ConsoleMode(false, false, true, true, 80);
+        $animation = new Animation($mode, $output, ["@frame:0@\n", "@frame:1@\n"]);
+
+        try {
+            if ($succeeds) {
+                $animation->during(function () use ($output): int {
+                    Animation::printLine($output, "output line\n");
+
+                    return 1;
+                });
+            } else {
+                try {
+                    $animation->during(function () use ($output, $interrupted): never {
+                        Animation::printLine($output, "output line\n");
+
+                        throw $interrupted
+                            ? new ConsoleInterrupted(SIGINT)
+                            : new RuntimeException('product failure');
+                    });
+                } catch (Throwable) {
+                    // Expected: the point of this case is what happens to the terminal, not
+                    // whether the exception itself propagates (it always does, unchanged).
+                }
+            }
+
+            rewind($stream);
+            $bytes = stream_get_contents($stream);
+            expect($bytes)->toContain('output line')
+                ->and(substr_count($bytes, "\e[?25l"))->toBe(1)
+                ->and($bytes)->toEndWith("\e[0m\e[?25h");
+        } finally {
+            fclose($stream);
+        }
+    })->with([
+        'succeeds' => [true, false],
+        'product failure' => [false, false],
+        'interrupted' => [false, true],
+    ]);
 
     it('transfers one render owner through nested callbacks and settled region updates', function (): void {
         $stream = tmpfile();

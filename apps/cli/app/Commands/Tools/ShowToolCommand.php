@@ -27,23 +27,16 @@ final class ShowToolCommand extends ToolCommand
         if ($connector === null) {
             return self::FAILURE;
         }
-        $response = $this->send($connector, new ShowToolRequest($id), ToolResponse::class);
+        $response = $this->sendWithProgress(
+            $connector,
+            new ShowToolRequest($id),
+            ToolResponse::class,
+            ['Show Tool', 'Loading Tool', 'Loaded Tool'],
+        );
         if (! $response instanceof ToolResponse) {
             return self::FAILURE;
         }
-        if ($this->option('json') === true) {
-            $this->writeToolJson($response);
 
-            return self::SUCCESS;
-        }
-        $data = $response->toArray();
-        unset($data['request_id']);
-        $this->table(
-            ['Field', 'Value'],
-            array_map(fn ($k, $v): array => [$k, $this->value($v)], array_keys($data), array_values($data)),
-        );
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderTool($response, "Tool [{$response->package}].");
     }
 }

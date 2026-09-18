@@ -64,7 +64,7 @@ final class CreateHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new CreateHerdrSessionRequest(
                 nodeId: $nodeId,
@@ -73,21 +73,13 @@ final class CreateHerdrSessionCommand extends HerdrSessionCommand
                 publishObserver: $this->option('publish-observer') === true,
             ),
             HerdrSessionResponse::class,
+            ['Create Herdr session', 'Creating Herdr session', 'Created Herdr session'],
         );
 
         if (! $response instanceof HerdrSessionResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedSessionPayload($response));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Herdr session [{$response->session}] on [{$response->node}] is {$response->status}.");
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderSession($response, "Herdr session [{$response->session}] on [{$response->node}] is {$response->status}.");
     }
 }

@@ -117,7 +117,9 @@ The CLI sends each deployment operation through the typed PHP SDK. It does not r
 | `orbit instance:rollback INSTANCE --release=NAME` | Selects one retained release and renders rollback events as they arrive. Add `--json` to write those same events as NDJSON, including a failed `result`. |
 | `orbit instance:release:list INSTANCE` | Lists retained release names, the current selection, and the `request_id`. Add `--json` to return those values as one JSON object. |
 
-Human deploy and rollback output names each phase and named step. It labels standard output and standard error separately and escapes control bytes so application output cannot become terminal control input. Output appears while the step is still running. The final output includes the request ID and the selected release when the Gateway reports one.
+Human deploy and rollback output shows a progress tree. The phases the Gateway always sends appear up front; named deploy steps and the PHP cache refresh phase reveal only when their phase starts. Glyphs and color show waiting, running, success, failure, and not-reached states, and active indicators alternate while work is in progress. Standard output and standard error from application commands appear labeled and escaped, and print above the tree without redrawing it, while their step runs, so application output cannot become terminal control input.
+
+On failure the tree marks the last reached step as failed, with the error code shown under it, even when the Gateway's failed boundary has no step of its own (an activation or cache-refresh failure during a rollback, for example). Every later step shows as not reached, and the footer turns red. The final lines add the failed boundary, the error code, the selected release when available, and the request ID.
 
 Add `--json` to deploy or rollback to write newline-delimited JSON (NDJSON) without prompts, progress decoration, or other prose. The CLI writes each validated event as one compact line using the event fields in the table above. An `output` line keeps `data_base64`, so arbitrary application bytes remain valid JSON.
 
@@ -140,9 +142,11 @@ The command exit status identifies whether the streamed operation completed succ
 | The final event is a succeeded result. | Zero. |
 | The final event is a failed result. | Nonzero. The command identifies the failed boundary and the selected release when the result includes one. |
 | The stream is malformed, truncated, or ends without a result. | Nonzero. The command never infers success from earlier events. |
-| The operator presses Ctrl-C. | Nonzero. The operating system terminates the CLI and closes its HTTP connection immediately. The CLI does not submit another deployment or rollback request. |
+| The operator presses Ctrl-C. | Nonzero. The CLI closes its HTTP connection at once and does not submit another deployment or rollback request. |
 
 A connected invocation ends with exactly one `result` event. An execution failure after admission produces a failed result in the stream; the Gateway does not try to send a second HTTP error response. An unavailable deployment configuration, including a development App instance, is such a failed result. Application output is flushed while its command is still running, and Caddy uses a 1 millisecond flush interval so it can still cancel the FastCGI request after a client disconnects. Gateway request and proxy limits cover the accepted deployment deadline.
+
+Ctrl-C closes the connection at once, including during a silent step with no output yet: the CLI does not wait for that step to finish first. Human output marks the current step failed and shows a red "Operation interrupted." footer; JSON mode ends the stream with no result line.
 
 Before each phase event, the Gateway uses a bounded 250 millisecond probe that flushes one JSON-safe whitespace byte every 10 milliseconds. The whitespace and event form one valid NDJSON line, and every byte counts toward the 32 KiB line limit.
 

@@ -56,6 +56,27 @@ describe('shared progress', function (): void {
             ->not->toContain('private callback detail', 'Completed first', 'conditional');
     });
 
+    it('colors the failure footer red and leaves a healthy footer uncolored (F2c)', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, true, false, 80), $output, 'Operation');
+        $display->admit('first', 'First', 'Running first', 'Completed first');
+        $display->during('first', fn (): bool => true);
+        $display->complete('first', ProgressState::Failure, 'boom');
+        $display->finish('Operation failed.');
+        $text = $output->fetch();
+
+        expect($text)->toContain("\e[31mOperation failed.\e[0m");
+
+        $healthy = new BufferedOutput;
+        $ok = new ProgressDisplay(new ConsoleMode(false, false, true, false, 80), $healthy, 'Operation');
+        $ok->admit('first', 'First', 'Running first', 'Completed first');
+        $ok->during('first', fn (): bool => true);
+        $ok->complete('first', ProgressState::Success);
+        $ok->finish('Operation succeeded.');
+
+        expect($healthy->fetch())->not->toContain("\e[31m");
+    });
+
     it('does not emit human output in machine mode and preserves spinner values and exceptions', function (): void {
         $output = new BufferedOutput;
         $mode = new ConsoleMode(true, false, false, false, 80);
@@ -131,5 +152,73 @@ describe('shared progress', function (): void {
         foreach (explode("\n", $output->fetch()) as $line) {
             expect(TerminalText::width($line))->toBeLessThanOrEqual(1);
         }
+    });
+
+    it('inserts a revealed step at its real position on a decorated terminal', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, true, true, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+        $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
+        $display->during('source_preparation', fn (): int => 0);
+        $display->complete('source_preparation', ProgressState::Success);
+        $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate');
+        $display->during('before_activation:migrate', fn (): int => 0);
+        $display->complete('before_activation:migrate', ProgressState::Success);
+        $display->during('activation', fn (): int => 0);
+        $display->complete('activation', ProgressState::Success);
+        $display->finish('Deployment succeeded.');
+        $text = $output->fetch();
+        $finalFrame = substr($text, strrpos($text, '┌'));
+
+        expect($text)->toContain("\e[")
+            ->and($finalFrame)->toContain('Resolved release', 'Ran migrate', 'Activated release')
+            ->and(strpos($finalFrame, 'Resolved release'))->toBeLessThan(strpos($finalFrame, 'Ran migrate'))
+            ->and(strpos($finalFrame, 'Ran migrate'))->toBeLessThan(strpos($finalFrame, 'Activated release'));
+    });
+
+    it('inserts a revealed step at its real position on plain output', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+        $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
+        $display->during('source_preparation', fn (): int => 0);
+        $display->complete('source_preparation', ProgressState::Success);
+        $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate');
+        $display->during('before_activation:migrate', fn (): int => 0);
+        $display->complete('before_activation:migrate', ProgressState::Success);
+        $display->during('activation', fn (): int => 0);
+        $display->complete('activation', ProgressState::Success);
+        $display->finish('Deployment succeeded.');
+        $text = $output->fetch();
+        $finalFrame = substr($text, strrpos($text, '┌'));
+
+        expect($text)->not->toContain("\e[")
+            ->and(strpos($finalFrame, 'Resolved release'))->toBeLessThan(strpos($finalFrame, 'Ran migrate'))
+            ->and(strpos($finalFrame, 'Ran migrate'))->toBeLessThan(strpos($finalFrame, 'Activated release'));
+    });
+
+    it('fails loudly when the anchor step for admitBefore does not exist', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+
+        expect(fn () => $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate'))
+            ->toThrow(LogicException::class);
+    });
+
+    it('fails loudly when the admitBefore anchor has already left Waiting (M12)', function (): void {
+        $output = new BufferedOutput;
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
+        $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
+        $display->during('source_preparation', fn (): int => 0);
+        $display->complete('source_preparation', ProgressState::Success);
+        // Activation already ran to completion: a later before_activation event is out of
+        // order, and the anchor existing is not enough on its own — it must still be Waiting.
+        $display->during('activation', fn (): int => 0);
+        $display->complete('activation', ProgressState::Success);
+
+        expect(fn () => $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate'))
+            ->toThrow(LogicException::class);
     });
 });

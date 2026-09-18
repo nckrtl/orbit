@@ -124,7 +124,8 @@
               "solutions/vpn-dnsmasq-uplink-resolvers",
               "solutions/remote-file-writes-on-uutils-coreutils",
               "solutions/migrate-unmanaged-executor-hostname",
-              "solutions/sqlite-wal-default"
+              "solutions/sqlite-wal-default",
+              "solutions/realtime-reverb"
             ]
           }
         ]
@@ -168,6 +169,7 @@
               "cli/doctor",
               "cli/profile",
               "cli/activity",
+              "cli/realtime",
               "cli/extension",
               "cli/herdr",
               "cli/workspace"

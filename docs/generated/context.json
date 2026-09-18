@@ -254,6 +254,7 @@
                 "Herdr session",
                 "Node",
                 "Process",
+                "Route",
                 "Tool"
             ],
             "governing_adrs": []
@@ -359,6 +360,22 @@
                 "Gateway",
                 "Node",
                 "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/realtime.mdx",
+            "title": "realtime",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -3187,6 +3204,23 @@
             "governing_adrs": [
                 "0080"
             ]
+        },
+        {
+            "path": "docs/solutions/realtime-reverb.mdx",
+            "title": "Realtime events with Reverb",
+            "kind": "solution",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Web root"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",

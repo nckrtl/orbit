@@ -21,6 +21,8 @@ final readonly class GatewayConfigRepository
             ! GatewayProfile::hasValidName($profile->name)
             || ! GatewayProfile::hasSafeUrl($profile->url)
             || ! GatewayProfile::hasValidCaPath($profile->caPath)
+            || ! GatewayProfile::hasSafeRealtimeUrl($profile->realtimeUrl)
+            || ! GatewayProfile::hasValidRealtimeKey($profile->realtimeKey)
         ) {
             throw new GatewayConfigException('Gateway profile is invalid.');
         }
@@ -66,6 +68,8 @@ final readonly class GatewayConfigRepository
                 name: $current->name,
                 url: $current->url,
                 caPath: $caPath,
+                realtimeUrl: $current->realtimeUrl,
+                realtimeKey: $current->realtimeKey,
             )->toArray();
 
             $this->write($config);

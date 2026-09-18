@@ -53,25 +53,17 @@ final class RestartHerdrSessionCommand extends HerdrSessionCommand
             return self::FAILURE;
         }
 
-        $response = $this->send(
+        $response = $this->sendWithProgress(
             $connector,
             new RestartHerdrSessionRequest($listed->id, $this->option('handoff') === true),
             HerdrSessionResponse::class,
+            ['Restart Herdr session', 'Restarting Herdr session', 'Restarted Herdr session'],
         );
 
         if (! $response instanceof HerdrSessionResponse) {
             return self::FAILURE;
         }
 
-        if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedSessionPayload($response));
-
-            return self::SUCCESS;
-        }
-
-        $this->info("Herdr session [{$response->session}] on [{$response->node}] is {$response->status}.");
-        $this->line("Request ID: {$response->requestId}");
-
-        return self::SUCCESS;
+        return $this->renderSession($response, "Herdr session [{$response->session}] on [{$response->node}] is {$response->status}.");
     }
 }
