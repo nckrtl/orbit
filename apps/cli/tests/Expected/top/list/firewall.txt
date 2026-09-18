@@ -1,13 +1,13 @@
   orbit                                                                                            gateway.test · live  
-╭──────────────────╮  Nodes   + create                                                                                  
+╭──────────────────╮  Firewall                                                                                          
 │  Dashboard       │╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│› Nodes         1 ││  Name                Status         Roles                   WireGuard IP               Instances │
-│  Apps          1 ││› beast               active         app-dev                 10.44.0.2                          1 │
+│  Nodes         1 ││  Node                  Port             Action        Source                              Status │
+│  Apps          1 ││› beast                 22/tcp           allow         10.44.0.0/16                        active │
 │  Instances     1 ││                                                                                                  │
 │  Processes     1 ││                                                                                                  │
 │  Schedules     1 ││                                                                                                  │
 │  Databases     1 ││                                                                                                  │
-│  Firewall      1 ││                                                                                                  │
+│› Firewall      1 ││                                                                                                  │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │
