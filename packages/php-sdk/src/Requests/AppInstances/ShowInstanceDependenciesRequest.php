@@ -32,8 +32,8 @@ final class ShowInstanceDependenciesRequest extends GatewayRequest
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceDependencyInventoryResponse
     {
-        return DependencyInventoryDecoder::decode(
-            $response->body(), $this->instanceId, $response->header('X-Orbit-Request-Id'), false,
+        return DependencyInventoryDecoder::decodeFromResponse(
+            $response, $this->instanceId, false, $this->successRequestId($response),
         );
     }
 }

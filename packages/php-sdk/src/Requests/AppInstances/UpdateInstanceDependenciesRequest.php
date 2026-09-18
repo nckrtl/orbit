@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\AppInstances;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\Dependencies\InstanceDependencyInventoryResponse;
+use Orbit\Sdk\Responses\Dependencies\InstanceDependencyUpdateResponse;
 use Orbit\Sdk\Support\DependencyInventoryDecoder;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -14,7 +14,7 @@ use Saloon\Repositories\Body\JsonBodyRepository;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
 
-final class ScanInstanceDependenciesRequest extends GatewayRequest implements HasBody
+final class UpdateInstanceDependenciesRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody {
         body as private jsonBody;
@@ -32,20 +32,20 @@ final class ScanInstanceDependenciesRequest extends GatewayRequest implements Ha
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/instances/{$this->instanceId}/dependencies/scan";
+        return "/api/v1/instances/{$this->instanceId}/dependencies/update";
     }
 
     public function hasRequestFailed(#[SensitiveParameter] Response $response): ?bool
     {
-        DependencyInventoryDecoder::guardBody($response->body(), $response->header('X-Orbit-Request-Id'));
+        DependencyInventoryDecoder::guardBody($response->body(), $response->header('X-Orbit-Request-Id'), update: true);
 
         return parent::hasRequestFailed($response);
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceDependencyInventoryResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceDependencyUpdateResponse
     {
-        return DependencyInventoryDecoder::decodeFromResponse(
-            $response, $this->instanceId, true, $this->successRequestId($response),
+        return DependencyInventoryDecoder::decodeUpdate(
+            $response, $this->instanceId, $this->successRequestId($response),
         );
     }
 }

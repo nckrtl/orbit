@@ -38,6 +38,6 @@ final class ResolveDirectoryInstanceRequest extends GatewayRequest
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): ResolvedDirectoryInstanceResponse
     {
-        return InstanceResolutionDecoder::decodeDirectory($response->body(), $response->header('X-Orbit-Request-Id'));
+        return InstanceResolutionDecoder::decodeDirectoryFromResponse($response, $this->successRequestId($response));
     }
 }

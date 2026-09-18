@@ -13,7 +13,10 @@ use Orbit\Sdk\Responses\Dependencies\DependencyRequirementResponse;
 use Orbit\Sdk\Responses\Dependencies\DependencyResolutionResponse;
 use Orbit\Sdk\Responses\Dependencies\DependencySnapshotResponse;
 use Orbit\Sdk\Responses\Dependencies\DependencySourceResponse;
+use Orbit\Sdk\Responses\Dependencies\DependencyUpdateStepResponse;
 use Orbit\Sdk\Responses\Dependencies\InstanceDependencyInventoryResponse;
+use Orbit\Sdk\Responses\Dependencies\InstanceDependencyUpdateResponse;
+use Saloon\Http\Response;
 use SensitiveParameter;
 use stdClass;
 
@@ -22,12 +25,22 @@ final class DependencyInventoryDecoder
 {
     private const int MAX_BYTES = 33_554_432;
 
-    private function __construct(private ?string $requestId) {}
+    private const string INVENTORY_MESSAGE = 'Gateway response contains invalid dependency inventory data.';
 
-    public static function guardBody(#[SensitiveParameter] string $body, #[SensitiveParameter] mixed $requestId): void
-    {
+    private const string UPDATE_MESSAGE = 'Gateway response contains invalid dependency update data.';
+
+    private function __construct(
+        private ?string $requestId,
+        private readonly string $invalidMessage = self::INVENTORY_MESSAGE,
+    ) {}
+
+    public static function guardBody(
+        #[SensitiveParameter] string $body,
+        #[SensitiveParameter] mixed $requestId,
+        bool $update = false,
+    ): void {
         if (strlen($body) > self::MAX_BYTES) {
-            new self(GatewayRequestId::fromTransport($requestId))->invalid();
+            new self(GatewayRequestId::fromTransport($requestId), $update ? self::UPDATE_MESSAGE : self::INVENTORY_MESSAGE)->invalid();
         }
     }
 
@@ -39,34 +52,132 @@ final class DependencyInventoryDecoder
     ): InstanceDependencyInventoryResponse {
         self::guardBody($body, $headerRequestId);
         $decoder = new self(GatewayRequestId::fromTransport($headerRequestId));
+        $data = $decoder->object($decoder->envelope($body)->data, ['instance_id', 'succeeded', 'composer', 'javascript']);
 
+        return $decoder->inventoryResponse($data, $instanceId, $scan);
+    }
+
+    public static function decodeFromResponse(
+        #[SensitiveParameter] Response $response,
+        int $instanceId,
+        bool $scan,
+        string $requestId,
+    ): InstanceDependencyInventoryResponse {
+        $result = self::decode($response->body(), $instanceId, $response->header('X-Orbit-Request-Id'), $scan);
+        if ($requestId !== '' && $result->requestId !== $requestId) {
+            throw new GatewayApiException(self::INVENTORY_MESSAGE, requestId: $result->requestId);
+        }
+
+        return $result;
+    }
+
+    public static function decodeUpdate(
+        #[SensitiveParameter] Response $response,
+        int $instanceId,
+        string $requestId,
+    ): InstanceDependencyUpdateResponse {
+        $body = $response->body();
+        $headerRequestId = $response->header('X-Orbit-Request-Id');
+        self::guardBody($body, $headerRequestId, update: true);
+        $decoder = new self(GatewayRequestId::fromTransport($headerRequestId), self::UPDATE_MESSAGE);
+        $data = $decoder->object(
+            $decoder->envelope($body)->data,
+            ['instance_id', 'succeeded', 'error_code', 'may_have_mutated', 'composer', 'javascript', 'inventory'],
+        );
+        if (! is_int($data->instance_id) || $data->instance_id < 1 || $data->instance_id !== $instanceId
+            || ! is_bool($data->succeeded) || ! is_bool($data->may_have_mutated)) {
+            $decoder->invalid();
+        }
+        $errorCode = $data->error_code === null ? null : GatewayErrorCode::fromTransport($data->error_code);
+        if ($data->error_code !== null && $errorCode === null) {
+            $decoder->invalid();
+        }
+        $composer = $decoder->step($data->composer, 'composer');
+        $javascript = $decoder->step($data->javascript, 'npm');
+        if ($data->may_have_mutated !== ($composer->mayHaveMutated || $javascript->mayHaveMutated)) {
+            $decoder->invalid();
+        }
+        $inventory = $data->inventory === null
+            ? null
+            : $decoder->inventoryResponse($data->inventory, $instanceId, true);
+        $completed = in_array($composer->status, ['succeeded', 'absent'], true)
+            && in_array($javascript->status, ['succeeded', 'absent'], true);
+        $expectedSucceeded = $errorCode === null
+            && $completed
+            && $inventory?->succeeded === true;
+        if ($data->succeeded !== $expectedSucceeded) {
+            $decoder->invalid();
+        }
+
+        $result = new InstanceDependencyUpdateResponse(
+            $instanceId, $data->succeeded, $errorCode, $data->may_have_mutated,
+            $composer, $javascript, $inventory, $decoder->requestId ?? $decoder->invalid(),
+        );
+        if ($requestId !== '' && $result->requestId !== $requestId) {
+            $decoder->invalid();
+        }
+
+        return $result;
+    }
+
+    private function envelope(#[SensitiveParameter] string $body): stdClass
+    {
         try {
             $envelope = json_decode($body, depth: 16, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            $decoder->invalid();
+            $this->invalid();
         }
 
-        $envelope = $decoder->object($envelope, ['data', 'meta']);
-        $meta = $decoder->object($envelope->meta, ['request_id']);
+        $envelope = $this->object($envelope, ['data', 'meta']);
+        $meta = $this->object($envelope->meta, ['request_id']);
         $requestId = GatewayRequestId::fromTransport($meta->request_id);
-        if ($requestId === null || ($decoder->requestId !== null && $decoder->requestId !== $requestId)) {
-            $decoder->invalid();
+        if ($requestId === null || ($this->requestId !== null && $this->requestId !== $requestId)) {
+            $this->invalid();
         }
-        $decoder->requestId = $requestId;
-        $decoder->uniqueKeys($body);
-        $data = $decoder->object($envelope->data, ['instance_id', 'succeeded', 'composer', 'javascript']);
+        $this->requestId = $requestId;
+        $this->uniqueKeys($body);
+
+        return $envelope;
+    }
+
+    private function inventoryResponse(#[SensitiveParameter] mixed $value, int $instanceId, bool $scan): InstanceDependencyInventoryResponse
+    {
+        $data = $this->object($value, ['instance_id', 'succeeded', 'composer', 'javascript']);
         if (! is_int($data->instance_id) || $data->instance_id < 1 || $data->instance_id !== $instanceId) {
-            $decoder->invalid();
+            $this->invalid();
         }
-        $composer = $decoder->inventory($data->composer, 'composer');
-        $javascript = $decoder->inventory($data->javascript, 'npm');
+        $composer = $this->inventory($data->composer, 'composer');
+        $javascript = $this->inventory($data->javascript, 'npm');
         $succeeded = $composer->succeeded === null || $javascript->succeeded === null
             ? null : $composer->succeeded && $javascript->succeeded;
         if ($data->succeeded !== $succeeded || ($scan && $succeeded === null)) {
-            $decoder->invalid();
+            $this->invalid();
         }
 
-        return new InstanceDependencyInventoryResponse($instanceId, $succeeded, $composer, $javascript, $requestId);
+        return new InstanceDependencyInventoryResponse($instanceId, $succeeded, $composer, $javascript, $this->requestId ?? $this->invalid());
+    }
+
+    private function step(#[SensitiveParameter] mixed $value, string $ecosystem): DependencyUpdateStepResponse
+    {
+        $data = $this->object($value, ['ecosystem', 'status', 'may_have_mutated', 'error_code']);
+        if ($data->ecosystem !== $ecosystem || ! is_bool($data->may_have_mutated)
+            || ! in_array($data->status, ['succeeded', 'absent', 'failed', 'not_run'], true)) {
+            $this->invalid();
+        }
+        $errorCode = $data->error_code === null ? null : GatewayErrorCode::fromTransport($data->error_code);
+        if ($data->error_code !== null && $errorCode === null) {
+            $this->invalid();
+        }
+        $valid = match ($data->status) {
+            'succeeded' => $errorCode === null && $data->may_have_mutated,
+            'absent', 'not_run' => $errorCode === null && ! $data->may_have_mutated,
+            'failed' => $errorCode !== null,
+        };
+        if (! $valid) {
+            $this->invalid();
+        }
+
+        return new DependencyUpdateStepResponse($ecosystem, $data->status, $data->may_have_mutated, $errorCode);
     }
 
     private function inventory(#[SensitiveParameter] mixed $value, string $ecosystem): DependencyInventoryResponse
@@ -253,6 +364,6 @@ final class DependencyInventoryDecoder
 
     private function invalid(): never
     {
-        throw new GatewayApiException('Gateway response contains invalid dependency inventory data.', requestId: $this->requestId);
+        throw new GatewayApiException($this->invalidMessage, requestId: $this->requestId);
     }
 }

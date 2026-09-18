@@ -326,9 +326,11 @@ Raw source contents, configuration values, download URLs, credentials, and proce
 
 `ShowInstanceDependenciesRequest` reads stored inventory by numeric instance ID. `ScanInstanceDependenciesRequest` sends an empty JSON object to scan that instance. Both return `InstanceDependencyInventoryResponse`, with typed ecosystem, snapshot, source, resolution, and requirement values. The SDK preserves null attempts, verified absence, empty graphs, partial results, and stale observations. Callers must inspect `succeeded`, including HTTP 200 responses.
 
+`UpdateInstanceDependenciesRequest` sends an empty JSON object to update that instance. It returns `InstanceDependencyUpdateResponse` with named Composer and JavaScript steps, a possible-mutation flag, nullable post-update inventory, and request correlation. Step statuses are `succeeded`, `absent`, `failed`, and `not_run`. Complete, skipped, rejected, and partial updates remain typed results. Rejected preflight outcomes keep both steps `not_run` and omit inventory. An operation-level `error_code` may accompany completed package steps and retained inventory. A failed second step, missing post-update inventory, or a failed post-update scan remains a typed failure with retained step and inventory status. Callers must inspect `succeeded`, step statuses, and inventory outcomes even after HTTP 200.
+
 The SDK rejects an entire invalid response instead of dropping graph records or supplying success defaults. It checks envelope shape, request correlation, instance identity, field types, state consistency, unique resolution IDs, and graph endpoints. It accepts at most 32 MiB of response JSON, 50,000 resolutions and 200,000 requirements per ecosystem, 64 source hashes, and 16 KiB per text field. Oversized or malformed results raise a safe `GatewayApiException`; valid error-envelope codes, redacted details, and request IDs use the shared transport boundary.
 
-These are transport limits, not package-selection policy. The SDK does not parse lockfiles, resolve domains, run packages, render CLI output, or retry scans. Focused Saloon fixtures verify this contract; CLI and integrated discovery checks exercise real transport.
+These are transport limits, not package-selection policy. The SDK does not parse lockfiles, resolve domains, run packages, render CLI output, or retry scans or updates. Focused Saloon fixtures verify this contract; CLI and integrated discovery checks exercise real transport.
 
 ## Full-domain target resolution
 

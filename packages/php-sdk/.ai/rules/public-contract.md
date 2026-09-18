@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 123 concrete public Gateway API operations:
+The SDK models exactly 124 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -8,7 +8,7 @@ The SDK models exactly 123 concrete public Gateway API operations:
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, update, and remove.
 - App runtime definition: process and Schedule list, create, show, update, and destroy.
-- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, and full-domain and directory instance resolution through the concise Instance routes.
+- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
@@ -55,6 +55,10 @@ operations. Keep the public API typed and small.
   optional import replacement, one key and string value for update, an empty
   synchronization body, and the bounded value-free operation result. The
   Gateway owns lookup, validation, references, storage, and synchronization.
+- Keep AppInstance dependency update transport limited to a numeric instance ID
+  and an explicit empty JSON object. Preserve typed step statuses, possible
+  mutation flags, nullable inventory, and request correlation. The Gateway owns
+  target authorization, preflight, package execution, and inventory refresh.
 - Keep Route transport limited to App, domain, publication intent, exclusive
   Node-or-Cluster scope, a single AppInstance target, an ordered production
   target set with explicit AppInstance and Route identities plus removal

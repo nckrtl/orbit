@@ -38,6 +38,6 @@ final class ResolveAppInstanceRequest extends GatewayRequest
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): ResolvedAppInstanceResponse
     {
-        return InstanceResolutionDecoder::decode($response->body(), $this->domain, $response->header('X-Orbit-Request-Id'));
+        return InstanceResolutionDecoder::decodeFromResponse($response, $this->domain, $this->successRequestId($response));
     }
 }

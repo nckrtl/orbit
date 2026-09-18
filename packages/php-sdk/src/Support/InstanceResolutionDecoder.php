@@ -8,6 +8,7 @@ use JsonException;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\AppInstances\ResolvedAppInstanceResponse;
 use Orbit\Sdk\Responses\AppInstances\ResolvedDirectoryInstanceResponse;
+use Saloon\Http\Response;
 use SensitiveParameter;
 use stdClass;
 
@@ -42,6 +43,31 @@ final class InstanceResolutionDecoder
         [$data, $requestId] = self::envelope($body, $headerRequestId, ['instance_id', 'app_id', 'node_id', 'environment']);
 
         return ResolvedDirectoryInstanceResponse::fromGatewayData($data, $requestId);
+    }
+
+    public static function decodeFromResponse(
+        #[SensitiveParameter] Response $response,
+        #[SensitiveParameter] string $domain,
+        string $requestId,
+    ): ResolvedAppInstanceResponse {
+        $result = self::decode($response->body(), $domain, $response->header('X-Orbit-Request-Id'));
+        if ($requestId !== '' && $result->requestId !== $requestId) {
+            throw new GatewayApiException('Gateway response contains invalid instance resolution data.', requestId: $result->requestId);
+        }
+
+        return $result;
+    }
+
+    public static function decodeDirectoryFromResponse(
+        #[SensitiveParameter] Response $response,
+        string $requestId,
+    ): ResolvedDirectoryInstanceResponse {
+        $result = self::decodeDirectory($response->body(), $response->header('X-Orbit-Request-Id'));
+        if ($requestId !== '' && $result->requestId !== $requestId) {
+            throw new GatewayApiException('Gateway response contains invalid instance resolution data.', requestId: $result->requestId);
+        }
+
+        return $result;
     }
 
     /** @param list<string> $fields
