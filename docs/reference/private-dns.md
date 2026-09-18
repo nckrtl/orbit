@@ -93,9 +93,9 @@ The requester's registered Node and local area network (LAN) settings determine 
 
 The Gateway returns the Router's configured LAN address to an active, LAN-configured WireGuard member of the same active Cluster. It returns the Router's WireGuard address to every other permitted requester, including a member without a LAN address, a member of another Cluster, and a source it cannot identify as an active registered WireGuard Node.
 
-The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route domain. Node-scoped App Routes, custom proxy Routes, `gateway.orbit`, `metrics.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. A custom proxy Route publishes an exact `host-record` for its domain and answers with the serving Node. [Herdr sessions](/reference/herdr-sessions) owns observer publication. [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns that Route kind.
+The same rule applies to the Cluster TLD and to each exact Cluster-scoped Route domain. Node-scoped App Routes, custom proxy Routes, `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and Herdr observer hostnames of the form `{session}.herdr.{node}.{tld}` keep their established addresses. A custom proxy Route publishes an exact `host-record` for its domain and answers with the serving Node; the `websocket` role's `reverb.orbit` record answers with that role's own Node the same way. [Herdr sessions](/reference/herdr-sessions) owns observer publication. [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns that Route kind.
 
-`gateway.orbit` and `metrics.orbit` are reserved platform names. A Route cannot own them.
+`gateway.orbit`, `metrics.orbit`, and `reverb.orbit` are reserved platform names. A Route cannot own them.
 
 | Observation | Meaning |
 | --- | --- |

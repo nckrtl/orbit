@@ -1,11 +1,11 @@
 ---
 title: "Realtime events"
-description: "The envelope, channel, and full catalogue of record-change events the Gateway broadcasts to Reverb, and the env contract that turns it on."
+description: "The envelope, channel, and full catalogue of record-change events the Gateway broadcasts to Reverb, and the websocket role that turns it on."
 ---
 
 # Realtime events
 
-The Gateway broadcasts one realtime event for every record it changes, so a client such as `orbit top` can stay live without polling. This page defines the envelope, the channel and its authorization, the full catalogue of event types, and the environment variables that configure delivery.
+The Gateway broadcasts one realtime event for every record it changes, so a client such as `orbit top` can stay live without polling. This page defines the envelope, the channel and its authorization, the full catalogue of event types, and the node role that configures delivery.
 
 ## Transport
 
@@ -23,12 +23,12 @@ A client asks the Gateway where Reverb is instead of carrying hand-edited connec
 
 ```json
 {
-  "data": { "url": "wss://reverb.orbit", "key": "<REVERB_APP_KEY>", "channel": "orbit" },
+  "data": { "url": "wss://reverb.orbit", "key": "<reverb-app-key>", "channel": "orbit" },
   "meta": { "request_id": "..." }
 }
 ```
 
-`url` and `key` are `null` when broadcasting is not configured, that is when `BROADCAST_CONNECTION` is not `reverb` or the Reverb host or app key is missing:
+`url` and `key` are `null` when broadcasting is not configured, that is when no `websocket` role is active on the fleet:
 
 ```json
 {
@@ -157,14 +157,12 @@ An idempotent create call, such as adding a Process, Schedule, or firewall rule 
 
 Repairing a Node's DNS resolver (`orbit node:dns-repair` and similar recovery paths) re-pushes already-stored WireGuard and DNS configuration to the peer. It does not change the Node record, so it does not broadcast.
 
-## Environment
+## Configuration
 
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `BROADCAST_CONNECTION` | Set to `reverb` to enable broadcasting. Unset or any other value broadcasts nowhere. | unset |
-| `REVERB_APP_ID` | The Reverb application id. | none |
-| `REVERB_APP_KEY` | The Reverb application key. | none |
-| `REVERB_APP_SECRET` | The Reverb application secret. | none |
-| `REVERB_HOST` | The Reverb server's hostname. | `reverb.orbit` |
-| `REVERB_PORT` | The Reverb server's port. | `443` |
-| `REVERB_SCHEME` | `https` or `http`. Also selects TLS for the connection. | `https` |
+Broadcasting turns on by assigning the `websocket` node role, which installs and runs Reverb itself; see [Realtime events with Reverb](/solutions/realtime-reverb):
+
+```bash
+orbit node:role:add gateway websocket --converge
+```
+
+There is no environment variable to set. The Gateway resolves the active connection (host, port, scheme, and the Reverb application credentials it generated for the role) from the role assignment itself, lazily and once per request, and configures its `reverb` broadcast connection from it before every broadcast. Removing the role removes the connection, the certificate, the Caddy site, the private DNS record, and the stored credentials; `GET /api/v1/realtime` then reports `url` and `key` as `null` again.

@@ -1,6 +1,6 @@
 ---
 title: "Realtime events with Reverb"
-description: "Deploy the plain Laravel Reverb app that carries the Gateway's realtime channel, the env contract it shares with the Gateway, and how to reach it at wss://reverb.orbit."
+description: "Turn on realtime events with one node role, what its converge installs on the node, how to verify it, and how to move it to another node."
 ---
 
 # Realtime events with Reverb
@@ -11,84 +11,47 @@ description: "Deploy the plain Laravel Reverb app that carries the Gateway's rea
 
 ## Cause
 
-Reverb itself must not become another Orbit-specific service baked into the monorepo. It is a plain Laravel app with no knowledge of Apps, App instances, Routes, or the CLI. Orbit deploys it exactly the way it deploys any customer app: as an App instance on a Node, with a Process that runs its server command.
+Reverb itself must not become another Orbit-specific service baked into the monorepo. It is a plain Laravel app with no knowledge of Apps, App instances, Routes, or the CLI. Orbit installs and runs it itself, as the `websocket` node role, the same way the `metrics` role installs and runs Prometheus and Grafana.
 
 ## Solution
 
-### What the Reverb app is
+### The one command
 
-A fresh Laravel app with `laravel/reverb` installed and one app in `config/reverb.php`, driven entirely by environment values. It has no database, no frontend build, and no Orbit code. Its only jobs are to answer `/up` and to run `php artisan reverb:start --host=0.0.0.0 --port=8080`.
+```bash
+orbit node:role:add gateway websocket --converge
+```
 
-### The env contract with the Gateway
+Today the `websocket` role has to go on the same node as the `gateway` role, because that is the only node reaching `reverb.orbit` needs to be pointed at; the role has no conflict with `gateway` or `vpn`. Nothing else is required: no App, no App instance, no deploy step, no custom proxy Route, and no `.env` edit on the Gateway.
 
-The Gateway and the Reverb app must agree on one Reverb app identity. Set the same three values on both sides.
+### What converge installs on the node
 
-| Variable | Meaning |
-| --- | --- |
-| `REVERB_APP_ID` | Reverb application ID. |
-| `REVERB_APP_KEY` | Public key the Gateway's `reverb` broadcaster connects with. |
-| `REVERB_APP_SECRET` | Secret the Gateway signs broadcast requests with. |
+Converge checks out a plain, unmodified Laravel app (`https://github.com/nckrtl/orbit-reverb.git` by default) at `/opt/orbit/websocket`, runs `composer install --no-dev`, and writes that app's own `.env` with a generated `APP_KEY` and the Reverb application credentials the Gateway generated for this role assignment. It installs and enables `orbit-websocket.service`, a systemd unit that runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
 
-The Reverb app also needs `REVERB_HOST=reverb.orbit`, `REVERB_PORT=443`, and `REVERB_SCHEME=https` so it renders correct public URLs; the Gateway's own `reverb` broadcasting connection needs the same three values to reach it. Channel authorization happens on the Gateway at `/broadcasting/auth`, not inside the Reverb app: the Reverb app trusts any client that presents a valid signed request for its one configured app, and the Gateway is the only thing deciding who may subscribe to the `orbit` channel.
+Alongside the app itself, converge reserves `reverb.orbit` as a private hostname, issues it an Orbit CA leaf certificate, and renders a Caddy site on the role's node that terminates that certificate and reverse-proxies to the local Reverb process; `reverse_proxy` admits a WebSocket upgrade by default. Gateway private DNS answers `reverb.orbit` with the role's node WireGuard address, the same way it answers `gateway.orbit` and `metrics.orbit`.
 
-`reverb.orbit` terminates TLS with an Orbit certificate-authority (CA) leaf, not a public certificate. Nodes Orbit manages already trust that CA, so the Gateway's outbound HTTPS calls to `reverb.orbit` need no extra trust configuration.
+The repository, ref, install path, and port all have config defaults (`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT`) and rarely need to change.
 
-### Deploy it on the gateway node
+### Moving the role to another node
 
-These steps use only commands documented on [`app`](/cli/app), [`instance`](/cli/instance), [`process`](/cli/process), and [`route`](/cli/route) today.
+Add the role to the new node, then remove it from the old one:
 
-1. Push the Reverb app's repository somewhere the gateway node can clone from (Orbit App records need a Git URL; a local-only checkout is not enough).
-2. Give the gateway node the `app-prod` role alongside its existing `gateway` role, if it does not already have it:
-   ```bash
-   orbit node:role:add gateway app-prod --converge
-   ```
-3. Create the App and a development candidate to clone from:
-   ```bash
-   orbit app:create reverb https://github.com/your-org/orbit-reverb.git
-   orbit instance:create <app> <dev-node> default
-   ```
-4. Clone the candidate into a production App instance on the gateway node:
-   ```bash
-   orbit instance:clone <candidate> <gateway-node> primary --preview-name=reverb
-   ```
-5. Record the deploy step and set env, then deploy:
-   ```bash
-   orbit instance:deploy-step:create <instance> install --command="composer install --no-dev --optimize-autoloader"
-   orbit env:sync --instance=<instance>
-   orbit instance:deploy <instance>
-   ```
-6. Install and start the Reverb server as a Process owned by that App instance:
-   ```bash
-   orbit process:create reverb --instance=<instance> \
-     --runtime=systemd \
-     --command=php --command=artisan --command=reverb:start \
-     --command=--host=0.0.0.0 --command=--port=8080 \
-     --restart=always --keep-alive --start
-   ```
-7. Point `reverb.orbit` at that process with a custom proxy Route, which is the Route kind that admits WebSocket upgrades:
-   ```bash
-   orbit route:create reverb.orbit --node=<gateway-node> --upstream=http://127.0.0.1:8080
-   ```
+```bash
+orbit node:role:add <new-node> websocket --converge
+orbit node:role:remove <old-node> websocket --converge
+```
 
-The App instance's own generated App Route still exists and still serves `/up` over HTTPS on whatever domain Orbit generated for it; it carries no realtime traffic. `reverb.orbit` is the domain the Gateway and the CLI actually use.
-
-`orbit dns:resolve` is not part of this: `reverb.orbit` is an exact custom proxy record, and Gateway private DNS already answers it for any WireGuard peer, the same way it answers `gateway.orbit` and `metrics.orbit`.
+Adding the role converges the checkout, the systemd unit, the certificate, the Caddy site, and repoints the `reverb.orbit` DNS record to the new node in the same step. The Gateway keeps the one generated set of Reverb credentials across the move, so no client reconfiguration is needed.
 
 ## Limits
 
-This deploys one Reverb app instance behind one custom proxy Route. It does not cover scaling Reverb across multiple Nodes, Redis-backed horizontal scaling, or rotating `REVERB_APP_SECRET` without downtime.
-
-## Gaps
-
-Orbit has no App-instance-owned Route kind that admits a WebSocket upgrade. An App Route reaches the app's web root through PHP-FPM or FrankenPHP, which cannot hold a WebSocket connection open; only a [custom proxy Route](/reference/routes#custom-proxy-routes) documents WebSocket and streaming support, and that Route kind has no App or App instance association. The workaround above (an App-instance-owned Process, fronted by a Node-scoped custom proxy Route) works today, but it means Reverb's own generated App Route is dead weight: it exists because every active App instance requires one, not because anything uses it. A first-class way to expose one App instance Process at its own Route, with WebSocket upgrade admitted, does not exist yet.
+This covers one Reverb instance behind one `websocket` role assignment. It does not cover scaling Reverb across multiple nodes, Redis-backed horizontal scaling, or rotating the generated Reverb secret without downtime.
 
 ## Verification
 
 ```bash
-orbit process:list --instance=<instance>
-orbit process:logs <process-id>
-orbit route:show <route-id>
+orbit node:doctor <node>
+orbit realtime:show
 getent ahostsv4 reverb.orbit
 ```
 
-`process:list` reports the `reverb` Process running; `process:logs` shows the `Starting server on 0.0.0.0:8080` line; `route:show` reports kind `custom_proxy` for `reverb.orbit`; `getent ahostsv4 reverb.orbit` resolves to the gateway node's address over WireGuard. From a Node that trusts the Orbit CA, `curl -i https://reverb.orbit/apps/<REVERB_APP_ID>/events -X POST` should answer `401 Unauthorized` with `Authentication signature invalid` rather than a connection or TLS error, confirming the Pusher-protocol server is live behind the Route.
+On the node itself, `systemctl status orbit-websocket` reports the unit active. `orbit realtime:show` reports a configured connection at `wss://reverb.orbit` once the role is active; `getent ahostsv4 reverb.orbit` resolves to the role's node address over WireGuard. `orbit realtime:tail` and the header of `orbit top` go live against real record changes once both report configured. From a node that trusts the Orbit CA, `curl -i https://reverb.orbit/apps/<app-id>/events -X POST` should answer `401 Unauthorized` with `Authentication signature invalid` rather than a connection or TLS error, confirming the Pusher-protocol server is live behind the role's Caddy site.

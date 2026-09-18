@@ -2261,7 +2261,8 @@
                 "0072",
                 "0080",
                 "0084",
-                "0085"
+                "0085",
+                "0086"
             ]
         },
         {
@@ -2287,6 +2288,31 @@
             "governing_adrs": [
                 "0084",
                 "0085"
+            ]
+        },
+        {
+            "path": "docs/decisions/0086-run-reverb-through-a-websocket-role.md",
+            "title": "ADR 0086: Run Reverb through a websocket role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0080",
+                "0084",
+                "0086"
             ]
         },
         {
@@ -2403,7 +2429,8 @@
                 "0082",
                 "0083",
                 "0084",
-                "0085"
+                "0085",
+                "0086"
             ]
         },
         {
@@ -3305,12 +3332,11 @@
             "concepts": [
                 "App",
                 "App instance",
-                "Database",
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
-                "Route",
-                "Web root"
+                "Route"
             ],
             "governing_adrs": []
         },

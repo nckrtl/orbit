@@ -144,7 +144,7 @@ The first form stores the loopback URL. The second form stores the Node-owned Pr
 | Rule | Result |
 | --- | --- |
 | Domain | Any unique DNS domain. `executor.orbit`, `grafana.internal`, `foo.bar`, and `something.test` are valid. Orbit does not require a Cluster TLD, a Node TLD, or `.orbit`. |
-| Uniqueness | Fleet-global across App Routes, custom proxy Routes, `gateway.orbit`, and `metrics.orbit`. A conflict leaves the existing name in place. |
+| Uniqueness | Fleet-global across App Routes, custom proxy Routes, `gateway.orbit`, `metrics.orbit`, and `reverb.orbit`. A conflict leaves the existing name in place. |
 | Owner | The serving Node. Cluster membership does not move the Route to Cluster scope. |
 | Publication | Private only. The Gateway refuses public intent. |
 | Upstream | HTTP on loopback (`127.0.0.1`, `localhost`, or `::1`) or the resolved listener of a Node-owned Process on that Node. A remote URL is refused. |
