@@ -1,0 +1,24 @@
+{
+  // Root-only Bun text version 1; executable metadata is inert.
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "sample-root",
+      "dependencies": {"alias": "npm:@sample/actual@^3", "app-one": "^1", "app-two": "^2",},
+      "devDependencies": {"tool": "^1"},
+      "optionalDependencies": {"unavailable": "^4"},
+      "peerDependencies": {"root-peer": "*"},
+      "optionalPeers": ["root-peer",],
+    },
+  },
+  "packages": {
+    "alias": ["@sample/actual@3.1.0", "https://fixture-user:fixture-secret@127.0.0.1/package?token=private", {}, "sha512-YWJjZA=="],
+    "app-one": ["app-one@1.1.0", "", {"dependencies": {"adapter": "^1", "shared": "^1"}, "devDependencies": {"not-installed": "*"}}, ""],
+    "app-one/adapter": ["adapter@1.0.0", "", {"peerDependencies": {"shared": "^1", "optional-peer": "*"}, "optionalPeers": ["optional-peer"]}, ""],
+    "app-two": ["app-two@2.1.0", "", {"dependencies": {"adapter": "^1", "shared": "^2"}}, ""],
+    "app-two/adapter": ["adapter@1.0.0", "", {"peerDependencies": {"shared": "^2"}}, ""],
+    "app-two/shared": ["shared@2.2.0", "", {}, ""],
+    "shared": ["shared@1.2.0", "", {"dependencies": {"app-one": "^1"}}, ""],
+    "tool": ["tool@1.0.0", "", {"dependencies": {"app-one": "^1"}, "bin": "must-never-execute"}, ""],
+  },
+}

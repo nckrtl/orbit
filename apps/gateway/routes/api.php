@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
+use App\Http\Controllers\Api\AppInstanceDependenciesController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
 use App\Http\Controllers\Api\AppInstanceDeployStepsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
@@ -32,6 +33,8 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
+use App\Http\Controllers\Api\ResolveDependencyInstanceController;
+use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
@@ -194,6 +197,11 @@ Route::prefix('v1')->group(function (): void {
             Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
                 ->name('schedule:destroy');
         });
+        Route::get('instances/resolve-directory', [ResolveDirectoryInstanceController::class, '__invoke'])->name('instance:resolve-directory');
+        Route::get('instances/resolve', [ResolveDependencyInstanceController::class, '__invoke'])->name('instance:resolve');
+        Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
+        Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
+        Route::post('instances/{instance}/dependencies/update', [AppInstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
         Route::patch('instances/{instance}', [AppInstancesController::class, 'update'])->name('instance:update');

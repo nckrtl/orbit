@@ -1,0 +1,9 @@
+{
+  "name": "sample-root",
+  "dependencies": {"alias": "npm:@sample/actual@^3", "app-one": "^1", "app-two": "^2"},
+  "devDependencies": {"tool": "^1"},
+  "optionalDependencies": {"unavailable": "^4"},
+  "peerDependencies": {"root-peer": "*"},
+  "peerDependenciesMeta": {"root-peer": {"optional": true}},
+  "scripts": {"postinstall": "must-never-execute"}
+}

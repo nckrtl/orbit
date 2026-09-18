@@ -362,6 +362,40 @@ it('terminates its complete process group when the timeout expires', function ()
     expect(is_int($childPid) && @posix_kill($childPid, 0))->toBeFalse();
 });
 
+function native_process_group_ignoring_term_child(string $ready, string $later): array
+{
+    return [
+        '/usr/bin/python3',
+        '-c',
+        <<<'PYTHON'
+import os, signal, sys, time
+ready, later = sys.argv[1], sys.argv[2]
+child = os.fork()
+if child == 0:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    with open(ready, 'w') as handle:
+        handle.write('ready')
+        handle.flush()
+        os.fsync(handle.fileno())
+    time.sleep(2)
+    with open(later, 'w') as handle:
+        handle.write('later')
+    os._exit(0)
+os.waitpid(child, 0)
+PYTHON,
+        $ready,
+        $later,
+    ];
+}
+
+function native_process_group_marker_paths(): array
+{
+    $prefix = sys_get_temp_dir().'/orbit-native-process-group-'.bin2hex(random_bytes(8));
+
+    return [$prefix.'-ready', $prefix.'-later'];
+}
+
 it('terminates its complete process group when the output sink fails', function (): void {
     $childPid = null;
     $runner = new NativeProcessRunner;
@@ -397,6 +431,74 @@ it('terminates its complete process group when the output sink fails', function 
     }
 
     expect(is_int($childPid) && @posix_kill($childPid, 0))->toBeFalse();
+});
+
+it('SIGKILLs a process-group child that ignores SIGTERM after its leader exits on cancellation', function (): void {
+    [$ready, $later] = native_process_group_marker_paths();
+    $cancel = false;
+    $runner = new NativeProcessRunner;
+
+    try {
+        $runner->run(new ProcessInvocation(
+            arguments: native_process_group_ignoring_term_child($ready, $later),
+            timeout: 5.0,
+            terminateGraceSeconds: 0.05,
+            cancelled: static function () use (&$cancel, $ready): bool {
+                if ($cancel) {
+                    return true;
+                }
+
+                if (is_file($ready)) {
+                    $cancel = true;
+
+                    return true;
+                }
+
+                return false;
+            },
+        ));
+
+        $this->fail('The cancelled process unexpectedly completed.');
+    } catch (ProcessCancelledException) {
+        expect($ready)->toBeFile();
+    } finally {
+        @unlink($ready);
+    }
+
+    $deadline = microtime(true) + 2.5;
+    while (! is_file($later) && microtime(true) < $deadline) {
+        usleep(50_000);
+    }
+
+    expect(is_file($later))->toBeFalse();
+    @unlink($later);
+});
+
+it('SIGKILLs a process-group child that ignores SIGTERM after its leader exits on timeout', function (): void {
+    [$ready, $later] = native_process_group_marker_paths();
+    $runner = new NativeProcessRunner;
+
+    try {
+        $runner->run(new ProcessInvocation(
+            arguments: native_process_group_ignoring_term_child($ready, $later),
+            timeout: 1.0,
+            terminateGraceSeconds: 0.05,
+        ));
+
+        $this->fail('The timed-out process unexpectedly completed.');
+    } catch (ProcessTimedOutException) {
+        expect($ready)->toBeFile();
+    } finally {
+        @unlink($ready);
+    }
+
+    $deadline = microtime(true) + 2.5;
+    while (! is_file($later) && microtime(true) < $deadline) {
+        usleep(50_000);
+    }
+
+    expect(is_file($later))->toBeFalse();
+    @unlink($later);
 });
 
 final class NativeProcessRunnerCompletedProcess extends SymfonyProcess

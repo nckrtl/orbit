@@ -81,6 +81,8 @@
               "reference/php-runtime",
               "reference/appinstance-cloning",
               "reference/deployments",
+              "reference/instance-dependencies",
+              "reference/instance-dependency-contracts",
               "reference/appinstance-removal",
               "reference/appinstance-transfer"
             ]
@@ -284,12 +286,17 @@
               "GET /api/v1/instances",
               "POST /api/v1/instances",
               "POST /api/v1/instances/register",
+              "GET /api/v1/instances/resolve",
+              "GET /api/v1/instances/resolve-directory",
               "POST /api/v1/instances/{candidate}/clone",
               "DELETE /api/v1/instances/{instance}",
               "GET /api/v1/instances/{instance}",
               "PATCH /api/v1/instances/{instance}",
               "DELETE /api/v1/instances/{instance}/database-connections/{database_connection}",
               "PUT /api/v1/instances/{instance}/database-connections/{database_connection}",
+              "GET /api/v1/instances/{instance}/dependencies",
+              "POST /api/v1/instances/{instance}/dependencies/scan",
+              "POST /api/v1/instances/{instance}/dependencies/update",
               "POST /api/v1/instances/{instance}/deploy",
               "GET /api/v1/instances/{instance}/deploy-steps",
               "POST /api/v1/instances/{instance}/deploy-steps",
@@ -520,7 +527,8 @@
               "decisions/0085-build-orbit-top-as-a-thin-tui-client",
               "decisions/0086-offer-the-api-as-mcp-tools",
               "decisions/0087-run-reverb-through-a-websocket-role",
-              "decisions/0088-cli-reads-display-metrics-from-grafana"
+              "decisions/0088-cli-reads-display-metrics-from-grafana",
+              "decisions/0089-index-appinstance-dependencies"
             ]
           }
         ]

@@ -31,3 +31,15 @@ it('stores sensitive input in a protected temporary file without exposing it in 
         ->and(file_exists($path))
         ->toBeFalse();
 });
+
+it('keeps a non-seekable input stream open until it is closed', function (): void {
+    $input = ProtectedInput::holdOpen();
+    $stream = $input->stream();
+
+    expect(is_resource($stream))->toBeTrue();
+    expect(stream_get_meta_data($stream)['eof'])->toBeFalse();
+
+    $input->close();
+
+    expect(is_resource($stream))->toBeFalse();
+});

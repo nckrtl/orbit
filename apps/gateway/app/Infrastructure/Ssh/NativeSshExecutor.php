@@ -45,6 +45,7 @@ final readonly class NativeSshExecutor implements SshExecutor
             maxOutputBytes: $command->maxOutputBytes,
             output: $command->output,
             cancelled: $command->cancelled,
+            terminateGraceSeconds: $command->terminateGraceSeconds,
         ));
     }
 }

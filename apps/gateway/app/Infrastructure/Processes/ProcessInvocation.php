@@ -21,5 +21,6 @@ final readonly class ProcessInvocation
         public ?int $maxOutputBytes = null,
         public ?Closure $output = null,
         public ?Closure $cancelled = null,
+        public float $terminateGraceSeconds = 0.1,
     ) {}
 }

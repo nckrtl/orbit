@@ -1,0 +1,9 @@
+{
+  "hash": "legacy-composer-hash",
+  "packages": [
+    {"name": "sample/bundle", "version": "1.0.0", "type": "metapackage", "replace": {"sample/old": "self.version"}, "require": {"sample/root-api": "^1.0"}},
+    {"name": "sample/shared", "version": "dev-feature/inventory", "dist": {"type": "zip", "url": "https://127.0.0.1:1/archive", "reference": "refs/heads/feature/inventory", "shasum": ""}}
+  ],
+  "packages-dev": [{"name": "sample/testing", "version": "2.0.0", "require": {"sample/shared": "dev-feature/inventory"}}],
+  "aliases": []
+}

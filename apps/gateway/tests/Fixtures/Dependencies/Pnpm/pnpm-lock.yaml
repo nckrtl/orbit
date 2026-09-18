@@ -1,0 +1,74 @@
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+importers:
+  .:
+    dependencies:
+      app-one:
+        specifier: ^1
+        version: 1.0.0
+      app-two:
+        specifier: ^1
+        version: 1.0.0
+      renamed:
+        specifier: npm:@sample/core@^3
+        version: '@sample/core@3.0.0'
+    devDependencies:
+      tool:
+        specifier: ^1
+        version: 1.0.0
+    optionalDependencies:
+      native:
+        specifier: ^1
+        version: 1.0.0
+packages:
+  '@sample/core@3.0.0':
+    resolution: {integrity: sha512-YWJjZA==, tarball: 'https://fixture-user:fixture-secret@127.0.0.1/core.tgz'}
+    hasBin: true
+  app-one@1.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+  app-two@1.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+  host@1.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+  host@2.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+  native@1.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+    cpu: [arm64]
+    os: [darwin]
+  plugin@1.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+    peerDependencies:
+      host: '>=1'
+      missing-peer: '*'
+    peerDependenciesMeta:
+      missing-peer: {optional: true}
+  tool@1.0.0:
+    resolution: {integrity: sha512-YWJjZA==}
+snapshots:
+  '@sample/core@3.0.0': {}
+  app-one@1.0.0:
+    dependencies:
+      plugin: 1.0.0(host@1.0.0)
+      renamed-transitive: '@sample/core@3.0.0'
+  app-two@1.0.0:
+    dependencies:
+      plugin: 1.0.0(host@2.0.0)
+  host@1.0.0:
+    dependencies:
+      app-one: 1.0.0
+  host@2.0.0: {}
+  native@1.0.0: {}
+  plugin@1.0.0(host@1.0.0):
+    dependencies:
+      host: 1.0.0
+    optionalDependencies:
+      native: 1.0.0
+  plugin@1.0.0(host@2.0.0):
+    dependencies:
+      host: 2.0.0
+  tool@1.0.0:
+    dependencies:
+      app-one: 1.0.0
