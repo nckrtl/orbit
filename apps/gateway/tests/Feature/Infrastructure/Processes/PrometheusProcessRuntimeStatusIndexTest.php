@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Processes\ListProcessesAction;
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Processes\ProcessRuntime;
@@ -135,5 +136,53 @@ describe(PrometheusProcessRuntimeStatusIndex::class, function (): void {
         ]));
 
         expect($statuses)->toBe([3 => 'nodes-were-asked']);
+    });
+});
+
+describe('listing the whole fleet', function (): void {
+    it('lists only Processes whose owner a target could name', function (): void {
+        activate_metrics_role();
+        prometheus_unit_states([]);
+
+        $node = Node::query()->create([
+            'name' => 'fleet-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.70',
+            'wireguard_ip' => '10.44.0.70',
+            'user' => 'orbit',
+        ]);
+
+        $owned = Process::query()->create([
+            'owner_type' => Node::class,
+            'owner_id' => $node->id,
+            'name' => 'valkey',
+            'runtime' => ProcessRuntime::Systemd,
+            'working_directory' => '/srv',
+            'runtime_config' => [],
+            'restart_policy' => 'always',
+            'keep_alive' => false,
+            'desired_state' => 'running',
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        // A real fleet carries Processes owned by a legacy model that no target selects; listing
+        // every target one by one never returned them, so listing the fleet must not either.
+        Process::query()->create([
+            'owner_type' => 'App\\Models\\Instance',
+            'owner_id' => 999,
+            'name' => 'legacy-worker',
+            'runtime' => ProcessRuntime::Systemd,
+            'working_directory' => '/srv',
+            'runtime_config' => [],
+            'restart_policy' => 'always',
+            'keep_alive' => false,
+            'desired_state' => 'running',
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $listed = app(ListProcessesAction::class)->executeAll();
+
+        expect($listed->pluck('name')->all())->toBe([$owned->name]);
     });
 });
