@@ -14,9 +14,9 @@ use App\Support\Realtime\WebSocketTransport;
 use App\Support\Tui\ActionRunner;
 use App\Support\Tui\Interaction;
 use App\Support\Tui\Screen;
-use App\Support\Tui\Sources\NullDatabaseUsersSource;
-use App\Support\Tui\Sources\NullDeploymentsSource;
-use App\Support\Tui\Sources\NullNodeMetricsSource;
+use App\Support\Tui\Sources\GatewayDatabaseUsersSource;
+use App\Support\Tui\Sources\GatewayDeploymentsSource;
+use App\Support\Tui\Sources\GatewayNodeMetricsSource;
 use App\Support\Tui\State;
 use App\Support\Tui\UiState;
 use Orbit\Sdk\GatewayApiException;
@@ -51,9 +51,10 @@ use PhpTui\Tui\DisplayBuilder;
  * inside a screen that must keep rendering, so those actions, along with `node:ssh`,
  * `instance:logs`, `instance:profile`, and `database:query` (none of which have a synchronous
  * SDK request), print the equivalent command instead of running it. Deployment history,
- * per-connection database users, and node metrics are not yet exposed by every Gateway; their
- * panes render "Not available on this Gateway yet." until `App\Support\Tui\Sources\
- * DeploymentsSource`, `DatabaseUsersSource`, and `NodeMetricsSource` get real implementations.
+ * per-connection database users, and node metrics come from `App\Support\Tui\Sources\
+ * GatewayDeploymentsSource`, `GatewayDatabaseUsersSource`, and `GatewayNodeMetricsSource`; when
+ * a Gateway does not answer one of those requests, its pane renders "Not available on this
+ * Gateway yet." instead of a table.
  */
 final class TopCommand extends GatewayCommand
 {
@@ -95,7 +96,7 @@ final class TopCommand extends GatewayCommand
 
         $send = fn (GatewayRequest $request, string $responseClass): object => $this->sendOrThrow($connector, $request, $responseClass);
 
-        $state = new State(new NullDeploymentsSource, new NullDatabaseUsersSource, new NullNodeMetricsSource);
+        $state = new State(new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send), new GatewayNodeMetricsSource($send));
 
         $progress = $this->progressDisplay('Load fleet data');
         $progress->admit('load', 'Load fleet data', 'Loading fleet data', 'Loaded fleet data');

@@ -257,6 +257,69 @@ final class Screen
             ]))));
     }
 
+    /**
+     * The node page's htop-like block: cores in two columns, then memory and swap beside the root
+     * disk and uptime. The dashboard keeps the one-line summary (nodeSummaryBlock).
+     *
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeMetricsPanel(State $state, array $node, int $width): Widget
+    {
+        $metrics = $state->nodeMetrics($node['id']);
+
+        if ($metrics === null) {
+            return $this->nodeSummaryBlock($state, $node, $width);
+        }
+
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $inner = $width - 4;
+        $gap = 2;
+        $half = intdiv($inner - $gap, 2);
+        $lastHalf = $inner - $half - $gap;
+
+        $coreLines = [];
+        foreach (array_chunk($metrics['cores'], 2, true) as $group) {
+            $spans = [];
+            $position = 0;
+            foreach ($group as $core => $load) {
+                if ($position > 0) {
+                    $spans[] = Span::fromString(str_repeat(' ', $gap));
+                }
+                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $position === 1 ? $lastHalf : $half)];
+                $position++;
+            }
+            $coreLines[] = Line::fromSpans(...$spans);
+        }
+
+        [$mount, $used, $total] = $metrics['disks'][0] ?? ['/', 0.0, 0.0];
+        $left = [
+            Line::fromSpans(...$this->bar('Mem', $metrics['mem'][1] > 0 ? $metrics['mem'][0] / $metrics['mem'][1] : 0, sprintf('%.1fG/%.0fG', $metrics['mem'][0], $metrics['mem'][1]), $half)),
+            Line::fromSpans(...$this->bar('Swp', $metrics['swap'][1] > 0 ? $metrics['swap'][0] / $metrics['swap'][1] : 0, sprintf('%.1fG/%.0fG', $metrics['swap'][0], $metrics['swap'][1]), $half)),
+        ];
+        $right = [
+            Line::fromSpans(...$this->bar(str_pad((string) $mount, 3), $total > 0 ? $used / $total : 0, sprintf('%.0fG/%.0fG', $used, $total), $lastHalf, [80, 90])),
+            Line::fromSpans(Span::styled('Up ', $dim), Span::fromString($metrics['uptime'])),
+        ];
+
+        return BlockWidget::default()
+            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->titles(Title::fromString(" {$node['name']} · {$node['status']} · metrics "))
+            ->borderStyle($node['status'] === 'active' ? $dim : Style::default()->fg(AnsiColor::Yellow))
+            ->padding(Padding::horizontal(1))
+            ->widget(
+                GridWidget::default()
+                    ->direction(Direction::Vertical)
+                    ->constraints(Constraint::length(count($coreLines)), Constraint::min(2))
+                    ->widgets(
+                        ParagraphWidget::fromText(Text::fromLines(...$coreLines)),
+                        GridWidget::default()
+                            ->direction(Direction::Horizontal)
+                            ->constraints(Constraint::length($half), Constraint::length($gap), Constraint::min($lastHalf))
+                            ->widgets(ParagraphWidget::fromText(Text::fromLines(...$left)), BlockWidget::default(), ParagraphWidget::fromText(Text::fromLines(...$right))),
+                    ),
+            );
+    }
+
     /** Counts for the whole network, a count in yellow when something in it needs a look. */
     private function stats(State $state, int $width): Line
     {
@@ -298,6 +361,7 @@ final class Screen
             'schedules' => 'Schedule',
             'databases' => 'Database',
             'firewall' => 'Firewall rule',
+            'deployments' => 'Deployment',
             default => '',
         };
         $crumbs = ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(
@@ -336,6 +400,7 @@ final class Screen
             'databases' => $this->databasePage($state, $ui, $row, $properties, $propertiesHeight, $body),
             'processes' => $this->logPage($properties, $propertiesHeight, ' Log · process:logs ', $state->processLogs[$row['id']] ?? [], $body),
             'schedules' => $this->logPage($properties, $propertiesHeight, ' Log · schedule:logs ', $state->scheduleLogs[$row['id']] ?? [], $body),
+            'deployments' => $this->logPage($properties, $propertiesHeight, ' Log · instance:deployment:show ', $state->deploymentLogs[$row['id']] ?? [], $body),
             default => $this->logPage($properties, $propertiesHeight, ' Detail ', [], $body),
         };
 
@@ -349,7 +414,8 @@ final class Screen
     private function nodePage(State $state, UiState $ui, array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
     {
         $instances = $state->instancesForNode($node['name']);
-        $metricsHeight = 3;
+        $metrics = $state->nodeMetrics($node['id']);
+        $metricsHeight = $metrics === null ? 3 : intdiv(count($metrics['cores']) + 1, 2) + 4;
         $top = max($propertiesHeight, $metricsHeight);
         $constraints = [Constraint::length($top), Constraint::length(min(count($instances) + 3, max(5, $body->height - $top - 8))), Constraint::min(5)];
         $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
@@ -367,7 +433,7 @@ final class Screen
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(40), Constraint::percentage(60))
-                    ->widgets($properties, $this->nodeSummaryBlock($state, $node, $topColumns->get(1)->width)),
+                    ->widgets($properties, $this->nodeMetricsPanel($state, $node, $topColumns->get(1)->width)),
                 $this->pane($ui, 'instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain'] ?? '—'], $i['status'], $i['status'] !== 'active'), $instances)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
@@ -461,7 +527,7 @@ final class Screen
         $usersWidget = $users === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Users '))->borderStyle($dim)->padding(Padding::horizontal(1))
                 ->widget(ParagraphWidget::fromString('Not available on this Gateway yet.')->style($dim))
-            : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Used by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['used_by'], false), $users), 'No users recorded.');
+            : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Created by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['created_by'], false), $users), 'No users recorded.');
 
         if ($users !== null) {
             $ui->drawn['users'] = ['area' => $columns->get(1), 'header' => true];
@@ -528,6 +594,7 @@ final class Screen
             'processes' => ['Name' => $row['name'], 'Owner' => $state->processOwner($row), 'Node' => $state->processNodeName($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
             'schedules' => ['Name' => $row['name'], 'Instance' => $state->instanceName($row['target_id']), 'Node' => $state->instanceNodeName($row['target_id']), 'Calendar' => $row['calendar'], 'Timeout' => "{$row['timeout_seconds']} s", 'Desired timer' => $row['desired_timer_state'], 'Status' => $row['status'], 'Last run' => $row['last_run_at'] ?? 'never', 'Last run status' => $row['last_run_status'] ?? '—'],
             'firewall' => ['Name' => $row['name'], 'Port' => $row['port'], 'Protocol' => $row['protocol'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
+            'deployments' => ['Release' => $row['release'], 'Branch' => $row['branch'], 'Commit' => $row['commit'], 'Started' => $row['started'], 'Finished' => $row['finished'], 'Duration' => $row['duration'], 'Status' => $row['status'], 'Failed step' => $row['failed_step'], 'Error code' => $row['error_code'], 'Selected release' => $row['selected_release'], 'Triggered by' => $row['by']],
             default => [],
         };
 
@@ -544,6 +611,7 @@ final class Screen
             'processes', 'schedules' => $row['name'],
             'databases' => $row['slug'],
             'firewall' => "{$row['port']}/{$row['protocol']} {$row['action']} {$row['source']}",
+            'deployments' => "release {$row['release']}",
             default => '',
         };
     }

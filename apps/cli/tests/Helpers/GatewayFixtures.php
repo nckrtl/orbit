@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Orbit\Sdk\GatewayConnector;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -82,4 +83,24 @@ function run_contract(string|array $fixtures, string $command, array $arguments,
 
     expect(Artisan::call($command, $arguments))->toBe($exitCode);
     expect_output(Artisan::output(), $expected);
+}
+
+/**
+ * A `Closure(object, string): object` backed by a real `GatewayConnector` replaying the named
+ * fixtures: the same shape `GatewayCommand::sendOrThrow()` and `TopCommand`'s own `$send` use.
+ * Lets a unit test exercise a `Sources\Gateway*Source` through the real SDK request and its
+ * `createDtoFromResponse()` mapping, without a command or Artisan.
+ */
+function gateway_fixture_send(string ...$names): Closure
+{
+    MockClient::destroyGlobal();
+    MockClient::global(gateway_fixture_mock(...$names));
+    $connector = new GatewayConnector('https://10.44.0.1');
+
+    return function (object $request, string $responseClass) use ($connector): object {
+        $dto = $connector->send($request)->dto();
+        assert($dto instanceof $responseClass);
+
+        return $dto;
+    };
 }

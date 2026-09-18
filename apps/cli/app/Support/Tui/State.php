@@ -56,7 +56,7 @@ final class State
     /** @var list<array<string, mixed>> */
     public array $databases = [];
 
-    /** Lazily loaded per record id: database slug => tables, process id => log lines, schedule id => log lines. */
+    /** Lazily loaded per record id: database slug => tables, process id => log lines, schedule id => log lines, deployment id => event log lines. */
     /** @var array<string, list<string>> */
     public array $databaseTables = [];
 
@@ -66,16 +66,31 @@ final class State
     /** @var array<string, list<string>> */
     public array $scheduleLogs = [];
 
+    /** @var array<int, list<string>> */
+    public array $deploymentLogs = [];
+
     /**
      * Metrics carried live by `node.sample` realtime events, keyed by node id. Checked before
-     * falling back to NodeMetricsSource, so a Gateway that streams samples but does not yet
-     * answer `GET /nodes/{node}/metrics` still shows live numbers.
+     * falling back to NodeMetricsSource, so a Gateway that streams samples but does not answer
+     * `GET /nodes/{node}/metrics` still shows live numbers.
      *
      * @var array<int, array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}>
      */
     public array $nodeSamples = [];
 
     public string $liveness = 'polling';
+
+    /** Minimum seconds between polls of a deployments, database users, or node metrics source for the same id; Screen calls these accessors on every drawn frame, and a Gateway request is far from free. */
+    private const float SOURCE_POLL_SECONDS = 5.0;
+
+    /** @var array<int, array{at: float, value: array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null}> */
+    private array $nodeMetricsPolled = [];
+
+    /** @var array<int, array{at: float, value: list<array<string, mixed>>|null}> */
+    private array $deploymentsPolled = [];
+
+    /** @var array<string, array{at: float, value: list<array<string, mixed>>|null}> */
+    private array $databaseUsersPolled = [];
 
     public function __construct(
         private readonly DeploymentsSource $deployments,
@@ -151,10 +166,11 @@ final class State
             $family === 'schedule' => $this->applyTo('schedules', 'id', $verb, $event->data),
             $family === 'database' => $this->applyTo('databases', 'id', $verb, $event->data),
             $family === 'firewall' => $this->applyTo('firewall', 'id', $verb, $event->data),
-            // deploy_step and deployment change AppInstance-embedded data or history this
-            // Gateway does not expose to the CLI yet (see Sources\DeploymentsSource); a full
-            // reload picks up the new deploy steps. route events do not change any pane top
-            // draws today.
+            // deploy_step events change AppInstance-embedded deploy steps; a full reload
+            // (State::load()) picks those up. deployment events need no handling here:
+            // deploymentsFor() re-polls Sources\DeploymentsSource on its own short interval, so
+            // an open Deployments pane picks up new history on its own. route events do not
+            // change any pane top draws today.
             default => null,
         };
     }
@@ -243,19 +259,43 @@ final class State
     /** @return array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null */
     public function nodeMetrics(int $nodeId): ?array
     {
-        return $this->nodeSamples[$nodeId] ?? $this->nodeMetrics->forNode($nodeId);
+        return $this->nodeSamples[$nodeId] ?? $this->polled($this->nodeMetricsPolled, $nodeId, fn (): ?array => $this->nodeMetrics->forNode($nodeId));
     }
 
     /** @return list<array<string, mixed>>|null */
     public function deploymentsFor(int $instanceId): ?array
     {
-        return $this->deployments->forInstance($instanceId);
+        return $this->polled($this->deploymentsPolled, $instanceId, fn (): ?array => $this->deployments->forInstance($instanceId));
     }
 
     /** @return list<array<string, mixed>>|null */
     public function databaseUsersFor(string $slug): ?array
     {
-        return $this->databaseUsers->forConnection($slug);
+        return $this->polled($this->databaseUsersPolled, $slug, fn (): ?array => $this->databaseUsers->forConnection($slug));
+    }
+
+    /**
+     * Runs $fetch at most once every SOURCE_POLL_SECONDS per key, returning the last result in
+     * between. Screen re-reads deploymentsFor(), databaseUsersFor(), and nodeMetrics() on every
+     * drawn frame (several times a second while a page is open), so calling the Gateway that
+     * often would be wasteful and would swamp it with redundant requests.
+     *
+     * @template TValue
+     *
+     * @param  array<array-key, array{at: float, value: TValue}>  $cache
+     * @param  Closure(): TValue  $fetch
+     * @return TValue
+     */
+    private function polled(array &$cache, int|string $key, Closure $fetch): mixed
+    {
+        $now = microtime(true);
+        $entry = $cache[$key] ?? null;
+
+        if ($entry === null || $now - $entry['at'] >= self::SOURCE_POLL_SECONDS) {
+            $cache[$key] = ['at' => $now, 'value' => $fetch()];
+        }
+
+        return $cache[$key]['value'];
     }
 
     public function instanceName(int $id): string
