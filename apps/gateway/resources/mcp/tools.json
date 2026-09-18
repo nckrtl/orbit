@@ -2185,6 +2185,84 @@
       }
     },
     {
+      "name": "instance-dependencies-scan",
+      "title": "instance:dependencies:scan",
+      "description": "Scan root dependency manifests and lockfiles for one instance or every authorized instance.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/dependencies/scan",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-dependencies-show",
+      "title": "instance:dependencies:show",
+      "description": "instance:dependencies:show",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/dependencies",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-dependencies-update",
+      "title": "instance:dependencies:update",
+      "description": "Update development root packages within declared constraints and refresh inventory.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/dependencies/update",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-deploy",
       "title": "Deploy an App instance",
       "description": "Deploy the configured branch of a production App instance.",
@@ -2507,6 +2585,56 @@
         "additionalProperties": false,
         "required": [
           "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-resolve",
+      "title": "instance:resolve",
+      "description": "instance:resolve",
+      "method": "GET",
+      "path": "/api/v1/instances/resolve",
+      "path_inputs": [],
+      "query_inputs": [
+        "domain"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "maxLength": 253
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "domain"
+        ]
+      }
+    },
+    {
+      "name": "instance-resolve-directory",
+      "title": "instance:resolve-directory",
+      "description": "instance:resolve-directory",
+      "method": "GET",
+      "path": "/api/v1/instances/resolve-directory",
+      "path_inputs": [],
+      "query_inputs": [
+        "directory"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "directory": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "directory"
         ]
       }
     },
@@ -2917,7 +3045,8 @@
                 "app-dev",
                 "app-prod",
                 "metrics",
-                "database"
+                "database",
+                "websocket"
               ]
             }
           },
@@ -3075,7 +3204,8 @@
               "app-dev",
               "app-prod",
               "metrics",
-              "database"
+              "database",
+              "websocket"
             ],
             "description": "Role name"
           },
@@ -3146,7 +3276,8 @@
               "app-dev",
               "app-prod",
               "metrics",
-              "database"
+              "database",
+              "websocket"
             ],
             "description": "Role name"
           },

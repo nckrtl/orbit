@@ -164,6 +164,10 @@ if [ -n "$watchdog" ]; then
     watchdog=
 fi
 finished=1
+now=$(date +%s)
+if [ $((now - start)) -ge "$deadline" ] && [ "$status" -eq 137 ]; then
+    exit 124
+fi
 exit "$status"
 BASH;
     }
