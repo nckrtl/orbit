@@ -13,6 +13,7 @@ use App\Support\Realtime\RealtimeSubscriber;
 use App\Support\Realtime\WebSocketTransport;
 use App\Support\Tui\ActionRunner;
 use App\Support\Tui\Interaction;
+use App\Support\Tui\RefreshScheduler;
 use App\Support\Tui\Screen;
 use App\Support\Tui\Sources\GatewayDatabaseUsersSource;
 use App\Support\Tui\Sources\GatewayDeploymentsSource;
@@ -52,9 +53,10 @@ use PhpTui\Tui\DisplayBuilder;
  * `instance:logs`, `instance:profile`, and `database:query` (none of which have a synchronous
  * SDK request), print the equivalent command instead of running it. Deployment history,
  * per-connection database users, and node metrics come from `App\Support\Tui\Sources\
- * GatewayDeploymentsSource`, `GatewayDatabaseUsersSource`, and `GatewayNodeMetricsSource`; when
- * a Gateway does not answer one of those requests, its pane renders "Not available on this
- * Gateway yet." instead of a table.
+ * GatewayDeploymentsSource`, `GatewayDatabaseUsersSource`, and `GatewayNodeMetricsSource`, kept
+ * current by `App\Support\Tui\RefreshScheduler` (see its class doc) rather than by Screen or
+ * State fetching on read; when a request fails or times out, its pane says so instead of
+ * rendering a table.
  */
 final class TopCommand extends GatewayCommand
 {
@@ -96,7 +98,8 @@ final class TopCommand extends GatewayCommand
 
         $send = fn (GatewayRequest $request, string $responseClass): object => $this->sendOrThrow($connector, $request, $responseClass);
 
-        $state = new State(new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send), new GatewayNodeMetricsSource($send));
+        $state = new State;
+        $scheduler = new RefreshScheduler(new GatewayNodeMetricsSource($send), new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
 
         $progress = $this->progressDisplay('Load fleet data');
         $progress->admit('load', 'Load fleet data', 'Loading fleet data', 'Loaded fleet data');
@@ -151,6 +154,9 @@ final class TopCommand extends GatewayCommand
                         $ui->message = $exception->getMessage();
                     }
                 }
+
+                [$visibleNodeIds, $visibleInstanceIds, $visibleDatabaseSlugs] = $this->visibleRefreshKeys($ui, $state);
+                $scheduler->tick($state, $visibleNodeIds, $visibleInstanceIds, $visibleDatabaseSlugs);
 
                 while (($event = $terminal->events()->next()) !== null) {
                     if ($event instanceof CharKeyEvent) {
@@ -218,6 +224,31 @@ final class TopCommand extends GatewayCommand
             realtimeUrl: $realtime->url,
             realtimeKey: $realtime->key,
         );
+    }
+
+    /**
+     * What RefreshScheduler should keep current this frame: every node on the dashboard (or the
+     * one node a node page is open on), the one instance an instance page is open on, and the
+     * one Database connection a database page is open on. Mirrors what Screen actually draws
+     * (only the topmost open page, if any) so the scheduler never fetches for a pane that is not
+     * on screen.
+     *
+     * @return array{list<int>, list<int>, list<string>}
+     */
+    private function visibleRefreshKeys(UiState $ui, State $state): array
+    {
+        $page = $ui->page();
+
+        if ($page === null) {
+            return $ui->section === 'dashboard' ? [array_column($state->nodes, 'id'), [], []] : [[], [], []];
+        }
+
+        return match ($page['kind']) {
+            'nodes' => [[$page['row']['id']], [], []],
+            'instances' => [[], [$page['row']['id']], []],
+            'databases' => [[], [], [$page['row']['slug']]],
+            default => [[], [], []],
+        };
     }
 
     private function header(GatewayProfile $profile, State $state, float $lastPoll, float $tick): string

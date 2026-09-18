@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Support\Tui;
 
 use App\Support\Realtime\RealtimeEvent;
-use App\Support\Tui\Sources\DatabaseUsersSource;
-use App\Support\Tui\Sources\DeploymentsSource;
-use App\Support\Tui\Sources\NodeMetricsSource;
 use Closure;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
@@ -80,23 +77,20 @@ final class State
 
     public string $liveness = 'polling';
 
-    /** Minimum seconds between polls of a deployments, database users, or node metrics source for the same id; Screen calls these accessors on every drawn frame, and a Gateway request is far from free. */
-    private const float SOURCE_POLL_SECONDS = 5.0;
+    /**
+     * Node metrics fetched by RefreshScheduler, keyed by node id. Screen only ever reads this
+     * cache; it never triggers the Gateway request itself (see RefreshScheduler's class doc for
+     * why: the request that fills it can take seconds, and Screen draws every frame).
+     *
+     * @var array<int, array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null>
+     */
+    private array $nodeMetricsCache = [];
 
-    /** @var array<int, array{at: float, value: array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null}> */
-    private array $nodeMetricsPolled = [];
+    /** @var array<int, list<array<string, mixed>>|null> */
+    private array $deploymentsCache = [];
 
-    /** @var array<int, array{at: float, value: list<array<string, mixed>>|null}> */
-    private array $deploymentsPolled = [];
-
-    /** @var array<string, array{at: float, value: list<array<string, mixed>>|null}> */
-    private array $databaseUsersPolled = [];
-
-    public function __construct(
-        private readonly DeploymentsSource $deployments,
-        private readonly DatabaseUsersSource $databaseUsers,
-        private readonly NodeMetricsSource $nodeMetrics,
-    ) {}
+    /** @var array<string, list<array<string, mixed>>|null> */
+    private array $databaseUsersCache = [];
 
     /**
      * Loads every list once, using $send to perform each typed SDK request. $send has the same
@@ -256,46 +250,68 @@ final class State
         $this->{$collection} = $rows;
     }
 
-    /** @return array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null */
+    /**
+     * The last node metrics RefreshScheduler fetched for this node (or a live `node.sample`
+     * event, if one arrived), or null when none has landed yet. A pure cache read: Screen calls
+     * this on every drawn frame and must never trigger the Gateway request that fills it.
+     *
+     * @return array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null
+     */
     public function nodeMetrics(int $nodeId): ?array
     {
-        return $this->nodeSamples[$nodeId] ?? $this->polled($this->nodeMetricsPolled, $nodeId, fn (): ?array => $this->nodeMetrics->forNode($nodeId));
-    }
-
-    /** @return list<array<string, mixed>>|null */
-    public function deploymentsFor(int $instanceId): ?array
-    {
-        return $this->polled($this->deploymentsPolled, $instanceId, fn (): ?array => $this->deployments->forInstance($instanceId));
-    }
-
-    /** @return list<array<string, mixed>>|null */
-    public function databaseUsersFor(string $slug): ?array
-    {
-        return $this->polled($this->databaseUsersPolled, $slug, fn (): ?array => $this->databaseUsers->forConnection($slug));
+        return $this->nodeSamples[$nodeId] ?? $this->nodeMetricsCache[$nodeId] ?? null;
     }
 
     /**
-     * Runs $fetch at most once every SOURCE_POLL_SECONDS per key, returning the last result in
-     * between. Screen re-reads deploymentsFor(), databaseUsersFor(), and nodeMetrics() on every
-     * drawn frame (several times a second while a page is open), so calling the Gateway that
-     * often would be wasteful and would swamp it with redundant requests.
+     * RefreshScheduler calls this after it fetches (or fails to fetch) one node's metrics.
      *
-     * @template TValue
-     *
-     * @param  array<array-key, array{at: float, value: TValue}>  $cache
-     * @param  Closure(): TValue  $fetch
-     * @return TValue
+     * @param  array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null  $metrics
      */
-    private function polled(array &$cache, int|string $key, Closure $fetch): mixed
+    public function setNodeMetrics(int $nodeId, ?array $metrics): void
     {
-        $now = microtime(true);
-        $entry = $cache[$key] ?? null;
+        $this->nodeMetricsCache[$nodeId] = $metrics;
+    }
 
-        if ($entry === null || $now - $entry['at'] >= self::SOURCE_POLL_SECONDS) {
-            $cache[$key] = ['at' => $now, 'value' => $fetch()];
-        }
+    /**
+     * The last deployment history RefreshScheduler fetched for this AppInstance, or null when
+     * none has landed yet. A pure cache read; see nodeMetrics().
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function deploymentsFor(int $instanceId): ?array
+    {
+        return $this->deploymentsCache[$instanceId] ?? null;
+    }
 
-        return $cache[$key]['value'];
+    /**
+     * RefreshScheduler calls this after it fetches (or fails to fetch) one instance's deployments.
+     *
+     * @param  list<array<string, mixed>>|null  $deployments
+     */
+    public function setDeployments(int $instanceId, ?array $deployments): void
+    {
+        $this->deploymentsCache[$instanceId] = $deployments;
+    }
+
+    /**
+     * The last Database connection users RefreshScheduler fetched for this connection, or null
+     * when none has landed yet. A pure cache read; see nodeMetrics().
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function databaseUsersFor(string $slug): ?array
+    {
+        return $this->databaseUsersCache[$slug] ?? null;
+    }
+
+    /**
+     * RefreshScheduler calls this after it fetches (or fails to fetch) one connection's users.
+     *
+     * @param  list<array<string, mixed>>|null  $users
+     */
+    public function setDatabaseUsers(string $slug, ?array $users): void
+    {
+        $this->databaseUsersCache[$slug] = $users;
     }
 
     public function instanceName(int $id): string

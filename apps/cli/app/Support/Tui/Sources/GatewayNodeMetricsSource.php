@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Tui\Sources;
 
+use App\Support\Tui\Sources\Concerns\LimitsBackgroundRequestTime;
 use Closure;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
@@ -12,6 +13,8 @@ use Orbit\Sdk\Responses\Nodes\NodeMetricsResponse;
 /** The compact CPU, memory, swap, and disk snapshot for one node, from `GET /nodes/{node}/metrics`. */
 final readonly class GatewayNodeMetricsSource implements NodeMetricsSource
 {
+    use LimitsBackgroundRequestTime;
+
     private const int BYTES_PER_GIB = 1024 ** 3;
 
     /** @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow(). */
@@ -21,7 +24,7 @@ final readonly class GatewayNodeMetricsSource implements NodeMetricsSource
     public function forNode(int $nodeId): ?array
     {
         try {
-            $response = ($this->send)(new ShowNodeMetricsRequest($nodeId), NodeMetricsResponse::class);
+            $response = ($this->send)(self::withBackgroundTimeout(new ShowNodeMetricsRequest($nodeId)), NodeMetricsResponse::class);
         } catch (GatewayApiException) {
             return null;
         }

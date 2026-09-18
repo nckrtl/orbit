@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Tui\Sources;
 
+use App\Support\Tui\Sources\Concerns\LimitsBackgroundRequestTime;
 use Closure;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceDeploymentsRequest;
@@ -13,6 +14,8 @@ use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentsResponse;
 /** Deployment history for one AppInstance, from `GET /instances/{instance}/deployments`. */
 final readonly class GatewayDeploymentsSource implements DeploymentsSource
 {
+    use LimitsBackgroundRequestTime;
+
     /** @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow(). */
     public function __construct(private Closure $send) {}
 
@@ -20,7 +23,7 @@ final readonly class GatewayDeploymentsSource implements DeploymentsSource
     public function forInstance(int $instanceId): ?array
     {
         try {
-            $response = ($this->send)(new ListAppInstanceDeploymentsRequest($instanceId), AppInstanceDeploymentsResponse::class);
+            $response = ($this->send)(self::withBackgroundTimeout(new ListAppInstanceDeploymentsRequest($instanceId)), AppInstanceDeploymentsResponse::class);
         } catch (GatewayApiException) {
             return null;
         }

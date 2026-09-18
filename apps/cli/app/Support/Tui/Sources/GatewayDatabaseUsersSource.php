@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Tui\Sources;
 
+use App\Support\Tui\Sources\Concerns\LimitsBackgroundRequestTime;
 use Closure;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseUsersRequest;
@@ -13,6 +14,8 @@ use Orbit\Sdk\Responses\DatabaseConnections\DatabaseUsersResponse;
 /** The users recorded on one Database connection, from `GET /database-connections/{slug}/users`. */
 final readonly class GatewayDatabaseUsersSource implements DatabaseUsersSource
 {
+    use LimitsBackgroundRequestTime;
+
     /** @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow(). */
     public function __construct(private Closure $send) {}
 
@@ -20,7 +23,7 @@ final readonly class GatewayDatabaseUsersSource implements DatabaseUsersSource
     public function forConnection(string $slug): ?array
     {
         try {
-            $response = ($this->send)(new ListDatabaseUsersRequest($slug), DatabaseUsersResponse::class);
+            $response = ($this->send)(self::withBackgroundTimeout(new ListDatabaseUsersRequest($slug)), DatabaseUsersResponse::class);
         } catch (GatewayApiException) {
             return null;
         }
