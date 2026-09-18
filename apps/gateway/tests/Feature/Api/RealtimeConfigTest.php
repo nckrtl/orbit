@@ -6,13 +6,15 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 
 beforeEach(function (): void {
-    $this->node = Node::query()->create([
-        'name' => 'app-dev',
+    // The realtime routes are Gateway-scoped, so the caller is the gateway peer.
+    $this->node = $this->markAsGateway(Node::query()->create([
+        'name' => 'gateway',
         'status' => LifecycleStatus::Active,
-        'public_ssh_host' => '192.0.2.20',
-        'wireguard_ip' => '10.44.0.3',
-    ]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+    ]));
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
 });
 
 describe('GET /api/v1/realtime', function (): void {

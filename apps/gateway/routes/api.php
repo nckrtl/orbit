@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
@@ -40,7 +41,6 @@ use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
-use Illuminate\Broadcasting\BroadcastController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -51,11 +51,13 @@ Route::prefix('v1')->group(function (): void {
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
-    ])->match(['get', 'post'], 'broadcasting/auth', [BroadcastController::class, 'authenticate'])
+        RequireNodeAccess::class,
+    ])->match(['get', 'post'], 'broadcasting/auth', [RealtimeAuthController::class, 'authenticate'])
         ->name('realtime:auth');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
     ])->get('realtime', [RealtimeConfigController::class, 'show'])
         ->name('realtime:show');
 

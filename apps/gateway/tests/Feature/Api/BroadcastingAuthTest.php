@@ -21,12 +21,14 @@ beforeEach(function (): void {
 
 describe('POST /api/v1/broadcasting/auth', function (): void {
     it('authorizes the private orbit channel for an active WireGuard peer', function (): void {
-        $node = Node::query()->create([
-            'name' => 'app-dev',
+        // The channel is Gateway-scoped, so the subscriber is the gateway peer.
+        $node = $this->markAsGateway(Node::query()->create([
+            'name' => 'gateway',
             'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.20',
-            'wireguard_ip' => '10.44.0.3',
-        ]);
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.2',
+            'wireguard_ip' => '10.44.0.2',
+        ]));
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
         $response = $this->postJson('/api/v1/broadcasting/auth', [
