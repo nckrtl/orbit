@@ -12,12 +12,13 @@ use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
  */
 describe('realtime response fixtures', function (): void {
     beforeEach(function (): void {
-        $operator = Node::query()->create([
+        $operator = $this->markAsGateway(Node::query()->create([
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
             'public_ssh_host' => '192.0.2.2',
             'wireguard_ip' => '10.44.0.1',
-        ]);
+        ]));
         $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip]);
         $this->withHeader('X-Orbit-Request-Id', fixture_request_id());
     });
