@@ -21,8 +21,7 @@ final readonly class MetricsConfigurationRenderer
         array $targets,
         #[SensitiveParameter] string $password,
         ?string $metricsWireguardIp = null,
-    ): MetricsConfigurationBundle
-    {
+    ): MetricsConfigurationBundle {
         if ($password === '') {
             throw new InvalidArgumentException('The Grafana admin password is unavailable.');
         }
