@@ -463,7 +463,7 @@ final class Screen
         $usersWidget = $users === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Users '))->borderStyle($dim)->padding(Padding::horizontal(1))
                 ->widget(ParagraphWidget::fromString('Not available on this Gateway yet.')->style($dim))
-            : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Used by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['used_by'], false), $users), 'No users recorded.');
+            : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Created by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['created_by'], false), $users), 'No users recorded.');
 
         if ($users !== null) {
             $ui->drawn['users'] = ['area' => $columns->get(1), 'header' => true];

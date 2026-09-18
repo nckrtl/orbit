@@ -177,7 +177,7 @@ describe(Screen::class, function (): void {
 
     it('renders a database record page with its users', function (): void {
         $state = tui_test_state(databaseUsers: new FakeDatabaseUsersSource([
-            ['username' => 'app', 'privileges' => 'ALL PRIVILEGES', 'used_by' => 'gateway'],
+            ['username' => 'app', 'privileges' => 'ALL PRIVILEGES', 'created_by' => 'gateway'],
         ]));
         $ui = new UiState;
         $ui->goTo('databases');

@@ -18,7 +18,7 @@ describe(GatewayDatabaseUsersSource::class, function (): void {
             [
                 'username' => 'app',
                 'privileges' => 'ALL PRIVILEGES ON `app`.*',
-                'used_by' => 'gateway',
+                'created_by' => 'gateway',
             ],
         ]);
     });

@@ -10,13 +10,7 @@ use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseUsersRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseUserResponse;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseUsersResponse;
 
-/**
- * The users recorded on one Database connection, from
- * `GET /database-connections/{slug}/users`.
- *
- * The Gateway response has no field naming what uses a user, so "Used by" reports who or what
- * created it (`created_by`) until the Gateway records that relationship.
- */
+/** The users recorded on one Database connection, from `GET /database-connections/{slug}/users`. */
 final readonly class GatewayDatabaseUsersSource implements DatabaseUsersSource
 {
     /** @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow(). */
@@ -36,13 +30,13 @@ final readonly class GatewayDatabaseUsersSource implements DatabaseUsersSource
         return array_map(self::row(...), $response->users);
     }
 
-    /** @return array{username: string, privileges: string, used_by: string} */
+    /** @return array{username: string, privileges: string, created_by: string} */
     private static function row(DatabaseUserResponse $user): array
     {
         return [
             'username' => $user->username,
             'privileges' => $user->privileges,
-            'used_by' => $user->createdBy ?? '—',
+            'created_by' => $user->createdBy ?? '—',
         ];
     }
 }

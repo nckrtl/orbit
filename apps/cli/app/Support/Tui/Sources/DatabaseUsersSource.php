@@ -15,7 +15,7 @@ namespace App\Support\Tui\Sources;
 interface DatabaseUsersSource
 {
     /**
-     * @return list<array{username: string, privileges: string, used_by: string}>|null Null when
+     * @return list<array{username: string, privileges: string, created_by: string}>|null Null when
      *                                                                                 this Gateway cannot list users for this connection.
      */
     public function forConnection(string $slug): ?array;
