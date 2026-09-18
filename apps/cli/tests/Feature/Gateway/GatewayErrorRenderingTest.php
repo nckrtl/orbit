@@ -810,6 +810,12 @@ it('renders local validation failures through the exact json boundary', function
         'node_role.role_required',
         'Role is required.',
     ],
+    'node rename empty name' => [
+        'node:rename',
+        ['node' => '1', 'name' => ''],
+        'node.name_required',
+        'Name is required.',
+    ],
 ]);
 
 it('renders console input failures through the exact json boundary', function (array $arguments, string $message): void {
@@ -934,6 +940,20 @@ it('renders console input failures through the exact json boundary', function (a
             'command' => 'node:role:relocate',
             'node' => '7',
             'role' => 'gateway',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
+    'node rename missing required arguments' => [
+        ['command' => 'node:rename', '--json' => true],
+        'Not enough arguments (missing: "node, name").',
+    ],
+    'node rename unknown option' => [
+        [
+            'command' => 'node:rename',
+            'node' => '1',
+            'name' => 'vpn',
             '--json' => true,
             '--unknown-option' => true,
         ],

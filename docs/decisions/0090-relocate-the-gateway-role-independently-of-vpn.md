@@ -49,6 +49,7 @@ The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on th
 
 ## Consequences
 
+- DevOps that wants the old Node named `vpn` and the new VPS named `gateway` must rename first. `orbit node:rename <old-node> vpn` runs while the new VPS is still unregistered. Then `orbit node:add gateway` and `orbit node:role:relocate gateway gateway --force`. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns the rename.
 - `orbit node:role:relocate <new-node> gateway --force` is the supported live cutover command after the operator has provisioned the target Node.
 - A brief DNS window exists only on the documented two-step fallback, not on relocate.
 - Leftover Caddy and PHP-FPM on the source are operator cleanup after `/up` answers on the new Node.
@@ -59,5 +60,5 @@ The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on th
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs, apps/e2e
 - ADRs: amends the `gateway` lifecycle in `RoleRegistry`; leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) and the VPN baseline unchanged
-- Detail: [`node`](/cli/node), [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [CLI command vocabulary](/reference/cli-command-vocabulary)
-- Verify: Gateway RoleRegistry, GatewayRoleBaseline, RelocateGatewayRoleAction, NodeAccessAuthorizer, node-role API, MCP catalogue, CLI `node:role:relocate`, and PHP SDK transport tests
+- Detail: [`node`](/cli/node), [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [CLI command vocabulary](/reference/cli-command-vocabulary), [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity)
+- Verify: Gateway RoleRegistry, GatewayRoleBaseline, RelocateGatewayRoleAction, NodeAccessAuthorizer, node-role API, MCP catalogue, CLI `node:role:relocate`, CLI `node:rename`, and PHP SDK transport tests

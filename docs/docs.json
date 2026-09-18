@@ -210,6 +210,7 @@
               "DELETE /api/v1/nodes/{node}",
               "GET /api/v1/nodes/{node}",
               "GET /api/v1/nodes/{node}/metrics",
+              "PATCH /api/v1/nodes/{node}/name",
               "GET /api/v1/nodes/{node}/roles",
               "POST /api/v1/nodes/{node}/roles",
               "DELETE /api/v1/nodes/{node}/roles/{role}",
@@ -531,7 +532,8 @@
               "decisions/0087-run-reverb-through-a-websocket-role",
               "decisions/0088-cli-reads-display-metrics-from-grafana",
               "decisions/0089-index-appinstance-dependencies",
-              "decisions/0090-relocate-the-gateway-role-independently-of-vpn"
+              "decisions/0090-relocate-the-gateway-role-independently-of-vpn",
+              "decisions/0091-rename-a-node-without-changing-wireguard-identity"
             ]
           }
         ]

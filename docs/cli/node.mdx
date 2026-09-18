@@ -1,9 +1,9 @@
 ---
 title: "node"
-description: "Add machines to the fleet, assign roles, grant Node-to-Node access, set storage settings, and remove Nodes."
+description: "Add machines to the fleet, rename Nodes, assign roles, grant Node-to-Node access, set storage settings, and remove Nodes."
 ---
 
-A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family provisions a machine, converges it again after a change, assigns and removes roles, records which Node may call which, and sets the apps root.
+A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family provisions a machine, converges it again after a change, changes the unique registry name, assigns and removes roles, records which Node may call which, and sets the apps root.
 
 The [Node provisioning](/reference/node-provisioning), [Node settings](/reference/node-settings), and [Node retarget](/reference/node-retarget) references own the bootstrap identity, the storage contract, and the public SSH boundaries that these commands follow.
 
@@ -16,6 +16,7 @@ The [Node provisioning](/reference/node-provisioning), [Node settings](/referenc
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
 | [`node:metrics`](#orbit-nodemetrics) | Show one synchronous metrics snapshot for a Node. |
 | [`node:remove`](#orbit-noderemove) | Remove a Node and restore its public SSH recovery rule. |
+| [`node:rename`](#orbit-noderename) | Change the unique registry name of one Node. |
 | [`node:role:add`](#orbit-noderoleadd) | Add or converge one role assignment. |
 | [`node:role:list`](#orbit-noderolelist) | List the role assignments of one Node. |
 | [`node:role:relocate`](#orbit-noderolerelocate) | Move the singleton `gateway` role to another Node. |
@@ -24,7 +25,7 @@ The [Node provisioning](/reference/node-provisioning), [Node settings](/referenc
 | [`node:access:remove`](#orbit-nodeaccessremove) | Remove one access edge. |
 | [`node:settings`](#orbit-nodesettings) | Update the typed storage settings of one Node. |
 
-Every command accepts `--json`. Commands that take a `node` argument or `--node` option accept the numeric Node ID; `node:role:*` and `node:settings` also accept the registered Node name.
+Every command accepts `--json`. Commands that take a `node` argument or `--node` option accept the numeric Node ID; `node:rename`, `node:role:*`, and `node:settings` also accept the registered Node name.
 
 Node and role lists use read-only tables with every column retained at narrow widths. Below the minimum table width, each row becomes a labeled record. Empty lists say `No nodes.` or `No roles.`. Node details use an aligned tree; absent human values use an em dash, and TLDs include their leading dot. JSON retains the existing fields and null values.
 
@@ -42,7 +43,7 @@ orbit node:add <name> [host] [options]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | Node name. It stays stable for the life of the record. |
+| `name` | yes | Unique registry name. Change it later with [`node:rename`](#orbit-noderename). |
 | `host` | no | Public SSH host. Required for a new machine. |
 
 | Option | Default | Meaning |
@@ -156,6 +157,27 @@ orbit node:remove 7 --offline --force
 </Warning>
 
 The [Node provisioning reference](/reference/node-provisioning#remove-a-node) lists each removal step and failure code.
+
+## orbit node:rename
+
+Change the unique registry name of one Node. The name is not WireGuard peer material. Keys, addresses, SSH identity, and role assignments stay on the same Node.
+
+```bash
+orbit node:rename <node> <name> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or registered name. |
+| `name` | yes | New unique registry name. ASCII letters, digits, dashes, and underscores. Maximum 63 characters. |
+
+A request that repeats the current name succeeds and writes nothing. The Gateway holds the provisioning lock for the current name and then for the new name so a concurrent `node:add` cannot claim the destination. It refuses with `node.has_herdr_sessions` when the Node still owns a Herdr session, because observer hostnames embed the Node name. Destroy those sessions, rename, then recreate them.
+
+```bash
+orbit node:rename gateway vpn
+```
+
+Rename the current `gateway` Node to `vpn` before you register a new VPS as `gateway`. [Relocate the gateway role](/solutions/relocate-gateway-role) owns that cutover order. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns the command.
 
 ## orbit node:role:add
 

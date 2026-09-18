@@ -146,6 +146,9 @@ Route::prefix('v1')->group(function (): void {
             ->name('activity:show');
         Route::post('nodes', [NodesController::class, 'store'])
             ->name('node:add');
+        Route::patch('nodes/{node}/name', [NodesController::class, 'rename'])
+            ->whereNumber('node')
+            ->name('node:rename');
         Route::patch('nodes/{node}/settings', [NodesController::class, 'settings'])
             ->whereNumber('node')
             ->name('node:settings');

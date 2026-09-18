@@ -1223,6 +1223,24 @@ describe('convergence guest scripts', function () {
             ->not->toContain('REQUIRED_GUEST_SCRIPTS');
     });
 
+    it('renames source to vpn and target to gateway around relocate', function (): void {
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/rename-and-relocate-gateway-role.sh');
+
+        expect($source)->toContain(
+            'node:rename',
+            'node:role:relocate',
+            'source must hold gateway and vpn before rename',
+            'renamed node',
+            'target Node is not named gateway',
+            'source Node is not named vpn',
+            '--resolve "gateway.orbit:443:${source_ip}"',
+            'https://gateway.orbit/up',
+        );
+        expect($source)
+            ->toContain('/home/orbit/.orbit/e2e-gateway-root-ca.pem')
+            ->not->toContain('REQUIRED_GUEST_SCRIPTS');
+    });
+
     it('provisions app-dev when the Gateway store has no active node role', function (): void {
         $fixture = convergence_app_fixture('converge-app-dev.sh');
         file_put_contents("{$fixture['root']}/orbit-home/gateway.sqlite", 'fixture');

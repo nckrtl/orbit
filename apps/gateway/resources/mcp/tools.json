@@ -3176,6 +3176,39 @@
       }
     },
     {
+      "name": "node-rename",
+      "title": "node:rename",
+      "description": "Change the unique registry name of a node.",
+      "method": "PATCH",
+      "path": "/api/v1/nodes/{node}/name",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "New unique registry name"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "name"
+        ]
+      }
+    },
+    {
       "name": "node-role-add",
       "title": "Add a role to a Node",
       "description": "Add one role assignment to a node.",

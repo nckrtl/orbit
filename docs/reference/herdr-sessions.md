@@ -111,6 +111,7 @@ The Gateway keeps a compatible running Herdr server in place unless the operator
 | Removal | Resolves the session, then asks for destructive consent before it mutates anything. `--accept-termination` stays an independent override for live panes on managed sessions. |
 | Observer publication failure | Records listener health. It does not destroy or restart the Herdr session. |
 | Node removal | The Gateway refuses `node:remove` while the Node owns a Herdr session. [Node provisioning](/reference/node-provisioning#remove-a-node) owns that guard. |
+| Node rename | The Gateway refuses `node:rename` while the Node owns a Herdr session. Observer hostnames embed the Node name; see [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity). |
 | Offline decommissioning of an unreachable Node | Deletes those session and Process records without remote cleanup. |
 
 `herdr:session:destroy` resolves the named session first, so it can name the session, the Node, and the effect in its consent prompt. An interactive operator confirms a default-No prompt: for a managed session the effect is Process destruction, for an adopted session the effect is Orbit state only. Noninteractive callers and `--json` mode must pass `--yes`; without it the command exits 1 with `input.confirmation_required`. Declining, Ctrl-C, or end of input exits 1 with `input.cancelled` and makes no mutation.
@@ -166,6 +167,7 @@ The Gateway returns these Herdr-specific codes.
 | `herdr.inspection_failed` | Orbit could not verify the Herdr session before observer publication or grant issuance. |
 | `herdr.observer_unsupported` | The installed Herdr observe protocol is not 22. |
 | `herdr.observer_failed` | Observer publication failed; the Herdr session remains. |
+| `node.has_herdr_sessions` | `node:rename` or `node:remove` refused because the Node still owns a Herdr session. |
 
 ## Herdr observe contract
 
