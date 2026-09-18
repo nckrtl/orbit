@@ -367,7 +367,7 @@ describe('fleet dependency scan', function (): void {
                 return MockResponse::make(scan_cli_inventory(instanceId: $id));
             },
         ]);
-        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--json' => true]))->toBe(1);
+        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--json' => true]))->toBe(130);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($scanned)->toBe([19, 18])
             ->and($json['succeeded'])->toBeFalse()

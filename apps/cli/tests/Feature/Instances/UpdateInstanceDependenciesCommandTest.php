@@ -272,7 +272,7 @@ describe('single instance dependency update', function (): void {
         expect(Artisan::call('instance:dependencies:update', [
             '--app' => 'fixture.example.test',
             '--json' => true,
-        ]))->toBe(1);
+        ]))->toBe(130);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json['error']['code'])->toBe('input.cancelled')
             ->and($json['error']['message'])->toContain('not rolled back automatically')
