@@ -159,22 +159,6 @@ final class TopCommand extends GatewayCommand
                     }
                 }
 
-                [$visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs] = $this->visibleRefreshKeys($ui, $state);
-                $scheduler->tick($state, $visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs);
-
-                // The fetch above can take seconds against a real fleet, and so can the batch
-                // below, which asks the Gateway for a Process's live status over SSH. Reading
-                // input after both, rather than before, is what keeps an arrow key responsive: a
-                // key waits only for the fetch already running, never for one yet to start.
-                if (! $state->processesLoaded && $drawnFrames > 0) {
-                    try {
-                        $state->loadNextProcesses($send, $sendMany);
-                    } catch (GatewayApiException $exception) {
-                        $state->processesLoaded = true;
-                        $ui->message = $exception->getMessage();
-                    }
-                }
-
                 $handledInput = false;
 
                 while (($event = $terminal->events()->next()) !== null) {
@@ -210,12 +194,29 @@ final class TopCommand extends GatewayCommand
 
                 $drawnFrames++;
 
-                // A key that arrived during the fetches above is drawn by the time we get here,
-                // so the next one should be read at once rather than after another idle sleep.
-                // Holding an arrow key then moves at the speed of the screen, not of this timer.
-                if (! $handledInput) {
-                    usleep(50_000);
+                // Fetching only on an idle frame is what keeps the screen responsive. Measured
+                // against a real fleet, one batch of Process status costs 1.7s on average and up
+                // to 3.5s, because the Gateway reads each Process's live state over SSH, and the
+                // metrics fetch allows itself three seconds. A frame that handled a key press
+                // therefore fetches nothing: it draws and comes straight back for the next key,
+                // so navigation runs at the speed of the screen no matter what is still loading.
+                if ($handledInput) {
+                    continue;
                 }
+
+                [$visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs] = $this->visibleRefreshKeys($ui, $state);
+                $scheduler->tick($state, $visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs);
+
+                if (! $state->processesLoaded) {
+                    try {
+                        $state->loadNextProcesses($send, $sendMany);
+                    } catch (GatewayApiException $exception) {
+                        $state->processesLoaded = true;
+                        $ui->message = $exception->getMessage();
+                    }
+                }
+
+                usleep(50_000);
             }
         } finally {
             $terminal->execute(Actions::disableMouseCapture(), Actions::cursorShow(), Actions::alternateScreenDisable());
