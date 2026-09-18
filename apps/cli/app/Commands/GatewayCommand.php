@@ -384,6 +384,71 @@ abstract class GatewayCommand extends Command
             throw new GatewayApiException('Could not reach the gateway.', 'gateway.unreachable');
         }
 
+        return $this->dtoOrThrow($response, $responseClass);
+    }
+
+    /**
+     * Sends several independent requests of the same response type concurrently through
+     * Saloon's own connection pool and returns each typed DTO in the same order as $requests.
+     * Throws the first failure as a GatewayApiException, the same as sendOrThrow(). Used where a
+     * command would otherwise send many requests one at a time for no reason other than the
+     * Gateway route being scoped per record (`orbit top`'s per-node and per-instance process and
+     * firewall rule lists, for example): no Gateway route lists those fleet-wide, so this is the
+     * lever available to keep that fast on a real fleet.
+     *
+     * @param  list<GatewayRequest>  $requests
+     * @return list<object>
+     */
+    protected function poolSend(
+        GatewayConnector $connector,
+        array $requests,
+        string $responseClass,
+        int $concurrency = 8,
+    ): array {
+        if ($requests === []) {
+            return [];
+        }
+
+        /** @var array<int, object> $results */
+        $results = [];
+        $failure = null;
+
+        $connector->pool(
+            requests: $requests,
+            concurrency: $concurrency,
+            responseHandler: function (Response $response, int|string $key) use (&$results, &$failure, $responseClass): void {
+                if ($failure !== null) {
+                    return;
+                }
+
+                try {
+                    $results[$key] = $this->dtoOrThrow($response, $responseClass);
+                } catch (GatewayApiException $exception) {
+                    $failure = $exception;
+                }
+            },
+            exceptionHandler: function (mixed $reason) use (&$failure): void {
+                if ($failure !== null) {
+                    return;
+                }
+
+                $failure = $reason instanceof FatalRequestException
+                    ? new GatewayApiException('Could not reach the gateway.', 'gateway.unreachable', previous: $reason)
+                    : new GatewayApiException('Gateway request failed.', 'gateway.request_failed', previous: $reason instanceof Throwable ? $reason : null);
+            },
+        )->send()->wait();
+
+        if ($failure !== null) {
+            throw $failure;
+        }
+
+        ksort($results);
+
+        return array_values($results);
+    }
+
+    private function dtoOrThrow(Response $response, string $responseClass): object
+    {
         try {
             $dto = $response->dto();
         } catch (InvalidArgumentException $exception) {

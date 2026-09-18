@@ -38,11 +38,10 @@ function tui_test_state(
     ?DatabaseUsersSource $databaseUsers = null,
     ?NodeMetricsSource $nodeMetrics = null,
 ): State {
-    $state = new State(
-        $deployments ?? new FakeDeploymentsSource(null),
-        $databaseUsers ?? new FakeDatabaseUsersSource(null),
-        $nodeMetrics ?? new FakeNodeMetricsSource(null),
-    );
+    $state = new State;
+    $deployments ??= new FakeDeploymentsSource(null);
+    $databaseUsers ??= new FakeDatabaseUsersSource(null);
+    $nodeMetrics ??= new FakeNodeMetricsSource(null);
 
     $node = new NodeResponse(
         id: 1,
@@ -107,7 +106,7 @@ function tui_test_state(
         'keep_alive' => true,
         'desired_state' => 'running',
         'status' => 'active',
-        'runtime_status' => 'running',
+        'runtime_status' => 'active',
         'failed_step' => null,
         'error_code' => null,
     ], '0198e15d-16c4-7855-8eb2-182b53ad28ba');
@@ -138,7 +137,7 @@ function tui_test_state(
         source: '10.44.0.0/16',
         protocol: 'tcp',
         port: '22',
-        status: 'applied',
+        status: 'active',
         backendStatus: null,
         failedStep: null,
         errorCode: null,
@@ -183,6 +182,22 @@ function tui_test_state(
             default => throw new RuntimeException("Unexpected request for {$responseClass}."),
         };
     });
+
+    // Screen only ever reads State's per-record caches (see State::nodeMetrics()/
+    // deploymentsFor()/databaseUsersFor()); it never fetches on read. Fill them here the way
+    // RefreshScheduler would once it had ticked, so a Screen test sees the fixture's sources
+    // immediately without needing to drive the scheduler.
+    foreach ($state->nodes as $stateNode) {
+        $state->setNodeMetrics($stateNode['id'], $nodeMetrics->forNode($stateNode['id']));
+    }
+
+    foreach ($state->instances as $stateInstance) {
+        $state->setDeployments($stateInstance['id'], $deployments->forInstance($stateInstance['id']));
+    }
+
+    foreach ($state->databases as $stateDatabase) {
+        $state->setDatabaseUsers($stateDatabase['slug'], $databaseUsers->forConnection($stateDatabase['slug']));
+    }
 
     return $state;
 }

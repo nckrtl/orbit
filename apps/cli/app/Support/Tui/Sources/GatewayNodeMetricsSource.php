@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Tui\Sources;
 
+use App\Support\Tui\Sources\Concerns\LimitsBackgroundRequestTime;
 use Closure;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
@@ -12,6 +13,8 @@ use Orbit\Sdk\Responses\Nodes\NodeMetricsResponse;
 /** The compact CPU, memory, swap, and disk snapshot for one node, from `GET /nodes/{node}/metrics`. */
 final readonly class GatewayNodeMetricsSource implements NodeMetricsSource
 {
+    use LimitsBackgroundRequestTime;
+
     private const int BYTES_PER_GIB = 1024 ** 3;
 
     /** @param  Closure(object, string): object  $send  Same shape as GatewayCommand::sendOrThrow(). */
@@ -21,7 +24,7 @@ final readonly class GatewayNodeMetricsSource implements NodeMetricsSource
     public function forNode(int $nodeId): ?array
     {
         try {
-            $response = ($this->send)(new ShowNodeMetricsRequest($nodeId), NodeMetricsResponse::class);
+            $response = ($this->send)(self::withBackgroundTimeout(new ShowNodeMetricsRequest($nodeId)), NodeMetricsResponse::class);
         } catch (GatewayApiException) {
             return null;
         }
@@ -33,11 +36,66 @@ final readonly class GatewayNodeMetricsSource implements NodeMetricsSource
             'mem' => [self::gib($response->memory['used']), self::gib($response->memory['total'])],
             'swap' => [self::gib($response->swap['used']), self::gib($response->swap['total'])],
             'uptime' => self::uptime($response->uptimeSeconds),
-            'disks' => array_map(
-                static fn (array $disk): array => [$disk['mount'], self::gib($disk['used']), self::gib($disk['total'])],
-                $response->disks,
-            ),
+            'disks' => self::disksRootFirst($response->disks),
         ];
+    }
+
+    /**
+     * Screen only ever shows `disks[0]` as "the" disk. `df` (what the Node's metrics probe
+     * shells out to) lists mounts in kernel mount order, not by size or significance, so the
+     * root filesystem is not reliably first — on a real Node it can follow pseudo-filesystems
+     * like `/sys/firmware/efi/efivars`. Put the `/` mount first when the Node reports one;
+     * otherwise fall back to the largest filesystem that is not a pseudo mount under
+     * `/sys`, `/proc`, `/dev`, or `/run`.
+     *
+     * @param  list<array{mount: string, used: int, total: int}>  $disks
+     * @return list<array{string, float, float}>
+     */
+    private static function disksRootFirst(array $disks): array
+    {
+        $mapped = array_map(
+            static fn (array $disk): array => [$disk['mount'], self::gib($disk['used']), self::gib($disk['total'])],
+            $disks,
+        );
+
+        $rootIndex = null;
+
+        foreach ($mapped as $index => $disk) {
+            if ($disk[0] === '/') {
+                $rootIndex = $index;
+
+                break;
+            }
+        }
+
+        if ($rootIndex === null) {
+            $largestTotal = -1.0;
+
+            foreach ($mapped as $index => $disk) {
+                if (self::isPseudoMount($disk[0])) {
+                    continue;
+                }
+
+                if ($disk[2] > $largestTotal) {
+                    $largestTotal = $disk[2];
+                    $rootIndex = $index;
+                }
+            }
+        }
+
+        if ($rootIndex === null || $rootIndex === 0) {
+            return $mapped;
+        }
+
+        $selected = $mapped[$rootIndex];
+        unset($mapped[$rootIndex]);
+
+        return [$selected, ...array_values($mapped)];
+    }
+
+    private static function isPseudoMount(string $mount): bool
+    {
+        return array_any(['/sys', '/proc', '/dev', '/run'], static fn (string $prefix): bool => $mount === $prefix || str_starts_with($mount, "{$prefix}/"));
     }
 
     private static function gib(int $bytes): float

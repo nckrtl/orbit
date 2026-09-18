@@ -161,7 +161,7 @@ final class Screen
             'nodes' => [
                 ['Name', 'Status', 'Roles', 'WireGuard IP', 'Instances'],
                 [Constraint::percentage(20), Constraint::percentage(14), Constraint::percentage(24), Constraint::percentage(20), Constraint::percentage(22)],
-                array_map(fn (array $n): TableRow => $this->row([$n['name'], $n['status'], implode(', ', $n['roles']), $n['wireguard_ip'] ?? '—'], (string) count($state->instancesForNode($n['name'])), $n['status'] !== 'active'), $rows),
+                array_map(fn (array $n): TableRow => $this->row([$n['name'], $n['status'], implode(', ', $n['roles']), $n['wireguard_ip'] ?? '—'], (string) count($state->instancesForNode($n['name'])), ! State::nodeHealthy($n)), $rows),
             ],
             'apps' => [
                 ['Slug', 'Name', 'Default branch', 'Instances'],
@@ -171,17 +171,17 @@ final class Screen
             'instances' => [
                 ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'],
                 [Constraint::percentage(18), Constraint::percentage(14), Constraint::percentage(14), Constraint::percentage(12), Constraint::percentage(28), Constraint::percentage(10)],
-                array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], $i['status'] !== 'active'), $rows),
+                array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $rows),
             ],
             'processes' => [
                 ['Name', 'Owner', 'Node', 'Runtime', 'Status'],
                 [Constraint::percentage(20), Constraint::percentage(30), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(16)],
-                array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $state->processNodeName($p), $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $rows),
+                array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $state->processNodeName($p), $p['runtime']], $p['runtime_status'], ! State::processHealthy($p)), $rows),
             ],
             'schedules' => [
                 ['Name', 'Instance', 'Node', 'Calendar', 'Last run'],
                 [Constraint::percentage(18), Constraint::percentage(20), Constraint::percentage(12), Constraint::percentage(30), Constraint::percentage(20)],
-                array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $state->instanceNodeName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', $s['desired_timer_state'] !== 'enabled'), $rows),
+                array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $state->instanceNodeName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $rows),
             ],
             'databases' => [
                 ['Slug', 'Driver', 'Node', 'Host', 'Database'],
@@ -192,35 +192,79 @@ final class Screen
         };
     }
 
-    /** The dashboard: counts, one compact metrics line per node, and everything that needs a look. */
+    /**
+     * The dashboard: counts, one compact table row per node, and everything that needs a look.
+     * The node table is sized to its content (one line per node, plus its border and header) so
+     * "Needs attention" keeps the rest of the screen, with its own selection-following scroll,
+     * regardless of how many nodes the fleet has.
+     */
     private function dashboard(State $state, UiState $ui, Area $area): Widget
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
-        $nodeBlocks = count($state->nodes) * 3;
-        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($nodeBlocks), Constraint::min(5)])->split($area);
+        $nodesHeight = count($state->nodes) + 3;
+        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($nodesHeight), Constraint::min(5)])->split($area);
         $ui->drawn['attention'] = ['area' => $split->get(2), 'header' => true];
         $ui->paneOrder = ['attention'];
-
-        $nodeWidgets = [];
-
-        foreach ($state->nodes as $node) {
-            $nodeWidgets[] = $this->nodeSummaryBlock($state, $node, $area->width - 2);
-        }
 
         $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $state->attentionRows());
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(3), Constraint::length($nodeBlocks), Constraint::min(5))
+            ->constraints(Constraint::length(3), Constraint::length($nodesHeight), Constraint::min(5))
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)
                     ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($state, $area->width - 2)))),
-                GridWidget::default()
-                    ->direction(Direction::Vertical)
-                    ->constraints(...array_fill(0, max(1, count($nodeWidgets)), Constraint::length(3)))
-                    ->widgets(...$nodeWidgets),
+                $this->nodeSummaryTable($state, $split->get(1)),
                 $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, 'Nothing needs attention.'),
             );
+    }
+
+    /** One line per node: name, status, cpu/mem/disk bars, and uptime; a yellow row means the node needs a look. */
+    private function nodeSummaryTable(State $state, Area $area): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $widths = [Constraint::percentage(14), Constraint::percentage(9), Constraint::percentage(21), Constraint::percentage(21), Constraint::percentage(19), Constraint::percentage(16)];
+        $columns = $this->columnWidths($area, $widths);
+        $lastWidth = $columns[count($columns) - 1] ?? 0;
+
+        $table = TableWidget::default();
+        $table->columnSpacing = 1;
+        $table->header($this->alignLast(TableRow::fromStrings('Name', 'Status', 'CPU', 'Mem', 'Disk', 'Uptime'), $lastWidth));
+        $table->widths(...$widths)->rows(...array_map(fn (array $node): TableRow => $this->alignLast($this->nodeSummaryRow($state, $node, $columns), $lastWidth), $state->nodes));
+
+        return BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->widget($table);
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @param  list<int>  $columns  Rendered pixel widths for [name, status, cpu, mem, disk, uptime].
+     */
+    private function nodeSummaryRow(State $state, array $node, array $columns): TableRow
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $warn = ! State::nodeHealthy($node);
+        $textStyle = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
+        $name = TableCell::fromLine(Line::fromSpan(Span::styled($node['name'], $textStyle)));
+        $status = TableCell::fromLine(Line::fromSpan(Span::styled($node['status'], $textStyle)));
+        $metrics = $state->nodeMetrics($node['id']);
+
+        if ($metrics === null) {
+            $blank = TableCell::fromLine(Line::fromSpan(Span::styled('—', $dim)));
+
+            return TableRow::fromCells($name, $status, $blank, $blank, $blank, $this->styledCell('No metrics.', $dim));
+        }
+
+        $cpu = array_sum($metrics['cores']) / max(1, count($metrics['cores']));
+        [$mount, $used, $total] = $metrics['disks'][0] ?? ['/', 0.0, 0.0];
+
+        return TableRow::fromCells(
+            $name,
+            $status,
+            TableCell::fromLine(Line::fromSpans(...$this->bar('', $cpu, sprintf('%3.0f%%', $cpu * 100), $columns[2]))),
+            TableCell::fromLine(Line::fromSpans(...$this->bar('', $metrics['mem'][1] > 0 ? $metrics['mem'][0] / $metrics['mem'][1] : 0, sprintf('%.1fG/%.0fG', $metrics['mem'][0], $metrics['mem'][1]), $columns[3]))),
+            TableCell::fromLine(Line::fromSpans(...$this->bar(str_pad((string) $mount, 3), $total > 0 ? $used / $total : 0, sprintf('%.0fG/%.0fG', $used, $total), $columns[4], [80, 90]))),
+            $this->styledCell($metrics['uptime'], $dim),
+        );
     }
 
     /** @param array<string, mixed> $node */
@@ -233,9 +277,9 @@ final class Screen
             return BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
                 ->titles(Title::fromString(" {$node['name']} · {$node['status']} "))
-                ->borderStyle($node['status'] === 'active' ? $dim : Style::default()->fg(AnsiColor::Yellow))
+                ->borderStyle(State::nodeHealthy($node) ? $dim : Style::default()->fg(AnsiColor::Yellow))
                 ->padding(Padding::horizontal(1))
-                ->widget(ParagraphWidget::fromString('Metrics not available on this Gateway yet.')->style($dim));
+                ->widget(ParagraphWidget::fromString('No metrics.')->style($dim));
         }
 
         $inner = $width - 4;
@@ -246,7 +290,7 @@ final class Screen
         return BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
             ->titles(Title::fromString(" {$node['name']} · {$node['status']} · up {$metrics['uptime']} "))
-            ->borderStyle($node['status'] === 'active' ? $dim : Style::default()->fg(AnsiColor::Yellow))
+            ->borderStyle(State::nodeHealthy($node) ? $dim : Style::default()->fg(AnsiColor::Yellow))
             ->padding(Padding::horizontal(1))
             ->widget(ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(...[
                 ...$this->bar('cpu', $cpu, sprintf('%3.0f%%', $cpu * 100), $third),
@@ -259,7 +303,8 @@ final class Screen
 
     /**
      * The node page's htop-like block: cores in two columns, then memory and swap beside the root
-     * disk and uptime. The dashboard keeps the one-line summary (nodeSummaryBlock).
+     * disk and uptime. The dashboard uses the compact one-line-per-node table instead
+     * (nodeSummaryTable); nodeSummaryBlock now only serves this page's no-metrics fallback.
      *
      * @param  array<string, mixed>  $node
      */
@@ -304,7 +349,7 @@ final class Screen
         return BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
             ->titles(Title::fromString(" {$node['name']} · {$node['status']} · metrics "))
-            ->borderStyle($node['status'] === 'active' ? $dim : Style::default()->fg(AnsiColor::Yellow))
+            ->borderStyle(State::nodeHealthy($node) ? $dim : Style::default()->fg(AnsiColor::Yellow))
             ->padding(Padding::horizontal(1))
             ->widget(
                 GridWidget::default()
@@ -375,8 +420,7 @@ final class Screen
         $propertyRows = [];
         $index = 0;
 
-        foreach ($this->properties($state, $kind, $row) as $name => $value) {
-            $warn = in_array($name, ['Runtime status', 'Status'], true) && ! in_array($value, ['active', 'running', 'enabled', 'applied', 'succeeded'], true);
+        foreach ($this->properties($state, $kind, $row) as $name => [$value, $warn]) {
             $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
 
             if ($link) {
@@ -434,13 +478,13 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(40), Constraint::percentage(60))
                     ->widgets($properties, $this->nodeMetricsPanel($state, $node, $topColumns->get(1)->width)),
-                $this->pane($ui, 'instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain'] ?? '—'], $i['status'], $i['status'] !== 'active'), $instances)),
+                $this->pane($ui, 'instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $instances)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $state->processesForNode($node['id']))),
-                        $this->pane($ui, 'firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row(["{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], $f['status'] !== 'applied'), $state->firewallForNode($node['id']))),
+                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], ! State::processHealthy($p)), $state->processesForNode($node['id']))),
+                        $this->pane($ui, 'firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row(["{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $state->firewallForNode($node['id']))),
                     ),
             );
     }
@@ -461,8 +505,8 @@ final class Screen
             ->constraints(...$constraints)
             ->widgets(
                 $properties,
-                $this->pane($ui, 'instances', ' Instances ', ['Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(40), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], $i['status'] !== 'active'), $instances)),
-                $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Instance', 'Calendar', 'Last run'], [Constraint::percentage(20), Constraint::percentage(22), Constraint::percentage(36), Constraint::percentage(20)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', $s['desired_timer_state'] !== 'enabled'), $schedules)),
+                $this->pane($ui, 'instances', ' Instances ', ['Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(40), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $instances)),
+                $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Instance', 'Calendar', 'Last run'], [Constraint::percentage(20), Constraint::percentage(22), Constraint::percentage(36), Constraint::percentage(20)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $schedules)),
             );
     }
 
@@ -486,8 +530,8 @@ final class Screen
 
         $deploymentsWidget = $deployments === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Deployments '))->borderStyle($dim)->padding(Padding::horizontal(1))
-                ->widget(ParagraphWidget::fromString('Not available on this Gateway yet.')->style($dim))
-            : $this->pane($ui, 'deployments', ' Deployments ', ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(16), Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['started'], $d['release'], $d['branch'], $d['commit'], $d['by'], $d['duration']], $d['status'], $d['status'] !== 'succeeded'), $deployments), 'Not deployed yet.');
+                ->widget(ParagraphWidget::fromString('Deployment history unavailable right now.')->style($dim))
+            : $this->pane($ui, 'deployments', ' Deployments ', ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(16), Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['started'], $d['release'], $d['branch'], $d['commit'], $d['by'], $d['duration']], $d['status'], ! State::deploymentHealthy($d)), $deployments), 'Not deployed yet.');
 
         if ($deployments !== null) {
             $ui->drawn['deployments'] = ['area' => $rows->get(2), 'header' => true];
@@ -503,8 +547,8 @@ final class Screen
                     ->constraints(Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34))
                     ->widgets(
                         $properties,
-                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], $p['runtime_status'] !== $p['desired_state']), $processes)),
-                        $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Calendar', 'Last run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['calendar']], $s['last_run_status'] ?? 'never', $s['desired_timer_state'] !== 'enabled'), $schedules)),
+                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], ! State::processHealthy($p)), $processes)),
+                        $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Calendar', 'Last run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $schedules)),
                     ),
                 $this->pane($ui, 'deploysteps', ' Deploy steps in the order they run ', ['Phase', '#', 'Name', 'Timeout'], [Constraint::percentage(24), Constraint::percentage(8), Constraint::percentage(38), Constraint::percentage(30)], array_map(fn (int $index, array $s): TableRow => $this->row([$s['phase'], (string) ($index + 1), $s['name']], "{$s['timeout_seconds']} s", false), array_keys($deploySteps), $deploySteps), 'No deploy steps. instance:deploy-step:create adds one.'),
                 $deploymentsWidget,
@@ -526,7 +570,7 @@ final class Screen
 
         $usersWidget = $users === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Users '))->borderStyle($dim)->padding(Padding::horizontal(1))
-                ->widget(ParagraphWidget::fromString('Not available on this Gateway yet.')->style($dim))
+                ->widget(ParagraphWidget::fromString('Database users unavailable right now.')->style($dim))
             : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Created by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['created_by'], false), $users), 'No users recorded.');
 
         if ($users !== null) {
@@ -572,10 +616,12 @@ final class Screen
     }
 
     /**
-     * The properties a page lists, named as the show commands name them.
+     * The properties a page lists, named as the show commands name them. Each entry carries
+     * whether that one field, in its own vocabulary (see the `State::*Healthy()` family), needs
+     * a look — never a blanket comparison against an unrelated field's healthy values.
      *
      * @param  array<string, mixed>  $row
-     * @return array<string, string>
+     * @return array<string, array{string, bool}>
      */
     private function properties(State $state, string $kind, array $row): array
     {
@@ -587,18 +633,18 @@ final class Screen
         };
 
         $properties = match ($kind) {
-            'nodes' => ['Name' => $row['name'], 'Status' => $row['status'], 'Roles' => $row['roles'], 'Platform' => $row['platform'] ?? null, 'Architecture' => $row['architecture'] ?? null, 'TLD' => $row['tld'] ?? null, 'WireGuard IP' => $row['wireguard_ip'] ?? null, 'SSH' => "{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}"],
-            'apps' => ['Name' => $row['name'], 'Slug' => $row['slug'], 'Repository' => $row['repository_url'] ?? null, 'Default branch' => $row['default_branch'] ?? null, 'Root' => $row['root'] ?? null],
-            'instances' => ['Name' => $row['name'], 'App' => $row['app']['slug'], 'Node' => $row['node']['name'], 'Environment' => $row['environment'], 'Domain' => $row['domain'] ?? null, 'Status' => $row['status'], 'Checkout' => $row['checkout_path'] ?? null, 'Selected branch' => $row['selected_branch'] ?? null, 'Deploy steps' => count($row['deploy_steps']).' steps'],
-            'databases' => ['Slug' => $row['slug'], 'Driver' => $row['driver'], 'Node' => $state->nodeName((int) ($row['node_id'] ?? 0)), 'Host' => $row['host'] !== null ? "{$row['host']}:{$row['port']}" : null, 'Path' => $row['path'] ?? null, 'Database' => $row['database'] ?? null, 'Username' => $row['username'] ?? null, 'Password' => $row['has_password'] ? '••••••••' : null],
-            'processes' => ['Name' => $row['name'], 'Owner' => $state->processOwner($row), 'Node' => $state->processNodeName($row), 'Runtime' => $row['runtime'], 'Working directory' => $row['working_directory'] ?? null, 'Restart policy' => $row['restart_policy'] ?? null, 'Desired state' => $row['desired_state'], 'Runtime status' => $row['runtime_status']],
-            'schedules' => ['Name' => $row['name'], 'Instance' => $state->instanceName($row['target_id']), 'Node' => $state->instanceNodeName($row['target_id']), 'Calendar' => $row['calendar'], 'Timeout' => "{$row['timeout_seconds']} s", 'Desired timer' => $row['desired_timer_state'], 'Status' => $row['status'], 'Last run' => $row['last_run_at'] ?? 'never', 'Last run status' => $row['last_run_status'] ?? '—'],
-            'firewall' => ['Name' => $row['name'], 'Port' => $row['port'], 'Protocol' => $row['protocol'], 'Action' => $row['action'], 'Source' => $row['source'], 'Status' => $row['status'], 'Node' => $row['node']],
-            'deployments' => ['Release' => $row['release'], 'Branch' => $row['branch'], 'Commit' => $row['commit'], 'Started' => $row['started'], 'Finished' => $row['finished'], 'Duration' => $row['duration'], 'Status' => $row['status'], 'Failed step' => $row['failed_step'], 'Error code' => $row['error_code'], 'Selected release' => $row['selected_release'], 'Triggered by' => $row['by']],
+            'nodes' => ['Name' => [$row['name'], false], 'Status' => [$row['status'], ! State::nodeHealthy($row)], 'Roles' => [$row['roles'], false], 'Platform' => [$row['platform'] ?? null, false], 'Architecture' => [$row['architecture'] ?? null, false], 'TLD' => [$row['tld'] ?? null, false], 'WireGuard IP' => [$row['wireguard_ip'] ?? null, false], 'SSH' => ["{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}", false]],
+            'apps' => ['Name' => [$row['name'], false], 'Slug' => [$row['slug'], false], 'Repository' => [$row['repository_url'] ?? null, false], 'Default branch' => [$row['default_branch'] ?? null, false], 'Root' => [$row['root'] ?? null, false]],
+            'instances' => ['Name' => [$row['name'], false], 'App' => [$row['app']['slug'], false], 'Node' => [$row['node']['name'], false], 'Environment' => [$row['environment'], false], 'Domain' => [$row['domain'] ?? null, false], 'Status' => [$row['status'], ! State::instanceHealthy($row)], 'Checkout' => [$row['checkout_path'] ?? null, false], 'Selected branch' => [$row['selected_branch'] ?? null, false], 'Deploy steps' => [count($row['deploy_steps']).' steps', false]],
+            'databases' => ['Slug' => [$row['slug'], false], 'Driver' => [$row['driver'], false], 'Node' => [$state->nodeName((int) ($row['node_id'] ?? 0)), false], 'Host' => [$row['host'] !== null ? "{$row['host']}:{$row['port']}" : null, false], 'Path' => [$row['path'] ?? null, false], 'Database' => [$row['database'] ?? null, false], 'Username' => [$row['username'] ?? null, false], 'Password' => [$row['has_password'] ? '••••••••' : null, false]],
+            'processes' => ['Name' => [$row['name'], false], 'Owner' => [$state->processOwner($row), false], 'Node' => [$state->processNodeName($row), false], 'Runtime' => [$row['runtime'], false], 'Working directory' => [$row['working_directory'] ?? null, false], 'Restart policy' => [$row['restart_policy'] ?? null, false], 'Desired state' => [$row['desired_state'], false], 'Runtime status' => [$row['runtime_status'], ! State::processHealthy($row)]],
+            'schedules' => ['Name' => [$row['name'], false], 'Instance' => [$state->instanceName($row['target_id']), false], 'Node' => [$state->instanceNodeName($row['target_id']), false], 'Calendar' => [$row['calendar'], false], 'Timeout' => ["{$row['timeout_seconds']} s", false], 'Desired timer' => [$row['desired_timer_state'], $row['desired_timer_state'] !== 'enabled'], 'Status' => [$row['status'], $row['status'] === 'failed'], 'Last run' => [$row['last_run_at'] ?? 'never', false], 'Last run status' => [$row['last_run_status'] ?? '—', false]],
+            'firewall' => ['Name' => [$row['name'], false], 'Port' => [$row['port'], false], 'Protocol' => [$row['protocol'], false], 'Action' => [$row['action'], false], 'Source' => [$row['source'], false], 'Status' => [$row['status'], ! State::firewallHealthy($row)], 'Node' => [$row['node'], false]],
+            'deployments' => ['Release' => [$row['release'], false], 'Branch' => [$row['branch'], false], 'Commit' => [$row['commit'], false], 'Started' => [$row['started'], false], 'Finished' => [$row['finished'], false], 'Duration' => [$row['duration'], false], 'Status' => [$row['status'], ! State::deploymentHealthy($row)], 'Failed step' => [$row['failed_step'], false], 'Error code' => [$row['error_code'], false], 'Selected release' => [$row['selected_release'], false], 'Triggered by' => [$row['by'], false]],
             default => [],
         };
 
-        return array_map($value, $properties);
+        return array_map(static fn (array $p): array => [$value($p[0]), $p[1]], $properties);
     }
 
     /** @param array<string, mixed> $row */
@@ -798,6 +844,26 @@ final class Screen
             return 0;
         }
 
+        $columns = $this->columnWidths($area, $widths);
+
+        return $columns[count($columns) - 1];
+    }
+
+    /**
+     * The rendered pixel width of every column a `TableWidget` with these width constraints
+     * would give them inside $area, mirroring the borders, selector gutter, and one-cell
+     * column spacing `pane()` and `TableWidget` apply. Used wherever a cell's content (a bar,
+     * for example) needs to fit its column exactly rather than truncate or leave slack.
+     *
+     * @param  list<Constraint>  $widths
+     * @return list<int>
+     */
+    private function columnWidths(Area $area, array $widths): array
+    {
+        if ($widths === []) {
+            return [];
+        }
+
         $constraints = [Constraint::length(2)];
 
         foreach ($widths as $width) {
@@ -808,7 +874,13 @@ final class Screen
         array_pop($constraints);
         $chunks = Layout::default()->direction(Direction::Horizontal)->constraints($constraints)->split(Area::fromDimensions(max(1, $area->width - 2), 1));
 
-        return $chunks->get(count($constraints) - 1)->width;
+        $columns = [];
+
+        for ($index = 1; $index < count($constraints); $index += 2) {
+            $columns[] = $chunks->get($index)->width;
+        }
+
+        return $columns;
     }
 
     private function alignLast(TableRow $row, int $width): TableRow
@@ -844,8 +916,17 @@ final class Screen
 
     private function cell(string $text, bool $warn): TableCell
     {
+        return $this->styledCell($text, $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
+    }
+
+    /**
+     * A plain-text cell styled as a whole cell rather than by span, so `alignLast()` (which
+     * flattens a right-aligned last cell's spans into one string) keeps its color.
+     */
+    private function styledCell(string $text, Style $style): TableCell
+    {
         $cell = TableCell::fromString($text);
-        $cell->style = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
+        $cell->style = $style;
 
         return $cell;
     }

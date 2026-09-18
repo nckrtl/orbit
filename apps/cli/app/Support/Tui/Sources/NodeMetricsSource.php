@@ -9,11 +9,10 @@ namespace App\Support\Tui\Sources;
  * per node.
  *
  * `Sources\GatewayNodeMetricsSource` calls `GET /nodes/{node}/metrics`. `forNode()` returns
- * `null` when the Gateway request fails (an older Gateway that does not expose metrics, for
- * example), and the metrics blocks render "Metrics not available on this Gateway yet." instead
- * of the bars. `State::nodeMetrics()` prefers a live `node.sample` realtime event over this
- * source, so a Gateway that streams samples but does not answer the metrics endpoint still
- * shows live numbers.
+ * `null` when the request fails or times out (an unreachable Node, for example), and the
+ * metrics blocks render "No metrics." instead of the bars. `State::nodeMetrics()` prefers a
+ * live `node.sample` realtime event over this source, so a Gateway that streams samples but
+ * does not answer the metrics endpoint still shows live numbers.
  */
 interface NodeMetricsSource
 {

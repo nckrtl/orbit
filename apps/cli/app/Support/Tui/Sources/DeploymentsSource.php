@@ -9,9 +9,8 @@ namespace App\Support\Tui\Sources;
  * deployment record page shows in full.
  *
  * `Sources\GatewayDeploymentsSource` calls `GET /instances/{instance}/deployments`. `forInstance()`
- * returns `null` when the Gateway request fails (an older Gateway that does not expose deployment
- * history, for example), and the Deployments pane renders "Not available on this Gateway yet."
- * instead of a table.
+ * returns `null` when the request fails or times out, and the Deployments pane renders
+ * "Deployment history unavailable right now." instead of a table.
  */
 interface DeploymentsSource
 {
