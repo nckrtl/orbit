@@ -159,7 +159,7 @@ describe(MetricsSshExecutor::class, function (): void {
         $grafanaRun = $containerRuns[1];
 
         expect($prometheusRun)
-            ->toContain("'--web.listen-address=127.0.0.1:9090'")
+            ->toContain("'--web.listen-address=10.44.0.3:9090'")
             ->and($grafanaRun)
             ->toContain("'GF_SERVER_HTTP_ADDR=10.44.0.3'");
 

@@ -17,7 +17,11 @@ final readonly class MetricsConfigurationRenderer
     ) {}
 
     /** @param list<array{name: string, address: string}> $targets */
-    public function render(array $targets, #[SensitiveParameter] string $password): MetricsConfigurationBundle
+    public function render(
+        array $targets,
+        #[SensitiveParameter] string $password,
+        ?string $metricsWireguardIp = null,
+    ): MetricsConfigurationBundle
     {
         if ($password === '') {
             throw new InvalidArgumentException('The Grafana admin password is unavailable.');
@@ -35,7 +39,11 @@ final readonly class MetricsConfigurationRenderer
         // while Grafana runs. See GrafanaConfigRenderer::dashboardProvider().
         $grafanaFiles = [
             '/etc/orbit/metrics/grafana/grafana.ini' => $this->grafana->rootUrl(),
-            '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml' => $this->grafana->datasource(),
+            '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml' => $this->grafana->datasource(
+                // Prometheus now binds the Metrics Node's WireGuard address instead of loopback
+                // (see MetricsRuntimeSpec), so Grafana's datasource must follow it there.
+                $metricsWireguardIp !== null ? "http://{$metricsWireguardIp}:9090" : 'http://127.0.0.1:9090',
+            ),
             '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml' => $this->grafana->dashboardProvider(),
         ];
         $publicFiles = [
