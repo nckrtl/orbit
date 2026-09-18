@@ -17,6 +17,28 @@ Every broadcast happens synchronously, inside the same request that changed the 
 
 Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. Any authenticated Gateway API caller may subscribe; there is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`.
 
+## Discovery
+
+A client asks the Gateway where Reverb is instead of carrying hand-edited connection settings. `GET /api/v1/realtime` requires the same active WireGuard peer identity as the rest of the API and returns:
+
+```json
+{
+  "data": { "url": "wss://reverb.orbit", "key": "<REVERB_APP_KEY>", "channel": "orbit" },
+  "meta": { "request_id": "..." }
+}
+```
+
+`url` and `key` are `null` when broadcasting is not configured, that is when `BROADCAST_CONNECTION` is not `reverb` or the Reverb host or app key is missing:
+
+```json
+{
+  "data": { "url": null, "key": null, "channel": "orbit" },
+  "meta": { "request_id": "..." }
+}
+```
+
+`channel` is always `"orbit"`, whether or not broadcasting is configured, so a client can read it once and reuse it across both shapes.
+
 ## Envelope
 
 Every event shares the same shape. The broadcast name equals `type`.
