@@ -228,7 +228,7 @@ use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
-use App\Infrastructure\Nodes\Metrics\NodeMetricsSshReader;
+use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
@@ -353,7 +353,7 @@ final class AppServiceProvider extends ServiceProvider
         NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
-        NodeMetricsReader::class => NodeMetricsSshReader::class,
+        NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,

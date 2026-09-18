@@ -118,6 +118,14 @@ A removal that the Gateway authorized and that finds no single active Gateway wh
 
 `orbit node:remove <node> --offline --force` resolves no Gateway, so it sheds the role from an unreachable Metrics node while the fleet has no single active Gateway; the route, certificate, and DNS record then stay on the Gateway host in the same way.
 
+## Reading Node metrics
+
+[`orbit node:metrics`](/cli/node#orbit-node-metrics) reads a Node's CPU, memory, swap, load, uptime, pressure, and disk snapshot from the Metrics role's own Prometheus. It reads through Grafana's datasource proxy, not from Prometheus directly. The Gateway authenticates with the stored Grafana credential, resolves the Prometheus datasource, and runs four instant PromQL queries filtered to that Node's exporter instance.
+
+No orbit software runs on the Node beyond the exporter this role already manages. The command does not depend on what CLI build the Node was provisioned with. A Node with no active exporter selection or no Prometheus samples yet answers `node.metrics_unreachable` instead of failing.
+
+[`orbit top`](/cli/top) reads the same way, directly from the CLI: one set of queries covers every Node for the dashboard, and a filtered set covers one Node for its page. See [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana) for why the CLI reads this way instead of through a Gateway endpoint.
+
 ## API surface
 
 The Metrics API exposes these routes on the active Gateway.

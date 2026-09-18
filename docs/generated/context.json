@@ -308,7 +308,9 @@
                 "Route",
                 "Router"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0088"
+            ]
         },
         {
             "path": "docs/cli/overview.mdx",
@@ -2339,6 +2341,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0088-cli-reads-display-metrics-from-grafana.md",
+            "title": "ADR 0088: CLI reads display metrics from Grafana",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0085",
+                "0088"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3081,7 +3104,8 @@
             "governing_adrs": [
                 "0003",
                 "0055",
-                "0057"
+                "0057",
+                "0088"
             ]
         },
         {
