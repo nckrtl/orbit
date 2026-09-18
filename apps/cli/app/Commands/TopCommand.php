@@ -17,6 +17,7 @@ use App\Support\Tui\RefreshScheduler;
 use App\Support\Tui\Screen;
 use App\Support\Tui\Sources\GatewayDatabaseUsersSource;
 use App\Support\Tui\Sources\GatewayDeploymentsSource;
+use App\Support\Tui\Sources\GatewayFleetNodeMetricsSource;
 use App\Support\Tui\Sources\GatewayNodeMetricsSource;
 use App\Support\Tui\State;
 use App\Support\Tui\UiState;
@@ -98,7 +99,7 @@ final class TopCommand extends GatewayCommand
         $sendMany = fn (array $requests, string $responseClass): array => $this->poolSend($connector, $requests, $responseClass, concurrency: 16);
 
         $state = new State;
-        $scheduler = new RefreshScheduler(new GatewayNodeMetricsSource($send), new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
+        $scheduler = new RefreshScheduler(new GatewayNodeMetricsSource($send), new GatewayFleetNodeMetricsSource($send), new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
 
         $progress = $this->progressDisplay('Load fleet data');
         $progress->admit('load', 'Load fleet data', 'Loading fleet data', 'Loaded fleet data');
@@ -154,8 +155,8 @@ final class TopCommand extends GatewayCommand
                     }
                 }
 
-                [$visibleNodeIds, $visibleInstanceIds, $visibleDatabaseSlugs] = $this->visibleRefreshKeys($ui, $state);
-                $scheduler->tick($state, $visibleNodeIds, $visibleInstanceIds, $visibleDatabaseSlugs);
+                [$visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs] = $this->visibleRefreshKeys($ui, $state);
+                $scheduler->tick($state, $visibleNodeIds, $dashboardVisible, $visibleInstanceIds, $visibleDatabaseSlugs);
 
                 while (($event = $terminal->events()->next()) !== null) {
                     if ($event instanceof CharKeyEvent) {
@@ -201,23 +202,25 @@ final class TopCommand extends GatewayCommand
      * one node a node page is open on), the one instance an instance page is open on, and the
      * one Database connection a database page is open on. Mirrors what Screen actually draws
      * (only the topmost open page, if any) so the scheduler never fetches for a pane that is not
-     * on screen.
+     * on screen. The second element tells RefreshScheduler whether the node ids are "every node
+     * on the dashboard" (fetched with one fleet-wide request) or "the one node a node page is
+     * open on" (fetched on its own).
      *
-     * @return array{list<int>, list<int>, list<string>}
+     * @return array{list<int>, bool, list<int>, list<string>}
      */
     private function visibleRefreshKeys(UiState $ui, State $state): array
     {
         $page = $ui->page();
 
         if ($page === null) {
-            return $ui->section === 'dashboard' ? [array_column($state->nodes, 'id'), [], []] : [[], [], []];
+            return $ui->section === 'dashboard' ? [array_column($state->nodes, 'id'), true, [], []] : [[], false, [], []];
         }
 
         return match ($page['kind']) {
-            'nodes' => [[$page['row']['id']], [], []],
-            'instances' => [[], [$page['row']['id']], []],
-            'databases' => [[], [], [$page['row']['slug']]],
-            default => [[], [], []],
+            'nodes' => [[$page['row']['id']], false, [], []],
+            'instances' => [[], false, [$page['row']['id']], []],
+            'databases' => [[], false, [], [$page['row']['slug']]],
+            default => [[], false, [], []],
         };
     }
 

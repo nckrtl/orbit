@@ -6,6 +6,7 @@ namespace App\Support\Tui;
 
 use App\Support\Tui\Sources\DatabaseUsersSource;
 use App\Support\Tui\Sources\DeploymentsSource;
+use App\Support\Tui\Sources\FleetNodeMetricsSource;
 use App\Support\Tui\Sources\NodeMetricsSource;
 use Closure;
 
@@ -22,17 +23,24 @@ use Closure;
  *
  * The command loop now owns this scheduler and calls `tick()` once per iteration, before
  * drawing, with whatever is currently visible. `tick()` performs at most one pending fetch —
- * the single most overdue key across the three sources, node metrics first, then deployments,
- * then database users, since normally only one of those three is visible at a time (the
- * dashboard's many nodes are the exception, handled by picking the most overdue of them) — and
- * writes the result into State via its setters. Every other call is a fast no-op. The command
- * loop's input handling runs after `tick()` and before the next one, so a key press is handled
- * within about the loop's own sleep interval plus at most one background request, which
- * `Sources\Concerns\LimitsBackgroundRequestTime` bounds to a few seconds.
+ * node metrics first (the dashboard's many nodes fetched together in one fleet-wide request, a
+ * node page's one node fetched on its own), then deployments, then database users, since
+ * normally only one of those three is visible at a time — and writes the result into State via
+ * its setters. Every other call is a fast no-op. The command loop's input handling runs after
+ * `tick()` and before the next one, so a key press is handled within about the loop's own sleep
+ * interval plus at most one background request, which `Sources\Concerns\LimitsBackgroundRequestTime`
+ * bounds to a few seconds.
  */
 final class RefreshScheduler
 {
     private const float METRICS_INTERVAL_SECONDS = 5.0;
+
+    /**
+     * The dashboard's fleet-wide fetch runs on its own, longer interval: it is one request no
+     * matter how many Nodes there are, and the Metrics role's Prometheus only has new samples
+     * every 15s (see `PrometheusConfigRenderer`), so refreshing faster would not show anything new.
+     */
+    private const float FLEET_METRICS_INTERVAL_SECONDS = 10.0;
 
     private const float DEPLOYMENTS_INTERVAL_SECONDS = 15.0;
 
@@ -52,6 +60,7 @@ final class RefreshScheduler
     /** @param  null|Closure(): float  $clock  Overridable for tests; defaults to microtime(true). */
     public function __construct(
         private readonly NodeMetricsSource $nodeMetrics,
+        private readonly FleetNodeMetricsSource $fleetNodeMetrics,
         private readonly DeploymentsSource $deployments,
         private readonly DatabaseUsersSource $databaseUsers,
         ?Closure $clock = null,
@@ -62,18 +71,24 @@ final class RefreshScheduler
     /**
      * @param  list<int>  $visibleNodeIds  Node metrics to keep current: every node on the
      *                                     dashboard, or the one node a node page is open on.
+     * @param  bool  $dashboardVisible  True when $visibleNodeIds is "every node on the
+     *                                  dashboard" (fetched with one fleet-wide request), false
+     *                                  when it is "the one node a node page is open on" (or
+     *                                  empty, fetched per node as before).
      * @param  list<int>  $visibleInstanceIds  Normally at most one: the instance a page is open on.
      * @param  list<string>  $visibleDatabaseSlugs  Normally at most one: the connection a page is open on.
      */
-    public function tick(State $state, array $visibleNodeIds, array $visibleInstanceIds, array $visibleDatabaseSlugs): void
+    public function tick(State $state, array $visibleNodeIds, bool $dashboardVisible, array $visibleInstanceIds, array $visibleDatabaseSlugs): void
     {
-        $fetchedMetrics = $this->fetchOneDue(
-            'node',
-            $visibleNodeIds,
-            self::METRICS_INTERVAL_SECONDS,
-            fn (int|string $nodeId): ?array => $this->nodeMetrics->forNode((int) $nodeId),
-            fn (int|string $nodeId, ?array $value): null => $state->setNodeMetrics((int) $nodeId, $value),
-        );
+        $fetchedMetrics = $dashboardVisible
+            ? $this->fetchFleetMetricsIfDue($state)
+            : $this->fetchOneDue(
+                'node',
+                $visibleNodeIds,
+                self::METRICS_INTERVAL_SECONDS,
+                fn (int|string $nodeId): ?array => $this->nodeMetrics->forNode((int) $nodeId),
+                fn (int|string $nodeId, ?array $value): null => $state->setNodeMetrics((int) $nodeId, $value),
+            );
 
         if ($fetchedMetrics) {
             return;
@@ -98,6 +113,36 @@ final class RefreshScheduler
             fn (int|string $slug): ?array => $this->databaseUsers->forConnection((string) $slug),
             fn (int|string $slug, ?array $value): null => $state->setDatabaseUsers((string) $slug, $value),
         );
+    }
+
+    /**
+     * Fetches every Node's metrics in one request when the fleet-wide key is due, storing each
+     * Node's result. Unlike `fetchOneDue()`, one attempt covers every visible Node at once, so
+     * there is only one "key" here (`"node:__fleet__"`) rather than one per Node id. A Node the
+     * response leaves out (unavailable, or the request failed entirely) keeps its last cached
+     * value in State rather than being cleared to null, since a fleet failure is not evidence
+     * that Node's own metrics stopped existing.
+     */
+    private function fetchFleetMetricsIfDue(State $state): bool
+    {
+        $id = 'node:__fleet__';
+        $lastAttempt = $this->lastAttempt[$id] ?? 0.0;
+        $effectiveInterval = ($this->failed[$id] ?? false) ? self::FAILURE_BACKOFF_SECONDS : self::FLEET_METRICS_INTERVAL_SECONDS;
+        $now = ($this->clock)();
+
+        if ($now - $lastAttempt < $effectiveInterval) {
+            return false;
+        }
+
+        $this->lastAttempt[$id] = $now;
+        $metrics = $this->fleetNodeMetrics->forFleet();
+        $this->failed[$id] = $metrics === [];
+
+        foreach ($metrics as $nodeId => $value) {
+            $state->setNodeMetrics($nodeId, $value);
+        }
+
+        return true;
     }
 
     /**
