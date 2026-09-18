@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Routes;
 
+use App\Data\Routes\RouteData;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -23,6 +26,7 @@ final readonly class UpdateRouteAction
         private ConvergeRouteAction $converge,
         private PublishPublicRouteAction $publishPublic,
         private RouteReconciliationGuard $reconciliation,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(Route $route, UpdateRouteData $data): Route
@@ -44,10 +48,18 @@ final readonly class UpdateRouteAction
             ->values()
             ->all();
 
-        return $this->environmentOperations->run(
+        $result = $this->environmentOperations->run(
             $targetIds,
             fn (): Route => $this->executeOwned($route, $data, $targetIds),
         );
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::RouteUpdated,
+            $result->id,
+            RouteData::fromModel($result)->toArray(),
+        );
+
+        return $result;
     }
 
     /** @param list<int> $expectedTargetIds */

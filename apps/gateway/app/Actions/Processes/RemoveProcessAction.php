@@ -7,6 +7,8 @@ namespace App\Actions\Processes;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AgentationUrlProjection;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -30,6 +32,8 @@ final readonly class RemoveProcessAction
 
     private AgentationSiteProjection $agentationSites;
 
+    private RecordEventBroadcaster $broadcaster;
+
     public function __construct(
         private ProcessRuntimeManager $runtime,
         private ProcessTargetResolver $targets,
@@ -37,11 +41,13 @@ final readonly class RemoveProcessAction
         ?AgentationPortAllocator $agentationPorts = null,
         ?AgentationUrlProjection $agentationUrls = null,
         ?AgentationSiteProjection $agentationSites = null,
+        ?RecordEventBroadcaster $broadcaster = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
         $this->agentationPorts = $agentationPorts ?? app(AgentationPortAllocator::class);
         $this->agentationUrls = $agentationUrls ?? app(AgentationUrlProjection::class);
         $this->agentationSites = $agentationSites ?? app(AgentationSiteProjection::class);
+        $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
     }
 
     public function execute(#[SensitiveParameter] Process $process): Process
@@ -81,6 +87,12 @@ final readonly class RemoveProcessAction
             }
 
             $fresh->delete();
+
+            $this->broadcaster->broadcast(
+                RecordEventType::ProcessDeleted,
+                $fresh->id,
+                ['id' => $fresh->id, 'name' => $fresh->name],
+            );
 
             return $fresh;
         });

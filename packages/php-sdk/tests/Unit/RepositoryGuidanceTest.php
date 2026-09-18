@@ -150,8 +150,6 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        // +1 for Requests\Realtime\ShowRealtimeRequest, a temporary local stand-in for the
-        // class PR #490 (nck/gateway-events) adds under the same name; see its doc comment.
         $preScheduleOperationCount = 89;
         $scheduleRequests = [
             ListSchedulesRequest::class,

@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Actions\Processes\CascadeAppInstanceProcessesAction;
 use App\Actions\Schedules\CascadeAppInstanceSchedulesAction;
+use App\Data\AppInstances\AppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
@@ -22,6 +23,8 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -55,9 +58,34 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         private ProductionAppInstanceContentRetention $productionContent,
         private RouteStateResolver $routeState,
         private ?CascadeAppInstanceSchedulesAction $schedules = null,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    {
+        $instanceId = $appInstance->id;
+        $instanceName = $appInstance->name;
+        $removal = $this->performRemoval($appInstance, $force);
+        $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
+
+        if (AppInstance::query()->whereKey($instanceId)->exists()) {
+            $broadcaster->broadcast(
+                RecordEventType::InstanceUpdated,
+                $instanceId,
+                AppInstanceData::fromModel($appInstance->fresh() ?? $appInstance)->toArray(),
+            );
+        } else {
+            $broadcaster->broadcast(
+                RecordEventType::InstanceDeleted,
+                $instanceId,
+                ['id' => $instanceId, 'name' => $instanceName],
+            );
+        }
+
+        return $removal;
+    }
+
+    private function performRemoval(AppInstance $appInstance, bool $force): AppInstanceRemoval
     {
         if ($appInstance->environment === 'production') {
             return $this->environmentOperations->run(

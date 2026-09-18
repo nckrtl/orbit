@@ -1,0 +1,20 @@
+Loading realtime connection...
+
+┌  Show realtime connection
+│
+├  ● Loaded realtime connection
+│
+└  Loaded realtime connection.
+
+
+┌  Realtime
+│
+├  Status    configured
+│
+├  URL       wss://reverb.orbit
+│
+├  Channel   orbit
+│
+└  Key       orbit-reverb-app-key
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

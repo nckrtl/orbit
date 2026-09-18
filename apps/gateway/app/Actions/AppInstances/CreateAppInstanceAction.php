@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\AppInstances;
 
+use App\Data\AppInstances\AppInstanceData;
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
@@ -13,6 +14,8 @@ use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -43,6 +46,7 @@ final readonly class CreateAppInstanceAction
         private DevelopmentAppInstanceSourceLifecycle $source,
         private DevelopmentAppInstanceProvisioner $provisioner,
         private ProductionAppInstanceProvisioner $productionProvisioner,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -60,7 +64,7 @@ final readonly class CreateAppInstanceAction
                 ->where('status', LifecycleStatus::Active)
                 ->exists()
         ) {
-            return $this->productionProvisioner->execute($data, $app, $requestedNode, $root);
+            return $this->announceCreated($this->productionProvisioner->execute($data, $app, $requestedNode, $root));
         }
 
         $existing = AppInstance::query()
@@ -123,7 +127,24 @@ final readonly class CreateAppInstanceAction
             },
         );
 
-        return ['appInstance' => $result, 'created' => $created];
+        return $this->announceCreated(['appInstance' => $result, 'created' => $created]);
+    }
+
+    /**
+     * @param  array{appInstance: AppInstance, created: bool}  $result
+     * @return array{appInstance: AppInstance, created: bool}
+     */
+    private function announceCreated(array $result): array
+    {
+        if ($result['created']) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::InstanceCreated,
+                $result['appInstance']->id,
+                AppInstanceData::fromModel($result['appInstance'])->toArray(),
+            );
+        }
+
+        return $result;
     }
 
     private function resumeSource(AppInstance $appInstance, bool $allowPreparedSource): AppInstance

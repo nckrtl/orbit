@@ -206,7 +206,7 @@ final class TopCommand extends GatewayCommand
             return $profile;
         }
 
-        if (! $realtime instanceof RealtimeResponse || ! $realtime->configured) {
+        if (! $realtime instanceof RealtimeResponse || $realtime->url === null || $realtime->key === null) {
             return $profile;
         }
 

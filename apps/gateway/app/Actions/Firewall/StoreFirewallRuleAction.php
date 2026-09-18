@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Firewall;
 
+use App\Data\Firewall\FirewallRuleData;
 use App\Data\Firewall\StoreFirewallRuleData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallManager;
@@ -19,6 +22,7 @@ final readonly class StoreFirewallRuleAction
 {
     public function __construct(
         private FirewallManager $firewall,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /** @return array{rule: FirewallRule, created: bool, backend_status: FirewallBackendStatus} */
@@ -76,8 +80,18 @@ final readonly class StoreFirewallRuleAction
             'error_code' => null,
         ]);
 
+        $rule = $rule->refresh()->load('node');
+
+        if ($created) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::FirewallCreated,
+                $rule->id,
+                FirewallRuleData::fromModel($rule, $backendStatus)->toArray(),
+            );
+        }
+
         return [
-            'rule' => $rule->refresh()->load('node'),
+            'rule' => $rule,
             'created' => $created,
             'backend_status' => $backendStatus,
         ];

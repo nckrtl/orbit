@@ -6,6 +6,8 @@ namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -25,6 +27,7 @@ final readonly class RemoveRouteAction
         private RouteAssociationGuard $associations,
         private RouteReconciliationGuard $reconciliation,
         private RouteRemovalProjector $projection,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(Route $route): Route
@@ -38,12 +41,20 @@ final readonly class RemoveRouteAction
             ->values()
             ->all();
 
-        return $this->environmentOperations->run(
+        $result = $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->owner->run(
                 fn (): Route => $this->executeOwned($route, $expectedTargetIds),
             ),
         );
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::RouteDeleted,
+            $result->id,
+            ['id' => $result->id, 'domain' => $result->domain],
+        );
+
+        return $result;
     }
 
     /** @param list<int> $expectedTargetIds */
