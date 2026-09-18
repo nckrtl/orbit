@@ -5,23 +5,21 @@ declare(strict_types=1);
 namespace App\Actions\Broadcasting;
 
 use App\Data\Broadcasting\RealtimeConfigData;
+use App\Domain\Broadcasting\RealtimeConnection;
 
 final readonly class ShowRealtimeConfigAction
 {
+    public function __construct(
+        private RealtimeConnection $realtime,
+    ) {}
+
     public function execute(): RealtimeConfigData
     {
-        /** @var mixed $host */
-        $host = config('broadcasting.connections.reverb.options.host');
-        /** @var mixed $key */
-        $key = config('broadcasting.connections.reverb.key');
-
-        $configured = config('broadcasting.default') === 'reverb'
-            && is_string($host) && $host !== ''
-            && is_string($key) && $key !== '';
+        $connection = $this->realtime->resolve();
 
         return new RealtimeConfigData(
-            url: $configured ? "wss://{$host}" : null,
-            key: $configured ? $key : null,
+            url: $connection?->url(),
+            key: $connection?->key,
             channel: 'orbit',
         );
     }

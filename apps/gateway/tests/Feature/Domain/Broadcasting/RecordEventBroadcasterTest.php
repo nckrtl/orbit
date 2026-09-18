@@ -9,8 +9,17 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 
 describe('RecordEventBroadcaster', function (): void {
+    it('does nothing, and never touches Reverb, without an active websocket role', function (): void {
+        Log::shouldReceive('warning')->never();
+
+        app(RecordEventBroadcaster::class)
+            ->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
+
+        expect(config('broadcasting.default'))->toBe('null');
+    });
+
     it('logs a warning and does not throw when the Reverb connection fails', function (): void {
-        config(['broadcasting.default' => 'reverb']);
+        activate_websocket_role();
 
         Broadcast::extend('reverb', function (): Broadcaster {
             return new class implements Broadcaster
@@ -36,11 +45,12 @@ describe('RecordEventBroadcaster', function (): void {
                 return true;
             }));
 
-        new RecordEventBroadcaster()->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
+        app(RecordEventBroadcaster::class)
+            ->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
     });
 
-    it('broadcasts without error when the connection is healthy', function (): void {
-        config(['broadcasting.default' => 'reverb']);
+    it('broadcasts without error when the websocket role is active and Reverb is healthy', function (): void {
+        [, $credentials] = activate_websocket_role();
 
         $broadcasted = [];
 
@@ -62,10 +72,13 @@ describe('RecordEventBroadcaster', function (): void {
 
         Log::shouldReceive('warning')->never();
 
-        new RecordEventBroadcaster()->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
+        app(RecordEventBroadcaster::class)
+            ->broadcast(RecordEventType::NodeCreated, 9, ['id' => 9, 'name' => 'edge']);
 
         expect($broadcasted)->toHaveCount(1);
         expect($broadcasted[0][0])->toBe('node.created');
         expect($broadcasted[0][1]['id'])->toBe(9);
+        expect(config('broadcasting.connections.reverb.key'))->toBe($credentials->appKey);
+        expect(config('broadcasting.connections.reverb.options.host'))->toBe('reverb.orbit');
     });
 });

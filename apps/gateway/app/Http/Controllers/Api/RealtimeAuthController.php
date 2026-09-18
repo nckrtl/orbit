@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Broadcasting\RealtimeConnection;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -17,8 +19,12 @@ use Illuminate\Support\Facades\Broadcast;
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class RealtimeAuthController extends Controller
 {
-    public function authenticate(Request $request): mixed
+    public function authenticate(Request $request, RealtimeConnection $realtime): mixed
     {
+        if (! $realtime->configureBroadcasting()) {
+            return new JsonResponse(['message' => 'Realtime is not configured.'], 404);
+        }
+
         return Broadcast::auth($request);
     }
 }

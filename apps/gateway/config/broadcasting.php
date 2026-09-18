@@ -10,12 +10,15 @@ return [
     |--------------------------------------------------------------------------
     |
     | The Gateway only broadcasts to an external Reverb server; it never
-    | runs one. Set BROADCAST_CONNECTION=reverb to enable realtime record
-    | events, or leave it unset to broadcast nowhere ("null").
+    | runs one. Broadcasting nowhere ("null") is the default here; the
+    | `reverb` connection below is only pointed at a real Reverb server, and
+    | the default flipped to `reverb`, by App\Domain\Broadcasting\RealtimeConnection
+    | at broadcast time, from the active `websocket` role assignment. There
+    | is no environment contract for this any more.
     |
     */
 
-    'default' => env('BROADCAST_CONNECTION', 'null'),
+    'default' => 'null',
 
     /*
     |--------------------------------------------------------------------------
@@ -28,17 +31,18 @@ return [
 
         'reverb' => [
             'driver' => 'reverb',
-            'key' => env('REVERB_APP_KEY'),
-            'secret' => env('REVERB_APP_SECRET'),
-            'app_id' => env('REVERB_APP_ID'),
+            'key' => null,
+            'secret' => null,
+            'app_id' => null,
             'options' => [
-                'host' => env('REVERB_HOST', 'reverb.orbit'),
-                'port' => env('REVERB_PORT', 443),
-                'scheme' => env('REVERB_SCHEME', 'https'),
-                'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
+                'host' => null,
+                'port' => 443,
+                'scheme' => 'https',
+                'useTLS' => true,
             ],
             'client_options' => [
                 // See available options: https://docs.guzzlephp.org/en/stable/request-options.html
+                // 'verify' is set at broadcast time to the Orbit CA root certificate.
             ],
         ],
 
