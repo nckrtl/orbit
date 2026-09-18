@@ -485,7 +485,7 @@ final class Screen
 
         $deploymentsWidget = $deployments === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Deployments '))->borderStyle($dim)->padding(Padding::horizontal(1))
-                ->widget(ParagraphWidget::fromString('Not available on this Gateway yet.')->style($dim))
+                ->widget(ParagraphWidget::fromString('Deployment history unavailable right now.')->style($dim))
             : $this->pane($ui, 'deployments', ' Deployments ', ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(16), Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['started'], $d['release'], $d['branch'], $d['commit'], $d['by'], $d['duration']], $d['status'], ! State::deploymentHealthy($d)), $deployments), 'Not deployed yet.');
 
         if ($deployments !== null) {
@@ -525,7 +525,7 @@ final class Screen
 
         $usersWidget = $users === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Users '))->borderStyle($dim)->padding(Padding::horizontal(1))
-                ->widget(ParagraphWidget::fromString('Not available on this Gateway yet.')->style($dim))
+                ->widget(ParagraphWidget::fromString('Database users unavailable right now.')->style($dim))
             : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Created by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['created_by'], false), $users), 'No users recorded.');
 
         if ($users !== null) {
