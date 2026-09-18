@@ -17,7 +17,7 @@ final readonly class DevelopmentCaddyAccessCommand
     {
         $arguments = ['bash', '-seu', '--'];
         foreach ($sites as $site) {
-            if ($site->isProxy() || $site->unavailable || $site->environment !== 'development') {
+            if ($site->isProxy() || $site->unavailable || $site->environment !== 'development' || $site->checkoutPath === '') {
                 continue;
             }
             $arguments[] = StoragePath::parse($site->checkoutPath)->value;

@@ -8,6 +8,29 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+it('leaves out sites that have no checkout to grant access to', function (): void {
+    $site = static fn (string $checkoutPath, ?string $localHttpUpstream = null): AppDevSite => new AppDevSite(
+        nodeId: 1,
+        nodeAddress: '10.44.0.7',
+        scope: 'node-1',
+        checkoutPath: $checkoutPath,
+        documentRoot: 'public',
+        phpVersion: '8.5',
+        domain: 'example.test',
+        localHttpUpstream: $localHttpUpstream,
+    );
+
+    $command = new DevelopmentCaddyAccessCommand()->command(collect([
+        $site('/apps/served'),
+        $site(''),
+        $site('/apps/proxied', 'http://127.0.0.1:4788'),
+    ]));
+
+    expect($site('/apps/proxied', 'http://127.0.0.1:4788')->isProxy())->toBeTrue()
+        ->and($command->arguments)->toContain('/apps/served')
+        ->and($command->arguments)->not->toContain('/apps/proxied', '');
+});
+
 it('serves a nested Web root while protecting source and preserving shared parent modes', function (): void {
     $root = development_caddy_access_fixture();
 

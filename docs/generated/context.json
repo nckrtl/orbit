@@ -2527,6 +2527,8 @@
                 "App",
                 "App instance",
                 "Cluster",
+                "Gateway",
+                "Herdr session",
                 "Node",
                 "Process",
                 "Route"

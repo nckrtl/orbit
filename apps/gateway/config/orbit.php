@@ -25,6 +25,10 @@ return [
         characters: '.',
     ),
     'command_timeout' => 900.0,
+    'agentation' => [
+        // Absolute path of a wrapper the antigravity-watch preset runs instead of Antigravity print mode.
+        'watch_command' => env('ORBIT_AGENTATION_WATCH_COMMAND'),
+    ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
         'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),

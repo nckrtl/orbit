@@ -239,6 +239,7 @@ use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
@@ -381,6 +382,10 @@ final class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->when(SystemdProcessRenderer::class)
+            ->needs('$antigravityWatchCommand')
+            ->giveConfig('orbit.agentation.watch_command');
+
         $this->app->bind(
             SweepIdleAppDevRuntimesAction::class,
             static fn ($app): SweepIdleAppDevRuntimesAction => new SweepIdleAppDevRuntimesAction(

@@ -72,7 +72,9 @@ Create the watcher after the HTTP Process. It requires that `agentation-mcp` Pro
 orbit process:create agentation-watch --instance=commander.test --preset=antigravity-watch --start
 ```
 
-The preset owns runtime and command configuration. `--keep-alive` is refused. Restart policy is `always` so a finished prompt re-enters watch. The command is `/usr/local/bin/agy --dangerously-skip-permissions -p` with the Agentation hands-free prompt: call `agentation_watch_annotations` in a loop, acknowledge each annotation, apply the change, and resolve it. The host must already provide `/usr/local/bin/agy`.
+The preset owns runtime and command configuration. `--keep-alive` is refused. Restart policy is `always` so a finished prompt re-enters watch. The command is `/usr/local/bin/agy --dangerously-skip-permissions -p` with the Agentation hands-free prompt: call `agentation_watch_annotations` in a loop, apply only the requested frontend change, and always resolve the annotation with a one-line summary so its toolbar marker clears. The prompt tells the agent not to write or run tests. The host must already provide `/usr/local/bin/agy`.
+
+Set `ORBIT_AGENTATION_WATCH_COMMAND` on the Gateway to the absolute path of a wrapper when a Node runs the watcher another way, for example inside an interactive Herdr session. The preset then runs that wrapper alone, and the wrapper owns the agent command and its prompt. The Node must provide the wrapper at that path.
 
 Removing the HTTP Process while the watcher still exists returns `process.has_dependent`. Destroy the watcher first.
 
