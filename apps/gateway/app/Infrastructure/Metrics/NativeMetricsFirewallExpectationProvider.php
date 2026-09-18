@@ -53,6 +53,12 @@ final readonly class NativeMetricsFirewallExpectationProvider implements Metrics
                 MetricsFootprint::ExporterFirewallComment,
                 'Metrics node exporter',
             );
+            $targets[] = $this->target(
+                $node,
+                $this->catalog->metricsCadvisor($node, $metricsNode),
+                MetricsFootprint::CadvisorFirewallComment,
+                'Metrics cAdvisor',
+            );
         }
 
         $gateway = $this->gateways->find();

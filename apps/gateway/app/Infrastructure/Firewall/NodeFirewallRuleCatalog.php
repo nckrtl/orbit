@@ -236,6 +236,16 @@ final readonly class NodeFirewallRuleCatalog
         );
     }
 
+    public function metricsCadvisor(Node $node, Node $metricsNode): UfwManagedRule
+    {
+        return $this->metricsRule(
+            MetricsFootprint::CadvisorFirewallComment,
+            $this->metricsExporterAddress($metricsNode),
+            $this->metricsExporterAddress($node),
+            MetricsFootprint::CadvisorPort,
+        );
+    }
+
     public function metricsGrafanaUpstream(Node $metricsNode, string $gatewayAddress): UfwManagedRule
     {
         if (filter_var($gatewayAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {

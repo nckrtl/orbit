@@ -21,6 +21,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -634,6 +635,14 @@ it('lists runtime status and removes only the selected process', function (): vo
         {
             return $processes->mapWithKeys(fn (Process $process): array => [
                 (int) $process->id => $this->runtime->status($process),
+            ])->all();
+        }
+    }, new class implements ProcessUsageIndex
+    {
+        public function usage(Collection $processes): array
+        {
+            return $processes->mapWithKeys(fn (Process $process): array => [
+                (int) $process->id => ['cpu' => null, 'memory_bytes' => null],
             ])->all();
         }
     })->execute(

@@ -6,6 +6,7 @@ use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsGatewayResolver;
@@ -166,6 +167,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -454,6 +456,7 @@ it('converges database beside router without rewriting routing or node processes
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -513,6 +516,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -570,6 +574,7 @@ it('keeps every Ingress lifecycle operation inside the database boundary', funct
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -613,6 +618,7 @@ it('dispatches removeUnreachable to the matching baseline and skips fleet reconc
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -654,6 +660,7 @@ it('republishes private DNS when the dispatcher sheds an unreachable gateway rol
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -690,6 +697,7 @@ it('propagates the VPN removeUnreachable rejection through the dispatcher', func
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -726,6 +734,7 @@ it('checks the remote operating system before every role convergence', function 
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -792,6 +801,7 @@ it('stops baseline convergence when the remote operating system guard fails', fu
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
             new MetricsGatewayResolver,
             new MetricsPublicationReport,
+            Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(

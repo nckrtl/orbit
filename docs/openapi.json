@@ -15670,6 +15670,18 @@
               "string",
               "null"
             ]
+          },
+          "cpu": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         }
       },

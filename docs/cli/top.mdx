@@ -33,6 +33,8 @@ The sidebar lists eight sections: Dashboard, Nodes, Apps, Instances, Processes, 
 - **Nodes** lists registered Nodes. `+ create` opens a form with the same fields `node:add` accepts (name, host, SSH port, user, roles, TLD); submitting it sends the same `AddNodeRequest` the command sends. A Node's own page adds its instances, its Node-owned processes, and its firewall rules to its properties.
 - **Apps**, **Instances**, **Processes**, **Schedules**, **Databases**, **Firewall** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployment history; a Database connection's tables and users). Enter or a click on a row in the Deployments pane opens that deployment's own record page: its properties (including a failed step, when it has one) and its recorded log. Firewall's fleet-wide list carries no filter bar or create link; the same rows and record page are also reachable from a Node's own Firewall pane.
 
+Every Processes pane carries a right-aligned `CPU/MEM` column, read from cAdvisor (see [Metrics role](/reference/metrics#per-process-cpu-and-memory-cadvisor)): whole-percent CPU over one core and memory in GiB, like `20%/1.2G`. A Process that is not running, or that cAdvisor has no series for, shows `—` instead.
+
 ## Keys and mouse
 
 | Key | Effect |

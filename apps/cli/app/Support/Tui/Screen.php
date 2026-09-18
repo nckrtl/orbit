@@ -49,6 +49,8 @@ final class Screen
 
     private const int MENU_WIDTH = 40;
 
+    private const int BYTES_PER_GIB = 1024 ** 3;
+
     public function screen(State $state, UiState $ui, string $header, string $footer, Area $area): Widget
     {
         $ui->drawn = [];
@@ -186,9 +188,9 @@ final class Screen
                 array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $rows),
             ],
             'processes' => [
-                ['Name', 'Owner', 'Node', 'Runtime', 'Status'],
-                [Constraint::percentage(20), Constraint::percentage(30), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(16)],
-                array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $state->processNodeName($p), $p['runtime']], $p['runtime_status'], ! State::processHealthy($p)), $rows),
+                ['Name', 'Owner', 'Node', 'Runtime', 'Status', 'CPU/MEM'],
+                [Constraint::percentage(18), Constraint::percentage(26), Constraint::percentage(14), Constraint::percentage(12), Constraint::percentage(14), Constraint::percentage(14)],
+                array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $state->processNodeName($p), $p['runtime'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $rows),
             ],
             'schedules' => [
                 ['Name', 'Instance', 'Node', 'Calendar', 'Last run'],
@@ -258,7 +260,7 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Where', 'Status'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(28)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p)], $p['runtime_status'], ! State::processHealthy($p)), $state->processes), $state->processesLoaded ? 'No processes.' : 'Checking processes…'),
+                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Where', 'Status', 'CPU/MEM'], [Constraint::percentage(24), Constraint::percentage(30), Constraint::percentage(22), Constraint::percentage(20)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processes), $state->processesLoaded ? 'No processes.' : 'Checking processes…'),
                         $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Where', 'Calendar', 'Last run'], [Constraint::percentage(22), Constraint::percentage(28), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $state->schedules), 'No schedules.'),
                     ),
                 $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, $state->processesLoaded ? 'Nothing needs attention.' : 'Checking processes…'),
@@ -508,7 +510,7 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], ! State::processHealthy($p)), $state->processesForNode($node['id']))),
+                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(46), Constraint::percentage(28), Constraint::percentage(22)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processesForNode($node['id']))),
                         $this->pane($ui, 'firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row(["{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $state->firewallForNode($node['id']))),
                     ),
             );
@@ -572,7 +574,7 @@ final class Screen
                     ->constraints(Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34))
                     ->widgets(
                         $properties,
-                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Runtime', 'Status'], [Constraint::percentage(46), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime']], $p['runtime_status'], ! State::processHealthy($p)), $processes)),
+                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(46), Constraint::percentage(28), Constraint::percentage(22)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $processes)),
                         $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Calendar', 'Last run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $schedules)),
                     ),
                 $this->pane($ui, 'deploysteps', ' Deploy steps in the order they run ', ['Phase', '#', 'Name', 'Timeout'], [Constraint::percentage(24), Constraint::percentage(8), Constraint::percentage(38), Constraint::percentage(30)], array_map(fn (int $index, array $s): TableRow => $this->row([$s['phase'], (string) ($index + 1), $s['name']], "{$s['timeout_seconds']} s", false), array_keys($deploySteps), $deploySteps), 'No deploy steps. instance:deploy-step:create adds one.'),
@@ -662,7 +664,7 @@ final class Screen
             'apps' => ['Name' => [$row['name'], false], 'Slug' => [$row['slug'], false], 'Repository' => [$row['repository_url'] ?? null, false], 'Default branch' => [$row['default_branch'] ?? null, false], 'Root' => [$row['root'] ?? null, false]],
             'instances' => ['Name' => [$row['name'], false], 'App' => [$row['app']['slug'], false], 'Node' => [$row['node']['name'], false], 'Environment' => [$row['environment'], false], 'Domain' => [$row['domain'] ?? null, false], 'Status' => [$row['status'], ! State::instanceHealthy($row)], 'Checkout' => [$row['checkout_path'] ?? null, false], 'Selected branch' => [$row['selected_branch'] ?? null, false], 'Deploy steps' => [count($row['deploy_steps']).' steps', false]],
             'databases' => ['Slug' => [$row['slug'], false], 'Driver' => [$row['driver'], false], 'Node' => [$state->nodeName((int) ($row['node_id'] ?? 0)), false], 'Host' => [$row['host'] !== null ? "{$row['host']}:{$row['port']}" : null, false], 'Path' => [$row['path'] ?? null, false], 'Database' => [$row['database'] ?? null, false], 'Username' => [$row['username'] ?? null, false], 'Password' => [$row['has_password'] ? '••••••••' : null, false]],
-            'processes' => ['Name' => [$row['name'], false], 'Owner' => [$state->processOwner($row), false], 'Node' => [$state->processNodeName($row), false], 'Runtime' => [$row['runtime'], false], 'Working directory' => [$row['working_directory'] ?? null, false], 'Restart policy' => [$row['restart_policy'] ?? null, false], 'Desired state' => [$row['desired_state'], false], 'Runtime status' => [$row['runtime_status'], ! State::processHealthy($row)]],
+            'processes' => ['Name' => [$row['name'], false], 'Owner' => [$state->processOwner($row), false], 'Node' => [$state->processNodeName($row), false], 'Runtime' => [$row['runtime'], false], 'Working directory' => [$row['working_directory'] ?? null, false], 'Restart policy' => [$row['restart_policy'] ?? null, false], 'Desired state' => [$row['desired_state'], false], 'Runtime status' => [$row['runtime_status'], ! State::processHealthy($row)], 'CPU/MEM' => [$this->processUsage($row), false]],
             'schedules' => ['Name' => [$row['name'], false], 'Instance' => [$state->instanceName($row['target_id']), false], 'Node' => [$state->instanceNodeName($row['target_id']), false], 'Calendar' => [$row['calendar'], false], 'Timeout' => ["{$row['timeout_seconds']} s", false], 'Desired timer' => [$row['desired_timer_state'], $row['desired_timer_state'] !== 'enabled'], 'Status' => [$row['status'], $row['status'] === 'failed'], 'Last run' => [$row['last_run_at'] ?? 'never', false], 'Last run status' => [$row['last_run_status'] ?? '—', false]],
             'firewall' => ['Name' => [$row['name'], false], 'Port' => [$row['port'], false], 'Protocol' => [$row['protocol'], false], 'Action' => [$row['action'], false], 'Source' => [$row['source'], false], 'Status' => [$row['status'], ! State::firewallHealthy($row)], 'Node' => [$row['node'], false]],
             'deployments' => ['Release' => [$row['release'], false], 'Branch' => [$row['branch'], false], 'Commit' => [$row['commit'], false], 'Started' => [$row['started'], false], 'Finished' => [$row['finished'], false], 'Duration' => [$row['duration'], false], 'Status' => [$row['status'], ! State::deploymentHealthy($row)], 'Failed step' => [$row['failed_step'], false], 'Error code' => [$row['error_code'], false], 'Selected release' => [$row['selected_release'], false], 'Triggered by' => [$row['by'], false]],
@@ -927,6 +929,27 @@ final class Screen
         $aligned->style = $last->style;
 
         return TableRow::fromCells(...[...$cells, $aligned]);
+    }
+
+    /**
+     * A Process's live CPU and memory as one reading, e.g. `20%/1.2G`: whole-percent CPU (matching
+     * the node bars' `%3.0f%%`) over memory in GiB at one decimal (matching the node metrics
+     * panel's `%.1fG`, which already shows sub-1 values this way — see nodeSummaryRow()). Either
+     * field null (not running, or cAdvisor has no series for it) collapses to a single dash rather
+     * than `—/—`.
+     *
+     * @param  array<string, mixed>  $process
+     */
+    private function processUsage(array $process): string
+    {
+        $cpu = $process['cpu'] ?? null;
+        $memoryBytes = $process['memory_bytes'] ?? null;
+
+        if (! is_numeric($cpu) || ! is_numeric($memoryBytes)) {
+            return '—';
+        }
+
+        return sprintf('%.0f%%/%.1fG', $cpu * 100, $memoryBytes / self::BYTES_PER_GIB);
     }
 
     /**

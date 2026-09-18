@@ -1426,6 +1426,8 @@ function process_cli_payload(array $overrides = []): array
         'runtime_status' => 'running',
         'failed_step' => null,
         'error_code' => null,
+        'cpu' => null,
+        'memory_bytes' => null,
     ], $overrides);
 }
 

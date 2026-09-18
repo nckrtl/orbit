@@ -776,6 +776,8 @@ final class State
             'status' => $process->status,
             'runtime_status' => $process->runtimeStatus,
             'failed_step' => $process->failedStep,
+            'cpu' => $process->cpu,
+            'memory_bytes' => $process->memoryBytes,
         ];
     }
 

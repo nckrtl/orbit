@@ -30,10 +30,18 @@ final class ProcessData extends Data
         public string $runtimeStatus,
         public ?string $failedStep,
         public ?string $errorCode,
+        /** Ratio of one core (0..1, matching `NodeMetricsResponse::$cores`), null when unavailable. */
+        public ?float $cpu = null,
+        /** Resident memory in bytes, null when unavailable — never zero for "not running". */
+        public ?int $memoryBytes = null,
     ) {}
 
-    public static function fromModel(#[SensitiveParameter] Process $process, string $runtimeStatus): self
-    {
+    public static function fromModel(
+        #[SensitiveParameter] Process $process,
+        string $runtimeStatus,
+        ?float $cpu = null,
+        ?int $memoryBytes = null,
+    ): self {
         /** @var ?string $failedStep */
         $failedStep = $process->getAttribute('failed_step');
         /** @var ?string $errorCode */
@@ -54,6 +62,8 @@ final class ProcessData extends Data
             runtimeStatus: $runtimeStatus,
             failedStep: $failedStep,
             errorCode: $errorCode,
+            cpu: $cpu,
+            memoryBytes: $memoryBytes,
         );
     }
 

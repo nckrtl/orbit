@@ -89,6 +89,7 @@ use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Metrics\MetricsAccessRevoker;
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialOperationLock;
 use App\Domain\Metrics\MetricsCredentialRuntime;
@@ -115,6 +116,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
+use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -213,12 +215,15 @@ use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteAppInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
+use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
+use App\Infrastructure\Metrics\MetricsCadvisorSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsPublicationManager;
 use App\Infrastructure\Metrics\MetricsRuntimeHost;
 use App\Infrastructure\Metrics\MetricsSshExecutor;
 use App\Infrastructure\Metrics\NativeMetricsAccessRevoker;
+use App\Infrastructure\Metrics\NativeMetricsCadvisorLifecycle;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsCredentialOperationLock;
@@ -244,6 +249,7 @@ use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\NativeProcessRuntimeLease;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\PrometheusProcessRuntimeStatusIndex;
+use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
@@ -345,6 +351,8 @@ final class AppServiceProvider extends ServiceProvider
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
         MetricsExporterRuntime::class => MetricsExporterSshExecutor::class,
+        MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
+        MetricsCadvisorRuntime::class => MetricsCadvisorSshExecutor::class,
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,
         MetricsRoleManager::class => NativeMetricsRoleManager::class,
@@ -367,6 +375,7 @@ final class AppServiceProvider extends ServiceProvider
         ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
+        ProcessUsageIndex::class => PrometheusProcessUsageIndex::class,
         VitePortRuntime::class => RemoteVitePortRuntime::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         AppInstanceCheckoutInspector::class => RemoteAppInstanceCheckoutInspector::class,

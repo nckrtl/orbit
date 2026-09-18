@@ -7,7 +7,7 @@ description: "What the metrics role runs, how to enable, inspect, and disable it
 
 The `metrics` role runs Prometheus and Grafana on one Node and collects metrics from selected managed Nodes. Use it to view machine health at `https://metrics.orbit`. [ADR 0003](/decisions/0003-singleton-metrics-role) defines placement, [ADR 0055](/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers) defines access, and [ADR 0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) defines eligible exporters.
 
-The containers are `orbit-metrics-prometheus` and `orbit-metrics-grafana`. Each selected Node runs `prometheus-node-exporter`. Both containers use host networking. Prometheus listens locally at `127.0.0.1:9090`, without a firewall rule. Grafana listens on WireGuard port 3000. Two Orbit UFW rules allow the Gateway and block other peers before general member rules apply. Container logs use `json-file`, limited to three files of 10 MB each.
+The containers are `orbit-metrics-prometheus` and `orbit-metrics-grafana`. Each selected Node runs `prometheus-node-exporter` and `orbit-cadvisor`. Both containers use host networking. Prometheus listens locally at `127.0.0.1:9090`, without a firewall rule. Grafana listens on WireGuard port 3000. Two Orbit UFW rules allow the Gateway and block other peers before general member rules apply. Container logs use `json-file`, limited to three files of 10 MB each.
 
 ## Placement and recovery
 
@@ -56,6 +56,16 @@ Both commands answer `metrics.exporter_node_inactive` for a Node that is not act
 A selected node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in at `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the node's WireGuard address on port 9100, and a UFW rule that the Metrics role owns admits that port only from the Metrics node's WireGuard address.
 
 Doctor does not expect an exporter service, exporter firewall rule, or exporter SSH reachability on an exporter-ineligible record. The Node family separately keeps lifecycle, reachability, and identity findings for a Node that the Gateway manages over SSH, even when that Node is not active. A stored fingerprint proves this observation contract in every lifecycle state. For a legacy Node without a stored fingerprint, any remaining managed role preserves the contract until the Gateway deletes that role. Doctor suppresses these Node-family findings only for records that the Gateway does not manage over SSH.
+
+## Per-Process CPU and memory (cAdvisor)
+
+`node_exporter` exposes systemd unit *state* only, not per-unit CPU or memory, so every selected exporter Node also runs [cAdvisor](https://github.com/google/cadvisor), pinned to `v0.60.5` and verified by SHA256 checksum before install. cAdvisor reads cgroups directly, which covers both systemd Processes and Docker Processes, and it is what [`orbit top`](/cli/top)'s Processes pane and `GET /api/v1/processes` read CPU and memory from.
+
+Every Node that runs `prometheus-node-exporter` runs cAdvisor the same way: a pinned static binary at `/usr/local/bin/orbit-cadvisor`, not a Docker container, because the Gateway Node is itself an exporter Node and has no Docker. A systemd unit (`orbit-cadvisor.service`) binds it to the Node's WireGuard address on port 9102, `Restart=always`, and a UFW rule admits only the Metrics Node's WireGuard address to that port, mirroring the node exporter's own rule. Enabling and disabling the exporter on a Node enables and disables cAdvisor with it; disabling removes the unit, the firewall rule, and the binary.
+
+An unfiltered cAdvisor is expensive: measured on beast, it added 8,359 series against `node_exporter`'s 5,150, at 3.1-4.5% of one core and 54-65 MiB. cAdvisor's install disables every metric kind except `cpu` and `memory` (`--disable_metrics=sched,percpu,memory_numa,cpuLoad,diskIO,disk,network,tcp,advtcp,udp,app,process,hugetlb,referenced_memory,cpu_topology,resctrl,cpuset,oom_event,pressure`), and `--store_container_labels=false` drops Docker container labels and environment variables from becoming Prometheus label dimensions. Prometheus scrapes cAdvisor every 30 seconds, six times less often than the node exporter's five seconds, because process CPU and memory do not need `orbit top`'s node-page resolution and cAdvisor is the more expensive job of the two.
+
+A Process's cAdvisor series is keyed by its systemd unit name or Docker container name, both `orbit-process-{id}-{name}`. A Process cAdvisor has no series for — not running, or cAdvisor unreachable — reports null CPU and memory, never zero.
 
 ## Private access and credentials
 

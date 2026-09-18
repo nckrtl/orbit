@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationCleanup;
@@ -28,6 +29,7 @@ it('converges exporters before runtime and private publication', function (): vo
 
     expect($events)->toBe([
         'exporters:converge',
+        'cadvisors:converge',
         'runtime:converge',
         'publication:converge',
     ]);
@@ -69,15 +71,17 @@ it('rolls completed runtime and exporter stages back in reverse order', function
 })->with([
     'runtime failure' => [
         'runtime:converge',
-        ['exporters:converge', 'runtime:converge', 'exporters:remove'],
+        ['exporters:converge', 'cadvisors:converge', 'runtime:converge', 'cadvisors:remove', 'exporters:remove'],
     ],
     'publication failure' => [
         'publication:converge',
         [
             'exporters:converge',
+            'cadvisors:converge',
             'runtime:converge',
             'publication:converge',
             'runtime:remove',
+            'cadvisors:remove',
             'exporters:remove',
         ],
     ],
@@ -118,6 +122,7 @@ it('removes publication, exporters, and runtime in that order', function (): voi
         ->toBe([
             'publication:remove',
             'exporters:remove',
+            'cadvisors:remove',
             'runtime:remove:purge',
         ])
         ->and($report->take())
@@ -137,6 +142,7 @@ it('removes node state before abandoning the publication when no single Gateway 
     expect($events)
         ->toBe([
             'exporters:remove',
+            'cadvisors:remove',
             'runtime:remove',
             'publication:abandon',
         ])
@@ -185,6 +191,7 @@ it('still removes the role and reports un-cleaned when abandoning the publicatio
     expect($events)
         ->toBe([
             'exporters:remove',
+            'cadvisors:remove',
             'runtime:remove',
             'publication:abandon',
         ])
@@ -253,6 +260,7 @@ function metricsBaseline(
         publication: new MetricsBaselinePublication($events, $failure, $rollbackFailure),
         gateways: new MetricsGatewayResolver,
         report: $report ?? new MetricsPublicationReport,
+        cadvisors: new MetricsBaselineCadvisors($events, $failure, $rollbackFailure),
     );
 }
 
@@ -320,6 +328,39 @@ final class MetricsBaselineExporters implements MetricsExporterLifecycle
     public function targets(Node $metricsNode): array
     {
         return [];
+    }
+
+    private function record(string $event): void
+    {
+        $this->events[] = $event;
+
+        if ($this->failure === $event || $this->rollbackFailure === $event) {
+            throw new RuntimeException("{$event} failed");
+        }
+    }
+}
+
+final class MetricsBaselineCadvisors implements MetricsCadvisorLifecycle
+{
+    public function __construct(
+        private array &$events,
+        private ?string $failure,
+        private ?string $rollbackFailure,
+    ) {}
+
+    public function converge(Node $node, NodeRole $assignment): void
+    {
+        $this->record('cadvisors:converge');
+    }
+
+    public function remove(Node $node, NodeRole $assignment): void
+    {
+        $this->record('cadvisors:remove');
+    }
+
+    public function removeNode(Node $node, Node $metricsNode): void
+    {
+        $this->record('cadvisors:remove-node');
     }
 
     private function record(string $event): void

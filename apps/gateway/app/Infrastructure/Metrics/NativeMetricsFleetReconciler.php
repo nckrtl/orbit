@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
@@ -18,6 +19,7 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
 {
     public function __construct(
         private MetricsExporterLifecycle $exporters,
+        private MetricsCadvisorLifecycle $cadvisors,
         private MetricsRuntimeLifecycle $runtime,
     ) {}
 
@@ -32,6 +34,7 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
         $node = $assignment->node;
 
         $this->exporters->converge($node, $assignment);
+        $this->cadvisors->converge($node, $assignment);
         $this->runtime->converge($node, $assignment);
     }
 
@@ -54,7 +57,14 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
             // regardless.
         }
 
+        try {
+            $this->cadvisors->removeNode($node, $metricsNode);
+        } catch (Throwable) {
+            // Same reasoning as the exporter above: best effort on the way out.
+        }
+
         $this->exporters->converge($metricsNode, $assignment);
+        $this->cadvisors->converge($metricsNode, $assignment);
         $this->runtime->converge($metricsNode, $assignment);
     }
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Metrics\ExporterPreferenceRepository;
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
@@ -144,6 +145,10 @@ function metricsRoleManagerStubBaselines(): void
     app()->instance(
         MetricsExporterLifecycle::class,
         Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+    );
+    app()->instance(
+        MetricsCadvisorLifecycle::class,
+        Mockery::mock(MetricsCadvisorLifecycle::class)->shouldIgnoreMissing(),
     );
     app()->instance(
         MetricsPublicationManager::class,
