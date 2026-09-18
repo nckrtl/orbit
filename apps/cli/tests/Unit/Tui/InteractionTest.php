@@ -123,6 +123,31 @@ describe(Interaction::class, function (): void {
             ->and($state->processes[0]['runtime_status'])->toBe('inactive');
     });
 
+    it('jumps straight to the Firewall section, the eighth and last sidebar entry, on digit 8', function (): void {
+        $state = tui_test_state();
+        $ui = new UiState;
+        $interaction = new Interaction($state, $ui, new ActionRunner(fn (): never => throw new RuntimeException('not used')), fn (): never => throw new RuntimeException('not used'));
+
+        $interaction->handleChar('8');
+
+        expect($ui->section)->toBe('firewall');
+    });
+
+    it('opens a firewall record page from the fleet-wide firewall list on Enter, the same way a firewall row opens from any other list', function (): void {
+        $state = tui_test_state();
+        $ui = new UiState;
+        $ui->goTo('firewall');
+        render_for_hit_testing($ui);
+        $ui->focus = 'list';
+
+        $interaction = new Interaction($state, $ui, new ActionRunner(fn (): never => throw new RuntimeException('not used')), fn (): never => throw new RuntimeException('not used'));
+        $interaction->handleKey(KeyCode::Enter);
+
+        expect($ui->pages)->toHaveCount(1)
+            ->and($ui->pages[0]['kind'])->toBe('firewall')
+            ->and($ui->pages[0]['row']['name'])->toBe('ssh');
+    });
+
     it('asks to confirm before running a destructive action', function (): void {
         $state = tui_test_state();
         $ui = new UiState;

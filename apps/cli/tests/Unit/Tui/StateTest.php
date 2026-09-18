@@ -131,6 +131,21 @@ describe(State::class, function (): void {
             ->and($state->attentionRows())->toHaveCount(1)
             ->and($state->attentionRows()[0]['label'])->toBe('Process');
     });
+
+    it('counts Databases alongside every other family, always off-count 0 since a connection has no health concept today', function (): void {
+        $state = tui_test_state();
+
+        expect($state->counts()['Databases'])->toBe([1, 0]);
+    });
+
+    it('lists the fleet-wide firewall rules, narrowed by the node filter and ignoring the app filter since rules are not app-scoped', function (): void {
+        $state = tui_test_state();
+
+        expect($state->listRows('firewall', null, null))->toHaveCount(1)
+            ->and($state->listRows('firewall', 'beast', null))->toHaveCount(1)
+            ->and($state->listRows('firewall', 'beast', 'charlie-shop'))->toHaveCount(1)
+            ->and($state->listRows('firewall', 'shark', null))->toBeEmpty();
+    });
 });
 
 describe('State health vocabulary', function (): void {

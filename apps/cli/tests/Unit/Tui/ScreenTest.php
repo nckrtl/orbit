@@ -24,17 +24,63 @@ beforeEach(function (): void {
 });
 
 describe(Screen::class, function (): void {
-    it('renders the dashboard with fleet counts and the needs-attention pane', function (): void {
+    it('renders the dashboard with fleet counts in the sidebar and the needs-attention pane, and no separate stats bar', function (): void {
         $ui = new UiState;
 
         $screen = render_top_screen($ui);
 
         expect($screen)->toContain('orbit')
-            ->and($screen)->toContain('Nodes 1')
+            ->and($screen)->toMatch('/Nodes\s+1/')
+            ->and($screen)->toMatch('/Firewall\s+1/')
             ->and($screen)->toContain('Needs attention')
             ->and($screen)->toContain('Nothing needs attention.');
 
         expect_output($screen, 'top/dashboard/default.txt');
+    });
+
+    it('leaves the Dashboard row\'s sidebar count blank, since Dashboard is not a record family', function (): void {
+        $ui = new UiState;
+
+        $screen = render_top_screen($ui);
+        $navLine = current(array_filter(explode("\n", $screen), static fn (string $line): bool => str_contains($line, 'Dashboard')));
+
+        expect($navLine)->not->toBeFalse();
+        // Everything between "Dashboard" and the nav pane's own right border is blank: no count digit.
+        preg_match('/Dashboard(.*?)│/u', (string) $navLine, $matches);
+        expect($matches[1] ?? null)->not->toBeNull()
+            ->and(trim($matches[1]))->toBe('');
+    });
+
+    it('renders the fleet-wide firewall list page without a create link or filter bar', function (): void {
+        $ui = new UiState;
+        $ui->goTo('firewall');
+
+        $screen = render_top_screen($ui);
+
+        expect($screen)->toContain('Firewall')
+            ->and($screen)->toContain('beast')
+            ->and($screen)->toContain('22/tcp')
+            ->and($screen)->toContain('allow')
+            ->and($screen)->toContain('10.44.0.0/16')
+            ->and($screen)->not->toContain('+ create');
+
+        expect_output($screen, 'top/list/firewall.txt');
+    });
+
+    it('opens a firewall record page from the fleet-wide firewall list, the same page a node\'s own Firewall pane opens', function (): void {
+        $ui = new UiState;
+        $ui->goTo('firewall');
+        $ui->open('firewall', tui_test_state()->firewall[0]);
+
+        $screen = render_top_screen($ui);
+
+        expect($screen)->toContain('Firewall rule:')
+            ->and($screen)->toContain('Properties')
+            ->and($screen)->toContain('22')
+            ->and($screen)->toContain('allow')
+            ->and($screen)->toContain('10.44.0.0/16');
+
+        expect_output($screen, 'top/record/firewall.txt');
     });
 
     it('renders the nodes list page with the create link', function (): void {
