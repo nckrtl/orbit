@@ -5,20 +5,18 @@ declare(strict_types=1);
 namespace App\Support\Tui\Sources;
 
 /**
- * The users or roles recorded on one Database connection, as `orbit top`'s Users pane would
- * list them.
+ * The users recorded on one Database connection, as `orbit top`'s Users pane lists them.
  *
- * The Gateway does not yet expose `GET /database-connections/{slug}/users`; a parallel slice is
- * adding it. `forConnection()` returns `null` until then, and the pane renders "Not available on
- * this Gateway yet." instead of a table. Wire the real SDK request by replacing
- * `NullDatabaseUsersSource` with an implementation that calls the new request and maps its
- * response into the same row shape.
+ * `Sources\GatewayDatabaseUsersSource` calls `GET /database-connections/{slug}/users`.
+ * `forConnection()` returns `null` when the Gateway request fails (an older Gateway that does
+ * not expose per-connection users, for example), and the pane renders "Not available on this
+ * Gateway yet." instead of a table.
  */
 interface DatabaseUsersSource
 {
     /**
      * @return list<array{username: string, privileges: string, used_by: string}>|null Null when
-     *                                                                                 this Gateway cannot list users for this connection yet.
+     *                                                                                 this Gateway cannot list users for this connection.
      */
     public function forConnection(string $slug): ?array;
 }

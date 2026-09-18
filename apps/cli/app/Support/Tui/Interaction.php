@@ -9,10 +9,13 @@ use Closure;
 use Laravel\Prompts\Key;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
+use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
 use Orbit\Sdk\Requests\Nodes\AddNodeRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Schedules\ScheduleLogsRequest;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseTablesResponse;
+use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentEvent;
+use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
@@ -378,7 +381,7 @@ final readonly class Interaction
             return;
         }
 
-        if (in_array($this->ui->focus, ['deploysteps', 'deployments', 'tables', 'users'], true)) {
+        if (in_array($this->ui->focus, ['deploysteps', 'tables', 'users'], true)) {
             return; // Leaf panes: nothing further to drill into.
         }
 
@@ -496,9 +499,50 @@ final readonly class Interaction
                 assert($response instanceof ScheduleLogsResponse);
                 $this->state->scheduleLogs[$row['id']] = $response->output === '' ? [] : explode("\n", rtrim($response->output, "\n"));
             }
+
+            if ($kind === 'deployments' && ! isset($this->state->deploymentLogs[$row['id']])) {
+                $response = ($this->send)(new ShowAppInstanceDeploymentRequest($row['id']), AppInstanceDeploymentResponse::class);
+                assert($response instanceof AppInstanceDeploymentResponse);
+                $this->state->deploymentLogs[$row['id']] = self::deploymentLogLines($response->events ?? []);
+            }
         } catch (GatewayApiException $exception) {
             $this->ui->message = $exception->getMessage();
         }
+    }
+
+    /**
+     * Phase markers and stdout/stderr output lines from a deployment's recorded events, in the
+     * order the deployment produced them. Mirrors instance:deployment:show's own log rendering.
+     *
+     * @param  list<AppInstanceDeploymentEvent>  $events
+     * @return list<string>
+     */
+    private static function deploymentLogLines(array $events): array
+    {
+        $lines = [];
+
+        foreach ($events as $event) {
+            if ($event->type === 'phase') {
+                $phase = str_replace('_', ' ', (string) $event->phase);
+                $lines[] = $event->stepName !== null ? "== {$phase}: {$event->stepName} ==" : "== {$phase} ==";
+
+                continue;
+            }
+
+            if ($event->type === 'output' && $event->value !== null) {
+                foreach (explode("\n", rtrim($event->value, "\n")) as $line) {
+                    $lines[] = "{$event->stream}: {$line}";
+                }
+
+                continue;
+            }
+
+            if ($event->type === 'output_truncated') {
+                $lines[] = '[output truncated]';
+            }
+        }
+
+        return $lines;
     }
 
     // ---- actions menu ---------------------------------------------------------------------------
