@@ -227,11 +227,8 @@ describe('State::load() concurrency', function (): void {
             $batches[] = [$responseClass, count($requests)];
 
             if ($responseClass === ProcessesResponse::class) {
-                // Simulate the pool returning results in request order: node beast, node
-                // shark, instance dev.
+                // One fleet-wide request, so one response carrying every Process.
                 return [
-                    new ProcessesResponse([], 'r'),
-                    new ProcessesResponse([], 'r'),
                     new ProcessesResponse([ProcessResponse::fromGatewayData(['id' => 1, 'target_type' => 'instance', 'target_id' => 10, 'name' => 'horizon', 'runtime' => 'systemd', 'working_directory' => '/srv', 'restart_policy' => 'always', 'keep_alive' => true, 'desired_state' => 'running', 'status' => 'active', 'runtime_status' => 'active', 'failed_step' => null, 'error_code' => null], 'r')], 'r'),
                 ];
             }
@@ -267,9 +264,8 @@ describe('State::load() concurrency', function (): void {
 
         $state->loadProcesses($send, $sendMany);
 
-        // loadProcesses() then batches one request per node (2) plus one per instance (1),
-        // never one request at a time.
-        expect($batches)->toBe([[FirewallRulesResponse::class, 2], [ProcessesResponse::class, 3]])
+        // loadProcesses() then asks for the whole fleet in one request.
+        expect($batches)->toBe([[FirewallRulesResponse::class, 2], [ProcessesResponse::class, 1]])
             ->and($state->processesLoaded)->toBeTrue()
             ->and($state->processes)->toHaveCount(1)
             ->and($state->processes[0]['name'])->toBe('horizon');

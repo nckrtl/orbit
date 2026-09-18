@@ -14,9 +14,17 @@ final class ListProcessesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'target_type' => ['required', Rule::enum(ProcessTargetType::class)],
-            'target_id' => ['required', 'integer', 'min:1'],
+            // Omit both to list every Process in the fleet. A screen that draws the whole fleet
+            // asks once rather than once per Node and AppInstance, which is dozens of requests
+            // for data the Gateway holds in one table.
+            'target_type' => ['required_with:target_id', 'nullable', Rule::enum(ProcessTargetType::class)],
+            'target_id' => ['required_with:target_type', 'nullable', 'integer', 'min:1'],
         ];
+    }
+
+    public function hasTarget(): bool
+    {
+        return $this->validated('target_type') !== null;
     }
 
     public function targetType(): ProcessTargetType

@@ -29,8 +29,12 @@ final class ProcessesController extends Controller
 {
     public function index(ListProcessesRequest $request, ListProcessesAction $action): JsonResponse
     {
+        $processes = $request->hasTarget()
+            ? $action->execute($request->targetType(), $request->targetId())
+            : $action->executeAll();
+
         return response()->json([
-            'data' => $action->execute($request->targetType(), $request->targetId())->all(),
+            'data' => $processes->all(),
             'meta' => $this->meta($request),
         ]);
     }

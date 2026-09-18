@@ -13,9 +13,7 @@ use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
 use Orbit\Sdk\Requests\Firewall\ListFirewallRulesRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
-use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
@@ -157,18 +155,16 @@ final class State
     /**
      * Queues every Process request the fleet needs, for `loadNextProcesses()` to drain.
      *
-     * No Gateway route lists Processes fleet-wide, so this needs one request per Node and per
-     * AppInstance, and the Gateway answers each by checking every owned Process's live runtime
-     * status one at a time over SSH. On a real fleet that is the whole cost of starting up
-     * (measured at 4.83s against 0.53s for every other list combined), and nothing the first
-     * frame draws depends on it.
+     * `GET /api/v1/processes` without a target answers with the whole fleet, so this is one
+     * request. It stays out of `load()` regardless: nothing the first frame draws depends on it,
+     * and the queue keeps the screen responsive if a fleet ever makes it slow again.
      */
     public function queueProcesses(): void
     {
-        $this->pendingProcessRequests = [
-            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
-            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
-        ];
+        // One request for the fleet. The Gateway reads every Process from its own table and
+        // resolves their live state in a single Prometheus query, so asking per Node and per
+        // AppInstance would be dozens of round trips for one table.
+        $this->pendingProcessRequests = [new ListProcessesRequest];
         $this->processes = [];
         $this->processesLoaded = $this->pendingProcessRequests === [];
     }

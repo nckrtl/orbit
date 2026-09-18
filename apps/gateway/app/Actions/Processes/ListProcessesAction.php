@@ -24,6 +24,28 @@ final readonly class ListProcessesAction
             ->where('owner_id', $targetId)
             ->orderBy('name')
             ->get();
+
+        return $this->withStatuses($processes);
+    }
+
+    /**
+     * Every Process in the fleet, for a caller that draws all of them.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function executeAll(): Collection
+    {
+        return $this->withStatuses(
+            Process::query()->orderBy('owner_type')->orderBy('owner_id')->orderBy('name')->get(),
+        );
+    }
+
+    /**
+     * @param  Collection<int, Process>  $processes
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function withStatuses(Collection $processes): Collection
+    {
         // One lookup for every Process, rather than one round trip each: see
         // ProcessRuntimeStatusIndex for why a list cannot ask each Node in turn.
         $statuses = $this->statuses->statuses($processes);
