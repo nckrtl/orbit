@@ -257,6 +257,69 @@ final class Screen
             ]))));
     }
 
+    /**
+     * The node page's htop-like block: cores in two columns, then memory and swap beside the root
+     * disk and uptime. The dashboard keeps the one-line summary (nodeSummaryBlock).
+     *
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeMetricsPanel(State $state, array $node, int $width): Widget
+    {
+        $metrics = $state->nodeMetrics($node['id']);
+
+        if ($metrics === null) {
+            return $this->nodeSummaryBlock($state, $node, $width);
+        }
+
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $inner = $width - 4;
+        $gap = 2;
+        $half = intdiv($inner - $gap, 2);
+        $lastHalf = $inner - $half - $gap;
+
+        $coreLines = [];
+        foreach (array_chunk($metrics['cores'], 2, true) as $group) {
+            $spans = [];
+            $position = 0;
+            foreach ($group as $core => $load) {
+                if ($position > 0) {
+                    $spans[] = Span::fromString(str_repeat(' ', $gap));
+                }
+                $spans = [...$spans, ...$this->bar(str_pad((string) $core, 3), $load, sprintf('%3.0f%%', $load * 100), $position === 1 ? $lastHalf : $half)];
+                $position++;
+            }
+            $coreLines[] = Line::fromSpans(...$spans);
+        }
+
+        [$mount, $used, $total] = $metrics['disks'][0] ?? ['/', 0.0, 0.0];
+        $left = [
+            Line::fromSpans(...$this->bar('Mem', $metrics['mem'][1] > 0 ? $metrics['mem'][0] / $metrics['mem'][1] : 0, sprintf('%.1fG/%.0fG', $metrics['mem'][0], $metrics['mem'][1]), $half)),
+            Line::fromSpans(...$this->bar('Swp', $metrics['swap'][1] > 0 ? $metrics['swap'][0] / $metrics['swap'][1] : 0, sprintf('%.1fG/%.0fG', $metrics['swap'][0], $metrics['swap'][1]), $half)),
+        ];
+        $right = [
+            Line::fromSpans(...$this->bar(str_pad((string) $mount, 3), $total > 0 ? $used / $total : 0, sprintf('%.0fG/%.0fG', $used, $total), $lastHalf, [80, 90])),
+            Line::fromSpans(Span::styled('Up ', $dim), Span::fromString($metrics['uptime'])),
+        ];
+
+        return BlockWidget::default()
+            ->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->titles(Title::fromString(" {$node['name']} · {$node['status']} · metrics "))
+            ->borderStyle($node['status'] === 'active' ? $dim : Style::default()->fg(AnsiColor::Yellow))
+            ->padding(Padding::horizontal(1))
+            ->widget(
+                GridWidget::default()
+                    ->direction(Direction::Vertical)
+                    ->constraints(Constraint::length(count($coreLines)), Constraint::min(2))
+                    ->widgets(
+                        ParagraphWidget::fromText(Text::fromLines(...$coreLines)),
+                        GridWidget::default()
+                            ->direction(Direction::Horizontal)
+                            ->constraints(Constraint::length($half), Constraint::length($gap), Constraint::min($lastHalf))
+                            ->widgets(ParagraphWidget::fromText(Text::fromLines(...$left)), BlockWidget::default(), ParagraphWidget::fromText(Text::fromLines(...$right))),
+                    ),
+            );
+    }
+
     /** Counts for the whole network, a count in yellow when something in it needs a look. */
     private function stats(State $state, int $width): Line
     {
@@ -351,7 +414,8 @@ final class Screen
     private function nodePage(State $state, UiState $ui, array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
     {
         $instances = $state->instancesForNode($node['name']);
-        $metricsHeight = 3;
+        $metrics = $state->nodeMetrics($node['id']);
+        $metricsHeight = $metrics === null ? 3 : intdiv(count($metrics['cores']) + 1, 2) + 4;
         $top = max($propertiesHeight, $metricsHeight);
         $constraints = [Constraint::length($top), Constraint::length(min(count($instances) + 3, max(5, $body->height - $top - 8))), Constraint::min(5)];
         $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
@@ -369,7 +433,7 @@ final class Screen
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(40), Constraint::percentage(60))
-                    ->widgets($properties, $this->nodeSummaryBlock($state, $node, $topColumns->get(1)->width)),
+                    ->widgets($properties, $this->nodeMetricsPanel($state, $node, $topColumns->get(1)->width)),
                 $this->pane($ui, 'instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain'] ?? '—'], $i['status'], $i['status'] !== 'active'), $instances)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)

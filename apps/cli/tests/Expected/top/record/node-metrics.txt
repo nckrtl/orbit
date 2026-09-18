@@ -1,9 +1,9 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────╮  ‹ back  Node: beast                                                                                   
-│  Dashboard   │╭ Properties ───────────────────────────╮╭ beast · active · up 1d 2h 3m ───────────────────────────────╮
-│› Nodes       ││ Name               beast              ││ cpu[|       ]  15%  mem[|    ] 1.0G/8G  /  [|     ] 10G/80G │
-│  Apps        ││ Status             active             ││                                                             │
-│  Instances   ││ Roles              app-dev            ││                                                             │
+│  Dashboard   │╭ Properties ───────────────────────────╮╭ beast · active · metrics ───────────────────────────────────╮
+│› Nodes       ││ Name               beast              ││ 0  [||                ]  10%  1  [||||               ]  20% │
+│  Apps        ││ Status             active             ││ Mem[||             ] 1.0G/8G  /  [||              ] 10G/80G │
+│  Instances   ││ Roles              app-dev            ││ Swp[               ] 0.0G/2G  Up 1d 2h 3m                   │
 │  Processes   ││ Platform           —                  ││                                                             │
 │  Schedules   ││ Architecture       —                  ││                                                             │
 │  Databases   ││ TLD                —                  ││                                                             │

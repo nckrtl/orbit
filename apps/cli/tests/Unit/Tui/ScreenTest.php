@@ -206,7 +206,7 @@ describe(Screen::class, function (): void {
 
         $screen = render_top_screen($ui, $state);
 
-        expect($screen)->toContain('up 1d 2h 3m')
+        expect($screen)->toContain('Up 1d 2h 3m')
             ->and($screen)->not->toContain('Metrics not available on this Gateway yet.');
 
         expect_output($screen, 'top/record/node-metrics.txt');
