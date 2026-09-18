@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Run the CLI tests that replay the given Gateway response fixtures.
+
+Run from any directory:
+
+    bin/cli-contract nodes/node-list/default nodes/node-add/created
+    bin/cli-contract --changed            fixtures changed against origin/main
+    bin/cli-contract --changed HEAD~1     fixtures changed against another base
+    bin/cli-contract --preview            regenerate every expected output into a temporary directory and
+                                          list the commands whose rendering differs from tests/Expected
+    bin/cli-contract --coverage           list the product commands that have no expected output yet
+
+Fixtures live under packages/php-sdk/fixtures. A CLI test names the fixtures it replays, so this script finds
+the test files that mention each name and runs only those, which answers "which commands does this response
+change reach" in seconds.
+"""
+
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+FIXTURES = ROOT / 'packages/php-sdk/fixtures'
+TESTS = ROOT / 'apps/cli/tests'
+
+
+def changed_fixtures(base):
+    """Fixtures that differ from base, plus untracked ones that are not committed yet."""
+    git = ['git', '-C', str(ROOT)]
+    output = subprocess.check_output([*git, 'diff', '--name-only', base, '--', 'packages/php-sdk/fixtures'], text=True)
+    output += subprocess.check_output([*git, 'ls-files', '--others', '--exclude-standard', '--', 'packages/php-sdk/fixtures'], text=True)
+    names = [pathlib.Path(line).relative_to('packages/php-sdk/fixtures').with_suffix('').as_posix() for line in output.split() if line]
+    return sorted(set(names))
+
+
+def preview():
+    """Render every contract case into a temporary directory and report what differs from tests/Expected."""
+    import difflib
+    import tempfile
+    expected = ROOT / 'apps/cli/tests/Expected'
+    directory = pathlib.Path(tempfile.mkdtemp(prefix='cli-contract-preview-'))
+    environment = {**os.environ, 'ORBIT_EXPECTED': 'update', 'ORBIT_EXPECTED_DIR': str(directory)}
+    result = subprocess.run(['vendor/bin/pest', '--filter=Contract'], cwd=ROOT / 'apps/cli', env=environment,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if result.returncode != 0:
+        sys.exit('The contract tests did not run cleanly; run vendor/bin/pest --filter=Contract in apps/cli.')
+    changed = {}
+    for current in sorted(directory.rglob('*')):
+        if not current.is_file():
+            continue
+        name = current.relative_to(directory).as_posix()
+        stored = expected / name
+        before = stored.read_text(encoding='utf-8') if stored.is_file() else ''
+        after = current.read_text(encoding='utf-8')
+        if before != after:
+            command = name.split('/')[1] if '/' in name else name
+            changed.setdefault(command, []).append((name, before, after, stored.is_file()))
+    if not changed:
+        print('Every command renders as tests/Expected records.')
+        return
+    for command, files in changed.items():
+        print(f'{command}: {len(files)} expected output(s) differ')
+        for name, before, after, existed in files:
+            print(f'  {name}' + ('' if existed else ' (new)'))
+            for line in difflib.unified_diff(before.splitlines(), after.splitlines(), 'expected', 'current', lineterm='', n=1):
+                print('    ' + line)
+    print('\nAccept with: cd apps/cli && ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract')
+    sys.exit(1)
+
+
+def coverage():
+    """List product commands without an expected output, from the command list of the CLI."""
+    listing = subprocess.check_output(['php', 'orbit', 'list', '--format=json'], cwd=ROOT / 'apps/cli', text=True)
+    commands = sorted(command['name'] for command in json.loads(listing)['commands']
+                      if ':' in command['name'] and not command['name'].startswith(('internal:', 'design:', 'make:', 'app:build', 'mcp:', 'boost:', 'vendor:', 'stub:', 'skill:'))
+                      and not command.get('hidden')) 
+    commands += [name for name in ('doctor', 'profile') if any(command['name'] == name for command in json.loads(listing)['commands'])]
+    expected = ROOT / 'apps/cli/tests/Expected'
+    covered = {path.parent.name for path in expected.rglob('*') if path.is_file()}
+    missing = [name for name in commands if name.replace(':', '-') not in covered]
+    print(f'{len(commands) - len(missing)} of {len(commands)} product commands have expected output.')
+    for name in missing:
+        print(f'  {name}')
+    sys.exit(1 if missing else 0)
+
+
+def main():
+    arguments = sys.argv[1:]
+    if arguments == ['--preview']:
+        preview()
+        return
+    if arguments == ['--coverage']:
+        coverage()
+        return
+    if arguments[:1] == ['--changed']:
+        names = changed_fixtures(arguments[1] if len(arguments) > 1 else 'origin/main')
+    else:
+        names = [name.removeprefix('packages/php-sdk/fixtures/').removesuffix('.json') for name in arguments]
+    if not names:
+        print('No fixtures selected.')
+        return
+    files = {}
+    for name in names:
+        if not (FIXTURES / f'{name}.json').is_file():
+            print(f'{name}: no fixture file (removed or misspelled); its tests must fail until they change.')
+        users = sorted(path for path in TESTS.rglob('*.php') if f"'{name}'" in path.read_text(encoding='utf-8'))
+        if not users:
+            print(f'{name}: no CLI test replays this fixture.')
+        for path in users:
+            files.setdefault(path, []).append(name)
+    if not files:
+        sys.exit(1)
+    for path, used in files.items():
+        print(f'{path.relative_to(ROOT)} replays {", ".join(used)}')
+    sys.exit(subprocess.call(['vendor/bin/pest', *[str(path.relative_to(ROOT / "apps/cli")) for path in files]], cwd=ROOT / 'apps/cli'))
+
+
+if __name__ == '__main__':
+    main()

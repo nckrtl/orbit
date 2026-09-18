@@ -1,0 +1,10 @@
+Removing App...
+
+┌  Remove App
+│
+├  ● Removed App
+│
+└  Removed App.
+
+App [acme] removed.
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

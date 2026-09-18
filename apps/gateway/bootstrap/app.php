@@ -18,6 +18,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Controllers\Api\JwksController;
 use App\Http\Middleware\EnsureRequestId;
+use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -61,7 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->api(prepend: [EnsureRequestId::class, RecordCommandActivity::class]);
+        $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
     })

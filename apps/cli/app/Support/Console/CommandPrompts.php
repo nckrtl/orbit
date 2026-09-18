@@ -6,13 +6,15 @@ namespace App\Support\Console;
 
 use App\Support\Console\Renderers\TableLayout;
 use Closure;
-use Laravel\Prompts\DataTablePrompt;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final readonly class CommandPrompts
 {
+    /** Rows a data list shows before it scrolls. */
+    private const int SCROLL_ROWS = 15;
+
     public function __construct(
         private ConsoleMode $mode,
         private OutputInterface $output,
@@ -40,7 +42,7 @@ final readonly class CommandPrompts
      */
     public function selectEntity(string $label, array $headers, array $rows, ?Closure $validate = null): int|string
     {
-        $selected = $this->run(function () use ($label, $headers, $rows, $validate): DataTablePrompt {
+        $selected = $this->run(function () use ($label, $headers, $rows, $validate): SearchableDataTablePrompt {
             if ($rows === []) {
                 throw new PromptAborted('No matching records were found.', 'empty_selection');
             }
@@ -51,13 +53,14 @@ final readonly class CommandPrompts
                 throw new PromptAborted("Selection requires at least {$minimum} terminal columns; {$this->mode->columns} are available.", 'terminal_too_narrow');
             }
 
-            return new DataTablePrompt(
+            return new SearchableDataTablePrompt(
                 headers: $headers,
                 rows: $rows,
                 label: $label,
-                hint: 'Press / to search',
                 required: true,
                 validate: $validate,
+                // Show every row of a short list; a long list scrolls inside a fixed window.
+                scroll: max(1, min(count($rows), self::SCROLL_ROWS)),
             );
         });
 

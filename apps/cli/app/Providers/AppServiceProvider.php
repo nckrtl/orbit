@@ -14,6 +14,9 @@ use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileRequestProfiler;
 use App\Support\Console\StandardInput;
 use App\Support\Console\StandardInputReader;
+use App\Support\Realtime\StreamWebSocketTransport;
+use App\Support\Realtime\WebSocketTransport;
+use Design\Support\FixtureReplay;
 use Illuminate\Support\ServiceProvider;
 
 final class AppServiceProvider extends ServiceProvider
@@ -21,7 +24,14 @@ final class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void {}
+    public function boot(): void
+    {
+        // Dev-only: replay recorded Gateway responses under a real command; see design/README.md.
+        $fixtures = getenv('ORBIT_GATEWAY_FIXTURES');
+        if (getenv('ORBIT_DESIGN') === '1' && is_string($fixtures) && $fixtures !== '' && class_exists(FixtureReplay::class)) {
+            FixtureReplay::install($fixtures, (string) config('orbit.home'));
+        }
+    }
 
     /**
      * Register any application services.
@@ -30,6 +40,7 @@ final class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(StandardInputReader::class, StandardInput::class);
         $this->app->singleton(ProfileRequestProfiler::class, CurlProfileRequestProfiler::class);
+        $this->app->bind(WebSocketTransport::class, StreamWebSocketTransport::class);
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);
         $this->app->singleton(

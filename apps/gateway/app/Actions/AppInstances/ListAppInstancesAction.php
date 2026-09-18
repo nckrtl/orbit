@@ -24,7 +24,9 @@ final readonly class ListAppInstancesAction
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereIn('node_id', $this->access->accessibleNodeIds($consumer)),
             )
-            ->latest('id')
+            // Alphabetical by name so a picker reads predictably; ids keep same-named instances of different Apps stable.
+            ->orderBy('name')
+            ->orderBy('id')
             ->get();
     }
 }

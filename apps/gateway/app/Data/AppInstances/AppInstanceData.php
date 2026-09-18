@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\AppInstances;
 
+use App\Data\Apps\AppIdentityData;
+use App\Data\Nodes\NodeIdentityData;
 use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Models\AppInstance;
@@ -21,6 +23,8 @@ final class AppInstanceData extends Data
         public int $id,
         public int $appId,
         public int $nodeId,
+        public AppIdentityData $app,
+        public NodeIdentityData $node,
         public string $name,
         public string $environment,
         public string $sourceLayout,
@@ -47,7 +51,7 @@ final class AppInstanceData extends Data
 
     public static function fromModel(AppInstance $appInstance): self
     {
-        $appInstance->loadMissing(['app', 'routes.targets', 'deploySteps']);
+        $appInstance->loadMissing(['app', 'node', 'routes.targets', 'deploySteps']);
         $route = $appInstance->authoritativeRoute() ?? $appInstance->routes->first();
         $removal = AppInstanceRemoval::query()
             ->with('members')
@@ -61,6 +65,8 @@ final class AppInstanceData extends Data
             id: $appInstance->id,
             appId: $appInstance->app_id,
             nodeId: $appInstance->node_id,
+            app: AppIdentityData::fromModel($appInstance->app),
+            node: NodeIdentityData::fromModel($appInstance->node),
             vitePort: $appInstance->vite_port,
             name: $appInstance->name,
             environment: $appInstance->environment,

@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Replay a design flow against its sketch in a recorded terminal and check what each step showed.
+
+Run from any directory:
+
+    bin/cli-flow node-add                    replay apps/cli/design/flows/node-add.json
+    bin/cli-flow node-add --keep DIR         keep the recording in DIR for review or import
+    bin/cli-flow --list                      list the flows
+    bin/cli-flow --all                       replay every flow and report failures
+
+A flow file names a sketch, its arguments, and the steps to type. Each step waits for text on the screen,
+sends keys, and names the text that must appear afterwards. `send` accepts plain text and the tokens
+<enter>, <space>, <tab>, <backspace>, <esc>, <up>, <down>, <left>, <right>. Send one selection key per
+step: Laravel Prompts reads one key per read and ignores keys that arrive together. Text prompts accept
+whole strings.
+
+The runner records with .agents/skills/verifying-cli-output/scripts/capture.py, which needs the packages in
+that skill's scripts/requirements.txt, and prints the final screen with one line per step.
+"""
+
+import argparse
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+FLOWS = ROOT / 'apps/cli/design/flows'
+CAPTURE = ROOT / '.agents/skills/verifying-cli-output/scripts/capture.py'
+ORBIT = ROOT / 'apps/cli/orbit'
+KEYS = {
+    '<enter>': '\r', '<space>': ' ', '<tab>': '\t', '<backspace>': '\x7f', '<esc>': '\x1b',
+    '<up>': '\x1b[A', '<down>': '\x1b[B', '<right>': '\x1b[C', '<left>': '\x1b[D',
+}
+
+
+def expand(send):
+    for token, bytes_ in KEYS.items():
+        send = send.replace(token, bytes_)
+    if '<' in send and '>' in send:
+        sys.exit(f'Unknown key token in {send!r}. Known tokens: {", ".join(KEYS)}.')
+    return send
+
+
+def load(name):
+    path = FLOWS / f'{name}.json'
+    if not path.is_file():
+        sys.exit(f'No flow at {path.relative_to(ROOT)}. Run bin/cli-flow --list.')
+    return json.loads(path.read_text(encoding='utf-8'))
+
+
+def visible(frame):
+    return '\n'.join(frame['lines'])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    parser.add_argument('flow', nargs='?')
+    parser.add_argument('--keep', type=pathlib.Path, help='Directory to keep the recording in')
+    parser.add_argument('--list', action='store_true')
+    parser.add_argument('--all', action='store_true', help='Replay every flow and report the ones that fail')
+    args = parser.parse_args()
+
+    if args.all:
+        failed = []
+        for path in sorted(FLOWS.glob('*.json')):
+            result = subprocess.run([sys.executable, __file__, path.stem], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"{'ok  ' if result.returncode == 0 else 'FAIL'}  {path.stem}")
+            if result.returncode != 0:
+                failed.append(path.stem)
+        sys.exit(1 if failed else 0)
+
+    if args.list:
+        for path in sorted(FLOWS.glob('*.json')):
+            flow = json.loads(path.read_text(encoding='utf-8'))
+            print(f"{path.stem:32} {flow['sketch']:20} {flow.get('title', '')}")
+        return
+    if args.flow is None:
+        parser.error('name a flow or pass --list')
+
+    try:
+        import pyte  # noqa: F401
+    except ImportError:
+        sys.exit('The recorder needs pyte and wcwidth: pip install -r .agents/skills/verifying-cli-output/scripts/requirements.txt')
+
+    flow = load(args.flow)
+    workdir = pathlib.Path(tempfile.mkdtemp(prefix='cli-flow-'))
+    recording = workdir / 'recording'
+    plan = workdir / 'plan.json'
+    plan.write_text(json.dumps([{'wait_for': step['wait_for'], 'send': expand(step['send'])} for step in flow['steps']]), encoding='utf-8')
+
+    command = [sys.executable, str(CAPTURE), '--output-dir', str(recording), '--candidate', 'sketch', '--label', args.flow,
+               '--columns', str(flow.get('columns', 100)), '--rows', str(flow.get('rows', 40)), '--no-live',
+               '--timeout', str(flow.get('timeout', 120)), '--input-plan', str(plan), '--',
+               str(ORBIT), flow['sketch'], *flow.get('arguments', [])]
+    environment = {**os.environ, 'ORBIT_DESIGN': '1'}
+    subprocess.run(command, cwd=ROOT / 'apps/cli', env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    summary_path = recording / 'summary.json'
+    if not summary_path.is_file():
+        sys.exit('The recorder produced no summary; run the capture command by hand to see why.')
+    summary = json.loads(summary_path.read_text(encoding='utf-8'))
+    frames = [json.loads(line) for line in (recording / 'frames.jsonl').read_text(encoding='utf-8').splitlines()]
+    inputs = [json.loads(line) for line in (recording / 'input-events.jsonl').read_text(encoding='utf-8').splitlines()]
+
+    failures = 0
+    for index, step in enumerate(flow['steps']):
+        sent = next((event['elapsed'] for event in inputs if event.get('index') == index and event.get('complete')), None)
+        seen = sent is not None and any(frame['elapsed'] >= sent and step['expect'] in visible(frame) for frame in frames)
+        failures += not seen
+        state = 'ok  ' if seen else ('miss' if sent is not None else 'skip')
+        print(f"{state}  step {index + 1}: after {step['send']!r} expected {step['expect']!r}")
+
+    final = visible(frames[-1]) if frames else ''
+    for text in flow.get('expect_final', []):
+        seen = text in final
+        failures += not seen
+        print(f"{'ok  ' if seen else 'miss'}  final screen shows {text!r}")
+    # The recorder exits with the child's status; 124 and 125 mean a timeout or an incomplete capture.
+    exit_ok = summary['child_exit_code'] == flow.get('exit_code', 0) and summary['capture_exit_code'] not in (124, 125)
+    failures += not exit_ok
+    print(f"{'ok  ' if exit_ok else 'miss'}  exit status {summary['child_exit_code']} (capture {summary['capture_exit_code']}), {summary['duration_seconds']:.1f} s")
+
+    print('\n' + '\n'.join(line.rstrip() for line in final.split('\n')).strip('\n'))
+
+    if args.keep:
+        shutil.copytree(recording, args.keep, dirs_exist_ok=True)
+        print(f'\nRecording kept in {args.keep}')
+    shutil.rmtree(workdir, ignore_errors=True)
+    sys.exit(1 if failures else 0)
+
+
+if __name__ == '__main__':
+    main()

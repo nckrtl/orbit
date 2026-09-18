@@ -1,0 +1,41 @@
+Fetching App instance...
+Fetching Processes...
+
+┌  App instance: dev
+│
+├  ID                   1
+│
+├  App                  charlie-shop
+│
+├  Node                 app-dev
+│
+├  Status               active
+│
+├  Environment          development
+│
+├  Source layout        checkout
+│
+├  Checkout             /srv/orbit/apps/charlie-shop/dev
+│
+├  Vite port            5173
+│
+├  Root override        —
+│
+├  Effective root       web/public
+│
+├  Selected branch      dev
+│
+├  Branch override      —
+│
+├  Migration required   no
+│
+├  Domain               dev.charlie-shop.test
+│
+└  URL                  https://dev.charlie-shop.test
+
+ ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
+ │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │
+ ├────┼───────────┼─────────┼─────────┼────────────────┼────────┤
+ │ 1  │ queue     │ systemd │ running │ running        │ active │
+ │ 2  │ scheduler │ systemd │ running │ running        │ active │
+ └────┴───────────┴─────────┴─────────┴────────────────┴────────┘

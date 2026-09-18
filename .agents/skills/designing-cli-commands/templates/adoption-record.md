@@ -5,7 +5,7 @@
 - Registry configuration (including enabled extensions):
 - Command contract and governing decisions:
 - Inputs, side effects, and existing consent/override meanings:
-- Supported modes and explicit-only restrictions:
+- Supported modes and prompted inputs:
 - Applicable standard rules:
 - Justified exceptions (contract citation and reason):
 - Open implementation or documentation gaps:

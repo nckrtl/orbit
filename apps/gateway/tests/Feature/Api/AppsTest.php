@@ -20,6 +20,10 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
+use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Apps\ShowAppRequest;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -51,6 +55,7 @@ describe('app creation', function (): void {
             ->assertJsonPath('data.slug', 'acme')
             ->assertJsonPath('data.repository_url', 'git@github.com:acme/site.git')
             ->assertJsonStructure(['meta' => ['request_id']]);
+        record_fixture($first, 'apps/app-create/created', CreateAppRequest::class, 'POST /api/v1/apps');
 
         $second = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
@@ -374,27 +379,59 @@ describe('app lifecycle', function (): void {
             'repository_url' => 'https://github.com/acme/site.git',
         ]);
 
-        $this
+        record_fixture($this
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $app->id);
+            ->assertJsonPath('data.0.id', $app->id), 'apps/app-list/default', ListAppsRequest::class, 'GET /api/v1/apps');
 
-        $this
+        record_fixture($this
             ->getJson("/api/v1/apps/{$app->id}")
             ->assertOk()
-            ->assertJsonPath('data.slug', 'acme');
+            ->assertJsonPath('data.slug', 'acme'), 'apps/app-show/default', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
 
         $requestId = (string) Str::uuid();
-        $this
+        record_fixture($this
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/apps/{$app->id}")
             ->assertOk()
-            ->assertJsonPath('data.id', $app->id);
+            ->assertJsonPath('data.id', $app->id), 'apps/app-destroy/removed', DestroyAppRequest::class, 'DELETE /api/v1/apps/{app}');
 
         expect(OrbitApp::query()->count())
             ->toBe(0)
             ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
             ->toBe('app:destroy');
+    });
+
+    it('records a list of several apps and one of them', function (): void {
+        foreach ([
+            ['Acme', 'acme', 'https://github.com/acme/site.git', 'main', 'public'],
+            ['Bravo docs', 'bravo-docs', 'git@github.com:bravo/docs.git', 'main', 'public'],
+            ['Charlie shop', 'charlie-shop', 'git@github.com:charlie/shop.git', 'release', 'web/public'],
+            ['Delta api', 'delta-api', 'https://github.com/delta/api.git', 'main', 'public'],
+        ] as [$name, $slug, $repository, $branch, $root]) {
+            OrbitApp::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
+        }
+
+        record_fixture($this->getJson('/api/v1/apps')->assertOk()->assertJsonCount(4, 'data'), 'apps/app-list/several', ListAppsRequest::class, 'GET /api/v1/apps');
+        record_fixture($this->getJson('/api/v1/apps/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'apps/app-show/charlie-shop', ShowAppRequest::class, 'GET /api/v1/apps/{app}');
+    });
+
+    it('records a long list of apps for scrolling', function (): void {
+        $names = ['Acme', 'Bravo docs', 'Charlie shop', 'Delta api', 'Echo mail', 'Foxtrot crm', 'Golf billing', 'Hotel booking',
+            'India search', 'Juliet chat', 'Kilo metrics', 'Lima auth', 'Mike media', 'November news', 'Oscar orders', 'Papa payments',
+            'Quebec queue', 'Romeo reports', 'Sierra store', 'Tango tickets', 'Uniform uploads', 'Victor video', 'Whiskey wiki', 'X-ray export'];
+        foreach ($names as $index => $name) {
+            $slug = str_replace(' ', '-', strtolower($name));
+            OrbitApp::query()->create([
+                'name' => $name,
+                'slug' => $slug,
+                'repository_url' => ($index % 3 === 0 ? 'https://github.com/example/' : 'git@github.com:example/').$slug.'.git',
+                'default_branch' => $index % 4 === 0 ? 'release' : 'main',
+                'root' => $index % 5 === 0 ? 'web/public' : 'public',
+            ]);
+        }
+
+        record_fixture($this->getJson('/api/v1/apps')->assertOk()->assertJsonCount(24, 'data'), 'apps/app-list/many', ListAppsRequest::class, 'GET /api/v1/apps');
     });
 
     it('does not remove an App that still owns AppInstances', function (): void {
@@ -688,19 +725,19 @@ describe('app list access', function (): void {
             ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$accessible->id, $inaccessible->id, $multiplyPlaced->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$accessible->id, $inaccessible->id, $multiplyPlaced->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $accessible->id]);
+            ->assertJsonPath('data.*.id', [$accessible->id, $multiplyPlaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])

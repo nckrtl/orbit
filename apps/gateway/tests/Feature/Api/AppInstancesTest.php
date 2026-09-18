@@ -56,6 +56,9 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -714,12 +717,12 @@ it('bounds AppInstance response relationship queries for one and several visible
         ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->getJson('/api/v1/instances')
         ->assertOk()
-        ->assertJsonPath('data.*.id', [$unrouted->id, $second->id, $first->id])
-        ->assertJsonPath('data.*.app_id', [$unroutedApp->id, $this->orbitApp->id, $this->orbitApp->id])
-        ->assertJsonPath('data.0.effective_root', 'web')
-        ->assertJsonPath('data.0.route', null)
-        ->assertJsonPath('data.1.route.target.app_instance_id', $second->id)
-        ->assertJsonPath('data.2.route.target.app_instance_id', $first->id);
+        ->assertJsonPath('data.*.id', [$first->id, $unrouted->id, $second->id])
+        ->assertJsonPath('data.*.app_id', [$this->orbitApp->id, $unroutedApp->id, $this->orbitApp->id])
+        ->assertJsonPath('data.1.effective_root', 'web')
+        ->assertJsonPath('data.1.route', null)
+        ->assertJsonPath('data.0.route.target.app_instance_id', $first->id)
+        ->assertJsonPath('data.2.route.target.app_instance_id', $second->id);
 
     expect($oneRowQueryCounts)
         ->toBe(['apps' => 1, 'routes' => 1, 'targets' => 1])
@@ -795,6 +798,7 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->assertJsonMissingPath('data.branch')
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.status', 'active');
+    record_fixture($response, 'instances/instance-create/created', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
 
     expect(AppInstance::query()->count())
         ->toBe(1)
@@ -843,10 +847,37 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe(AppInstance::query()->sole()->id);
 });
 
+it('records the instances of one App among several', function (): void {
+    OrbitApp::query()->create(['name' => 'Bravo docs', 'slug' => 'bravo-docs', 'repository_url' => 'git@github.com:bravo/docs.git', 'default_branch' => 'main', 'root' => 'public']);
+    $shop = OrbitApp::query()->create(['name' => 'Charlie shop', 'slug' => 'charlie-shop', 'repository_url' => 'git@github.com:charlie/shop.git', 'default_branch' => 'release', 'root' => 'web/public']);
+    foreach (['dev', 'staging', 'feature-checkout'] as $name) {
+        // The fake source resolves to the branch the placement name selects.
+        $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
+        $this->postJson('/api/v1/instances', ['app_id' => $shop->id, 'node_id' => $this->node->id, 'name' => $name])->assertCreated();
+    }
+    $this->source->resolution = new DevelopmentSourceResolution('dev', str_repeat('a', 40));
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
+
+    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(4, 'data'), 'instances/instance-list/charlie-shop', ListAppInstancesRequest::class, 'GET /api/v1/instances');
+    record_fixture($this->getJson('/api/v1/instances/1')->assertOk()->assertJsonPath('data.name', 'dev'), 'instances/instance-show/charlie-shop-dev', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
+});
+
+it('records the list and show responses of an active checkout AppInstance', function (): void {
+    $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $instance = AppInstance::query()->sole();
+
+    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data'), 'instances/instance-list/default', ListAppInstancesRequest::class, 'GET /api/v1/instances');
+    record_fixture($this->getJson("/api/v1/instances/{$instance->id}")->assertOk(), 'instances/instance-show/default', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
+});
+
 it('refuses new production placement with a candidate-required error before mutation', function (): void {
     $node = create_app_prod_node('app-prod');
 
-    $this
+    $refusal = $this
         ->postJson('/api/v1/instances', [
             'app_id' => $this->orbitApp->id,
             'node_id' => $node->id,
@@ -859,6 +890,7 @@ it('refuses new production placement with a candidate-required error before muta
             'error.message',
             'New production AppInstances require a candidate. Use instance:clone.',
         );
+    record_fixture($refusal, 'instances/instance-create/candidate-required', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
 
     expect(AppInstance::query()->count())
         ->toBe(0)

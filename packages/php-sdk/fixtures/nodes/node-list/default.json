@@ -1,0 +1,61 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\ListNodesRequest",
+    "route": "GET /api/v1/nodes",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 2,
+                "cluster_id": 1,
+                "name": "app-dev",
+                "status": "active",
+                "platform": "linux",
+                "architecture": "x86_64",
+                "tld": "app-dev.orbit",
+                "public_ssh_host": "94.237.40.75",
+                "public_ssh_port": 22,
+                "user": "orbit",
+                "wireguard_ip": "10.44.0.3",
+                "lan_ip": "10.0.0.3",
+                "wireguard_public_key": "app-dev-public-key",
+                "wireguard_endpoint_override": "10.0.0.2:51820",
+                "dns_server_override": "10.0.0.2",
+                "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
+                "failed_step": null,
+                "error_code": null,
+                "roles": [
+                    "app-dev"
+                ],
+                "settings": null
+            },
+            {
+                "id": 1,
+                "cluster_id": null,
+                "name": "gateway",
+                "status": "active",
+                "platform": "linux",
+                "architecture": "x86_64",
+                "tld": null,
+                "public_ssh_host": "192.0.2.2",
+                "public_ssh_port": 22,
+                "user": "orbit",
+                "wireguard_ip": "10.44.0.1",
+                "lan_ip": null,
+                "wireguard_public_key": null,
+                "wireguard_endpoint_override": null,
+                "dns_server_override": null,
+                "ssh_host_fingerprint": "SHA256:GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+                "failed_step": null,
+                "error_code": null,
+                "roles": [
+                    "gateway"
+                ],
+                "settings": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

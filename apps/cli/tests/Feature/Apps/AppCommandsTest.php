@@ -8,6 +8,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
@@ -366,7 +367,10 @@ describe('app:show', function (): void {
     });
 
     it('shows app details for humans', function (): void {
-        MockClient::global([ShowAppRequest::class => app_mock_response()]);
+        MockClient::global([
+            ShowAppRequest::class => app_mock_response(),
+            ListAppInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
 
         expect(Artisan::call('app:show', ['app' => '3']))->toBe(0);
         expect(Artisan::output())->toContain('App: orbit')
@@ -376,7 +380,8 @@ describe('app:show', function (): void {
             ->toContain('main')
             ->toContain('Web root')
             ->toContain('public')
-            ->toContain(app_request_id());
+            ->toContain('No App instances.')
+            ->not->toContain(app_request_id());
     });
 
     it('returns legacy null source defaults unchanged', function (): void {

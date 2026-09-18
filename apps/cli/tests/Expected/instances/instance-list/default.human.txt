@@ -1,0 +1,17 @@
+Loading App instances...
+
+┌  List App instances
+│
+├  ● Loaded App instances
+│
+└  Loaded App instances.
+
+ ┌────┬─────┬──────┬───────────┬──────┬─────────────┬─────────────┬────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────┬─────────┐
+ │ ID │ APP │ NODE │ VITE PORT │ NAME │ ENVIRONMENT │ SOURCE LAYO │ ROOT   │ SELECTED B │ BRANCH OVE │ MIGRATION  │ ROUTE DOMA │ URL        │ STATUS │ REMOVAL │
+ │    │     │      │           │      │             │ UT          │        │ RANCH      │ RRIDE      │ REQUIRED   │ IN         │            │        │         │
+ ├────┼─────┼──────┼───────────┼──────┼─────────────┼─────────────┼────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────┼─────────┤
+ │ 1  │ 1   │ 1    │ 5173      │ dev  │ development │ checkout    │ public │ dev        │ —          │ no         │ dev.acme.t │ https://de │ active │ —       │
+ │    │     │      │           │      │             │             │        │            │            │            │ est        │ v.acme.tes │        │         │
+ │    │     │      │           │      │             │             │        │            │            │            │            │ t          │        │         │
+ └────┴─────┴──────┴───────────┴──────┴─────────────┴─────────────┴────────┴────────────┴────────────┴────────────┴────────────┴────────────┴────────┴─────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844
