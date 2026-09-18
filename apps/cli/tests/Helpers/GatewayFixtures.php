@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Artisan;
+use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 /**
@@ -66,4 +68,18 @@ function expect_output(string $actual, string $name): void
 
     expect(is_file($path))->toBeTrue("Expected output {$name} is not recorded. Run ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract in apps/cli.");
     expect($actual)->toBe((string) file_get_contents($path), "Command output differs from tests/Expected/{$name}. Review the change, then run ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract in apps/cli.");
+}
+
+/**
+ * @param  string|list<string>  $fixtures
+ * @param  array<string, mixed>  $arguments
+ */
+function run_contract(string|array $fixtures, string $command, array $arguments, string $expected, int $exitCode): void
+{
+    // A global mock keeps its first responses, so replace it for every replay.
+    MockClient::destroyGlobal();
+    MockClient::global(gateway_fixture_mock(...(array) $fixtures));
+
+    expect(Artisan::call($command, $arguments))->toBe($exitCode);
+    expect_output(Artisan::output(), $expected);
 }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Saloon\Http\Faking\MockClient;
 
@@ -31,20 +30,6 @@ afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
-
-/**
- * @param  string|list<string>  $fixtures
- * @param  array<string, mixed>  $arguments
- */
-function run_contract(string|array $fixtures, string $command, array $arguments, string $expected, int $exitCode): void
-{
-    // A global mock keeps its first responses, so replace it for every replay.
-    MockClient::destroyGlobal();
-    MockClient::global(gateway_fixture_mock(...(array) $fixtures));
-
-    expect(Artisan::call($command, $arguments))->toBe($exitCode);
-    expect_output(Artisan::output(), $expected);
-}
 
 $addArguments = [
     'name' => 'app-dev',
