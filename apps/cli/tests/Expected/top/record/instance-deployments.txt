@@ -1,0 +1,40 @@
+  orbit                                                                                            gateway.test · live  
+╭──────────────╮  ‹ back  App instance: charlie-shop/dev                                                                
+│  Dashboard   │╭ Properties ───────────────────────────╮╭ Processes ──────────────╮╭ Schedules ───────────────────────╮
+│  Nodes       ││ Name               dev                ││  Name        Runtime Sta││  Name       Calendar       Last r│
+│  Apps        ││ App                charlie-shop       ││› horizon     systemd run││› backup     0 3 * * *      never │
+│› Instances   ││ Node               beast              ││                         ││                                  │
+│  Processes   ││ Environment        production         ││                         ││                                  │
+│  Schedules   ││ Domain             charlie-shop.test  ││                         ││                                  │
+│  Databases   ││ Status             active             ││                         ││                                  │
+│              ││ Checkout           /srv/charlie-shop  ││                         ││                                  │
+│              ││ Selected branch    main               ││                         ││                                  │
+│              ││ Deploy steps       0 steps            ││                         ││                                  │
+│              │╰───────────────────────────────────────╯╰─────────────────────────╯╰──────────────────────────────────╯
+│              │╭ Deploy steps in the order they run ──────────────────────────────────────────────────────────────────╮
+│              ││ No deploy steps. instance:deploy-step:create adds one.                                               │
+│              │╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+│              │╭ Deployments ─────────────────────────────────────────────────────────────────────────────────────────╮
+│              ││  Started          Release            Branch       Commit        By           Duration     Status     │
+│              ││› 2026-01-01T00:00 20260101000000     main         aaaaaaa       gateway      42s          succeeded  │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+╰──────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                                        

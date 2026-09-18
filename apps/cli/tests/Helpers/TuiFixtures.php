@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Support\Tui\Sources\NullDatabaseUsersSource;
-use App\Support\Tui\Sources\NullDeploymentsSource;
-use App\Support\Tui\Sources\NullNodeMetricsSource;
+use App\Support\Tui\Screen;
+use App\Support\Tui\Sources\DatabaseUsersSource;
+use App\Support\Tui\Sources\DeploymentsSource;
+use App\Support\Tui\Sources\NodeMetricsSource;
 use App\Support\Tui\State;
+use App\Support\Tui\UiState;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 use Orbit\Sdk\Responses\Apps\AppIdentityResponse;
@@ -21,6 +23,8 @@ use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
+use PhpTui\Tui\Display\Backend\DummyBackend;
+use PhpTui\Tui\DisplayBuilder;
 
 /**
  * Builds a `App\Support\Tui\State` loaded from constructed SDK responses, without any HTTP
@@ -29,9 +33,16 @@ use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
  * and one database connection on the node. Shared by the `orbit top` Tui unit tests
  * (`tests/Unit/Tui`) so State, Screen, and Interaction tests start from the same fixture.
  */
-function tui_test_state(): State
-{
-    $state = new State(new NullDeploymentsSource, new NullDatabaseUsersSource, new NullNodeMetricsSource);
+function tui_test_state(
+    ?DeploymentsSource $deployments = null,
+    ?DatabaseUsersSource $databaseUsers = null,
+    ?NodeMetricsSource $nodeMetrics = null,
+): State {
+    $state = new State(
+        $deployments ?? new FakeDeploymentsSource(null),
+        $databaseUsers ?? new FakeDatabaseUsersSource(null),
+        $nodeMetrics ?? new FakeNodeMetricsSource(null),
+    );
 
     $node = new NodeResponse(
         id: 1,
@@ -174,4 +185,58 @@ function tui_test_state(): State
     });
 
     return $state;
+}
+
+/**
+ * Renders one `orbit top` Screen frame into a DummyBackend and returns its flushed text grid.
+ * Defaults to `tui_test_state()`; pass $state to render against a fixture built with a
+ * non-default Deployments, Database users, or Node metrics source.
+ */
+function render_top_screen(UiState $ui, ?State $state = null, string $header = 'gateway.test · live  ', string $footer = ''): string
+{
+    $state ??= tui_test_state();
+    $backend = DummyBackend::fromDimensions(120, 40);
+    $display = DisplayBuilder::default($backend)->fullscreen()->build();
+    $display->draw((new Screen)->screen($state, $ui, $header, $footer, $display->viewportArea()));
+
+    return (string) $backend->flushed();
+}
+
+/** A fixed DeploymentsSource for `orbit top` Tui tests: returns whatever the caller passed it. */
+final readonly class FakeDeploymentsSource implements DeploymentsSource
+{
+    /** @param  list<array<string, mixed>>|null  $rows */
+    public function __construct(private ?array $rows) {}
+
+    #[Override]
+    public function forInstance(int $instanceId): ?array
+    {
+        return $this->rows;
+    }
+}
+
+/** A fixed DatabaseUsersSource for `orbit top` Tui tests: returns whatever the caller passed it. */
+final readonly class FakeDatabaseUsersSource implements DatabaseUsersSource
+{
+    /** @param  list<array<string, mixed>>|null  $rows */
+    public function __construct(private ?array $rows) {}
+
+    #[Override]
+    public function forConnection(string $slug): ?array
+    {
+        return $this->rows;
+    }
+}
+
+/** A fixed NodeMetricsSource for `orbit top` Tui tests: returns whatever the caller passed it. */
+final readonly class FakeNodeMetricsSource implements NodeMetricsSource
+{
+    /** @param  array{cores: list<float>, mem: array{float, float}, swap: array{float, float}, uptime: string, disks: list<array{string, float, float}>}|null  $metrics */
+    public function __construct(private ?array $metrics) {}
+
+    #[Override]
+    public function forNode(int $nodeId): ?array
+    {
+        return $this->metrics;
+    }
 }

@@ -1,0 +1,40 @@
+  orbit                                                                                            gateway.test · live  
+╭──────────────╮  ‹ back  Deployment: release 20260101000000                                                            
+│  Dashboard   │╭ Properties ──────────────────────────────────────────────────────────────────────────────────────────╮
+│  Nodes       ││ Release            20260101000000                                                                    │
+│  Apps        ││ Branch             main                                                                              │
+│› Instances   ││ Commit             aaaaaaa                                                                           │
+│  Processes   ││ Started            2026-01-01T00:00:00+00:00                                                         │
+│  Schedules   ││ Finished           2026-01-01T00:00:42+00:00                                                         │
+│  Databases   ││ Duration           42s                                                                               │
+│              ││ Status             failed                                                                            │
+│              ││ Failed step        prepare                                                                           │
+│              ││ Error code         deploy.step_failed                                                                │
+│              ││ Selected release   20260101000000                                                                    │
+│              ││ Triggered by       gateway                                                                           │
+│              │╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+│              │╭ Log · instance:deployment:show ──────────────────────────────────────────────────────────────────────╮
+│              ││ == source preparation ==                                                                             │
+│              ││ == before activation: prepare ==                                                                     │
+│              ││ stdout: Running composer install                                                                     │
+│              ││ [output truncated]                                                                                   │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+│              ││                                                                                                      │
+╰──────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                                        

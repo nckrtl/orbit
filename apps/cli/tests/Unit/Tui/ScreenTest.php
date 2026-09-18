@@ -7,8 +7,6 @@ use App\Support\Tui\Interaction;
 use App\Support\Tui\Screen;
 use App\Support\Tui\UiState;
 use PhpTui\Term\KeyCode;
-use PhpTui\Tui\Display\Backend\DummyBackend;
-use PhpTui\Tui\DisplayBuilder;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -24,17 +22,6 @@ beforeEach(function (): void {
         putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
     });
 });
-
-/** Renders one Screen frame into a DummyBackend and returns its flushed text grid. */
-function render_top_screen(UiState $ui, string $header = 'gateway.test · live  ', string $footer = ''): string
-{
-    $state = tui_test_state();
-    $backend = DummyBackend::fromDimensions(120, 40);
-    $display = DisplayBuilder::default($backend)->fullscreen()->build();
-    $display->draw((new Screen)->screen($state, $ui, $header, $footer, $display->viewportArea()));
-
-    return (string) $backend->flushed();
-}
 
 describe(Screen::class, function (): void {
     it('renders the dashboard with fleet counts and the needs-attention pane', function (): void {
@@ -119,5 +106,109 @@ describe(Screen::class, function (): void {
             ->and($screen)->toContain('Node name');
 
         expect_output($screen, 'top/form/node-add-validation.txt');
+    });
+
+    it('renders an instance record page with deployment history', function (): void {
+        $deployment = [
+            'id' => 1,
+            'release' => '20260101000000',
+            'branch' => 'main',
+            'commit' => 'aaaaaaa',
+            'started' => '2026-01-01T00:00:00+00:00',
+            'finished' => '2026-01-01T00:00:42+00:00',
+            'duration' => '42s',
+            'status' => 'succeeded',
+            'failed_step' => null,
+            'error_code' => null,
+            'selected_release' => '20260101000000',
+            'by' => 'gateway',
+        ];
+        $state = tui_test_state(deployments: new FakeDeploymentsSource([$deployment]));
+        $ui = new UiState;
+        $ui->goTo('instances');
+        $ui->open('instances', $state->instances[0]);
+
+        $screen = render_top_screen($ui, $state);
+
+        expect($screen)->toContain('Deployments')
+            ->and($screen)->toContain('20260101000000')
+            ->and($screen)->toContain('main')
+            ->and($screen)->toContain('succeeded');
+
+        expect_output($screen, 'top/record/instance-deployments.txt');
+    });
+
+    it('renders a deployment record page with its properties and event log', function (): void {
+        $deployment = [
+            'id' => 1,
+            'release' => '20260101000000',
+            'branch' => 'main',
+            'commit' => 'aaaaaaa',
+            'started' => '2026-01-01T00:00:00+00:00',
+            'finished' => '2026-01-01T00:00:42+00:00',
+            'duration' => '42s',
+            'status' => 'failed',
+            'failed_step' => 'prepare',
+            'error_code' => 'deploy.step_failed',
+            'selected_release' => '20260101000000',
+            'by' => 'gateway',
+        ];
+        $state = tui_test_state(deployments: new FakeDeploymentsSource([$deployment]));
+        $state->deploymentLogs[1] = [
+            '== source preparation ==',
+            '== before activation: prepare ==',
+            'stdout: Running composer install',
+            '[output truncated]',
+        ];
+        $ui = new UiState;
+        $ui->goTo('instances');
+        $ui->open('instances', $state->instances[0]);
+        $ui->open('deployments', $deployment);
+
+        $screen = render_top_screen($ui, $state);
+
+        expect($screen)->toContain('Deployment:')
+            ->and($screen)->toContain('Failed step')
+            ->and($screen)->toContain('prepare')
+            ->and($screen)->toContain('Running composer install');
+
+        expect_output($screen, 'top/record/deployment.txt');
+    });
+
+    it('renders a database record page with its users', function (): void {
+        $state = tui_test_state(databaseUsers: new FakeDatabaseUsersSource([
+            ['username' => 'app', 'privileges' => 'ALL PRIVILEGES', 'used_by' => 'gateway'],
+        ]));
+        $ui = new UiState;
+        $ui->goTo('databases');
+        $ui->open('databases', $state->databases[0]);
+
+        $screen = render_top_screen($ui, $state);
+
+        expect($screen)->toContain('Users')
+            ->and($screen)->toContain('app')
+            ->and($screen)->toContain('ALL PRIVILEGES');
+
+        expect_output($screen, 'top/record/database-users.txt');
+    });
+
+    it('renders a node record page with live metrics', function (): void {
+        $state = tui_test_state(nodeMetrics: new FakeNodeMetricsSource([
+            'cores' => [0.1, 0.2],
+            'mem' => [1.0, 8.0],
+            'swap' => [0.0, 2.0],
+            'uptime' => '1d 2h 3m',
+            'disks' => [['/', 10.0, 80.0]],
+        ]));
+        $ui = new UiState;
+        $ui->goTo('nodes');
+        $ui->open('nodes', $state->nodes[0]);
+
+        $screen = render_top_screen($ui, $state);
+
+        expect($screen)->toContain('up 1d 2h 3m')
+            ->and($screen)->not->toContain('Metrics not available on this Gateway yet.');
+
+        expect_output($screen, 'top/record/node-metrics.txt');
     });
 });
