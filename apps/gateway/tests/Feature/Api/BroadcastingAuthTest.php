@@ -2,19 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 
 describe('POST /api/v1/broadcasting/auth', function (): void {
     it('authorizes the private orbit channel for an active WireGuard peer', function (): void {
-        activate_websocket_role();
-        app(RealtimeConnection::class)->configureBroadcasting();
-
-        // The app boots with no websocket role active, so routes/channels.php
-        // registered the `orbit` channel against the null connection. Re-require it now
-        // that the default connection is reverb, so the channel is registered there too.
-        require base_path('routes/channels.php');
+        [, $credentials] = activate_websocket_role();
 
         // The channel is Gateway-scoped, so the subscriber is the gateway peer.
         $node = $this->markAsGateway(Node::query()->create([
@@ -27,12 +20,14 @@ describe('POST /api/v1/broadcasting/auth', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
         $response = $this->postJson('/api/v1/broadcasting/auth', [
-            'socket_id' => '1234.1234',
+            'socket_id' => '1.1',
             'channel_name' => 'private-orbit',
         ]);
 
         $response->assertOk();
-        expect($response->json('auth'))->toBeString()->not->toBe('');
+        expect($response->json('auth'))->toBe(
+            $credentials->appKey.':'.hash_hmac('sha256', '1.1:private-orbit', $credentials->appSecret),
+        );
     });
 
     it('answers 404 when no websocket role is active', function (): void {
