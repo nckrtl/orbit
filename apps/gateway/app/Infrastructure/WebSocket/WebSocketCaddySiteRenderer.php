@@ -16,11 +16,12 @@ final readonly class WebSocketCaddySiteRenderer
         $marker = WebSocketFootprint::CaddyFragmentMarker;
         $host = WebSocketFootprint::Hostname;
         $certificate = WebSocketFootprint::CertificateCurrentDirectory;
+        $bind = WebSocketFootprint::CaddyBindPlaceholder;
 
         return <<<CADDY
             {$marker}
             {$host} {
-                bind 0.0.0.0
+                bind {$bind}
                 tls {$certificate}/reverb.pem {$certificate}/reverb.key
                 reverse_proxy 127.0.0.1:{$port}
             }

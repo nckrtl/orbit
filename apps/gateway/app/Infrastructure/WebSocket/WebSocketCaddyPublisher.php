@@ -15,7 +15,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
  */
 final readonly class WebSocketCaddyPublisher
 {
-    public function command(string $configuration, string $port): RemoteCommand
+    public function command(string $configuration, string $port, string $wireguardIp): RemoteCommand
     {
         $encoded = base64_encode($configuration);
         $version = bin2hex(random_bytes(8));
@@ -32,6 +32,8 @@ final readonly class WebSocketCaddyPublisher
                 WebSocketFootprint::CaddyfilePath,
                 WebSocketFootprint::CaddyServiceName,
                 WebSocketFootprint::CaddyLockPath,
+                $wireguardIp,
+                WebSocketFootprint::CaddyBindPlaceholder,
             ],
             input: <<<BASH
                 version=\$1
@@ -40,6 +42,8 @@ final readonly class WebSocketCaddyPublisher
                 live_caddyfile=\$4
                 caddy_service=\$5
                 lock=\$6
+                wireguard_ip=\$7
+                bind_placeholder=\$8
                 exec 9>"\$lock"
                 flock -w 30 9
                 candidate="\$versions/\$version.candidate"
@@ -59,7 +63,14 @@ final readonly class WebSocketCaddyPublisher
                 elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
                     cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
                 fi
-                printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/\$owned_fragment"
+                # Caddy refuses to mix a wildcard and a specific address on one port, so the
+                # site binds whatever this node's other sites already bind.
+                bind_address=\$wireguard_ip
+                if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
+                    bind_address=0.0.0.0
+                fi
+                printf '%s' '{$encoded}' | base64 --decode \\
+                    | sed "s/\$bind_placeholder/\$bind_address/" > "\$candidate/fragments/\$owned_fragment"
                 printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
@@ -75,9 +86,19 @@ final readonly class WebSocketCaddyPublisher
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
+                previous_target=\$(readlink -- "\$live_caddyfile" || true)
                 mv -fT -- "\$candidate_link" "\$live_caddyfile"
                 systemctl enable "\$caddy_service"
-                systemctl reload-or-restart "\$caddy_service"
+                if ! systemctl reload-or-restart "\$caddy_service"; then
+                    # Caddy validates syntax, not listeners; a rejected load must not stay live.
+                    if [ -n "\$previous_target" ]; then
+                        ln -s -- "\$previous_target" "\$candidate_link"
+                        mv -fT -- "\$candidate_link" "\$live_caddyfile"
+                        systemctl reload-or-restart "\$caddy_service" || true
+                    fi
+                    rm -rf -- "\$published"
+                    exit 1
+                fi
                 BASH,
         );
     }
@@ -132,8 +153,17 @@ final readonly class WebSocketCaddyPublisher
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"
+                previous_target=$(readlink -- "$live_caddyfile" || true)
                 mv -fT -- "$candidate_link" "$live_caddyfile"
-                systemctl reload-or-restart "$caddy_service"
+                if ! systemctl reload-or-restart "$caddy_service"; then
+                    if [ -n "$previous_target" ]; then
+                        ln -s -- "$previous_target" "$candidate_link"
+                        mv -fT -- "$candidate_link" "$live_caddyfile"
+                        systemctl reload-or-restart "$caddy_service" || true
+                    fi
+                    rm -rf -- "$published"
+                    exit 1
+                fi
                 BASH,
         );
     }
