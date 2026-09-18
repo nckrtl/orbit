@@ -369,3 +369,8 @@ Each array member must be a JSON object with a positive `id`, `app_id`, `node_id
 A listing transport or structured error envelope returns the ordinary CLI `error` envelope and starts no scans. Each scan outcome is recorded even when that instance fails. Later captured targets still run. HTTP 200 inventory results keep the typed composer and JavaScript graphs. Authorization, unavailability, timeout, and other request failures become a per-instance error without a successful empty graph. SIGINT or SIGTERM during a scan stops remaining targets, preserves attempted outcomes, and marks unattempted IDs as skipped rather than complete.
 
 `--json` returns `{succeeded, summary, instances, request_id}`. `summary` counts attempted, succeeded, failed, and skipped targets. `request_id` is the listing correlation. Instance rows include `instance_id`, `app_id`, `node_id`, `name`, `environment`, and `domain`. The command does not update packages or deploy.
+
+
+## Nightly Gateway Schedule
+
+Operators create one Node Schedule whose command is `orbit instance:dependencies:scan --all --json --no-interaction`. The Schedule owns calendar time, timezone (via the systemd calendar expression), and timeout. The Gateway CLI on that Node uses the managed user's configured profile. Fleet membership is resolved at each run through `ListAppInstancesRequest`; new instances require no Schedule changes. A nonzero CLI exit from any instance failure is a failed Schedule run with retained logs. The feature does not install per-instance Schedules or a live production Schedule.

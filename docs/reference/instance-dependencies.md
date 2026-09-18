@@ -157,11 +157,35 @@ Test the development changes, commit the updated manifests and lockfiles, and ma
 
 ## Schedule one nightly scan
 
-Create one Node [Schedule](/reference/schedules) on the Gateway host with `orbit instance:dependencies:scan --all` as its command. Select the nightly execution time and timezone when configuring the Schedule. Its runtime user needs the Orbit executable and an active Gateway profile that can address the target fleet.
+Create **one** Node [Schedule](/reference/schedules) on the Gateway host. The Schedule runs as that Node's Orbit-managed user with the Gateway CLI profile already configured on the host.
 
-Each run discovers the current instance set. New instances need no separate Schedule. The existing Schedule mechanism records the latest success or error, retains command logs, and prevents overlap of the same scheduled service. Set its execution timeout for the fleet size; a timeout must not appear as a completed fleet scan.
+Verified recipe on the disposable Gateway (adjust calendar, timezone, timeout, and name as needed):
 
-Nightly scanning refreshes inventory. It does not check advisories, query registries for newer versions, or update packages. The update command refreshes inventory after its own package work. Changes made outside that command appear after an explicit scan or the next nightly run.
+```bash
+orbit schedule:create dependency-nightly-scan \
+  --node=GATEWAY_NODE_ID \
+  --calendar='*-*-* 03:15:00 Europe/Amsterdam' \
+  --command='orbit instance:dependencies:scan --all --json --no-interaction' \
+  --timeout=7200 \
+  --json
+```
+
+- `--calendar` is a native systemd calendar expression; include the timezone in the expression when the host timezone must stay fixed.
+- `--timeout` bounds the whole fleet scan (1–86400 seconds). Size it for the fleet; a timeout must not appear as a completed fleet scan.
+- The command must be noninteractive (`--json --no-interaction`) so timer runs do not block on prompts.
+- Do not create per-instance Schedules. One Node Schedule rediscovers the authorized instance set on every run.
+
+Invoke and inspect without waiting for the calendar:
+
+```bash
+orbit schedule:run SCHEDULE_UUID --json
+orbit schedule:show SCHEDULE_UUID --json
+orbit schedule:logs SCHEDULE_UUID --json
+```
+
+`schedule:run` starts the installed unit once. Readable logs retain the CLI JSON, including per-instance outcomes. A failed instance scan makes the Schedule command exit nonzero; the host records that as a failed unit result. After the host completion callback, `last_run_status` becomes `success` or `error`. Repeated runs reuse the same Schedule record and do not create additional Schedules.
+
+Nightly scanning refreshes inventory only. It does not check advisories, query registries for newer versions, or update packages. The update command refreshes inventory after its own package work. Changes made outside that command appear after an explicit scan or the next nightly run. Do not create this Schedule against live production outside the owned disposable Gateway.
 
 ## Limits
 
