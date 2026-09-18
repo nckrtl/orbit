@@ -29,7 +29,7 @@ final readonly class RoleRegistry
                 name: $role,
                 singleton: true,
                 assignableDuringProvisioning: true,
-                mutable: false,
+                mutable: true,
                 conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database],
             ),
             RoleName::Vpn => new RoleDefinition(

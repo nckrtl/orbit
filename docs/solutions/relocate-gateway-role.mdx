@@ -1,0 +1,72 @@
+---
+title: "Relocate the gateway role"
+description: "Move the Laravel/FPM control plane to another Node while vpn and private DNS stay on the original Node."
+---
+
+# Relocate the gateway role
+
+## Problem
+
+The Gateway Laravel app and the WireGuard/DNS server start on the same Node. Later you may want the control plane on a new VPS while `vpn` and private DNS stay where they are.
+
+## Cause
+
+Bootstrap assigns both `gateway` and `vpn` to one Node. `vpn` stays immutable. The `gateway` role is a singleton. Removing it and adding it again drops the only active Gateway assignment, so the next API call loses implicit Gateway authority and `gateway.orbit` disappears from private DNS until a new assignment exists.
+
+## Solution
+
+### Preferred: rename first, then relocate
+
+The Node name is a unique registry identifier. It is not the WireGuard public key or address. When the current Node is named `gateway` and the new VPS must register as `gateway`, rename the old Node first while the new VPS is still unregistered:
+
+```bash
+orbit node:rename gateway vpn
+orbit node:add gateway <new-vps-host>
+```
+
+`node:add` looks up an existing record by name. Rename-first avoids a unique-name collision. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns that command. Destroy any Herdr sessions on the old Node before rename; observer hostnames embed the Node name.
+
+Then provision the new Node as an ordinary machine. It must not already hold `app-dev`, `app-prod`, or `database`; those roles conflict with `gateway`. Install PHP-FPM and Caddy there, and copy the serving checkout, `ORBIT_HOME` (CA and Gateway SSH keys), and Gateway `.env`. Relocate updates the live SQLite on the process host that runs the command, so copy that database onto the target after relocate (or copy it again if you staged one earlier). Then transfer the singleton assignment:
+
+```bash
+orbit node:role:relocate gateway gateway --force
+```
+
+Relocate keeps one active `gateway` row for the whole request. It opens `orbit:gateway-https` on the target, moves the assignment, republishes private DNS so `gateway.orbit` answers with the target WireGuard address, and retracts the gateway HTTPS firewall on the source. It does not move `vpn`, stop the old Caddy or PHP-FPM, or copy secrets.
+
+### Two-step fallback
+
+Remove then add only when you can still reach the leftover serving stack by WireGuard IP (the CLI profile address). Prefer relocate.
+
+```bash
+orbit node:role:remove <old-node> gateway --force
+orbit node:role:add <new-node> gateway --converge
+```
+
+Between those commands `gateway.orbit` has no active role, so private DNS omits the record. The Node that still runs the Gateway process keeps serving-host authority so the add can run.
+
+### After the assignment moves
+
+1. Confirm `orbit node:list` shows names `vpn` and `gateway`. Confirm `orbit node:role:list gateway` shows `gateway` and `orbit node:role:list vpn` still shows `vpn`.
+2. Copy the live SQLite from the process host that ran relocate onto the target, then start Caddy and PHP-FPM there.
+3. From a peer that trusts the Orbit CA, `curl https://<new-wireguard-ip>/up` once the new serving stack is up, then `curl https://gateway.orbit/up`.
+4. Point CLI profiles that stored the old WireGuard origin at the new address.
+5. The leftover serving-host setting still names the original Node, so that Node keeps implicit control-plane authority until you re-bootstrap or write `gateway.serving_node_id` to the new Node.
+6. Stop leftover Caddy and PHP-FPM on the old Node after the new `/up` is healthy.
+
+`vpn` cannot be removed or added through the generic role commands.
+
+## Limits
+
+Relocate does not install Laravel on the target and does not rsync SQLite or the Orbit CA. Live cutover of those files is an operator step. This page does not cover pointing production clients at a new public VPS.
+
+## Verification
+
+```bash
+orbit node:role:list <old-node>
+orbit node:role:list <new-node>
+orbit node:doctor <new-node>
+curl --fail https://gateway.orbit/up
+```
+
+On disposable Incus, run [`apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh`](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh) `<source-name> <target-name>` on the Gateway checkout Node. The script renames the source to `vpn`, relocates `gateway` onto the target, then renames the target to `gateway`. Keep `vpn` on the old Node and smoke `/up` on the source WireGuard address while the leftover stack still runs. After the operator copies the serving checkout, smoke `/up` on the new address as well. Those proof scripts stay out of `apps/e2e/resources/guest/` so they do not join the required guest inventory.

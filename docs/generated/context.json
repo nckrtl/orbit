@@ -89,7 +89,9 @@
                 "0004",
                 "0014",
                 "0081",
-                "0083"
+                "0083",
+                "0090",
+                "0091"
             ]
         },
         {
@@ -303,13 +305,15 @@
                 "Cluster",
                 "Database",
                 "Gateway",
+                "Herdr session",
                 "Ingress",
                 "Node",
                 "Route",
                 "Router"
             ],
             "governing_adrs": [
-                "0088"
+                "0088",
+                "0091"
             ]
         },
         {
@@ -2389,6 +2393,55 @@
             ]
         },
         {
+            "path": "docs/decisions/0090-relocate-the-gateway-role-independently-of-vpn.md",
+            "title": "ADR 0090: Relocate the gateway role independently of vpn",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0090",
+                "0091"
+            ]
+        },
+        {
+            "path": "docs/decisions/0091-rename-a-node-without-changing-wireguard-identity.md",
+            "title": "ADR 0091: Rename a Node without changing WireGuard identity",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0071",
+                "0072",
+                "0090",
+                "0091"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2506,7 +2559,9 @@
                 "0086",
                 "0087",
                 "0088",
-                "0089"
+                "0089",
+                "0090",
+                "0091"
             ]
         },
         {
@@ -3026,7 +3081,8 @@
             ],
             "governing_adrs": [
                 "0004",
-                "0069"
+                "0069",
+                "0091"
             ]
         },
         {
@@ -3476,6 +3532,25 @@
                 "Route"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/relocate-gateway-role.mdx",
+            "title": "Relocate the gateway role",
+            "kind": "solution",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0091"
+            ]
         },
         {
             "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",

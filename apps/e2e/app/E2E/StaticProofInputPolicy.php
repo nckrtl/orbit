@@ -173,6 +173,15 @@ final readonly class StaticProofInputPolicy
         if (str_starts_with($path, 'apps/cli/phpacker/')) {
             return true;
         }
+        if (str_starts_with($path, 'apps/cli/design/')) {
+            return true;
+        }
+        if (str_starts_with($path, 'packages/php-sdk/fixtures/')) {
+            return true;
+        }
+        if (str_starts_with($path, 'apps/e2e/resources/proofs/')) {
+            return true;
+        }
 
         return
             preg_match(

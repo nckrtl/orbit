@@ -26,6 +26,18 @@ final readonly class AssignRoleAction
         $this->validate($node, $role, $prospectiveRoles);
     }
 
+    /**
+     * Validates a target for a singleton transfer. The existing assignment
+     * stays on the source until the transfer updates its node_id, so the
+     * usual "already assigned" singleton guard does not apply.
+     *
+     * @param  list<RoleName>  $prospectiveRoles
+     */
+    public function preflightTransfer(Node $node, RoleName $role, array $prospectiveRoles = []): void
+    {
+        $this->validate($node, $role, $prospectiveRoles, ignoreExistingSingleton: true);
+    }
+
     public function execute(Node $node, RoleName $role): NodeRole
     {
         try {
@@ -72,15 +84,19 @@ final readonly class AssignRoleAction
     }
 
     /** @param list<RoleName> $prospectiveRoles */
-    private function validate(Node $node, RoleName $role, array $prospectiveRoles = []): void
-    {
+    private function validate(
+        Node $node,
+        RoleName $role,
+        array $prospectiveRoles = [],
+        bool $ignoreExistingSingleton = false,
+    ): void {
         $definition = $this->registry->definition($role);
 
         if ($role === RoleName::Ingress) {
             $this->validateIngressCluster($node);
         }
 
-        if ($definition->singleton) {
+        if ($definition->singleton && ! $ignoreExistingSingleton) {
             $assigned = NodeRole::query()
                 ->with('node')
                 ->where('role', $role->value)

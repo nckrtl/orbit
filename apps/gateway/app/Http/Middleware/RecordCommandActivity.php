@@ -531,6 +531,10 @@ final readonly class RecordCommandActivity
             );
         }
 
+        if ($command === 'node:role:relocate') {
+            return $this->relocateNodeRoleInput($request);
+        }
+
         if ($command !== 'node:role:add') {
             return $this->inputSanitizer->sanitizeProperties($request->collect()->all());
         }
@@ -858,6 +862,32 @@ final readonly class RecordCommandActivity
             if (count(array_unique($families)) !== count($families)) {
                 return [];
             }
+        }
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function relocateNodeRoleInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['force']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        $role = $request->route('role');
+
+        if (is_string($role)) {
+            $input['role'] = $role;
+        }
+
+        if (
+            ! is_string($input['role'] ?? null)
+            || ! RoleName::tryFrom((string) $input['role']) instanceof RoleName
+            || (array_key_exists('force', $input) && ! is_bool($input['force']))
+        ) {
+            return [];
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);

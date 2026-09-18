@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -34,6 +35,10 @@ beforeEach(function (): void {
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
+    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
+    {
+        public function converge(?Node $pendingNode = null): void {}
+    });
     $this->reachability = new NodeRoleApiReachabilityFake;
     app()->instance(NodeReachabilityProbe::class, $this->reachability);
 
@@ -134,6 +139,11 @@ it('exposes only the exact numeric node role routes and methods', function (): v
         ],
         'node:role:add' => [
             'uri' => 'api/v1/nodes/{node}/roles',
+            'methods' => ['POST'],
+            'node_where' => '[0-9]+',
+        ],
+        'node:role:relocate' => [
+            'uri' => 'api/v1/nodes/{node}/roles/{role}/relocate',
             'methods' => ['POST'],
             'node_where' => '[0-9]+',
         ],
@@ -524,11 +534,87 @@ it('returns standard validation failures for protected unknown and duplicate ass
         ->and($this->roleLifecycle->converged)
         ->toBeEmpty();
 })->with([
-    'gateway is protected' => ['gateway', 'unassigned'],
     'vpn is protected' => ['vpn', 'unassigned'],
     'unknown role' => ['future-role', 'unassigned'],
     'existing role requires explicit convergence' => ['app-dev', 'preassigned'],
 ]);
+
+it('refuses a second gateway assignment because the role is a singleton', function (): void {
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'gateway'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [gateway] is already assigned to node [gateway-peer].');
+
+    expect($this->node->roles()->where('role', RoleName::Gateway)->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->converged)
+        ->toBeEmpty();
+});
+
+it('relocates the singleton gateway assignment onto the target node', function (): void {
+    $requestId = (string) Str::uuid();
+    $sourceAssignment = $this->caller->roles()->where('role', RoleName::Gateway)->sole();
+    $this->caller->roles()->create([
+        'role' => RoleName::Vpn,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => true])
+        ->assertOk()
+        ->assertHeader('X-Orbit-Request-Id', $requestId)
+        ->assertExactJson([
+            'data' => [
+                'node_id' => $this->node->id,
+                'node_name' => $this->node->name,
+                'role' => 'gateway',
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
+                'assignment' => [
+                    'id' => $sourceAssignment->id,
+                    'role' => 'gateway',
+                    'status' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'removed' => false,
+            ],
+            'meta' => ['request_id' => $requestId],
+        ]);
+
+    expect($sourceAssignment->refresh()->node_id)
+        ->toBe($this->node->id)
+        ->and($this->caller->roles()->where('role', RoleName::Gateway)->exists())
+        ->toBeFalse()
+        ->and($this->caller->roles()->where('role', RoleName::Vpn)->exists())
+        ->toBeTrue()
+        ->and(NodeRole::query()->where('role', RoleName::Gateway)->count())
+        ->toBe(1);
+});
+
+it('requires force before relocating the gateway role', function (): void {
+    $assignment = $this->caller->roles()->where('role', RoleName::Gateway)->sole();
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/gateway/relocate", ['force' => false])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Use --force to relocate this node role.')
+        ->assertJsonPath('error.details.reason', 'destructive_consent_required');
+
+    expect($assignment->refresh()->node_id)->toBe($this->caller->id);
+});
+
+it('refuses to relocate a role other than gateway', function (): void {
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/vpn/relocate", ['force' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [vpn] cannot be relocated.');
+});
 
 it('includes the same role enum validation details for add and remove', function (): void {
     $add = $this

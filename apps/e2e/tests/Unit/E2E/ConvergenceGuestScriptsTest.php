@@ -1206,6 +1206,53 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('keeps optional gateway proof scripts out of the required guest inventory', function (): void {
+        $directory = dirname(__DIR__, 3).'/resources/proofs';
+        $scripts = glob($directory.'/*.sh');
+
+        expect($scripts)->not->toBeFalse()->not->toBeEmpty();
+        expect(glob(dirname(__DIR__, 3).'/resources/guest/*gateway-role*.sh'))->toBe([]);
+
+        foreach ($scripts as $script) {
+            expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
+        }
+    });
+
+    it('smokes leftover gateway /up after relocating the role off vpn', function (): void {
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/proofs/relocate-gateway-role.sh');
+
+        expect($source)->toContain(
+            'node:role:relocate',
+            'source must hold gateway and vpn before relocate',
+            'vpn left the source Node',
+            'vpn moved with gateway',
+            '--cacert "$ca"',
+            '--resolve "gateway.orbit:443:${source_ip}"',
+            'https://gateway.orbit/up',
+        );
+        expect($source)
+            ->toContain('/home/orbit/.orbit/e2e-gateway-root-ca.pem')
+            ->not->toContain('REQUIRED_GUEST_SCRIPTS');
+    });
+
+    it('renames source to vpn and target to gateway around relocate', function (): void {
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/proofs/rename-and-relocate-gateway-role.sh');
+
+        expect($source)->toContain(
+            'node:rename',
+            'node:role:relocate',
+            'source must hold gateway and vpn before rename',
+            'renamed node',
+            'target Node is not named gateway',
+            'source Node is not named vpn',
+            '--resolve "gateway.orbit:443:${source_ip}"',
+            'https://gateway.orbit/up',
+        );
+        expect($source)
+            ->toContain('/home/orbit/.orbit/e2e-gateway-root-ca.pem')
+            ->not->toContain('REQUIRED_GUEST_SCRIPTS');
+    });
+
     it('provisions app-dev when the Gateway store has no active node role', function (): void {
         $fixture = convergence_app_fixture('converge-app-dev.sh');
         file_put_contents("{$fixture['root']}/orbit-home/gateway.sqlite", 'fixture');
