@@ -12,6 +12,13 @@ final readonly class MetricsRuntimeSpec
     public const string PrometheusImage = 'prom/prometheus:v3.5.0';
 
     /**
+     * How long Prometheus keeps samples. Every node's series costs roughly three times what it
+     * did at a fifteen-second scrape, so this window is what bounds the volume rather than the
+     * scrape rate: measured at ~1.7GB for fifteen days at fifteen seconds.
+     */
+    public const string RetentionTime = '7d';
+
+    /**
      * Pinned Grafana image.
      *
      * A version bump must re-run the NCK-109 dashboard proof. The provisioned
@@ -125,7 +132,7 @@ final readonly class MetricsRuntimeSpec
             'command' => [
                 '--config.file=/etc/prometheus/prometheus.yml',
                 '--storage.tsdb.path=/prometheus',
-                '--storage.tsdb.retention.time=15d',
+                '--storage.tsdb.retention.time='.self::RetentionTime,
                 '--web.listen-address=127.0.0.1:9090',
             ],
             'mounts' => [
