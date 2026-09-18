@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Design\Support;
+namespace App\Support\Tui\Prompts;
 
 use PhpTui\Tui\Color\AnsiColor;
 use PhpTui\Tui\Style\Modifier;
@@ -11,8 +11,8 @@ use PhpTui\Tui\Text\Line;
 use PhpTui\Tui\Text\Span;
 
 /**
- * Design sketch: turns one line of SGR-coloured terminal text, as Laravel Prompts renders
- * it, into a php-tui Line of styled spans. Only the codes the Prompts themes emit are read.
+ * Turns one line of SGR-coloured terminal text, as Laravel Prompts renders it, into a php-tui
+ * Line of styled spans. Only the codes the Prompts themes emit are read.
  */
 final class AnsiLine
 {

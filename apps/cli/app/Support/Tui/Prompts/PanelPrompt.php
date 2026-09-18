@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Design\Support;
+namespace App\Support\Tui\Prompts;
 
 /**
- * Design sketch: Laravel Prompts drawn inside a php-tui panel instead of on the terminal.
+ * A Laravel Prompts prompt drawn inside a php-tui panel instead of on the terminal.
  *
- * A prompt is never run; the panel forwards the keys it receives and draws the frame the
- * prompt's own theme renderer returns. That keeps the rendering and validation of the CLI
- * prompts as the single source, the panel only decides where the frame goes.
+ * A prompt is never run through Prompt::prompt(); the panel forwards the keys it receives and
+ * draws the frame the prompt's own theme renderer returns. That keeps the rendering and
+ * validation of the CLI's own prompts as the single source; the panel only decides where the
+ * frame goes. Ported from the `design:top` sketch (see `apps/cli/design/README.md`).
  */
 trait PanelPrompt
 {

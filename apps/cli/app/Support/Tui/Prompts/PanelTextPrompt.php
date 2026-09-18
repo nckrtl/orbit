@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Design\Support;
+namespace App\Support\Tui\Prompts;
 
-use Laravel\Prompts\MultiSelectPrompt;
+use Laravel\Prompts\TextPrompt;
 
-/** A MultiSelectPrompt drawn inside a php-tui panel; see PanelPrompt. */
-final class PanelMultiSelectPrompt extends MultiSelectPrompt
+/** A TextPrompt drawn inside a php-tui panel; see PanelPrompt. */
+final class PanelTextPrompt extends TextPrompt
 {
     use PanelPrompt;
 

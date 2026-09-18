@@ -171,6 +171,7 @@
               "cli/profile",
               "cli/activity",
               "cli/realtime",
+              "cli/top",
               "cli/extension",
               "cli/herdr",
               "cli/workspace"
