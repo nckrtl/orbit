@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Routes;
 
+use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,6 +19,7 @@ final readonly class ClearRouteTargetAction
     public function __construct(
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private RouteAssociationGuard $associations,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(Route $route): Route
@@ -37,10 +41,18 @@ final readonly class ClearRouteTargetAction
             ->values()
             ->all();
 
-        return $this->environmentOperations->run(
+        $result = $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->executeOwned($route, $expectedTargetIds),
         );
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::RouteUpdated,
+            $result->id,
+            RouteData::fromModel($result)->toArray(),
+        );
+
+        return $result;
     }
 
     /** @param list<int> $expectedTargetIds */

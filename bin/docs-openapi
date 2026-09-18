@@ -219,6 +219,7 @@ TAGS = [
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),
     ('herdr', 'Herdr sessions', 'Named Herdr terminal sessions and observation grants.'),
     ('workspace', 'Workspaces', 'Git worktrees owned by legacy Instances.'),
+    ('realtime', 'Realtime', 'The record-change event feed broadcast to Reverb, its channel authorization, and Reverb connection discovery.'),
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
@@ -262,10 +263,13 @@ SUMMARIES = {
     'herdr:session:list': 'List Herdr sessions', 'herdr:session:show': 'Show a Herdr session', 'herdr:session:create': 'Create a Herdr session', 'herdr:session:restart': 'Restart a Herdr session', 'herdr:session:destroy': 'Remove a Herdr session', 'herdr:observe': 'Issue an observation grant',
     'workspace:list': 'List Workspaces', 'workspace:show': 'Show a Workspace', 'workspace:new': 'Create a Workspace', 'workspace:php': 'Change the Workspace PHP version', 'workspace:remove': 'Remove a Workspace',
     'runtime-activation:app-instance': 'Wake an App instance',
+    'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
 }
 DESCRIPTIONS = {
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
+    'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
+    'realtime:show': 'Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.',
     'metrics:grafana:authorize': 'Caddy on the Gateway calls this endpoint for each Grafana request. The Gateway identifies the caller from the connection address and answers 204 when the caller may reach Grafana.',
     'schedule:complete': 'The installed Schedule callback on the host Node reports the latest run. The Gateway accepts it only from the Schedule\'s recorded host Node and records `last_run_at` and `last_run_status`.',
     'runtime-activation:app-instance': 'Caddy on the App instance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.',

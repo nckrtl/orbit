@@ -146,6 +146,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'process:start' => ServingNode::ProcessOwning,
         'process:stop' => ServingNode::ProcessOwning,
         'process:update' => ServingNode::AppOwning,
+        'realtime:auth' => ServingNode::Gateway,
+        'realtime:show' => ServingNode::Gateway,
         'route:create' => ServingNode::RouteOwning,
         'route:destroy' => ServingNode::RouteOwning,
         'route:list' => ServingNode::Collection,

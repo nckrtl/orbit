@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
+use App\Data\Apps\AppData;
 use App\Data\Apps\CreateAppData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
@@ -18,6 +21,7 @@ final readonly class CreateAppAction
 {
     public function __construct(
         private RepositoryDefaultBranchResolver $branches,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /** @return array{app: OrbitApp, created: bool} */
@@ -76,7 +80,15 @@ final readonly class CreateAppAction
             throw $exception;
         }
 
-        return ['app' => $app->refresh(), 'created' => true];
+        $app = $app->refresh();
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::AppCreated,
+            $app->id,
+            AppData::fromModel($app)->toArray(),
+        );
+
+        return ['app' => $app, 'created' => true];
     }
 
     private function assertRepositoryIdentityAvailable(string $repositoryIdentity): void

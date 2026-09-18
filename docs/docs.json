@@ -100,7 +100,8 @@
               "reference/metrics",
               "reference/herdr-sessions",
               "reference/local-resolver-overrides",
-              "reference/cli-binaries"
+              "reference/cli-binaries",
+              "reference/events"
             ]
           },
           {
@@ -399,6 +400,14 @@
               "GET /api/v1/herdr/sessions/{session}",
               "POST /api/v1/herdr/sessions/{session}/observation-grants",
               "POST /api/v1/herdr/sessions/{session}/restart"
+            ]
+          },
+          {
+            "group": "Realtime",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/broadcasting/auth",
+              "GET /api/v1/realtime"
             ]
           },
           {

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Firewall;
 
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\FirewallOperationException;
@@ -14,6 +16,7 @@ final readonly class RemoveFirewallRuleAction
 {
     public function __construct(
         private FirewallManager $firewall,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(FirewallRule $rule): FirewallBackendStatus
@@ -46,6 +49,12 @@ final readonly class RemoveFirewallRuleAction
         }
 
         $rule->delete();
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::FirewallDeleted,
+            $rule->id,
+            ['id' => $rule->id, 'name' => $rule->name],
+        );
 
         return FirewallBackendStatus::Absent;
     }

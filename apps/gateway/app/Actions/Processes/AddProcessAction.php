@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Data\Processes\AddProcessData;
+use App\Data\Processes\ProcessData;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AgentationUrlProjection;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\AgentationMcpPreset;
 use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\DesiredProcessState;
@@ -40,6 +43,8 @@ final readonly class AddProcessAction
 
     private AgentationSiteProjection $agentationSites;
 
+    private RecordEventBroadcaster $broadcaster;
+
     public function __construct(
         private ProcessTargetResolver $targets,
         private ProcessRuntimeManager $runtime,
@@ -49,12 +54,14 @@ final readonly class AddProcessAction
         ?AgentationPortAllocator $agentationPorts = null,
         ?AgentationUrlProjection $agentationUrls = null,
         ?AgentationSiteProjection $agentationSites = null,
+        ?RecordEventBroadcaster $broadcaster = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
         $this->specifications = $specifications ?? new ProcessSpecification;
         $this->agentationPorts = $agentationPorts ?? app(AgentationPortAllocator::class);
         $this->agentationUrls = $agentationUrls ?? app(AgentationUrlProjection::class);
         $this->agentationSites = $agentationSites ?? app(AgentationSiteProjection::class);
+        $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
     }
 
     /** @return array{process: Process, created: bool} */
@@ -172,6 +179,14 @@ final readonly class AddProcessAction
 
             $fresh = $fresh->refresh();
             $this->projectAgentationSite($fresh);
+
+            if ($admission['created']) {
+                $this->broadcaster->broadcast(
+                    RecordEventType::ProcessCreated,
+                    $fresh->id,
+                    ProcessData::fromModel($fresh, $this->runtime->status($fresh))->toArray(),
+                );
+            }
 
             return ['process' => $fresh, 'created' => $admission['created']];
         });

@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Realtime\\ShowRealtimeRequest",
+    "route": "GET /api/v1/realtime",
+    "status": 200,
+    "body": {
+        "data": {
+            "url": "wss://reverb.orbit",
+            "key": "orbit-reverb-app-key",
+            "channel": "orbit"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

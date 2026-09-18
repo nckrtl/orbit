@@ -51,6 +51,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 JwksController::class,
                 'show',
             ])->name('jwks:show');
+            require __DIR__.'/../routes/channels.php';
         },
     )
     ->withCommands()
