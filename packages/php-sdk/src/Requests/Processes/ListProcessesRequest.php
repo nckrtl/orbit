@@ -15,8 +15,9 @@ final class ListProcessesRequest extends GatewayRequest
     #[\Override]
     protected Method $method = Method::GET;
 
+    /** @param  null|AppInstanceProcessTarget|NodeProcessTarget  $target  Null lists every Process in the fleet. */
     public function __construct(
-        private readonly AppInstanceProcessTarget|NodeProcessTarget $target,
+        private readonly AppInstanceProcessTarget|NodeProcessTarget|null $target = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -36,9 +37,9 @@ final class ListProcessesRequest extends GatewayRequest
         return new ProcessesResponse($processes, $requestId);
     }
 
-    /** @return array{target_type: string, target_id: int} */
+    /** @return array{target_type?: string, target_id?: int} */
     protected function defaultQuery(): array
     {
-        return $this->target->toRequestData();
+        return $this->target?->toRequestData() ?? [];
     }
 }

@@ -158,24 +158,16 @@ function tui_test_state(
         requestId: '0198e15d-16c4-7855-8eb2-182b53ad28ba',
     );
 
-    // loadProcesses() sends one ProcessesRequest per node, then one per instance (one of each
-    // here); the fake process belongs to the instance, so only the second call returns it.
-    // Every other family sends exactly one request.
-    $processCalls = 0;
+    // loadProcesses() asks for the whole fleet in one request, as does every other family here.
 
     $send = function (object $request, string $responseClass) use (
-        &$processCalls, $node, $app, $instance, $process, $scheduleData, $firewall, $database,
+        $node, $app, $instance, $process, $scheduleData, $firewall, $database,
     ): object {
-        if ($responseClass === ProcessesResponse::class) {
-            $processCalls++;
-
-            return new ProcessesResponse($processCalls === 2 ? [$process] : [], $process->requestId);
-        }
-
         return match ($responseClass) {
             NodesResponse::class => new NodesResponse([$node], $node->requestId),
             AppsResponse::class => new AppsResponse([$app], $app->requestId),
             AppInstancesResponse::class => new AppInstancesResponse([$instance], $instance->requestId),
+            ProcessesResponse::class => new ProcessesResponse([$process], $process->requestId),
             SchedulesResponse::class => SchedulesResponse::fromGatewayData([$scheduleData], '0198e15d-16c4-7855-8eb2-182b53ad28ba'),
             FirewallRulesResponse::class => new FirewallRulesResponse([$firewall], $firewall->requestId),
             DatabaseConnectionsResponse::class => new DatabaseConnectionsResponse([$database], $database->requestId),
