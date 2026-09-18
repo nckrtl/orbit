@@ -34,7 +34,7 @@ The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on th
 
 - Mark `RoleName::Gateway` `mutable: true` and keep it a singleton that may be assigned during provisioning. Keep `RoleName::Vpn` `mutable: false`.
 - Add `POST /api/v1/nodes/{node}/roles/{role}/relocate` (`node:role:relocate`). Only `gateway` is accepted. The request requires `--force` consent. Authorization uses the current active Gateway Node (`ServingNode::Gateway`).
-- Relocate preflights the target (active Linux Node, no role conflicts, not the current holder), opens `orbit:gateway-https` on the target, transfers the existing `node_roles` row to that Node inside the singleton claim lock, republishes private DNS, and retracts the gateway HTTPS firewall on the source. It does not stop Caddy, PHP-FPM, the serving checkout, SQLite, the Orbit CA, or VPN on the source.
+- Relocate preflights the target (active Linux Node, no role conflicts, not the current holder), opens `orbit:gateway-https` on the target, transfers the existing `node_roles` row to that Node inside the singleton claim lock, grants the new Gateway access to the `vpn` and `metrics` nodes, republishes private DNS on the `vpn` node, and retracts the gateway HTTPS firewall on the source. It does not stop Caddy, PHP-FPM, the serving checkout, SQLite, the Orbit CA, or VPN on the source. [ADR 0092](/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate) owns the DNS target and the granted access set.
 - `GatewayRoleBaseline.remove` and `removeUnreachable` stop refusing. Reachable remove retracts the role-owned firewall and republishes DNS. Unreachable remove republishes DNS only. Converge opens the firewall and republishes DNS.
 - Record `gateway.serving_node_id` during bootstrap. `NodeAccessAuthorizer` treats that Node as implicit control-plane authority even when the `gateway` role is briefly unassigned, so a documented remove-then-add fallback can still call the API. Relocate does not change the serving-host setting; the process still runs on the source until the operator moves it.
 - Generic `node:role:add` and `node:role:remove` for `gateway` follow the same mutable singleton rules as `websocket`. Relocate is the supported path. Remove-then-add has a window with no `gateway.orbit` record; clients that still use the stored WireGuard address reach the leftover serving stack.
@@ -51,14 +51,14 @@ The serving checkout, SQLite database, Orbit CA, and Gateway SSH keys live on th
 
 - DevOps that wants the old Node named `vpn` and the new VPS named `gateway` must rename first. `orbit node:rename <old-node> vpn` runs while the new VPS is still unregistered. Then `orbit node:add gateway` and `orbit node:role:relocate gateway gateway --force`. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns the rename.
 - `orbit node:role:relocate <new-node> gateway --force` is the supported live cutover command after the operator has provisioned the target Node.
-- A brief DNS window exists only on the documented two-step fallback, not on relocate.
+- A brief DNS window exists only on the documented two-step fallback, not on relocate. After the roles split, publication SSHes to the `vpn` node; a failed DNS step does not destroy a Metrics runtime that already converged.
 - Leftover Caddy and PHP-FPM on the source are operator cleanup after `/up` answers on the new Node.
 - CLI profiles that store `https://10.44.0.1` must be pointed at the new WireGuard address after the serving stack moves.
-- The MCP catalogue must be regenerated when role enums change.
+- The MCP catalogue must be regenerated when role enums change. `node-role-add.converge_existing` is a boolean.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs, apps/e2e
-- ADRs: amends the `gateway` lifecycle in `RoleRegistry`; leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) and the VPN baseline unchanged
-- Detail: [`node`](/cli/node), [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [CLI command vocabulary](/reference/cli-command-vocabulary), [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity)
+- ADRs: amends the `gateway` lifecycle in `RoleRegistry`; leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) and the VPN baseline unchanged; [ADR 0092](/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate) amends the DNS target and Gateway access grants
+- Detail: [`node`](/cli/node), [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [Metrics](/reference/metrics), [CLI command vocabulary](/reference/cli-command-vocabulary), [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity)
 - Verify: Gateway RoleRegistry, GatewayRoleBaseline, RelocateGatewayRoleAction, NodeAccessAuthorizer, node-role API, MCP catalogue, CLI `node:role:relocate`, CLI `node:rename`, and PHP SDK transport tests

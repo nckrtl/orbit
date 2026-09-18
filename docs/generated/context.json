@@ -2413,7 +2413,8 @@
             "governing_adrs": [
                 "0061",
                 "0090",
-                "0091"
+                "0091",
+                "0092"
             ]
         },
         {
@@ -2439,6 +2440,27 @@
                 "0072",
                 "0090",
                 "0091"
+            ]
+        },
+        {
+            "path": "docs/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate.md",
+            "title": "ADR 0092: Publish private DNS on the VPN node after gateway relocate",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0090",
+                "0092"
             ]
         },
         {
@@ -2561,7 +2583,8 @@
                 "0088",
                 "0089",
                 "0090",
-                "0091"
+                "0091",
+                "0092"
             ]
         },
         {
@@ -3231,7 +3254,8 @@
                 "0003",
                 "0055",
                 "0057",
-                "0088"
+                "0088",
+                "0092"
             ]
         },
         {
@@ -3546,10 +3570,12 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Route"
             ],
             "governing_adrs": [
-                "0091"
+                "0091",
+                "0092"
             ]
         },
         {

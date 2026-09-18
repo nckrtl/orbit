@@ -55,6 +55,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
 
@@ -221,6 +222,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
     $events = [];
     [$gatewayNode, $gatewayAssignment] = role_baseline_models(RoleName::Gateway, name: 'gateway-role');
     [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, name: 'vpn-role');
+    $vpnAssignment->update(['status' => LifecycleStatus::Active]);
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $gateway = new GatewayRoleBaseline($firewall, baseline_dns($events));
@@ -241,7 +243,8 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         'dns:none',
         'ssh:vpn',
         'firewall:converge:vpn',
-    ]);
+    ])->and(NodeAccess::query()->where('consumer_node_id', $gatewayNode->id)->pluck('serving_node_id')->all())
+        ->toBe([$vpnNode->id]);
 
     $gateway->remove($gatewayNode, $gatewayAssignment, purgeData: false);
     $gateway->removeUnreachable($gatewayNode, $gatewayAssignment);

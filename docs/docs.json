@@ -533,7 +533,8 @@
               "decisions/0088-cli-reads-display-metrics-from-grafana",
               "decisions/0089-index-appinstance-dependencies",
               "decisions/0090-relocate-the-gateway-role-independently-of-vpn",
-              "decisions/0091-rename-a-node-without-changing-wireguard-identity"
+              "decisions/0091-rename-a-node-without-changing-wireguard-identity",
+              "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate"
             ]
           }
         ]

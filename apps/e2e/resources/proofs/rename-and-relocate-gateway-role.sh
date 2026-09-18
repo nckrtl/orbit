@@ -151,6 +151,26 @@ if (in_array("vpn", $target, true)) {
 }
 ' "$after_source" "$after_target"
 
+"$orbit" node:show "$target_id" --json | php -r '
+$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
+$access=$v["data"]["access"]["can_access"] ?? $v["access"]["can_access"] ?? null;
+if (!is_array($access)) {
+    fwrite(STDERR, "relocated gateway has no access list\n");
+    exit(1);
+}
+$ids=[];
+foreach ($access as $row) {
+    if (is_array($row) && is_int($row["id"] ?? null)) {
+        $ids[]=$row["id"];
+    }
+}
+if (!in_array((int) $argv[1], $ids, true)) {
+    fwrite(STDERR, "relocated gateway was not granted access to the vpn node\n");
+    exit(1);
+}
+printf("granted gateway access to vpn node %d\n", (int) $argv[1]);
+' "$source_id"
+
 listed=$("$orbit" node:list --json)
 php -r '
 $v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);

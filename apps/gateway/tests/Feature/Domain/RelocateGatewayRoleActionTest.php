@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use App\Models\NodeAccess;
 use App\Models\NodeRole;
 
 describe(RelocateGatewayRoleAction::class, function (): void {
@@ -99,6 +100,32 @@ describe(RelocateGatewayRoleAction::class, function (): void {
             RoleName::Gateway,
             force: true,
         ))->toThrow(NodeRoleValidationException::class, 'Role [gateway] is already assigned to node [beast].');
+    });
+
+    it('grants the new gateway access to the vpn and metrics nodes', function (): void {
+        $source = relocate_gateway_node('vpn', '10.44.0.1');
+        $target = relocate_gateway_node('gateway', '10.44.0.2');
+        $metrics = relocate_gateway_node('beast', '10.44.0.9');
+        $source->roles()->create([
+            'role' => RoleName::Gateway,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $source->roles()->create([
+            'role' => RoleName::Vpn,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $metrics->roles()->create([
+            'role' => RoleName::Metrics,
+            'status' => LifecycleStatus::Active,
+        ]);
+        app(GatewayServingHost::class)->remember($source);
+
+        app(RelocateGatewayRoleAction::class)->execute($target, RoleName::Gateway, force: true);
+
+        expect(NodeAccess::query()->where('consumer_node_id', $target->id)->pluck('serving_node_id')->all())
+            ->toEqualCanonicalizing([$source->id, $metrics->id])
+            ->and($this->dns->calls)
+            ->toBe(1);
     });
 
     it('refuses a target that already owns a conflicting role', function (): void {

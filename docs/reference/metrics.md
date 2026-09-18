@@ -29,6 +29,8 @@ orbit node:role:add <node> metrics --converge
 
 `--converge` re-claims an assignment that is active or whose failed step starts with `converge:`. A removal that fails leaves the assignment `failed` with a step that starts with `remove:`; `orbit metrics:disable` retries that removal, and `--converge` answers `node.role_conflict` for it. There is no separate Metrics convergence command.
 
+Convergence starts exporters, then cAdvisor, then the Prometheus and Grafana runtime, then Gateway publication (certificate, Caddy, Grafana firewall, and private DNS). After the runtime is up, a publication failure — including `converge:private-dns` / `app-dev.dns_config_failed` when the DNS listener lives on a different `vpn` node — leaves Grafana, Prometheus, cAdvisor, and `/etc/orbit/metrics` in place. Retry `--converge` after the DNS path is reachable. Adding or relocating the `gateway` role grants that Gateway access to the `vpn` and `metrics` nodes so this path can run. [ADR 0092](/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate) owns those rules.
+
 Orbit updates each container when its configuration changes: `prometheus.yml` for Prometheus; `grafana.ini` and provisioning files for Grafana. Changing exporters replaces Prometheus and interrupts active queries. Grafana and its sessions keep running. Grafana reloads dashboard files without a container restart. Password resets use Grafana's API and replace neither container.
 
 ## Exporter selection

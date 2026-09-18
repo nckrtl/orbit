@@ -27,6 +27,7 @@ final readonly class RelocateGatewayRoleAction
         private RoleRegistry $registry,
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
+        private GrantGatewayRoleAccessAction $access,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
@@ -72,6 +73,7 @@ final readonly class RelocateGatewayRoleAction
         $source = $this->currentHolder($target);
         $this->firewall->converge($target, $role, $target->user);
         $assignment = $this->transfer($target, $source);
+        $this->access->execute($target);
         $this->dns->converge();
         $this->firewall->remove($source, $role, $source->user);
         $this->announce($source);

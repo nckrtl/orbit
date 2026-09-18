@@ -11,8 +11,14 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -47,6 +53,9 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         private ?string $orbitHome = null,
         private ?VpnSettings $vpnSettings = null,
         private PrivateDnsListenerUnitRenderer $units = new PrivateDnsListenerUnitRenderer,
+        private ?SshExecutor $ssh = null,
+        private ?SshKeyProvider $keys = null,
+        private ?KnownHostsStore $knownHosts = null,
     ) {}
 
     public function converge(?Node $pendingNode = null): void
@@ -118,60 +127,113 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $pathExport = $this->executablePath === null
             ? ''
             : 'export PATH='.escapeshellarg($this->executablePath).':"$PATH"'."\n";
-        $listener = $this->listenerPublication();
-        $result = $this->processes->run(new ProcessInvocation(
-            arguments: $this->shell,
-            timeout: 60.0,
-            input: <<<BASH
-                {$pathExport}managed={$recordsDirectory}/{$recordsFile}
-                candidate={$recordsDirectory}/.orbit-records.\$\$.candidate
-                catalog_managed={$catalogDirectory}/{$catalogFile}
-                catalog_candidate={$catalogDirectory}/.orbit-catalog.\$\$.candidate
-                catalog_directory={$catalogDirectory}
-                install -d -m 0755 -- "\$catalog_directory" {$recordsDirectory}
-                validation=\$(mktemp -d)
-                backup=\$(mktemp "\$validation/orbit-records.backup.XXXXXX")
-                catalog_backup=\$(mktemp {$catalogDirectory}/.orbit-catalog.backup.XXXXXX)
-                had_managed=0
-                had_catalog=0
-                trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup"' EXIT
-                exec 9>{$lockPath}
-                flock -w 30 9
-                if [ -f "\$managed" ]; then
-                    cp --preserve=mode,ownership -- "\$managed" "\$backup"
-                    had_managed=1
-                fi
-                if [ -f "\$catalog_managed" ]; then
-                    cp --preserve=mode,ownership -- "\$catalog_managed" "\$catalog_backup"
-                    had_catalog=1
-                fi
-                install -d -m 0755 -- "\$validation/fragments"
-                cp -a -- {$recordsDirectory}/. "\$validation/fragments/"
-                printf '%s' '{$encoded}' | base64 --decode > "\$validation/fragments/{$recordsFile}"
-                printf '%s' '{$catalogEncoded}' | base64 --decode > "\$validation/catalog.json"
-                python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "\$validation/catalog.json"
-                sed "s#{$recordsDirectory}#\$validation/fragments#g" {$dnsmasqConf} > "\$validation/dnsmasq.conf"
-                dnsmasq --test --conf-file="\$validation/dnsmasq.conf"
-                records_changed=1
-                catalog_changed=1
-                if [ -f "\$managed" ] && cmp -s -- "\$validation/fragments/{$recordsFile}" "\$managed"; then
-                    records_changed=0
-                fi
-                if [ -f "\$catalog_managed" ] && cmp -s -- "\$validation/catalog.json" "\$catalog_managed"; then
-                    catalog_changed=0
-                fi
-                {$listener}
-                BASH,
-        ));
+        $remote = $this->remoteListenerOwner();
+        $listener = $remote instanceof Node
+            ? $this->recordsOnlyActivation()
+            : $this->listenerPublication();
+        $result = $this->runPublication($remote, <<<BASH
+            {$pathExport}managed={$recordsDirectory}/{$recordsFile}
+            candidate={$recordsDirectory}/.orbit-records.\$\$.candidate
+            catalog_managed={$catalogDirectory}/{$catalogFile}
+            catalog_candidate={$catalogDirectory}/.orbit-catalog.\$\$.candidate
+            catalog_directory={$catalogDirectory}
+            install -d -m 0755 -- "\$catalog_directory" {$recordsDirectory}
+            validation=\$(mktemp -d)
+            backup=\$(mktemp "\$validation/orbit-records.backup.XXXXXX")
+            catalog_backup=\$(mktemp {$catalogDirectory}/.orbit-catalog.backup.XXXXXX)
+            had_managed=0
+            had_catalog=0
+            trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup" "\$catalog_candidate" "\$catalog_backup"' EXIT
+            exec 9>{$lockPath}
+            flock -w 30 9
+            if [ -f "\$managed" ]; then
+                cp --preserve=mode,ownership -- "\$managed" "\$backup"
+                had_managed=1
+            fi
+            if [ -f "\$catalog_managed" ]; then
+                cp --preserve=mode,ownership -- "\$catalog_managed" "\$catalog_backup"
+                had_catalog=1
+            fi
+            install -d -m 0755 -- "\$validation/fragments"
+            cp -a -- {$recordsDirectory}/. "\$validation/fragments/"
+            printf '%s' '{$encoded}' | base64 --decode > "\$validation/fragments/{$recordsFile}"
+            printf '%s' '{$catalogEncoded}' | base64 --decode > "\$validation/catalog.json"
+            python3 -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "\$validation/catalog.json"
+            sed "s#{$recordsDirectory}#\$validation/fragments#g" {$dnsmasqConf} > "\$validation/dnsmasq.conf"
+            dnsmasq --test --conf-file="\$validation/dnsmasq.conf"
+            records_changed=1
+            catalog_changed=1
+            if [ -f "\$managed" ] && cmp -s -- "\$validation/fragments/{$recordsFile}" "\$managed"; then
+                records_changed=0
+            fi
+            if [ -f "\$catalog_managed" ] && cmp -s -- "\$validation/catalog.json" "\$catalog_managed"; then
+                catalog_changed=0
+            fi
+            {$listener}
+            BASH);
 
         if (! $result->succeeded()) {
             throw new RuntimeConvergenceException(
                 step: 'private-dns',
                 errorCode: 'app-dev.dns_config_failed',
-                message: 'Could not converge Orbit private DNS records.',
+                message: $remote instanceof Node
+                    ? "Could not converge Orbit private DNS records on node [{$remote->name}]."
+                    : 'Could not converge Orbit private DNS records.',
                 result: $result,
             );
         }
+    }
+
+    private function runPublication(?Node $remote, string $script): CommandResult
+    {
+        if (! $remote instanceof Node) {
+            return $this->processes->run(new ProcessInvocation(
+                arguments: $this->shell,
+                timeout: 60.0,
+                input: $script,
+            ));
+        }
+
+        $address = $remote->wireguard_ip;
+        if (! is_string($address) || $address === '' || $this->ssh === null || $this->keys === null || $this->knownHosts === null) {
+            throw new RuntimeConvergenceException(
+                step: 'private-dns',
+                errorCode: 'app-dev.dns_config_failed',
+                message: "Could not converge Orbit private DNS records on node [{$remote->name}].",
+            );
+        }
+
+        return $this->ssh->execute(
+            new SshConnection(
+                host: $address,
+                user: $remote->user,
+                port: 22,
+                identityFile: $this->keys->privateKeyPath(),
+                knownHostsFile: $this->knownHosts->path(),
+                commandTimeout: 60.0,
+            ),
+            new RemoteCommand(
+                arguments: $this->shell,
+                input: $script,
+                timeout: 60.0,
+            ),
+        );
+    }
+
+    private function remoteListenerOwner(): ?Node
+    {
+        if ($this->ssh === null || $this->keys === null || $this->knownHosts === null) {
+            return null;
+        }
+
+        $listener = $this->activeRoleHolder(RoleName::Vpn);
+        $gateway = $this->activeRoleHolder(RoleName::Gateway);
+
+        if (! $listener instanceof Node || ! $gateway instanceof Node || $listener->is($gateway)) {
+            return null;
+        }
+
+        return $listener;
     }
 
     private function listenerPublication(): string
@@ -432,22 +494,27 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             return DnsAddress::normalize($configured) ?? $configured;
         }
 
-        $gateway = Node::query()
-            ->where('status', LifecycleStatus::Active->value)
+        $listener = $this->activeRoleHolder(RoleName::Vpn) ?? $this->activeRoleHolder(RoleName::Gateway);
+
+        if ($listener instanceof Node && is_string($listener->wireguard_ip) && $listener->wireguard_ip !== '') {
+            return DnsAddress::normalize($listener->wireguard_ip) ?? $listener->wireguard_ip;
+        }
+
+        return null;
+    }
+
+    private function activeRoleHolder(RoleName $role): ?Node
+    {
+        return Node::query()
+            ->where('status', LifecycleStatus::Active)
             ->whereNotNull('wireguard_ip')
             ->whereHas(
                 'roles',
                 static fn ($query) => $query
-                    ->where('role', RoleName::Gateway->value)
-                    ->where('status', LifecycleStatus::Active->value),
+                    ->where('role', $role)
+                    ->where('status', LifecycleStatus::Active),
             )
             ->first();
-
-        if ($gateway instanceof Node) {
-            return DnsAddress::normalize((string) $gateway->wireguard_ip);
-        }
-
-        return null;
     }
 
     private function checkout(): string

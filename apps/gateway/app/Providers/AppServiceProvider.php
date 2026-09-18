@@ -510,6 +510,9 @@ final class AppServiceProvider extends ServiceProvider
                 checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 vpnSettings: app(VpnSettings::class),
+                ssh: app(SshExecutor::class),
+                keys: app(SshKeyProvider::class),
+                knownHosts: app(KnownHostsStore::class),
             ),
         );
         $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));

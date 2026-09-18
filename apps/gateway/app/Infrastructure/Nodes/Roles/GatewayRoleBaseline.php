@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Actions\Nodes\GrantGatewayRoleAccessAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
@@ -16,12 +17,19 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
     public function __construct(
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
+        private ?GrantGatewayRoleAccessAction $access = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
         $this->firewall->converge($node, RoleName::Gateway, $node->user);
+        $this->grants()->execute($node);
         $this->dns->converge();
+    }
+
+    private function grants(): GrantGatewayRoleAccessAction
+    {
+        return $this->access ?? app(GrantGatewayRoleAccessAction::class);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void

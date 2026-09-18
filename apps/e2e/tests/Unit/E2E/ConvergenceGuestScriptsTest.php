@@ -1226,6 +1226,7 @@ describe('convergence guest scripts', function () {
             'source must hold gateway and vpn before relocate',
             'vpn left the source Node',
             'vpn moved with gateway',
+            'relocated gateway was not granted access to the vpn node',
             '--cacert "$ca"',
             '--resolve "gateway.orbit:443:${source_ip}"',
             'https://gateway.orbit/up',
@@ -1245,6 +1246,7 @@ describe('convergence guest scripts', function () {
             'renamed node',
             'target Node is not named gateway',
             'source Node is not named vpn',
+            'relocated gateway was not granted access to the vpn node',
             '--resolve "gateway.orbit:443:${source_ip}"',
             'https://gateway.orbit/up',
         );

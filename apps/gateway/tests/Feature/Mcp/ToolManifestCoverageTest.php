@@ -58,6 +58,15 @@ describe('MCP tool manifest', function (): void {
         expect(array_map(static fn ($definition): string => $definition->name, $orphans))->toBe([]);
     });
 
+    it('types node-role-add converge_existing as a boolean', function (): void {
+        $tool = collect(ToolManifest::default()->definitions())
+            ->first(static fn ($definition): bool => $definition->name === 'node-role-add');
+
+        expect($tool)->not->toBeNull()
+            ->and($tool?->inputSchema['properties']['converge_existing']['type'] ?? null)
+            ->toBe('boolean');
+    });
+
     it('gives every tool a unique name an MCP client accepts', function (): void {
         $names = array_map(static fn ($definition): string => $definition->name, ToolManifest::default()->definitions());
 
