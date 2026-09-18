@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Tui;
 
 use App\Support\Realtime\RealtimeEvent;
+use App\Support\Tui\Sources\Concerns\LimitsBackgroundRequestTime;
 use Closure;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
@@ -33,6 +34,8 @@ use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
  */
 final class State
 {
+    use LimitsBackgroundRequestTime;
+
     /** @var list<array<string, mixed>> */
     public array $nodes = [];
 
@@ -173,15 +176,18 @@ final class State
     /**
      * Sends the next few queued Process requests and merges what comes back.
      *
-     * The command calls this once per drawn frame rather than draining the queue in one call, so
+     * The command calls this once per idle frame rather than draining the queue in one call, so
      * a fleet whose Process status checks take seconds still redraws and answers a key press
-     * between batches, and "Needs attention" fills in as the answers arrive.
+     * between batches, and "Needs attention" fills in as the answers arrive. The batch is small
+     * and each request is capped on purpose: a key pressed while one is in flight waits for it,
+     * and the Gateway reads every owned Process's live state over SSH, which on a real fleet
+     * reached 3.5 seconds for a single instance.
      *
      * @param  Closure(object, string): object  $send
      * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
      * @return bool Whether anything was sent; false once the queue is empty.
      */
-    public function loadNextProcesses(Closure $send, ?Closure $sendMany = null, int $batch = 8): bool
+    public function loadNextProcesses(Closure $send, ?Closure $sendMany = null, int $batch = 3): bool
     {
         if ($this->pendingProcessRequests === []) {
             return false;
@@ -192,7 +198,10 @@ final class State
             $requests,
         );
 
-        $requests = array_splice($this->pendingProcessRequests, 0, max(1, $batch));
+        $requests = array_map(
+            self::withBackgroundTimeout(...),
+            array_splice($this->pendingProcessRequests, 0, max(1, $batch)),
+        );
 
         foreach ($sendMany($requests, ProcessesResponse::class) as $response) {
             assert($response instanceof ProcessesResponse);

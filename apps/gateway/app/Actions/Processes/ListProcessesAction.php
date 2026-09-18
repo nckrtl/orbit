@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Data\Processes\ProcessData;
-use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessTargetType;
 use App\Models\Process;
 use Illuminate\Support\Collection;
@@ -13,7 +13,7 @@ use Illuminate\Support\Collection;
 final readonly class ListProcessesAction
 {
     public function __construct(
-        private ProcessRuntimeManager $runtime,
+        private ProcessRuntimeStatusIndex $statuses,
     ) {}
 
     /** @return Collection<int, array<string, mixed>> */
@@ -24,6 +24,10 @@ final readonly class ListProcessesAction
             ->where('owner_id', $targetId)
             ->orderBy('name')
             ->get();
+        // One lookup for every Process, rather than one round trip each: see
+        // ProcessRuntimeStatusIndex for why a list cannot ask each Node in turn.
+        $statuses = $this->statuses->statuses($processes);
+
         /** @var Collection<int, array<string, mixed>> $result */
         $result = new Collection;
 
@@ -31,7 +35,7 @@ final readonly class ListProcessesAction
             /** @var array<string, mixed> $data */
             $data = ProcessData::fromModel(
                 $process,
-                $this->runtime->status($process),
+                $statuses[(int) $process->id] ?? 'unknown',
             )->toArray();
             $result->push($data);
         }
