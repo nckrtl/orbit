@@ -51,6 +51,9 @@ final class State
     /** @var list<array<string, mixed>> */
     public array $firewall = [];
 
+    /** False until loadProcesses() has answered once; the screen says so rather than "none". */
+    public bool $processesLoaded = false;
+
     /** @var list<array<string, mixed>> */
     public array $databases = [];
 
@@ -97,12 +100,13 @@ final class State
      * Loads every list once, using $send to perform each typed SDK request. $send has the same
      * shape as GatewayCommand::sendOrThrow(): it throws GatewayApiException on failure.
      *
-     * No Gateway route lists processes or firewall rules fleet-wide; both are scoped per Node
-     * (firewall) or per Node/AppInstance (processes), so a real fleet needs one request per
-     * target for each — nine-plus for firewall, dozens for processes. $sendMany, when given,
-     * runs each of those two batches concurrently through GatewayCommand::poolSend() instead of
-     * one at a time; omitting it (as the Tui unit tests do) falls back to calling $send once per
-     * request, in the same order, so callers that only need correctness need not provide it.
+     * This is only what the dashboard's first frame draws: every fleet-wide list, plus firewall
+     * rules, which are scoped per Node and so need one cheap request each. Processes are not
+     * here — see loadProcesses(), which the command runs after the first frame because it is
+     * slow enough to be the whole of a startup wait. $sendMany, when given, runs the per-Node
+     * firewall batch concurrently through GatewayCommand::poolSend() instead of one at a time;
+     * omitting it (as the Tui unit tests do) falls back to calling $send once per request, in
+     * the same order, so callers that only need correctness need not provide it.
      *
      * @param  Closure(object, string): object  $send
      * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
@@ -125,19 +129,6 @@ final class State
         $this->apps = array_map(self::appRow(...), $apps->apps);
         $this->instances = array_map(self::instanceRow(...), $instances->appInstances);
 
-        $processRequests = [
-            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
-            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
-        ];
-        $processes = [];
-
-        foreach ($sendMany($processRequests, ProcessesResponse::class) as $response) {
-            assert($response instanceof ProcessesResponse);
-            array_push($processes, ...array_map(self::processRow(...), $response->processes));
-        }
-
-        $this->processes = $processes;
-
         $schedules = $send(new ListSchedulesRequest, SchedulesResponse::class);
         assert($schedules instanceof SchedulesResponse);
         $this->schedules = array_map(self::scheduleRow(...), $schedules->schedules);
@@ -155,6 +146,41 @@ final class State
         $databases = $send(new ListDatabaseConnectionsRequest, DatabaseConnectionsResponse::class);
         assert($databases instanceof DatabaseConnectionsResponse);
         $this->databases = array_map(self::databaseRow(...), $databases->connections);
+    }
+
+    /**
+     * Every Process in the fleet, which `load()` deliberately leaves out.
+     *
+     * No Gateway route lists Processes fleet-wide, so this needs one request per Node and per
+     * AppInstance, and each of those asks the Gateway for every owned Process's live runtime
+     * status one at a time over SSH. On a real fleet that is the whole cost of starting up
+     * (measured at 5s of a 5.2s load, against 0.14s for every other list combined), and nothing
+     * the dashboard draws first depends on it, so the command loads it after the first frame and
+     * the screen renders its "Needs attention" pane from whatever has arrived.
+     *
+     * @param  Closure(object, string): object  $send
+     * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
+     */
+    public function loadProcesses(Closure $send, ?Closure $sendMany = null): void
+    {
+        $sendMany ??= static fn (array $requests, string $responseClass): array => array_map(
+            static fn (GatewayRequest $request): object => $send($request, $responseClass),
+            $requests,
+        );
+
+        $requests = [
+            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
+            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
+        ];
+        $processes = [];
+
+        foreach ($sendMany($requests, ProcessesResponse::class) as $response) {
+            assert($response instanceof ProcessesResponse);
+            array_push($processes, ...array_map(self::processRow(...), $response->processes));
+        }
+
+        $this->processes = $processes;
+        $this->processesLoaded = true;
     }
 
     /** Applies one realtime event to the in-memory collections it names. */

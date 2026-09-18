@@ -149,8 +149,21 @@ final class TopCommand extends GatewayCommand
                     $lastPoll = microtime(true);
 
                     try {
-                        $state->load($send);
+                        $state->load($send, $sendMany);
+                        $state->loadProcesses($send, $sendMany);
                     } catch (GatewayApiException $exception) {
+                        $ui->message = $exception->getMessage();
+                    }
+                }
+
+                // The first frame draws without Processes (see State::loadProcesses): they cost
+                // one SSH-backed status check per Process and would otherwise be the whole of
+                // the startup wait. Fetch them once the screen is already up.
+                if (! $state->processesLoaded) {
+                    try {
+                        $state->loadProcesses($send, $sendMany);
+                    } catch (GatewayApiException $exception) {
+                        $state->processesLoaded = true;
                         $ui->message = $exception->getMessage();
                     }
                 }

@@ -229,7 +229,7 @@ final class Screen
             ->constraints(Constraint::length($nodesHeight), Constraint::min(5))
             ->widgets(
                 $this->nodeSummaryTable($state, $split->get(0)),
-                $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, 'Nothing needs attention.'),
+                $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, $state->processesLoaded ? 'Nothing needs attention.' : 'Checking processes…'),
             );
     }
 

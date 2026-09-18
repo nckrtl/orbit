@@ -158,12 +158,12 @@ function tui_test_state(
         requestId: '0198e15d-16c4-7855-8eb2-182b53ad28ba',
     );
 
-    // State::load() sends one ProcessesRequest per node, then one per instance (one of each
+    // loadProcesses() sends one ProcessesRequest per node, then one per instance (one of each
     // here); the fake process belongs to the instance, so only the second call returns it.
     // Every other family sends exactly one request.
     $processCalls = 0;
 
-    $state->load(function (object $request, string $responseClass) use (
+    $send = function (object $request, string $responseClass) use (
         &$processCalls, $node, $app, $instance, $process, $scheduleData, $firewall, $database,
     ): object {
         if ($responseClass === ProcessesResponse::class) {
@@ -181,7 +181,12 @@ function tui_test_state(
             DatabaseConnectionsResponse::class => new DatabaseConnectionsResponse([$database], $database->requestId),
             default => throw new RuntimeException("Unexpected request for {$responseClass}."),
         };
-    });
+    };
+
+    // The real command draws its first frame before Processes arrive (see State::loadProcesses),
+    // but a test wants the finished screen, so load both halves here.
+    $state->load($send);
+    $state->loadProcesses($send);
 
     // Screen only ever reads State's per-record caches (see State::nodeMetrics()/
     // deploymentsFor()/databaseUsersFor()); it never fetches on read. Fill them here the way
