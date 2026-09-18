@@ -1,0 +1,49 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Deployments\\ShowAppInstanceDeploymentRequest",
+    "route": "GET /api/v1/deployments/{deployment}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "app_instance_id": 1,
+            "release": "20260101000000",
+            "branch": "main",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "finished_at": "2026-01-01T00:00:42+00:00",
+            "duration_seconds": 42,
+            "status": "succeeded",
+            "failed_step": null,
+            "error_code": null,
+            "selected_release": "20260101000000",
+            "triggered_by": "gateway",
+            "events": [
+                {
+                    "type": "phase",
+                    "phase": "source_preparation",
+                    "step_name": null
+                },
+                {
+                    "type": "phase",
+                    "phase": "before_activation",
+                    "step_name": "prepare"
+                },
+                {
+                    "type": "output",
+                    "step": "prepare",
+                    "stream": "stdout",
+                    "value_base64": "UnVubmluZyBjb21wb3NlciBpbnN0YWxsCg=="
+                },
+                {
+                    "type": "phase",
+                    "phase": "activation",
+                    "step_name": null
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

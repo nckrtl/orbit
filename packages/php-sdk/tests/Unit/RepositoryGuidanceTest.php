@@ -19,6 +19,7 @@ use Orbit\Sdk\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\DestroyDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseTablesRequest;
+use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseUsersRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
@@ -27,9 +28,11 @@ use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
+use Orbit\Sdk\Requests\Deployments\ListAppInstanceDeploymentsRequest;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
@@ -42,6 +45,7 @@ use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
 use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
+use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
@@ -150,7 +154,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 88;
+        $preScheduleOperationCount = 91;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -183,6 +187,7 @@ describe('repository guidance bootstrap', function (): void {
             ListDatabaseTablesRequest::class,
             ShowDatabaseSchemaRequest::class,
             DescribeDatabaseTableRequest::class,
+            ListDatabaseUsersRequest::class,
         ];
         $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests);
         $expectedRequests = [
@@ -295,9 +300,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(DeployAppInstanceRequest::class)
             ->toContain(RollbackAppInstanceRequest::class)
             ->toContain(ListAppInstanceReleasesRequest::class)
+            ->toContain(ListAppInstanceDeploymentsRequest::class)
+            ->toContain(ShowAppInstanceDeploymentRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
-            ->toContain(UnsetClusterRouterRequest::class);
+            ->toContain(UnsetClusterRouterRequest::class)
+            ->toContain(ShowNodeMetricsRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -321,14 +329,14 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($databaseRequests);
     });
 
-    it('documents the 115-operation SDK surface including Database connection transport', function (): void {
+    it('documents the 119-operation SDK surface including Database connection transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 115 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 119 concrete public Gateway API operations:')
             ->toContain(
-                '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, and role remove.',
+                '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, role remove, and metrics.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
@@ -336,12 +344,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
             ->toContain('- Herdr: session list, add, adopt, show, restart, remove, and observation-grant.')
-            ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create.')
+            ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.')
             ->toContain(
                 '- App runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, environment import, environment update, and environment synchronization through the concise Instance routes.',
+                '- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, and environment synchronization through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')
@@ -395,7 +403,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 115 public Gateway operations.',
+                'The SDK exposes exactly 119 public Gateway operations.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
