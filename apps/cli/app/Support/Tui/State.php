@@ -446,31 +446,31 @@ final class State
         $rows = [];
 
         foreach ($this->nodes as $node) {
-            if ($node['status'] !== 'active') {
+            if (! self::nodeHealthy($node)) {
                 $rows[] = ['kind' => 'nodes', 'record' => $node, 'label' => 'Node', 'name' => $node['name'], 'where' => '—', 'state' => $node['status']];
             }
         }
 
         foreach ($this->instances as $instance) {
-            if ($instance['status'] !== 'active') {
+            if (! self::instanceHealthy($instance)) {
                 $rows[] = ['kind' => 'instances', 'record' => $instance, 'label' => 'Instance', 'name' => "{$instance['app']['slug']}/{$instance['name']}", 'where' => $instance['node']['name'], 'state' => $instance['status']];
             }
         }
 
         foreach ($this->processes as $process) {
-            if ($process['runtime_status'] !== $process['desired_state']) {
+            if (! self::processHealthy($process)) {
                 $rows[] = ['kind' => 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->processOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
             }
         }
 
         foreach ($this->schedules as $schedule) {
-            if ($schedule['desired_timer_state'] !== 'enabled' || $schedule['status'] === 'failed') {
+            if (! self::scheduleHealthy($schedule)) {
                 $rows[] = ['kind' => 'schedules', 'record' => $schedule, 'label' => 'Schedule', 'name' => $schedule['name'], 'where' => $this->instanceName($schedule['target_id']), 'state' => $schedule['status'] === 'failed' ? 'failed' : $schedule['desired_timer_state']];
             }
         }
 
         foreach ($this->firewall as $rule) {
-            if ($rule['status'] !== 'applied') {
+            if (! self::firewallHealthy($rule)) {
                 $rows[] = ['kind' => 'firewall', 'record' => $rule, 'label' => 'Firewall', 'name' => "{$rule['port']}/{$rule['protocol']} {$rule['action']} {$rule['source']}", 'where' => $rule['node'], 'state' => $rule['status']];
             }
         }
@@ -484,13 +484,71 @@ final class State
         $off = static fn (array $rows, callable $ok): int => count(array_filter($rows, static fn (array $row): bool => ! $ok($row)));
 
         return [
-            'Nodes' => [count($this->nodes), $off($this->nodes, static fn (array $n): bool => $n['status'] === 'active')],
+            'Nodes' => [count($this->nodes), $off($this->nodes, self::nodeHealthy(...))],
             'Apps' => [count($this->apps), 0],
-            'Instances' => [count($this->instances), $off($this->instances, static fn (array $i): bool => $i['status'] === 'active')],
-            'Processes' => [count($this->processes), $off($this->processes, static fn (array $p): bool => $p['runtime_status'] === $p['desired_state'])],
-            'Schedules' => [count($this->schedules), $off($this->schedules, static fn (array $s): bool => $s['desired_timer_state'] === 'enabled')],
-            'Firewall' => [count($this->firewall), $off($this->firewall, static fn (array $f): bool => $f['status'] === 'applied')],
+            'Instances' => [count($this->instances), $off($this->instances, self::instanceHealthy(...))],
+            'Processes' => [count($this->processes), $off($this->processes, self::processHealthy(...))],
+            'Schedules' => [count($this->schedules), $off($this->schedules, self::scheduleHealthy(...))],
+            'Firewall' => [count($this->firewall), $off($this->firewall, self::firewallHealthy(...))],
         ];
+    }
+
+    // ---- health: whether a row is "yellow" (needs a look), in the Gateway's own vocabulary ----
+    //
+    // A record's provisioning `status` and, where it exists, its separate runtime/desired state
+    // use different enums (see apps/gateway/app/Domain/**): comparing them literally, or against
+    // a value from the wrong enum, produces false positives. These are the one place that decides
+    // "needs attention" per family; Screen and attentionRows()/counts() above all call through
+    // them instead of repeating the comparison.
+
+    /** A Node's `status` is LifecycleStatus: provisioning, active, failed, removing. */
+    public static function nodeHealthy(array $node): bool
+    {
+        return $node['status'] === 'active';
+    }
+
+    /** An AppInstance's `status` is AppInstanceState; active is the only settled, healthy state. */
+    public static function instanceHealthy(array $instance): bool
+    {
+        return $instance['status'] === 'active';
+    }
+
+    /**
+     * A Process's `desired_state` is DesiredProcessState (running, stopped); its `runtime_status`
+     * is the systemd/Docker runtime state (active, inactive, failed, activating, deactivating,
+     * maintenance, absent, ...) reported by `systemctl is-active`/`docker container inspect`, not
+     * the same vocabulary as `desired_state`. A running process is healthy when active; a stopped
+     * one is healthy when inactive. Anything else (still settling, or failed) needs a look.
+     */
+    public static function processHealthy(array $process): bool
+    {
+        return match ($process['desired_state']) {
+            'running' => $process['runtime_status'] === 'active',
+            'stopped' => $process['runtime_status'] === 'inactive',
+            default => false,
+        };
+    }
+
+    /**
+     * A Schedule's `desired_timer_state` is DesiredTimerState (enabled, disabled); its `status`
+     * is a separate LifecycleStatus-shaped provisioning status (provisioning, active, failed,
+     * removing). Healthy means the timer is enabled and provisioning did not fail.
+     */
+    public static function scheduleHealthy(array $schedule): bool
+    {
+        return $schedule['desired_timer_state'] === 'enabled' && $schedule['status'] !== 'failed';
+    }
+
+    /** A Firewall rule's `status` is LifecycleStatus; active is its healthy, applied state. */
+    public static function firewallHealthy(array $rule): bool
+    {
+        return $rule['status'] === 'active';
+    }
+
+    /** A deployment's `status` is running, succeeded, or failed; succeeded is the settled, healthy state. */
+    public static function deploymentHealthy(array $deployment): bool
+    {
+        return $deployment['status'] === 'succeeded';
     }
 
     /**

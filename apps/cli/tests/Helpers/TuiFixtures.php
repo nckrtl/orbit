@@ -107,7 +107,7 @@ function tui_test_state(
         'keep_alive' => true,
         'desired_state' => 'running',
         'status' => 'active',
-        'runtime_status' => 'running',
+        'runtime_status' => 'active',
         'failed_step' => null,
         'error_code' => null,
     ], '0198e15d-16c4-7855-8eb2-182b53ad28ba');
@@ -138,7 +138,7 @@ function tui_test_state(
         source: '10.44.0.0/16',
         protocol: 'tcp',
         port: '22',
-        status: 'applied',
+        status: 'active',
         backendStatus: null,
         failedStep: null,
         errorCode: null,

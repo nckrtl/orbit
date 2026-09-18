@@ -54,7 +54,10 @@ final readonly class ActionRunner
             ],
             'processes' => [
                 'restart' => Action::real("Restart process [{$row['name']}]."),
-                ...$row['runtime_status'] === 'running'
+                // The runtime status a systemd/Docker process actually reports is "active" or
+                // "inactive" (see State::processHealthy()), never "running"/"stopped" (that
+                // vocabulary belongs to desired_state).
+                ...$row['runtime_status'] === 'active'
                     ? ['stop' => Action::real("Stop process [{$row['name']}].")]
                     : ['start' => Action::real("Start process [{$row['name']}].")],
             ],

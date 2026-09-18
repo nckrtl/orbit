@@ -3,7 +3,7 @@
 │› Dashboard   ││ Nodes 1        Apps 1         Instances 1         Processes 1         Schedules 1         Firewall 1 │
 │  Nodes       │╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
 │  Apps        │╭ beast · active ──────────────────────────────────────────────────────────────────────────────────────╮
-│  Instances   ││ Metrics not available on this Gateway yet.                                                           │
+│  Instances   ││ No metrics.                                                                                          │
 │  Processes   │╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
 │  Schedules   │╭ Needs attention ─────────────────────────────────────────────────────────────────────────────────────╮
 │  Databases   ││ Nothing needs attention.                                                                             │

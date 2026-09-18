@@ -1,7 +1,7 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────╮  ‹ back  Node: beast                                                                                   
 │  Dashboard   │╭ Properties ───────────────────────────╮╭ beast · active ─────────────────────────────────────────────╮
-│› Nodes       ││ Name               beast              ││ Metrics not available on this Gateway yet.                  │
+│› Nodes       ││ Name               beast              ││ No metrics.                                                 │
 │  Apps        ││ Status             active             ││                                                             │
 │  Instances   ││ Roles              app-dev            ││                                                             │
 │  Processes   ││ Platform           —                  ││                                                             │
@@ -16,7 +16,7 @@
 │              │╰──────────────────────────────────────────────────────────────────────────────────────────────────────╯
 │              │╭ Node processes ──────────────────────────────────╮╭ Firewall ────────────────────────────────────────╮
 │              ││ None.                                            ││  Port        Action   Source               Status│
-│              ││                                                  ││› 22/tcp      allow    10.44.0.0/16         applie│
+│              ││                                                  ││› 22/tcp      allow    10.44.0.0/16         active│
 │              ││                                                  ││                                                  │
 │              ││                                                  ││                                                  │
 │              ││                                                  ││                                                  │

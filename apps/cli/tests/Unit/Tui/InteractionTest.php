@@ -101,7 +101,7 @@ describe(Interaction::class, function (): void {
                 'keep_alive' => true,
                 'desired_state' => 'running',
                 'status' => 'active',
-                'runtime_status' => 'stopped',
+                'runtime_status' => 'inactive',
                 'failed_step' => null,
                 'error_code' => null,
             ], '0198e15d-16c4-7855-8eb2-182b53ad28ba');
@@ -120,7 +120,7 @@ describe(Interaction::class, function (): void {
         expect($sentRequest)->not->toBeNull()
             ->and($ui->menu)->toBeNull()
             ->and($ui->message)->toBe('Process [horizon] stopped.')
-            ->and($state->processes[0]['runtime_status'])->toBe('stopped');
+            ->and($state->processes[0]['runtime_status'])->toBe('inactive');
     });
 
     it('asks to confirm before running a destructive action', function (): void {

@@ -63,7 +63,7 @@ describe(Screen::class, function (): void {
             ->and($screen)->toContain('Instances on this node')
             ->and($screen)->toContain('Node processes')
             ->and($screen)->toContain('Firewall')
-            ->and($screen)->toContain('Metrics not available on this Gateway yet.');
+            ->and($screen)->toContain('No metrics.');
 
         expect_output($screen, 'top/record/node.txt');
     });
@@ -207,7 +207,7 @@ describe(Screen::class, function (): void {
         $screen = render_top_screen($ui, $state);
 
         expect($screen)->toContain('Up 1d 2h 3m')
-            ->and($screen)->not->toContain('Metrics not available on this Gateway yet.');
+            ->and($screen)->not->toContain('No metrics.');
 
         expect_output($screen, 'top/record/node-metrics.txt');
     });

@@ -23,18 +23,18 @@ describe(State::class, function (): void {
     it('flips a process row runtime_status when a process.status event arrives', function (): void {
         $state = tui_test_state();
 
-        expect($state->processes[0]['runtime_status'])->toBe('running');
+        expect($state->processes[0]['runtime_status'])->toBe('active');
 
         $event = RealtimeEvent::fromChannelPayload('event', [
             'type' => 'process.status',
             'id' => 1,
             'at' => '2026-09-18T10:00:00+00:00',
-            'data' => ['id' => 1, 'runtime_status' => 'stopped'],
+            'data' => ['id' => 1, 'runtime_status' => 'inactive'],
         ]);
 
         $state->applyEvent($event);
 
-        expect($state->processes[0]['runtime_status'])->toBe('stopped')
+        expect($state->processes[0]['runtime_status'])->toBe('inactive')
             // Fields the event did not carry stay as they were.
             ->and($state->processes[0]['name'])->toBe('horizon');
     });
@@ -110,11 +110,56 @@ describe(State::class, function (): void {
             'type' => 'process.status',
             'id' => 5,
             'at' => '2026-09-18T10:00:00+00:00',
-            'data' => ['id' => 1, 'runtime_status' => 'stopped'],
+            'data' => ['id' => 1, 'runtime_status' => 'inactive'],
         ]));
 
         expect($state->counts()['Processes'])->toBe([1, 1])
             ->and($state->attentionRows())->toHaveCount(1)
             ->and($state->attentionRows()[0]['label'])->toBe('Process');
+    });
+});
+
+describe('State health vocabulary', function (): void {
+    it('treats a process as healthy only when its systemd/Docker runtime_status matches its desired_state, not when the strings are equal', function (): void {
+        expect(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'active']))->toBeTrue()
+            ->and(State::processHealthy(['desired_state' => 'stopped', 'runtime_status' => 'inactive']))->toBeTrue()
+            // The literal-comparison bug: runtime_status never equals desired_state's own
+            // vocabulary, so a healthy stopped process must not be flagged.
+            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'running']))->toBeFalse()
+            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'inactive']))->toBeFalse()
+            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'activating']))->toBeFalse()
+            ->and(State::processHealthy(['desired_state' => 'stopped', 'runtime_status' => 'active']))->toBeFalse()
+            ->and(State::processHealthy(['desired_state' => 'running', 'runtime_status' => 'failed']))->toBeFalse();
+    });
+
+    it('treats a firewall rule as healthy at status active, never the nonexistent "applied"', function (): void {
+        expect(State::firewallHealthy(['status' => 'active']))->toBeTrue()
+            ->and(State::firewallHealthy(['status' => 'provisioning']))->toBeFalse()
+            ->and(State::firewallHealthy(['status' => 'failed']))->toBeFalse()
+            ->and(State::firewallHealthy(['status' => 'removing']))->toBeFalse();
+    });
+
+    it('treats a node as healthy only at status active', function (): void {
+        expect(State::nodeHealthy(['status' => 'active']))->toBeTrue()
+            ->and(State::nodeHealthy(['status' => 'provisioning']))->toBeFalse()
+            ->and(State::nodeHealthy(['status' => 'failed']))->toBeFalse();
+    });
+
+    it('treats an App instance as healthy only at status active', function (): void {
+        expect(State::instanceHealthy(['status' => 'active']))->toBeTrue()
+            ->and(State::instanceHealthy(['status' => 'reserved']))->toBeFalse()
+            ->and(State::instanceHealthy(['status' => 'removing']))->toBeFalse();
+    });
+
+    it('treats a schedule as healthy when its timer is enabled and provisioning did not fail', function (): void {
+        expect(State::scheduleHealthy(['desired_timer_state' => 'enabled', 'status' => 'active']))->toBeTrue()
+            ->and(State::scheduleHealthy(['desired_timer_state' => 'disabled', 'status' => 'active']))->toBeFalse()
+            ->and(State::scheduleHealthy(['desired_timer_state' => 'enabled', 'status' => 'failed']))->toBeFalse();
+    });
+
+    it('treats a deployment as healthy only once it has succeeded', function (): void {
+        expect(State::deploymentHealthy(['status' => 'succeeded']))->toBeTrue()
+            ->and(State::deploymentHealthy(['status' => 'running']))->toBeFalse()
+            ->and(State::deploymentHealthy(['status' => 'failed']))->toBeFalse();
     });
 });
