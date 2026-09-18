@@ -95,13 +95,7 @@ final readonly class GatewayNodeMetricsSource implements NodeMetricsSource
 
     private static function isPseudoMount(string $mount): bool
     {
-        foreach (['/sys', '/proc', '/dev', '/run'] as $prefix) {
-            if ($mount === $prefix || str_starts_with($mount, "{$prefix}/")) {
-                return true;
-            }
-        }
-
-        return false;
+        return array_any(['/sys', '/proc', '/dev', '/run'], static fn (string $prefix): bool => $mount === $prefix || str_starts_with($mount, "{$prefix}/"));
     }
 
     private static function gib(int $bytes): float

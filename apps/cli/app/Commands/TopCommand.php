@@ -97,6 +97,8 @@ final class TopCommand extends GatewayCommand
         }
 
         $send = fn (GatewayRequest $request, string $responseClass): object => $this->sendOrThrow($connector, $request, $responseClass);
+        /** @param  list<GatewayRequest>  $requests */
+        $sendMany = fn (array $requests, string $responseClass): array => $this->poolSend($connector, $requests, $responseClass);
 
         $state = new State;
         $scheduler = new RefreshScheduler(new GatewayNodeMetricsSource($send), new GatewayDeploymentsSource($send), new GatewayDatabaseUsersSource($send));
@@ -105,8 +107,8 @@ final class TopCommand extends GatewayCommand
         $progress->admit('load', 'Load fleet data', 'Loading fleet data', 'Loaded fleet data');
 
         try {
-            $progress->during('load', function () use ($state, $send): true {
-                $state->load($send);
+            $progress->during('load', function () use ($state, $send, $sendMany): true {
+                $state->load($send, $sendMany);
 
                 return true;
             });

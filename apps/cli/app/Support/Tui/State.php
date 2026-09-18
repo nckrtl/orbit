@@ -6,6 +6,7 @@ namespace App\Support\Tui;
 
 use App\Support\Realtime\RealtimeEvent;
 use Closure;
+use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseConnectionsRequest;
@@ -96,10 +97,23 @@ final class State
      * Loads every list once, using $send to perform each typed SDK request. $send has the same
      * shape as GatewayCommand::sendOrThrow(): it throws GatewayApiException on failure.
      *
+     * No Gateway route lists processes or firewall rules fleet-wide; both are scoped per Node
+     * (firewall) or per Node/AppInstance (processes), so a real fleet needs one request per
+     * target for each — nine-plus for firewall, dozens for processes. $sendMany, when given,
+     * runs each of those two batches concurrently through GatewayCommand::poolSend() instead of
+     * one at a time; omitting it (as the Tui unit tests do) falls back to calling $send once per
+     * request, in the same order, so callers that only need correctness need not provide it.
+     *
      * @param  Closure(object, string): object  $send
+     * @param  null|Closure(list<GatewayRequest>, string): list<object>  $sendMany
      */
-    public function load(Closure $send): void
+    public function load(Closure $send, ?Closure $sendMany = null): void
     {
+        $sendMany ??= static fn (array $requests, string $responseClass): array => array_map(
+            static fn (GatewayRequest $request): object => $send($request, $responseClass),
+            $requests,
+        );
+
         $nodes = $send(new ListNodesRequest, NodesResponse::class);
         $apps = $send(new ListAppsRequest, AppsResponse::class);
         $instances = $send(new ListAppInstancesRequest, AppInstancesResponse::class);
@@ -111,16 +125,13 @@ final class State
         $this->apps = array_map(self::appRow(...), $apps->apps);
         $this->instances = array_map(self::instanceRow(...), $instances->appInstances);
 
+        $processRequests = [
+            ...array_map(static fn (array $node): GatewayRequest => new ListProcessesRequest(new NodeProcessTarget($node['id'])), $this->nodes),
+            ...array_map(static fn (array $instance): GatewayRequest => new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), $this->instances),
+        ];
         $processes = [];
 
-        foreach ($this->nodes as $node) {
-            $response = $send(new ListProcessesRequest(new NodeProcessTarget($node['id'])), ProcessesResponse::class);
-            assert($response instanceof ProcessesResponse);
-            array_push($processes, ...array_map(self::processRow(...), $response->processes));
-        }
-
-        foreach ($this->instances as $instance) {
-            $response = $send(new ListProcessesRequest(new AppInstanceProcessTarget($instance['id'])), ProcessesResponse::class);
+        foreach ($sendMany($processRequests, ProcessesResponse::class) as $response) {
             assert($response instanceof ProcessesResponse);
             array_push($processes, ...array_map(self::processRow(...), $response->processes));
         }
@@ -131,10 +142,10 @@ final class State
         assert($schedules instanceof SchedulesResponse);
         $this->schedules = array_map(self::scheduleRow(...), $schedules->schedules);
 
+        $firewallRequests = array_map(static fn (array $node): GatewayRequest => new ListFirewallRulesRequest($node['id']), $this->nodes);
         $firewall = [];
 
-        foreach ($this->nodes as $node) {
-            $response = $send(new ListFirewallRulesRequest($node['id']), FirewallRulesResponse::class);
+        foreach ($sendMany($firewallRequests, FirewallRulesResponse::class) as $response) {
             assert($response instanceof FirewallRulesResponse);
             array_push($firewall, ...array_map(self::firewallRow(...), $response->rules));
         }

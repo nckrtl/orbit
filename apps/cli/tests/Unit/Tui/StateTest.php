@@ -4,6 +4,20 @@ declare(strict_types=1);
 
 use App\Support\Realtime\RealtimeEvent;
 use App\Support\Tui\State;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
+use Orbit\Sdk\Responses\Apps\AppIdentityResponse;
+use Orbit\Sdk\Responses\Apps\AppResponse;
+use Orbit\Sdk\Responses\Apps\AppsResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionsResponse;
+use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
+use Orbit\Sdk\Responses\Firewall\FirewallRulesResponse;
+use Orbit\Sdk\Responses\Nodes\NodeIdentityResponse;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Processes\ProcessesResponse;
+use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
 
 describe(State::class, function (): void {
     it('maps every loaded family into the row shape Screen renders', function (): void {
@@ -161,5 +175,69 @@ describe('State health vocabulary', function (): void {
         expect(State::deploymentHealthy(['status' => 'succeeded']))->toBeTrue()
             ->and(State::deploymentHealthy(['status' => 'running']))->toBeFalse()
             ->and(State::deploymentHealthy(['status' => 'failed']))->toBeFalse();
+    });
+});
+
+describe('State::load() concurrency', function (): void {
+    it('batches the per-node and per-instance process lists, and the per-node firewall list, through $sendMany, in request order', function (): void {
+        $nodeA = new NodeResponse(id: 1, name: 'beast', status: 'active', publicSshHost: '10.0.0.1', publicSshPort: 22, user: 'root', wireguardIp: '10.44.0.1', roles: [], requestId: 'r');
+        $nodeB = new NodeResponse(id: 2, name: 'shark', status: 'active', publicSshHost: '10.0.0.2', publicSshPort: 22, user: 'root', wireguardIp: '10.44.0.2', roles: [], requestId: 'r');
+        $app = new AppResponse(id: 1, name: 'Charlie Shop', slug: 'charlie-shop', repositoryUrl: 'https://example.test/charlie-shop.git', defaultBranch: 'main', root: null, defaults: null, requestId: 'r');
+        $instance = new AppInstanceResponse(
+            id: 10, appId: 1, nodeId: 1, app: new AppIdentityResponse(1, 'Charlie Shop', 'charlie-shop'), node: new NodeIdentityResponse(1, 'beast'),
+            name: 'dev', environment: 'production', sourceLayout: 'flat', checkoutPath: '/srv/charlie-shop', productionUser: null, productionHome: null,
+            root: null, effectiveRoot: null, selectedBranch: 'main', branchOverride: null, migrationRequired: false, startingCommit: null, detached: false,
+            status: 'active', route: null, domain: 'charlie-shop.test', url: null, removal: null, transfer: null, deploySteps: [], requestId: 'r',
+        );
+
+        $batches = [];
+        $sendMany = function (array $requests, string $responseClass) use (&$batches): array {
+            $batches[] = [$responseClass, count($requests)];
+
+            if ($responseClass === ProcessesResponse::class) {
+                // Simulate the pool returning results in request order: node beast, node
+                // shark, instance dev.
+                return [
+                    new ProcessesResponse([], 'r'),
+                    new ProcessesResponse([], 'r'),
+                    new ProcessesResponse([ProcessResponse::fromGatewayData(['id' => 1, 'target_type' => 'instance', 'target_id' => 10, 'name' => 'horizon', 'runtime' => 'systemd', 'working_directory' => '/srv', 'restart_policy' => 'always', 'keep_alive' => true, 'desired_state' => 'running', 'status' => 'active', 'runtime_status' => 'active', 'failed_step' => null, 'error_code' => null], 'r')], 'r'),
+                ];
+            }
+
+            // FirewallRulesResponse: one rule on beast, none on shark.
+            return [
+                new FirewallRulesResponse([new FirewallRuleResponse(id: 1, nodeId: 1, node: 'beast', name: 'ssh', action: 'allow', source: '0.0.0.0/0', protocol: 'tcp', port: '22', status: 'active', backendStatus: null, failedStep: null, errorCode: null, requestId: 'r')], 'r'),
+                new FirewallRulesResponse([], 'r'),
+            ];
+        };
+
+        $send = function (object $request, string $responseClass) use ($nodeA, $nodeB, $app, $instance): object {
+            return match ($responseClass) {
+                NodesResponse::class => new NodesResponse([$nodeA, $nodeB], 'r'),
+                AppsResponse::class => new AppsResponse([$app], 'r'),
+                AppInstancesResponse::class => new AppInstancesResponse([$instance], 'r'),
+                SchedulesResponse::class => SchedulesResponse::fromGatewayData([], 'r'),
+                DatabaseConnectionsResponse::class => new DatabaseConnectionsResponse([], 'r'),
+                default => throw new RuntimeException("Unexpected request for {$responseClass}."),
+            };
+        };
+
+        $state = new State;
+        $state->load($send, $sendMany);
+
+        // Two batched calls: one process list request per node (2) plus one per instance (1),
+        // and one firewall list request per node (2) — never one request at a time.
+        expect($batches)->toBe([[ProcessesResponse::class, 3], [FirewallRulesResponse::class, 2]])
+            ->and($state->processes)->toHaveCount(1)
+            ->and($state->processes[0]['name'])->toBe('horizon')
+            ->and($state->firewall)->toHaveCount(1)
+            ->and($state->firewall[0]['name'])->toBe('ssh');
+    });
+
+    it('falls back to one request at a time when $sendMany is omitted, and still produces the same rows', function (): void {
+        $state = tui_test_state();
+
+        expect($state->processes[0]['name'])->toBe('horizon')
+            ->and($state->firewall[0]['name'])->toBe('ssh');
     });
 });
