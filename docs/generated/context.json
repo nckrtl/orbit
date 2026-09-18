@@ -2670,6 +2670,8 @@
             ],
             "concepts": [
                 "App",
+                "Gateway",
+                "Node",
                 "Process"
             ],
             "governing_adrs": [
@@ -2781,6 +2783,24 @@
                 "Node",
                 "Process",
                 "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-response-fixtures.md",
+            "title": "Gateway response fixtures",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -3183,6 +3203,23 @@
             "governing_adrs": [
                 "0080"
             ]
+        },
+        {
+            "path": "docs/solutions/realtime-reverb.mdx",
+            "title": "Realtime events with Reverb",
+            "kind": "solution",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Web root"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",

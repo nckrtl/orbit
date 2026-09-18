@@ -32,6 +32,8 @@ describe(AppInstanceResponse::class, function (): void {
             'id' => 7,
             'app_id' => 3,
             'node_id' => 4,
+            'app' => null,
+            'node' => null,
             'vite_port' => null,
             'name' => 'main',
             'environment' => 'development',

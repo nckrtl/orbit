@@ -13,6 +13,8 @@ Run the feature's source or binary in its intended environment. Record the commi
 
 Capture interactive cases in a visible terminal. Test piped and machine output separately. Use disposable inputs and keep secrets out of recordings.
 
+To drive a flow from an agent, use a Solo terminal: spawn a terminal process, send the command, then send each key as its own input with a short wait, and read the rendered screen back after every step. Laravel Prompts reads one key per read and ignores keys that arrive together, so send arrow keys, space, and enter separately. A text prompt shows its default as editable text, so typing appends to it. Record on Linux; the recorder on macOS runs Orbit without repainting, which hides animation.
+
 The bundled recorder captures terminal output, screen frames, timing, and exit status. See [recorder usage](references/recorder.md) for commands and verification options.
 
 ## Inspect the result

@@ -14,8 +14,8 @@ trait InstanceOutput
     {
         $fields = [
             'ID' => $instance->id,
-            'App' => $instance->appId,
-            'Node' => $instance->nodeId,
+            'App' => $instance->app->slug ?? (string) $instance->appId,
+            'Node' => $instance->node->name ?? (string) $instance->nodeId,
             'Status' => $instance->status,
             'Environment' => $instance->environment,
             'Source layout' => $instance->sourceLayout,
@@ -26,9 +26,7 @@ trait InstanceOutput
             'Selected branch' => $instance->selectedBranch,
             'Branch override' => $instance->branchOverride,
             'Migration required' => $instance->migrationRequired ? 'yes' : 'no',
-            'Starting commit' => $instance->startingCommit,
-            'Git state' => $instance->detached ? 'detached' : $instance->selectedBranch,
-            'Route domain' => $instance->domain,
+            'Domain' => $instance->domain,
             'URL' => $instance->url,
         ];
 
@@ -48,7 +46,6 @@ trait InstanceOutput
             ];
         }
 
-        $fields['Request ID'] = $instance->requestId;
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", $fields));
     }
 

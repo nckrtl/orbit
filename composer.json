@@ -13,6 +13,8 @@
         "docs-context": "@php apps/docs/artisan orbit:docs-context",
         "docs-lint": "@php apps/docs/artisan orbit:docs-lint --format=agent --strict",
         "docs-openapi": "bin/docs-openapi",
+        "api-fixtures": "bin/api-fixtures --check",
+        "cli-contract": "bin/cli-contract",
         "test": "bin/test",
         "check": [
             "Composer\\Config::disableProcessTimeout",

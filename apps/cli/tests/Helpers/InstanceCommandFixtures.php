@@ -11,6 +11,8 @@ function instance_payload(?array $removal = null): array
         'id' => 5,
         'app_id' => 3,
         'node_id' => 2,
+        'app' => ['id' => 3, 'name' => 'Orbit docs', 'slug' => 'orbit-docs'],
+        'node' => ['id' => 2, 'name' => 'beast'],
         'vite_port' => null,
         'name' => 'dev',
         'environment' => 'development',
