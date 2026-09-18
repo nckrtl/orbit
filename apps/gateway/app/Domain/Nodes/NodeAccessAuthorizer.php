@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 
 final readonly class NodeAccessAuthorizer
 {
+    public function __construct(
+        private ?GatewayServingHost $servingHost = null,
+    ) {}
+
     public function allows(Node $consumer, Node $serving): bool
     {
-        if ($this->isGatewayNode($consumer)) {
+        if ($this->hasControlPlaneAuthority($consumer)) {
             return true;
         }
 
@@ -27,7 +32,7 @@ final readonly class NodeAccessAuthorizer
 
     public function hasGatewayAuthority(Node $consumer): bool
     {
-        if ($this->isGatewayNode($consumer)) {
+        if ($this->hasControlPlaneAuthority($consumer)) {
             return true;
         }
 
@@ -59,7 +64,7 @@ final readonly class NodeAccessAuthorizer
     public function hasAnyAccess(Node $consumer): bool
     {
         return
-            $this->isGatewayNode($consumer)
+            $this->hasControlPlaneAuthority($consumer)
             || $this->hasGatewayAuthority($consumer)
             || $consumer->accessibleNodes()->exists();
     }
@@ -67,7 +72,7 @@ final readonly class NodeAccessAuthorizer
     /** @return list<int> */
     public function accessibleNodeIds(Node $consumer): array
     {
-        if ($this->isGatewayNode($consumer) || $this->hasGatewayAuthority($consumer)) {
+        if ($this->hasControlPlaneAuthority($consumer) || $this->hasGatewayAuthority($consumer)) {
             /** @var list<int> */
             return Node::query()
                 ->orderBy('id')
@@ -81,6 +86,16 @@ final readonly class NodeAccessAuthorizer
             ->orderBy('nodes.id')
             ->pluck('nodes.id')
             ->all();
+    }
+
+    private function hasControlPlaneAuthority(Node $node): bool
+    {
+        return $this->isGatewayNode($node) || $this->servingHost()->is($node);
+    }
+
+    private function servingHost(): GatewayServingHost
+    {
+        return $this->servingHost ?? app(GatewayServingHost::class);
     }
 
     private function activeGatewayId(): ?int

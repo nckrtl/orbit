@@ -9,6 +9,7 @@ use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -39,6 +40,7 @@ final readonly class BootstrapGatewayAction
         private GatewaySelfAccessConverger $selfAccess,
         private PrivateDnsManager $dns,
         private string $orbitHome,
+        private ?GatewayServingHost $servingHost = null,
     ) {}
 
     public function execute(BootstrapGatewayData $data): Node
@@ -124,6 +126,7 @@ final readonly class BootstrapGatewayAction
         ];
         $node->update($active);
         $node->roles()->whereIn('role', self::OwnedRoles)->update($active);
+        ($this->servingHost ?? app(GatewayServingHost::class))->remember($node);
 
         return $node->load('roles');
     }

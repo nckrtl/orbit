@@ -137,8 +137,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:list',
         'node:metrics',
         'node:remove',
+        'node:rename',
         'node:role:add',
         'node:role:list',
+        'node:role:relocate',
         'node:role:remove',
         'node:settings',
         'node:show',
@@ -295,7 +297,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(124);
+    expect($orbitCommands)->toHaveCount(126);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -719,9 +721,11 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:list' => [[], ['json' => false]],
         'node:metrics' => [['node'], ['json' => false]],
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
+        'node:rename' => [['node', 'name'], ['json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],
+        'node:role:relocate' => [['node', 'role'], ['force' => false, 'json' => false]],
         'node:role:remove' => [
             ['node', 'role'],
             ['force' => false, 'purge-data' => false, 'offline' => false, 'json' => false],
@@ -1058,8 +1062,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:list' => [[], ...$profileMissing],
         'node:metrics' => [['node' => '1'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
+        'node:rename' => [['node' => '1', 'name' => 'vpn'], ...$profileMissing],
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],
+        'node:role:relocate' => [['node' => '7', 'role' => 'gateway', '--force' => true], ...$profileMissing],
         'node:role:remove' => [['node' => '7', 'role' => 'app-dev', '--force' => true], ...$profileMissing],
         'node:settings' => [['node' => '1', '--setting' => ['apps.path:/srv/orbit/apps']], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],

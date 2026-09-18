@@ -46,6 +46,8 @@ use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
 use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
+use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
+use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
@@ -155,7 +157,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 97;
+        $preScheduleOperationCount = 99;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -307,7 +309,9 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
             ->toContain(UnsetClusterRouterRequest::class)
-            ->toContain(ShowNodeMetricsRequest::class);
+            ->toContain(ShowNodeMetricsRequest::class)
+            ->toContain(RelocateNodeRoleRequest::class)
+            ->toContain(RenameNodeRequest::class);
 
         expect(array_values(array_filter(
             $requestClasses,
@@ -331,14 +335,14 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($databaseRequests);
     });
 
-    it('documents the 125-operation SDK surface including Database connection transport', function (): void {
+    it('documents the 127-operation SDK surface including Database connection transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 125 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 127 concrete public Gateway API operations:')
             ->toContain(
-                '- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, role remove, and metrics.',
+                '- Node: list, show, add, rename, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
             ->toContain(
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
@@ -405,7 +409,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 125 public Gateway operations.',
+                'The SDK exposes exactly 127 public Gateway operations.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',

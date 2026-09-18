@@ -798,6 +798,24 @@ it('renders local validation failures through the exact json boundary', function
         'node_role.role_required',
         'Role is required.',
     ],
+    'node role relocate id' => [
+        'node:role:relocate',
+        ['node' => '0', 'role' => 'gateway', '--force' => true],
+        'node.id_invalid',
+        'Node ID must be a positive integer.',
+    ],
+    'node role relocate empty role' => [
+        'node:role:relocate',
+        ['node' => '7', 'role' => '', '--force' => true],
+        'node_role.role_required',
+        'Role is required.',
+    ],
+    'node rename empty name' => [
+        'node:rename',
+        ['node' => '1', 'name' => ''],
+        'node.name_required',
+        'Name is required.',
+    ],
 ]);
 
 it('renders console input failures through the exact json boundary', function (array $arguments, string $message): void {
@@ -908,6 +926,34 @@ it('renders console input failures through the exact json boundary', function (a
             'command' => 'node:role:remove',
             'node' => '7',
             'role' => 'app-dev',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
+    'node role relocate missing required arguments' => [
+        ['command' => 'node:role:relocate', '--json' => true],
+        'Not enough arguments (missing: "node, role").',
+    ],
+    'node role relocate unknown option' => [
+        [
+            'command' => 'node:role:relocate',
+            'node' => '7',
+            'role' => 'gateway',
+            '--json' => true,
+            '--unknown-option' => true,
+        ],
+        'The "--unknown-option" option does not exist.',
+    ],
+    'node rename missing required arguments' => [
+        ['command' => 'node:rename', '--json' => true],
+        'Not enough arguments (missing: "node, name").',
+    ],
+    'node rename unknown option' => [
+        [
+            'command' => 'node:rename',
+            'node' => '1',
+            'name' => 'vpn',
             '--json' => true,
             '--unknown-option' => true,
         ],
