@@ -16,7 +16,7 @@ interface DatabaseUsersSource
 {
     /**
      * @return list<array{username: string, privileges: string, created_by: string}>|null Null when
-     *                                                                                 this Gateway cannot list users for this connection.
+     *                                                                                    this Gateway cannot list users for this connection.
      */
     public function forConnection(string $slug): ?array;
 }
