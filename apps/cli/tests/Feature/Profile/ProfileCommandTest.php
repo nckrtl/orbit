@@ -495,9 +495,9 @@ final class ProfileCommandFakeProfiler implements ProfileRequestProfiler
      * @param  array<string, string>  $headers
      * @return array<string, mixed>
      */
-    public function profile(string $url, array $headers = []): array
+    public function profile(string $url, array $headers = [], ?string $caPath = null): array
     {
-        $this->calls[] = compact('url', 'headers');
+        $this->calls[] = compact('url', 'headers', 'caPath');
 
         return $this->profile;
     }

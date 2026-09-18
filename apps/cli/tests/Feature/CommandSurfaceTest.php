@@ -764,7 +764,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'profile' => [['url'], ['as-first-user' => false, 'user' => null, 'json' => false]],
+        'profile' => [['url'], ['instance' => null, 'path' => null, 'as-first-user' => false, 'user' => null, 'json' => false]],
         'realtime:show' => [[], ['json' => false]],
         'realtime:tail' => [[], ['types' => null, 'json' => false]],
         'route:list' => [[], ['json' => false]],

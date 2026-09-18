@@ -18,7 +18,7 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
      * @param  array<string, string>  $headers
      * @return array<string, mixed>
      */
-    public function profile(string $url, array $headers = []): array
+    public function profile(string $url, array $headers = [], ?string $caPath = null): array
     {
         $handle = curl_init($url);
 
@@ -48,6 +48,13 @@ final readonly class CurlProfileRequestProfiler implements ProfileRequestProfile
                 return strlen($header);
             },
         ];
+
+        if ($caPath !== null) {
+            // Assigned rather than unpacked into the literal above: array unpacking renumbers
+            // integer keys, and every CURLOPT_* constant is an integer, so a spread would
+            // silently drop this and leave the request verifying against the system store.
+            $options[CURLOPT_CAINFO] = $caPath;
+        }
 
         curl_setopt_array($handle, $options);
 

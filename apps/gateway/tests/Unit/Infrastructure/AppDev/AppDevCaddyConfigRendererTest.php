@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\DevelopmentServerEndpoint;
+use App\Domain\Hibernation\RuntimeHibernation;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSite;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 it('proxies the reserved development-server path to loopback on a development site', function (): void {
     $configuration = new AppDevCaddyConfigRenderer()->render(collect([
@@ -120,6 +122,32 @@ it('binds a public Ingress proxy without an https prefix and preserves forwarded
         ->toContain('header_up X-Forwarded-Host shop.example.test')
         ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
         ->not->toContain('https://shop.example.test {');
+});
+
+it('measures a development site without waking it or counting the request as activity', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        new AppDevSite(
+            nodeId: 3,
+            nodeAddress: '10.44.0.7',
+            scope: 'app-instance-28',
+            checkoutPath: '/fast/apps/dlf/best-practices',
+            documentRoot: 'public',
+            phpVersion: '8.5',
+            domain: 'best-practices.dlf.test',
+        ),
+    ]));
+
+    // Two rules, and losing either one breaks hibernation silently: a probe that reaches
+    // forward_auth starts the Processes the sweep halted, and a probe that reaches the access
+    // log keeps resetting the mtime the sweep reads as activity.
+    expect($configuration)
+        ->toContain('@orbit_probe header '.RuntimeHibernation::ProbeHeader.' 1')
+        ->toContain('log_skip @orbit_probe')
+        ->toContain('not header '.RuntimeHibernation::ProbeHeader.' 1');
+
+    $asleep = Str::between($configuration, '@orbit_asleep {', '}');
+
+    expect($asleep)->toContain('not header '.RuntimeHibernation::ProbeHeader.' 1');
 });
 
 it('does not attach the development-server handle to production, proxy, or unavailable sites', function (): void {

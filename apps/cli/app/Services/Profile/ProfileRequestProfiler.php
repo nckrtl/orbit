@@ -8,6 +8,9 @@ interface ProfileRequestProfiler
 {
     /**
      * @param  array<string, string>  $headers
+     * @param  string|null  $caPath  Certificate bundle to verify against, for a host that
+     *                               presents an Orbit CA leaf rather than a public certificate.
+     *                               Null verifies against the system store, as a public URL needs.
      * @return array{
      *     request: array{
      *         method: string,
@@ -30,5 +33,5 @@ interface ProfileRequestProfiler
      *     response_headers: array<string, string>
      * }
      */
-    public function profile(string $url, array $headers = []): array;
+    public function profile(string $url, array $headers = [], ?string $caPath = null): array;
 }
