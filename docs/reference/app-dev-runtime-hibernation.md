@@ -46,7 +46,7 @@ orbit process:create queue \
 
 ## Idle window and sweep
 
-The Gateway reads last HTTP activity from the more recent of the App instance Caddy access log and the awake marker on the workload Node. The default idle window is 3,600 seconds. The Gateway hibernator runs every 10 minutes on the Gateway host as `orbit-runtime-hibernator.timer`. The same sweep also evaluates the cold dependency window.
+The Gateway reads last HTTP activity from the more recent of the App instance Caddy access log and the awake marker on the workload Node. A probe request is absent from that log by design, so measuring an App instance never extends its idle window. The default idle window is 3,600 seconds. The Gateway hibernator runs every 10 minutes on the Gateway host as `orbit-runtime-hibernator.timer`. The same sweep also evaluates the cold dependency window.
 
 | Setting | Default | Config key |
 | --- | --- | --- |
@@ -91,6 +91,8 @@ The publish lock uses `umask 0077`. The Gateway sets each ancestor to `0755` so 
 ## Wake
 
 Caddy on the App instance Node looks for `app-instance-{id}.awake` under `/dev/shm/orbit/hibernation` with a file matcher that names that directory as its root. A matching request enters a `handle` that runs before the Vite and application handles. When the marker is absent, that handle calls `GET /api/v1/runtime-activations/app-instance/{id}` on `https://gateway.orbit` over WireGuard. The transport trusts the Orbit root CA already published as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` with `tls_trusted_ca_certs`, a Caddy 2.6 directive. Caddy 2.6 is the fleet floor for the Ubuntu `caddy` package Orbit installs. A Node may run a newer Caddy.
+
+A request carrying `X-Orbit-Probe: 1` is exempt from both halves of that mechanism: it never enters the wake handle, so it starts nothing, and Caddy skips it in the access log, so it never becomes the activity the sweep reads. [`profile --instance`](/cli/profile) sends that header, which is what lets an operator measure a sleeping App instance without changing whether it sleeps. A request without the header behaves exactly as described above.
 
 The Gateway accepts that call only from the App instance's Node. It returns an HTML progress page with status 401 and a two-second refresh, then starts the desired-running App instance Processes after that response. Caddy returns that non-2xx page to the client and does not proxy the site.
 

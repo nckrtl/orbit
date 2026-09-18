@@ -3,9 +3,9 @@ title: "profile"
 description: "Profile one HTTP request from the operator machine and show timings, without using the Gateway."
 ---
 
-`profile` sends one GET from this machine to an absolute HTTP or HTTPS URL and reports timings. It does not use a Gateway profile, the Gateway API, or a registered App target. [Gateway profiles](/cli/gateway) remain a separate local configuration family.
+`profile` sends one GET from this machine and reports timings. Name an absolute HTTP or HTTPS URL, or pass `--instance` to profile an AppInstance at the URL the Gateway records for it. [Gateway profiles](/cli/gateway) remain a separate local configuration family.
 
-The command is local-only. It never opens an SSH session and never asks the Gateway to issue the request.
+The request always leaves this machine. The command never opens an SSH session and never asks the Gateway to issue it; with `--instance` it asks the Gateway only where to send it, and verifies that host against the active profile's Orbit root certificate, because an AppInstance domain presents an Orbit CA leaf.
 
 ## Commands
 
@@ -25,10 +25,12 @@ orbit profile [url] [--as-first-user] [--user=ID] [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `url` | when no usable `APP_URL` exists | Absolute `http` or `https` URL to profile. An explicit URL wins over a nearest `.env` `APP_URL`. |
+| `url` | when neither `--instance` nor a usable `APP_URL` exists | Absolute `http` or `https` URL to profile. An explicit URL wins over a nearest `.env` `APP_URL`. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `--instance=ID` | none | Profile the AppInstance with this numeric ID, at the URL the Gateway records for it. Refuses a `url` argument at the same time. The request carries `X-Orbit-Probe: 1`, which a development AppInstance's site answers without waking the Processes hibernation halted and without counting as the activity that keeps them running, so profiling a sleeping instance leaves it asleep. |
+| `--path=PATH` | `/` | Path to profile on the `--instance` URL. |
 | `--as-first-user` | guest | Authenticate the profiled request as the first user. Mutually exclusive with `--user`. |
 | `--user=ID` | guest | Authenticate the profiled request as the given primary key. Mutually exclusive with `--as-first-user`. |
 | `--json` | human output | Return the same result as one JSON document. |

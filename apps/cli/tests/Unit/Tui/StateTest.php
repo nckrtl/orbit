@@ -211,7 +211,7 @@ describe('State health vocabulary', function (): void {
 });
 
 describe('State::load() concurrency', function (): void {
-    it('batches the per-node and per-instance process lists, and the per-node firewall list, through $sendMany, in request order', function (): void {
+    it('batches the per-node firewall list on load, and the process lists only once loadProcesses runs, through $sendMany, in request order', function (): void {
         $nodeA = new NodeResponse(id: 1, name: 'beast', status: 'active', publicSshHost: '10.0.0.1', publicSshPort: 22, user: 'root', wireguardIp: '10.44.0.1', roles: [], requestId: 'r');
         $nodeB = new NodeResponse(id: 2, name: 'shark', status: 'active', publicSshHost: '10.0.0.2', publicSshPort: 22, user: 'root', wireguardIp: '10.44.0.2', roles: [], requestId: 'r');
         $app = new AppResponse(id: 1, name: 'Charlie Shop', slug: 'charlie-shop', repositoryUrl: 'https://example.test/charlie-shop.git', defaultBranch: 'main', root: null, defaults: null, requestId: 'r');
@@ -257,13 +257,22 @@ describe('State::load() concurrency', function (): void {
         $state = new State;
         $state->load($send, $sendMany);
 
-        // Two batched calls: one process list request per node (2) plus one per instance (1),
-        // and one firewall list request per node (2) — never one request at a time.
-        expect($batches)->toBe([[ProcessesResponse::class, 3], [FirewallRulesResponse::class, 2]])
-            ->and($state->processes)->toHaveCount(1)
-            ->and($state->processes[0]['name'])->toBe('horizon')
+        // load() draws the first frame, so it batches only the per-node firewall list (2) and
+        // asks for no Process at all.
+        expect($batches)->toBe([[FirewallRulesResponse::class, 2]])
+            ->and($state->processes)->toBe([])
+            ->and($state->processesLoaded)->toBeFalse()
             ->and($state->firewall)->toHaveCount(1)
             ->and($state->firewall[0]['name'])->toBe('ssh');
+
+        $state->loadProcesses($send, $sendMany);
+
+        // loadProcesses() then batches one request per node (2) plus one per instance (1),
+        // never one request at a time.
+        expect($batches)->toBe([[FirewallRulesResponse::class, 2], [ProcessesResponse::class, 3]])
+            ->and($state->processesLoaded)->toBeTrue()
+            ->and($state->processes)->toHaveCount(1)
+            ->and($state->processes[0]['name'])->toBe('horizon');
     });
 
     it('falls back to one request at a time when $sendMany is omitted, and still produces the same rows', function (): void {

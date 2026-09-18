@@ -358,6 +358,7 @@
             "components": [],
             "concepts": [
                 "App",
+                "App instance",
                 "Doctor",
                 "Gateway",
                 "Node",

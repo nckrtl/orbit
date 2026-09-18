@@ -177,8 +177,17 @@ final readonly class AppDevCaddyConfigRenderer
         $markers = RuntimeHibernation::MarkerDirectory;
         $marker = '/'.$key.'.awake';
 
+        $probeHeader = RuntimeHibernation::ProbeHeader;
+
+        // A probe (`orbit profile --instance`) measures this site without disturbing it: it must
+        // not reach forward_auth, which would start the Processes hibernation halted, and it must
+        // not reach the access log, whose mtime is the activity that decides when they halt
+        // again. Every other request behaves exactly as before.
         return <<<CADDY
+            @orbit_probe header {$probeHeader} 1
+            log_skip @orbit_probe
             @orbit_asleep {
+                not header {$probeHeader} 1
                 not file {
                     root {$markers}
                     try_files {$marker}

@@ -116,6 +116,8 @@ final class TopCommand extends GatewayCommand
             return $this->renderGatewayFailure($code, $exception->getMessage(), $exception->requestId());
         }
 
+        $state->queueProcesses();
+
         $progress->complete('load', ProgressState::Success);
         $progress->dismiss();
 
@@ -149,7 +151,8 @@ final class TopCommand extends GatewayCommand
                     $lastPoll = microtime(true);
 
                     try {
-                        $state->load($send);
+                        $state->load($send, $sendMany);
+                        $state->queueProcesses();
                     } catch (GatewayApiException $exception) {
                         $ui->message = $exception->getMessage();
                     }
@@ -186,6 +189,20 @@ final class TopCommand extends GatewayCommand
                 }
 
                 $display->draw($screen->screen($state, $ui, $this->header($profile, $state, $lastPoll, $tick), $this->footer($ui), $display->viewportArea()));
+
+                // Only now that a frame is on screen: the Gateway answers each of these by
+                // checking a Process's live status over SSH, so draining the whole queue in one
+                // call would hold the first frame back and freeze the keyboard while it ran.
+                // One batch per frame keeps the screen up and fills "Needs attention" as the
+                // answers arrive.
+                if (! $state->processesLoaded) {
+                    try {
+                        $state->loadNextProcesses($send, $sendMany);
+                    } catch (GatewayApiException $exception) {
+                        $state->processesLoaded = true;
+                        $ui->message = $exception->getMessage();
+                    }
+                }
                 usleep(50_000);
             }
         } finally {

@@ -10,6 +10,13 @@ final readonly class RuntimeHibernation
 {
     public const string MarkerDirectory = '/dev/shm/orbit/hibernation';
 
+    /**
+     * Header a measurement carries so a development site neither wakes for it nor counts it as
+     * the activity that keeps it awake. `orbit profile --instance` sends it; the rendered Caddy
+     * site honours it (see AppDevCaddyConfigRenderer).
+     */
+    public const string ProbeHeader = 'X-Orbit-Probe';
+
     public const string AccessLogDirectory = '/data/caddy/orbit/hibernation';
 
     public const int DefaultIdleSeconds = 3_600;
