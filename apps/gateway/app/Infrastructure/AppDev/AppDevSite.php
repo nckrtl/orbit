@@ -63,7 +63,8 @@ final readonly class AppDevSite
     {
         return $this->upstreamAddress !== null
             || $this->upstreamAddresses !== []
-            || $this->localUnixUpstream !== null;
+            || $this->localUnixUpstream !== null
+            || $this->isLocalHttpProxy();
     }
 
     /** @return list<string> */
