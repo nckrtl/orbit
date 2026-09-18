@@ -1,7 +1,7 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │› Dashboard       ││Name          Status    CPU                   Mem                  Disk                  Uptime   │
-│  Nodes         1 ││beast         active    —                     —                    —                   No metrics.│
+│  Nodes         1 ││beast         active    —                     —                    —                          —   │
 │  Apps          1 │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │  Instances     1 │╭ Needs attention ─────────────────────────────────────────────────────────────────────────────────╮
 │  Processes     1 ││ Nothing needs attention.                                                                         │

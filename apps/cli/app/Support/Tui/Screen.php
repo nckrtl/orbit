@@ -265,7 +265,7 @@ final class Screen
         if ($metrics === null) {
             $blank = TableCell::fromLine(Line::fromSpan(Span::styled('—', $dim)));
 
-            return TableRow::fromCells($name, $status, $blank, $blank, $blank, $this->styledCell('No metrics.', $dim));
+            return TableRow::fromCells($name, $status, $blank, $blank, $blank, $blank);
         }
 
         $cpu = array_sum($metrics['cores']) / max(1, count($metrics['cores']));

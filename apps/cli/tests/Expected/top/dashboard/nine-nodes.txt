@@ -1,15 +1,15 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │› Dashboard       ││Name          Status    CPU                   Mem                  Disk                  Uptime   │
-│  Nodes         9 ││node-1        active    —                     —                    —                   No metrics.│
-│  Apps          1 ││node-2        active    —                     —                    —                   No metrics.│
+│  Nodes         9 ││node-1        active    —                     —                    —                          —   │
+│  Apps          1 ││node-2        active    —                     —                    —                          —   │
 │  Instances     1 ││node-3        active    [||||          ]  30% [|        ] 2.0G/16G /  [|    ] 40G/200G    5d 1h   │
-│  Processes     1 ││node-4        active    —                     —                    —                   No metrics.│
-│  Schedules     1 ││node-5        active    —                     —                    —                   No metrics.│
-│  Databases     1 ││node-6        active    —                     —                    —                   No metrics.│
-│  Firewall      1 ││node-7        active    —                     —                    —                   No metrics.│
-│                  ││node-8        active    —                     —                    —                   No metrics.│
-│                  ││node-9        failed    —                     —                    —                   No metrics.│
+│  Processes     1 ││node-4        active    —                     —                    —                          —   │
+│  Schedules     1 ││node-5        active    —                     —                    —                          —   │
+│  Databases     1 ││node-6        active    —                     —                    —                          —   │
+│  Firewall      1 ││node-7        active    —                     —                    —                          —   │
+│                  ││node-8        active    —                     —                    —                          —   │
+│                  ││node-9        failed    —                     —                    —                          —   │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Needs attention ─────────────────────────────────────────────────────────────────────────────────╮
 │                  ││  Kind        Name                             Where                                        State │
