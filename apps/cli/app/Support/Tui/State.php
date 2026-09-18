@@ -501,13 +501,21 @@ final class State
     // "needs attention" per family; Screen and attentionRows()/counts() above all call through
     // them instead of repeating the comparison.
 
-    /** A Node's `status` is LifecycleStatus: provisioning, active, failed, removing. */
+    /**
+     * A Node's `status` is LifecycleStatus: provisioning, active, failed, removing.
+     *
+     * @param  array<string, mixed>  $node
+     */
     public static function nodeHealthy(array $node): bool
     {
         return $node['status'] === 'active';
     }
 
-    /** An AppInstance's `status` is AppInstanceState; active is the only settled, healthy state. */
+    /**
+     * An AppInstance's `status` is AppInstanceState; active is the only settled, healthy state.
+     *
+     * @param  array<string, mixed>  $instance
+     */
     public static function instanceHealthy(array $instance): bool
     {
         return $instance['status'] === 'active';
@@ -519,6 +527,8 @@ final class State
      * maintenance, absent, ...) reported by `systemctl is-active`/`docker container inspect`, not
      * the same vocabulary as `desired_state`. A running process is healthy when active; a stopped
      * one is healthy when inactive. Anything else (still settling, or failed) needs a look.
+     *
+     * @param  array<string, mixed>  $process
      */
     public static function processHealthy(array $process): bool
     {
@@ -533,19 +543,30 @@ final class State
      * A Schedule's `desired_timer_state` is DesiredTimerState (enabled, disabled); its `status`
      * is a separate LifecycleStatus-shaped provisioning status (provisioning, active, failed,
      * removing). Healthy means the timer is enabled and provisioning did not fail.
+     *
+     * @param  array<string, mixed>  $schedule
      */
     public static function scheduleHealthy(array $schedule): bool
     {
         return $schedule['desired_timer_state'] === 'enabled' && $schedule['status'] !== 'failed';
     }
 
-    /** A Firewall rule's `status` is LifecycleStatus; active is its healthy, applied state. */
+    /**
+     * A Firewall rule's `status` is LifecycleStatus; active is its healthy, applied state.
+     *
+     * @param  array<string, mixed>  $rule
+     */
     public static function firewallHealthy(array $rule): bool
     {
         return $rule['status'] === 'active';
     }
 
-    /** A deployment's `status` is running, succeeded, or failed; succeeded is the settled, healthy state. */
+    /**
+     * A deployment's `status` is running, succeeded, or failed; succeeded is the settled,
+     * healthy state.
+     *
+     * @param  array<string, mixed>  $deployment
+     */
     public static function deploymentHealthy(array $deployment): bool
     {
         return $deployment['status'] === 'succeeded';

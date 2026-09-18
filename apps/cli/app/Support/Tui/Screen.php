@@ -192,35 +192,79 @@ final class Screen
         };
     }
 
-    /** The dashboard: counts, one compact metrics line per node, and everything that needs a look. */
+    /**
+     * The dashboard: counts, one compact table row per node, and everything that needs a look.
+     * The node table is sized to its content (one line per node, plus its border and header) so
+     * "Needs attention" keeps the rest of the screen, with its own selection-following scroll,
+     * regardless of how many nodes the fleet has.
+     */
     private function dashboard(State $state, UiState $ui, Area $area): Widget
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
-        $nodeBlocks = count($state->nodes) * 3;
-        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($nodeBlocks), Constraint::min(5)])->split($area);
+        $nodesHeight = count($state->nodes) + 3;
+        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($nodesHeight), Constraint::min(5)])->split($area);
         $ui->drawn['attention'] = ['area' => $split->get(2), 'header' => true];
         $ui->paneOrder = ['attention'];
-
-        $nodeWidgets = [];
-
-        foreach ($state->nodes as $node) {
-            $nodeWidgets[] = $this->nodeSummaryBlock($state, $node, $area->width - 2);
-        }
 
         $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $state->attentionRows());
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(3), Constraint::length($nodeBlocks), Constraint::min(5))
+            ->constraints(Constraint::length(3), Constraint::length($nodesHeight), Constraint::min(5))
             ->widgets(
                 BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)
                     ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($state, $area->width - 2)))),
-                GridWidget::default()
-                    ->direction(Direction::Vertical)
-                    ->constraints(...array_fill(0, max(1, count($nodeWidgets)), Constraint::length(3)))
-                    ->widgets(...$nodeWidgets),
+                $this->nodeSummaryTable($state, $split->get(1)),
                 $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, 'Nothing needs attention.'),
             );
+    }
+
+    /** One line per node: name, status, cpu/mem/disk bars, and uptime; a yellow row means the node needs a look. */
+    private function nodeSummaryTable(State $state, Area $area): Widget
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $widths = [Constraint::percentage(14), Constraint::percentage(9), Constraint::percentage(21), Constraint::percentage(21), Constraint::percentage(19), Constraint::percentage(16)];
+        $columns = $this->columnWidths($area, $widths);
+        $lastWidth = $columns[count($columns) - 1] ?? 0;
+
+        $table = TableWidget::default();
+        $table->columnSpacing = 1;
+        $table->header($this->alignLast(TableRow::fromStrings('Name', 'Status', 'CPU', 'Mem', 'Disk', 'Uptime'), $lastWidth));
+        $table->widths(...$widths)->rows(...array_map(fn (array $node): TableRow => $this->alignLast($this->nodeSummaryRow($state, $node, $columns), $lastWidth), $state->nodes));
+
+        return BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->widget($table);
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @param  list<int>  $columns  Rendered pixel widths for [name, status, cpu, mem, disk, uptime].
+     */
+    private function nodeSummaryRow(State $state, array $node, array $columns): TableRow
+    {
+        $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $warn = ! State::nodeHealthy($node);
+        $textStyle = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
+        $name = TableCell::fromLine(Line::fromSpan(Span::styled($node['name'], $textStyle)));
+        $status = TableCell::fromLine(Line::fromSpan(Span::styled($node['status'], $textStyle)));
+        $metrics = $state->nodeMetrics($node['id']);
+
+        if ($metrics === null) {
+            $blank = TableCell::fromLine(Line::fromSpan(Span::styled('—', $dim)));
+
+            return TableRow::fromCells($name, $status, $blank, $blank, $blank, $this->styledCell('No metrics.', $dim));
+        }
+
+        $cpu = array_sum($metrics['cores']) / max(1, count($metrics['cores']));
+        [$mount, $used, $total] = $metrics['disks'][0] ?? ['/', 0.0, 0.0];
+
+        return TableRow::fromCells(
+            $name,
+            $status,
+            TableCell::fromLine(Line::fromSpans(...$this->bar('', $cpu, sprintf('%3.0f%%', $cpu * 100), $columns[2]))),
+            TableCell::fromLine(Line::fromSpans(...$this->bar('', $metrics['mem'][1] > 0 ? $metrics['mem'][0] / $metrics['mem'][1] : 0, sprintf('%.1fG/%.0fG', $metrics['mem'][0], $metrics['mem'][1]), $columns[3]))),
+            TableCell::fromLine(Line::fromSpans(...$this->bar(str_pad((string) $mount, 3), $total > 0 ? $used / $total : 0, sprintf('%.0fG/%.0fG', $used, $total), $columns[4], [80, 90]))),
+            $this->styledCell($metrics['uptime'], $dim),
+        );
     }
 
     /** @param array<string, mixed> $node */
@@ -259,7 +303,8 @@ final class Screen
 
     /**
      * The node page's htop-like block: cores in two columns, then memory and swap beside the root
-     * disk and uptime. The dashboard keeps the one-line summary (nodeSummaryBlock).
+     * disk and uptime. The dashboard uses the compact one-line-per-node table instead
+     * (nodeSummaryTable); nodeSummaryBlock now only serves this page's no-metrics fallback.
      *
      * @param  array<string, mixed>  $node
      */
@@ -799,6 +844,26 @@ final class Screen
             return 0;
         }
 
+        $columns = $this->columnWidths($area, $widths);
+
+        return $columns[count($columns) - 1];
+    }
+
+    /**
+     * The rendered pixel width of every column a `TableWidget` with these width constraints
+     * would give them inside $area, mirroring the borders, selector gutter, and one-cell
+     * column spacing `pane()` and `TableWidget` apply. Used wherever a cell's content (a bar,
+     * for example) needs to fit its column exactly rather than truncate or leave slack.
+     *
+     * @param  list<Constraint>  $widths
+     * @return list<int>
+     */
+    private function columnWidths(Area $area, array $widths): array
+    {
+        if ($widths === []) {
+            return [];
+        }
+
         $constraints = [Constraint::length(2)];
 
         foreach ($widths as $width) {
@@ -809,7 +874,13 @@ final class Screen
         array_pop($constraints);
         $chunks = Layout::default()->direction(Direction::Horizontal)->constraints($constraints)->split(Area::fromDimensions(max(1, $area->width - 2), 1));
 
-        return $chunks->get(count($constraints) - 1)->width;
+        $columns = [];
+
+        for ($index = 1; $index < count($constraints); $index += 2) {
+            $columns[] = $chunks->get($index)->width;
+        }
+
+        return $columns;
     }
 
     private function alignLast(TableRow $row, int $width): TableRow
@@ -845,8 +916,17 @@ final class Screen
 
     private function cell(string $text, bool $warn): TableCell
     {
+        return $this->styledCell($text, $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
+    }
+
+    /**
+     * A plain-text cell styled as a whole cell rather than by span, so `alignLast()` (which
+     * flattens a right-aligned last cell's spans into one string) keeps its color.
+     */
+    private function styledCell(string $text, Style $style): TableCell
+    {
         $cell = TableCell::fromString($text);
-        $cell->style = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
+        $cell->style = $style;
 
         return $cell;
     }

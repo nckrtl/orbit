@@ -211,4 +211,46 @@ describe(Screen::class, function (): void {
 
         expect_output($screen, 'top/record/node-metrics.txt');
     });
+
+    it('renders a 9-node dashboard as a compact table with room left for needs attention', function (): void {
+        $state = tui_test_state();
+        $state->nodes = array_map(
+            static fn (int $i): array => [
+                'id' => $i,
+                'name' => "node-{$i}",
+                // node-9 is unhealthy, so its row turns yellow and it also shows in "Needs attention".
+                'status' => $i === 9 ? 'failed' : 'active',
+                'roles' => ['app-dev'],
+                'platform' => 'linux',
+                'architecture' => 'x86_64',
+                'tld' => null,
+                'wireguard_ip' => "10.44.0.{$i}",
+                'public_ssh_host' => "10.0.0.{$i}",
+                'public_ssh_port' => 22,
+                'user' => 'root',
+            ],
+            range(1, 9),
+        );
+        // node-3 has live metrics from a node.sample event; the rest have none yet, and show
+        // "No metrics." in dim text instead of bars.
+        $state->nodeSamples[3] = [
+            'cores' => [0.2, 0.4],
+            'mem' => [2.0, 16.0],
+            'swap' => [0.0, 4.0],
+            'uptime' => '5d 1h',
+            'disks' => [['/', 40.0, 200.0]],
+        ];
+        $ui = new UiState;
+
+        $screen = render_top_screen($ui, $state);
+
+        expect($screen)->toContain('node-1')
+            ->and($screen)->toContain('node-9')
+            ->and($screen)->toContain('No metrics.')
+            ->and($screen)->toContain('Needs attention')
+            ->and($screen)->toContain('Node')
+            ->and($screen)->not->toContain('Metrics not available on this Gateway yet.');
+
+        expect_output($screen, 'top/dashboard/nine-nodes.txt');
+    });
 });
