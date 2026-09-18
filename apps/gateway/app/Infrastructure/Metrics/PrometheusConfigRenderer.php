@@ -13,11 +13,51 @@ final readonly class PrometheusConfigRenderer
      */
     public const string ScrapeInterval = '5s';
 
+    /**
+     * How often Prometheus scrapes cAdvisor. Process CPU and memory do not need `orbit top`'s
+     * five-second node resolution, and cAdvisor is the expensive job (see
+     * `MetricsFootprint::CadvisorDisabledMetrics`), so it is scraped six times less often than the
+     * node exporter. `PrometheusProcessMetricsQueries::CpuRateWindow` is sized off this interval.
+     */
+    public const string CadvisorScrapeInterval = '30s';
+
     /** @param list<array{name:string,address:string}> $nodes */
     public function render(array $nodes): string
     {
         usort($nodes, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+        $this->guardTargets($nodes);
+
+        return
+            '# retention.time: '.MetricsRuntimeSpec::RetentionTime." (configured by the container CLI flag)\nglobal:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n"
+            .$this->job('orbit-node-exporter', $nodes, MetricsFootprint::ExporterPort, null)
+            .$this->job('orbit-cadvisor', $nodes, MetricsFootprint::CadvisorPort, self::CadvisorScrapeInterval);
+    }
+
+    /** @param list<array{name:string,address:string}> $nodes */
+    private function job(string $name, array $nodes, string $port, ?string $scrapeInterval): string
+    {
         $entries = '';
+
+        foreach ($nodes as $node) {
+            $entries .=
+                '      - targets: ["'
+                .$node['address']
+                .':'
+                .$port
+                .'"]'
+                ."\n        labels:\n          node: \""
+                .$node['name']
+                ."\"\n";
+        }
+
+        $interval = $scrapeInterval === null ? '' : "    scrape_interval: {$scrapeInterval}\n";
+
+        return "  - job_name: {$name}\n{$interval}    static_configs:\n{$entries}";
+    }
+
+    /** @param list<array{name:string,address:string}> $nodes */
+    private function guardTargets(array $nodes): void
+    {
         foreach ($nodes as $node) {
             if (
                 ! preg_match('/^[A-Za-z0-9._:-]+$/', $node['address'])
@@ -25,19 +65,6 @@ final readonly class PrometheusConfigRenderer
             ) {
                 throw new \InvalidArgumentException('Invalid metrics target.');
             }
-            $entries .=
-                '      - targets: ["'
-                .$node['address']
-                .':'
-                .MetricsFootprint::ExporterPort
-                .'"]'
-                ."\n        labels:\n          node: \""
-                .$node['name']
-                ."\"\n";
         }
-
-        return
-            '# retention.time: '.MetricsRuntimeSpec::RetentionTime." (configured by the container CLI flag)\nglobal:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n  - job_name: orbit-node-exporter\n    static_configs:\n"
-            .$entries;
     }
 }
