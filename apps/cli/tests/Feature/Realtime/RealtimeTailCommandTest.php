@@ -51,7 +51,7 @@ describe('realtime:tail', function (): void {
     it('asks the gateway for the realtime endpoint when the profile has none', function (): void {
         app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://gateway.test'));
         MockClient::global(gateway_fixture_mock('realtime/realtime-show/configured'));
-        Http::fake(['*/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
+        Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
 
         $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
@@ -76,7 +76,7 @@ describe('realtime:tail', function (): void {
             realtimeUrl: 'wss://reverb.test',
             realtimeKey: 'app-key',
         ));
-        Http::fake(['*/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
+        Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
 
         $exitCode = Artisan::call('realtime:tail', ['--json' => true]);
@@ -109,7 +109,7 @@ describe('realtime:tail', function (): void {
             realtimeUrl: 'wss://reverb.test',
             realtimeKey: 'app-key',
         ));
-        Http::fake(['*/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
+        Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('mixed_events'));
 
         $exitCode = Artisan::call('realtime:tail', ['--json' => true, '--types' => 'node.*,process.status']);
@@ -127,12 +127,12 @@ describe('realtime:tail', function (): void {
             realtimeUrl: 'wss://reverb.test',
             realtimeKey: 'app-key',
         ));
-        Http::fake(['*/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
+        Http::fake(['*/api/v1/broadcasting/auth' => Http::response(['auth' => 'app-key:signature'])]);
         app()->instance(WebSocketTransport::class, realtime_fixture_command_transport('handshake'));
 
         Artisan::call('realtime:tail', ['--json' => true]);
 
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://gateway.test/broadcasting/auth'
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://gateway.test/api/v1/broadcasting/auth'
             && $request['socket_id'] === '123.456'
             && $request['channel_name'] === 'private-orbit');
     });

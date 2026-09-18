@@ -11,10 +11,10 @@ use Illuminate\Support\Facades\Http;
  * Authorizes a realtime channel subscription the same way the rest of the CLI talks to the
  * gateway: HTTPS to the active profile's URL, pinned to its trusted root CA when one is stored.
  *
- * The gateway's `/broadcasting/auth` route is Laravel's own broadcasting auth endpoint, not a
- * versioned Gateway API route, so this goes through the plain HTTP client rather than the SDK's
- * Saloon connector. The CLI does not otherwise carry a bearer token for gateway requests; today
- * that TLS trust is the whole of "the CLI's usual" authorization, and this call reuses exactly it.
+ * The gateway authorizes the private orbit channel at `/api/v1/broadcasting/auth`, the versioned
+ * API route next to `GET /api/v1/realtime`. This goes through the plain HTTP client rather than
+ * the SDK's Saloon connector because the call carries no bearer token: TLS trust (the pinned
+ * Orbit CA) is the authorization, the same model as other CLI-to-gateway HTTPS.
  */
 final readonly class GatewayChannelAuthorizer implements RealtimeChannelAuthorizer
 {
@@ -34,7 +34,7 @@ final readonly class GatewayChannelAuthorizer implements RealtimeChannelAuthoriz
         }
 
         try {
-            $response = $request->post('/broadcasting/auth', [
+            $response = $request->post('/api/v1/broadcasting/auth', [
                 'socket_id' => $socketId,
                 'channel_name' => $channelName,
             ]);

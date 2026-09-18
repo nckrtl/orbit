@@ -25,6 +25,8 @@ final class RealtimeAuthController extends Controller
             return new JsonResponse(['message' => 'Realtime is not configured.'], 404);
         }
 
+        $realtime->registerChannelAuthorizers();
+
         return Broadcast::auth($request);
     }
 }

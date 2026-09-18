@@ -6,6 +6,7 @@ namespace App\Domain\Broadcasting;
 
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketHostname;
+use Illuminate\Support\Facades\Broadcast;
 
 /**
  * Resolves the realtime connection from the active `websocket` role
@@ -80,5 +81,19 @@ final class RealtimeConnection
         ]);
 
         return true;
+    }
+
+    /**
+     * Registers the private `orbit` channel on the current default driver.
+     *
+     * Channel callbacks live on the resolved driver. Boot registers `orbit` on
+     * the default `null` connection; after {@see configureBroadcasting()} flips
+     * the default to `reverb`, auth must register the channel on that driver or
+     * `Broadcast::auth()` throws and the API renders `gateway.unhandled`.
+     */
+    public function registerChannelAuthorizers(): void
+    {
+        Broadcast::purge('reverb');
+        require base_path('routes/channels.php');
     }
 }
