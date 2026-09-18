@@ -42,6 +42,7 @@ final readonly class CommandVocabulary
             'transfer',
         ],
         'metrics' => ['status'],
+        'node' => ['relocate'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'profile' => ['profile'],
         'realtime' => ['tail'],

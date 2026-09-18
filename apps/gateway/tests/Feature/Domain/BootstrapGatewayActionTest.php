@@ -10,6 +10,7 @@ use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -125,7 +126,9 @@ it('initializes the portable gateway authority idempotently', function (): void 
             ->and($second->ssh_host_fingerprint)
             ->toBe('SHA256:gateway')
             ->and(Node::query()->count())
-            ->toBe(1);
+            ->toBe(1)
+            ->and(app(GatewayServingHost::class)->is($first))
+            ->toBeTrue();
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

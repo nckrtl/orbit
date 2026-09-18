@@ -35,7 +35,7 @@ The Gateway lives in `apps/gateway`. It stores Orbit's records in SQLite, author
 
 ## Nodes and roles
 
-A Node can stand alone or belong to one Cluster. Roles define its work: `app-dev` runs development applications, `database` installs Docker for shared database processes, and Router sends Cluster traffic to applications.
+A Node can stand alone or belong to one Cluster. Roles define its work: `app-dev` runs development applications, `database` installs Docker for shared database processes, and Router sends Cluster traffic to applications. The `gateway` role is a singleton that can move to another Node without moving `vpn`; see [Relocate the gateway role](/solutions/relocate-gateway-role) and [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn).
 
 The Gateway manages Nodes over SSH. After setup, WireGuard provides the private network used for those connections. Orbit manages the files and services needed by each Node's assigned roles.
 

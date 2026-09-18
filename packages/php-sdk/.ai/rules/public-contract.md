@@ -1,10 +1,10 @@
 # Public contract
 
-The SDK models exactly 125 concrete public Gateway API operations:
+The SDK models exactly 126 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
-- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, role remove, and metrics.
+- Node: list, show, add, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, update, and remove.
 - App runtime definition: process and Schedule list, create, show, update, and destroy.

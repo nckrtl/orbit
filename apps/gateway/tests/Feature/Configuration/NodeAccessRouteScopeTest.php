@@ -139,6 +139,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:remove' => ServingNode::Target,
         'node:role:add' => ServingNode::RoleMutation,
         'node:role:list' => ServingNode::Target,
+        'node:role:relocate' => ServingNode::Gateway,
         'node:role:remove' => ServingNode::RoleMutation,
         'node:settings' => ServingNode::Target,
         'node:show' => ServingNode::Target,

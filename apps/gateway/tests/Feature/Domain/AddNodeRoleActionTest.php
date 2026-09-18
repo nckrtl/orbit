@@ -265,7 +265,6 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($node->roles()->exists())
             ->toBeFalse();
     })->with([
-        'gateway' => RoleName::Gateway,
         'VPN' => RoleName::Vpn,
     ]);
 

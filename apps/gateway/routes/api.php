@@ -130,6 +130,9 @@ Route::prefix('v1')->group(function (): void {
         Route::post('nodes/{node}/roles', [NodeRolesController::class, 'store'])
             ->whereNumber('node')
             ->name('node:role:add');
+        Route::post('nodes/{node}/roles/{role}/relocate', [NodeRolesController::class, 'relocate'])
+            ->whereNumber('node')
+            ->name('node:role:relocate');
         Route::delete('nodes/{node}/roles/{role}', [NodeRolesController::class, 'destroy'])
             ->whereNumber('node')
             ->name('node:role:remove');

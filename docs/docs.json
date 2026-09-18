@@ -129,7 +129,8 @@
               "solutions/remote-file-writes-on-uutils-coreutils",
               "solutions/migrate-unmanaged-executor-hostname",
               "solutions/sqlite-wal-default",
-              "solutions/realtime-reverb"
+              "solutions/realtime-reverb",
+              "solutions/relocate-gateway-role"
             ]
           }
         ]
@@ -528,7 +529,8 @@
               "decisions/0086-offer-the-api-as-mcp-tools",
               "decisions/0087-run-reverb-through-a-websocket-role",
               "decisions/0088-cli-reads-display-metrics-from-grafana",
-              "decisions/0089-index-appinstance-dependencies"
+              "decisions/0089-index-appinstance-dependencies",
+              "decisions/0090-relocate-the-gateway-role-independently-of-vpn"
             ]
           }
         ]

@@ -18,6 +18,7 @@ The [Node provisioning](/reference/node-provisioning), [Node settings](/referenc
 | [`node:remove`](#orbit-noderemove) | Remove a Node and restore its public SSH recovery rule. |
 | [`node:role:add`](#orbit-noderoleadd) | Add or converge one role assignment. |
 | [`node:role:list`](#orbit-noderolelist) | List the role assignments of one Node. |
+| [`node:role:relocate`](#orbit-noderolerelocate) | Move the singleton `gateway` role to another Node. |
 | [`node:role:remove`](#orbit-noderoleremove) | Remove one role assignment and its dependent state. |
 | [`node:access:add`](#orbit-nodeaccessadd) | Allow one Node to run commands on another Node. |
 | [`node:access:remove`](#orbit-nodeaccessremove) | Remove one access edge. |
@@ -82,7 +83,7 @@ orbit node:add beast --role=app-dev --role=database
 A production Node that receives clones needs `--tld`; the [instance:clone](/cli/instance#orbit-instanceclone) command derives its preview domain from that value.
 </Note>
 
-The roles you can assign are `app-dev`, `app-prod`, `router`, `ingress`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. The [Database role](/reference/database-role) and [Metrics](/reference/metrics) references list which roles may share one Node. The `websocket` role runs Reverb for realtime events and has no role conflicts, so it combines with `gateway` today; it can move to a dedicated Node later. See [Realtime events with Reverb](/solutions/realtime-reverb).
+The roles you can assign are `app-dev`, `app-prod`, `router`, `ingress`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. The [Database role](/reference/database-role) and [Metrics](/reference/metrics) references list which roles may share one Node. The `websocket` role runs Reverb for realtime events and has no role conflicts, so it combines with `gateway` today; it can move to a dedicated Node later. See [Realtime events with Reverb](/solutions/realtime-reverb). The `gateway` role is a singleton you can relocate without moving `vpn`; see [Relocate the gateway role](/solutions/relocate-gateway-role). `vpn` stays protected from generic add and remove.
 
 ## orbit node:list
 
@@ -178,12 +179,37 @@ orbit node:role:add beast database
 orbit node:role:add beast metrics --converge
 ```
 
+`gateway` is mutable. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the singleton assignment already exists. `vpn` is refused.
+
 ## orbit node:role:list
 
 List the role assignments of one Node with their lifecycle status and failed step, when one exists.
 
 ```bash
 orbit node:role:list <node> [--json]
+```
+
+## orbit node:role:relocate
+
+Move the singleton `gateway` role from its current Node onto the named Node. The command keeps one active assignment for the whole request.
+
+```bash
+orbit node:role:relocate <node> gateway [--force] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `node` | yes | Node ID or registered name of the target. |
+| `role` | yes | Must be `gateway`. |
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm the transfer. Required in JSON and other non-interactive modes. |
+
+The Gateway opens the gateway HTTPS firewall on the target, transfers the assignment, republishes private DNS, and retracts that firewall on the source. It does not move `vpn`, stop Caddy or PHP-FPM on the source, or copy the serving checkout. [Relocate the gateway role](/solutions/relocate-gateway-role) owns ordering, the leftover serving stack, and CLI profile updates.
+
+```bash
+orbit node:role:relocate beast gateway --force
 ```
 
 ## orbit node:role:remove

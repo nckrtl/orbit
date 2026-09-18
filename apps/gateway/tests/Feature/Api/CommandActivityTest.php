@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Metrics\MetricsMutationData;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
@@ -749,6 +750,7 @@ it('records node role commands against the node with bounded inputs and stable f
     $listRequestId = (string) Str::uuid();
     $addRequestId = (string) Str::uuid();
     $removeRequestId = (string) Str::uuid();
+    $relocateRequestId = (string) Str::uuid();
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
@@ -803,6 +805,28 @@ it('records node role commands against the node with bounded inputs and stable f
             'purge_data' => false,
             'offline' => false,
             'role' => 'app-dev',
+        ]);
+
+    app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
+    app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
+    {
+        public function converge(?Node $pendingNode = null): void {}
+    });
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $relocateRequestId)
+        ->postJson("/api/v1/nodes/{$node->id}/roles/gateway/relocate", ['force' => true])
+        ->assertOk();
+
+    $relocate = Activity::query()->where('request_id', $relocateRequestId)->sole();
+    expect($relocate)
+        ->command->toBe('node:role:relocate')
+        ->subject_type->toBe(Node::class)
+        ->subject_id->toBe($node->id)
+        ->target_node_id->toBe($node->id)
+        ->status->toBe('succeeded')->and($relocate->properties?->get('input'))->toBe([
+            'force' => true,
+            'role' => 'gateway',
         ]);
 
     foreach ($activities as $activity) {

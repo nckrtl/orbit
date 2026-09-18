@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\NodeRoleFirewallManager;
-use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Models\Node;
@@ -15,20 +15,28 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
 {
     public function __construct(
         private NodeRoleFirewallManager $firewall,
+        private PrivateDnsManager $dns,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
         $this->firewall->converge($node, RoleName::Gateway, $node->user);
+        $this->dns->converge();
     }
 
-    public function remove(Node $node, NodeRole $assignment, bool $purgeData): never
+    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        throw new NodeRoleValidationException('The gateway role cannot be removed.');
+        $this->firewall->remove($node, RoleName::Gateway, $node->user);
+        $this->dns->converge();
     }
 
-    public function removeUnreachable(Node $node, NodeRole $assignment): never
+    /**
+     * Removes only what lives on the Gateway, for a gateway node Orbit
+     * cannot reach: the private DNS record. Caddy, PHP-FPM, the serving
+     * checkout, and the HTTPS firewall stay on the box.
+     */
+    public function removeUnreachable(Node $node, NodeRole $assignment): void
     {
-        throw new NodeRoleValidationException('The gateway role cannot be removed.');
+        $this->dns->converge();
     }
 }

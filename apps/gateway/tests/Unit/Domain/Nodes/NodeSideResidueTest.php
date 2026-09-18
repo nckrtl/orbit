@@ -51,6 +51,11 @@ it('names what each app role leaves behind', function (RoleName $role, string $e
         RoleName::WebSocket,
         'Stored Reverb application credentials and generated APP_KEY',
     ],
+    'gateway caddy' => [
+        RoleName::Gateway,
+        'Caddy site, PHP-FPM pool and serving checkout for the gateway role',
+    ],
+    'gateway firewall' => [RoleName::Gateway, 'Orbit firewall rule for the gateway role'],
 ]);
 
 it('merges several roles into one sorted list without repeating the exporter', function (): void {
@@ -69,7 +74,6 @@ it('merges several roles into one sorted list without repeating the exporter', f
 it('leaves nothing behind for the roles that cannot be removed', function (RoleName $role): void {
     expect(new NodeSideResidue()->describe([$role], nodeLeavesFleet: true))->toHaveCount(1);
 })->with([
-    'gateway' => [RoleName::Gateway],
     'vpn' => [RoleName::Vpn],
     'ingress' => [RoleName::Ingress],
     'database' => [RoleName::Database],

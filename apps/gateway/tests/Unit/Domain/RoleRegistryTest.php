@@ -27,7 +27,7 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::Gateway)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Gateway)->mutable)
-            ->toBeFalse()
+            ->toBeTrue()
             ->and($registry->definition(RoleName::Vpn)->singleton)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Vpn)->assignableDuringProvisioning)

@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\ListNodeRolesAction;
+use App\Actions\Nodes\RelocateGatewayRoleAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Nodes\NodeRoleAssignmentData;
 use App\Data\Nodes\NodeRoleMutationData;
@@ -17,6 +18,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\AddNodeRoleRequest;
+use App\Http\Requests\Nodes\RelocateNodeRoleRequest;
 use App\Http\Requests\Nodes\RemoveNodeRoleRequest;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -68,6 +70,20 @@ final class NodeRolesController extends Controller
             ],
             $result['created'] ? 201 : 200,
         );
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function relocate(
+        RelocateNodeRoleRequest $request,
+        Node $node,
+        RelocateGatewayRoleAction $action,
+    ): JsonResponse {
+        $outcome = $action->execute($node, $request->role(), $request->force());
+
+        return response()->json([
+            'data' => NodeRoleMutationData::added($node, $outcome)->toArray(),
+            'meta' => $this->meta($request),
+        ]);
     }
 
     #[RequiresNodeAccess(ServingNode::RoleMutation)]

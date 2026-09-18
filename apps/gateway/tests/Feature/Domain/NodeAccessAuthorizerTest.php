@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -89,6 +90,24 @@ describe(NodeAccessAuthorizer::class, function (): void {
             ->toBeEmpty()
             ->and($authorizer->hasAnyAccess($consumer))
             ->toBeFalse();
+    });
+
+    it('grants control-plane authority through the recorded serving host without a gateway role', function (): void {
+        $serving = node_access_authorizer_node('serving-host');
+        $peer = node_access_authorizer_node('peer');
+        app(GatewayServingHost::class)->remember($serving);
+        $authorizer = app(NodeAccessAuthorizer::class);
+
+        expect($authorizer->isGatewayNode($serving))
+            ->toBeFalse()
+            ->and($authorizer->hasGatewayAuthority($serving))
+            ->toBeTrue()
+            ->and($authorizer->allows($serving, $peer))
+            ->toBeTrue()
+            ->and($authorizer->hasAnyAccess($serving))
+            ->toBeTrue()
+            ->and($authorizer->accessibleNodeIds($serving))
+            ->toBe([$serving->id, $peer->id]);
     });
 
     it('does not grant implicit or fleet authority through an inactive Gateway role', function (): void {
