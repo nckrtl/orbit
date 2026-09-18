@@ -20,6 +20,13 @@ class OrbitServer extends Server
     #[\Override]
     protected string $version = '1.0.0';
 
+    /** One page holds the whole catalogue, so a client lists every tool in one request. */
+    #[\Override]
+    public int $maxPaginationLength = 500;
+
+    #[\Override]
+    public int $defaultPaginationLength = 500;
+
     #[\Override]
     protected string $instructions = <<<'MARKDOWN'
         Operate an Orbit fleet through the Gateway. Every tool is one Gateway API operation and returns the API's JSON, usually `{"data": ..., "meta": {"request_id": ...}}`.

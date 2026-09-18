@@ -68,7 +68,8 @@ describe('POST /mcp', function (): void {
 
         $manifest = json_decode((string) file_get_contents(resource_path('mcp/tools.json')), true);
 
-        expect($names)->toEqualCanonicalizing(array_column($manifest['tools'], 'name'))
+        expect($response->json('result.nextCursor'))->toBeNull('The catalogue must fit in one page.')
+            ->and($names)->toEqualCanonicalizing(array_column($manifest['tools'], 'name'))
             ->and($names)->toContain('node-list', 'instance-deploy', 'process-restart');
     });
 
