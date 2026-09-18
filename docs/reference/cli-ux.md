@@ -25,7 +25,7 @@ Public product commands that return data support `--json`. Their existing final-
 
 Resolve and validate required fields before mutations. Validate a supplied value when it is read, and validate a prompted value when the user submits it. If a prompted value is invalid, ask again without an arbitrary retry cap. Stop on cancellation or end of input, using the command's failure status, before mutation begins.
 
-Prompt only where the current command permits interactive input. A command requiring an explicit target must continue to refuse an omitted target. Read-only lookups needed to resolve a permitted prompt may run before consent. A slow lookup needs visible waiting feedback.
+In a terminal, a command prompts for every required input the caller omitted, and it offers a default where one exists, such as `root` for a bootstrap user or the App default branch. A destructive target is selected through the interactive data list, never inferred. A noninteractive or machine call refuses an omitted required input with the command's documented error code. Read-only lookups needed to resolve a prompt may run before consent. A slow lookup needs visible waiting feedback.
 
 ## Prompt selection
 
@@ -71,6 +71,8 @@ Select the display from the task the user is performing.
 | Multi-step or slow structured operation | Progress tree |
 | Short wait without meaningful substeps | Spinner |
 | Line-oriented logs or another continuous text output | The stream itself |
+
+Human output names a related record by its name or slug, such as the App `charlie-shop` or the Node `beast`, never by its numeric id alone. JSON output carries the id and, where the Gateway provides it, the name and slug beside it.
 
 A list does not become interactive unless its command contract defines a selection and follow-up action. Tables use short uppercase headers. Data lists retain the exact documented column names. Empty lists state that no matching records were found. Missing display values use an em dash; JSON keeps its documented null or omission behavior. A property list uses a group heading, a primary item label, and indented labeled values.
 
@@ -152,6 +154,21 @@ The shared implementation lives under `apps/cli/app/Support/Console`. `ConsoleMo
 
 These helpers do not migrate a command automatically. Keep its adoption verdict unverified until its documented input, output, and terminal cases pass.
 
+## Canonical renderings
+
+The agreed rendering of a command is its expected output under `apps/cli/tests/Expected`, which the CLI contract tests enforce against recorded Gateway responses. Copy the canonical example for a display instead of the nearest command, because some commands predate this standard. Every change to a rendering appears as a diff in these files, and the reviewer accepts that diff as the new agreed rendering.
+
+| Display | Canonical command | Expected output |
+| --- | --- | --- |
+| Table | `node:list` | [default.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.human.txt) |
+| Detail tree | `node:show` | [default.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-show/default.human.txt) |
+| Progress tree | `node:add` | [created.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/created.human.txt) |
+| Failure after progress | `node:add` | [tld-required.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.human.txt) |
+| JSON result | `node:list` | [default.json](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.json) |
+| JSON failure envelope | `node:add` | [tld-required.json](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.json) |
+
+Streams and prompt flows have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until its real command lands. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
+
 ## Verification and adoption
 
 Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Account separately for internal commands that share input or output infrastructure.
@@ -163,5 +180,7 @@ Check success, empty results, invalid and missing input, cancellation, consent, 
 Automated text assertions establish content. Terminal evidence establishes interactive selection, repainting, cadence, wrapping, and liveness. Record timestamped raw PTY output, decoded chunks, reconstructed frames, terminal size, terminal settings, candidate and launcher identity, exit status, first-output delay, and idle gaps. Verify real frame transitions rather than the presence of two glyphs in a transcript.
 
 Use disposable fixtures for mutations. Exercise the real candidate in the assigned runtime and keep evidence tied to that candidate. A recording is stale after a fix changes the behavior it records. Do not declare a command compliant until every applicable check is supported by inspected evidence.
+
+Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed.
 
 A regression check for a recovered UX requirement demonstrates both an accepted and a rejected case. Check observable behavior rather than similarity of wording or implementation style. For example, a state analyzer accepts a running row that reaches a terminal state and rejects the same row returning to waiting. Apply each check only to the surface it covers.

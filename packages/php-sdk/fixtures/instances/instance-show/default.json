@@ -1,0 +1,78 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\AppInstances\\ShowAppInstanceRequest",
+    "route": "GET /api/v1/instances/{instance}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "app_id": 1,
+            "node_id": 1,
+            "app": {
+                "id": 1,
+                "name": "Acme",
+                "slug": "acme"
+            },
+            "node": {
+                "id": 1,
+                "name": "app-dev"
+            },
+            "name": "dev",
+            "environment": "development",
+            "source_layout": "checkout",
+            "checkout_path": "/srv/orbit/apps/acme/dev",
+            "production_user": null,
+            "production_home": null,
+            "root": null,
+            "effective_root": "public",
+            "selected_branch": "dev",
+            "branch_override": null,
+            "migration_required": false,
+            "starting_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "detached": false,
+            "status": "active",
+            "route": {
+                "id": 1,
+                "kind": "app",
+                "app_id": 1,
+                "node_id": 1,
+                "cluster_id": null,
+                "generation_basis_node_id": 1,
+                "domain": "dev.acme.test",
+                "provenance": "generated",
+                "publication": "private",
+                "public_publication": "inactive",
+                "status": "active",
+                "failed_step": null,
+                "error_code": null,
+                "replaces_route_id": null,
+                "replaced_by_route_id": null,
+                "replacement_step": null,
+                "target_set_step": null,
+                "target": {
+                    "id": 1,
+                    "app_instance_id": 1,
+                    "position": 0
+                },
+                "targets": [
+                    {
+                        "id": 1,
+                        "app_instance_id": 1,
+                        "position": 0
+                    }
+                ],
+                "process_id": null,
+                "upstream": null
+            },
+            "domain": "dev.acme.test",
+            "url": "https://dev.acme.test",
+            "removal": null,
+            "transfer": null,
+            "deploy_steps": [],
+            "vite_port": 5173
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

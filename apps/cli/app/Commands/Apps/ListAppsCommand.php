@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use App\Support\Console\PromptAborted;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
 
@@ -30,7 +31,7 @@ final class ListAppsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress($connector, new ListAppsRequest, AppsResponse::class, ['List Apps', 'Loading Apps', 'Loaded Apps']);
+        $response = $this->sendWithProgress($connector, new ListAppsRequest, AppsResponse::class, ['List Apps', 'Fetching Apps', 'Fetched Apps'], dismiss: true);
 
         if (! $response instanceof AppsResponse) {
             return self::FAILURE;
@@ -42,11 +43,11 @@ final class ListAppsCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
+        $headers = ['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Web root'];
         $rows = [];
-
         foreach ($response->apps as $app) {
-            $rows[] = [
-                $app->id,
+            $rows[$app->id] = [
+                (string) $app->id,
                 $app->name,
                 $app->slug,
                 $app->repositoryUrl,
@@ -55,7 +56,18 @@ final class ListAppsCommand extends GatewayCommand
             ];
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->table(['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Web root'], $rows, 'No Apps found.'));
+        if ($this->consoleMode()->mayPrompt && $rows !== []) {
+            // In a terminal the list is the selector: Enter shows the highlighted App.
+            try {
+                $selected = $this->commandPrompts()->selectEntity('Apps', $headers, $rows);
+            } catch (PromptAborted) {
+                return self::SUCCESS;
+            }
+
+            return $this->call('app:show', ['app' => (string) $selected]);
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table($headers, array_values($rows), 'No Apps found.'));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

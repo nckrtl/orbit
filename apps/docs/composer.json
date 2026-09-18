@@ -2,7 +2,12 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "nckrtl/orbit-docs",
     "description": "Console tooling for verified Orbit documentation context.",
-    "keywords": ["documentation", "laravel", "librarian", "orbit"],
+    "keywords": [
+        "documentation",
+        "laravel",
+        "librarian",
+        "orbit"
+    ],
     "type": "project",
     "license": "MIT",
     "require": {
@@ -37,6 +42,7 @@
         "check": [
             "@guidance:check",
             "@docs:lint",
+            "@fixtures:check",
             "@rector",
             "@format:check",
             "@analyse"
@@ -44,6 +50,7 @@
         "context": "@php artisan orbit:docs-context",
         "context:build": "@php artisan orbit:docs-index",
         "docs:lint": "@php artisan orbit:docs-lint --format=agent --strict",
+        "fixtures:check": "python3 ../../bin/api-fixtures --check",
         "issue:lint": "@php artisan orbit:issue-lint",
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
