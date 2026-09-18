@@ -130,10 +130,10 @@ abstract class GatewayCommand extends Command
     {
         try {
             $profile = $repository->active();
-        } catch (GatewayConfigException) {
+        } catch (GatewayConfigException $exception) {
             $this->renderGatewayFailure(
-                'gateway.config_invalid',
-                'Orbit gateway configuration is invalid.',
+                $exception->isPrivacyFailure() ? GatewayConfigException::CONFIG_NOT_PRIVATE : 'gateway.config_invalid',
+                $exception->isPrivacyFailure() ? $exception->getMessage() : 'Orbit gateway configuration is invalid.',
             );
 
             return null;

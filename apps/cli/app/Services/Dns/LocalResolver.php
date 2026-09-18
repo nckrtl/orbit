@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Dns;
 
+use App\Support\EffectiveUser;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
@@ -342,7 +343,7 @@ final readonly class LocalResolver implements ResolvesLocalDns
             return true;
         }
 
-        $userId = posix_geteuid();
+        $userId = EffectiveUser::id() ?? getmyuid();
 
         try {
             Process::timeout(30)->run([

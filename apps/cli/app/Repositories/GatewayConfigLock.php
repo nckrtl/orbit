@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Exceptions\GatewayConfigException;
+use App\Support\EffectiveUser;
 use Closure;
 
 final readonly class GatewayConfigLock
@@ -56,7 +57,7 @@ final readonly class GatewayConfigLock
 
         $permissions = fileperms($directory);
         $owner = fileowner($directory);
-        $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
+        $effectiveUserId = EffectiveUser::id();
 
         if (
             is_link($directory)
@@ -158,7 +159,7 @@ final readonly class GatewayConfigLock
         }
 
         $handleStat = fstat($lock);
-        $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
+        $effectiveUserId = EffectiveUser::id();
 
         if (
             is_link($lockPath)

@@ -7,6 +7,7 @@ namespace App\Repositories;
 use App\Data\GatewayProfile;
 use App\Exceptions\GatewayCertificateRemovalException;
 use App\Exceptions\GatewayConfigException;
+use App\Support\EffectiveUser;
 use JsonException;
 
 final readonly class GatewayConfigRepository
@@ -168,7 +169,7 @@ final readonly class GatewayConfigRepository
 
         $permissions = fileperms($this->path);
         $owner = fileowner($this->path);
-        $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
+        $effectiveUserId = EffectiveUser::id();
 
         if (
             ! is_int($permissions)
