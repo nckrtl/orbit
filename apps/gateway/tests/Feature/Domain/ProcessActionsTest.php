@@ -18,6 +18,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\LifecycleStatus;
@@ -29,6 +30,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 beforeEach(function (): void {
@@ -622,7 +624,19 @@ it('lists runtime status and removes only the selected process', function (): vo
     $process = process_actions_record($this->instance);
     $this->runtime->status = 'stopped';
 
-    $listed = new ListProcessesAction($this->runtime)->execute(
+    // The list reads status through the index now; this one answers from the same fake runtime,
+    // so the assertion still describes what a caller sees.
+    $listed = new ListProcessesAction(new class($this->runtime) implements ProcessRuntimeStatusIndex
+    {
+        public function __construct(private readonly object $runtime) {}
+
+        public function statuses(Collection $processes): array
+        {
+            return $processes->mapWithKeys(fn (Process $process): array => [
+                (int) $process->id => $this->runtime->status($process),
+            ])->all();
+        }
+    })->execute(
         ProcessTargetType::AppInstance,
         $this->instance->id,
     );
