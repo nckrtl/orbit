@@ -65,5 +65,6 @@ These families have recorded fixtures and contract tests.
 | `node` | `node-list/default`, `node-show/default`, `node-add/created`, `node-add/tld-required`, `node-add/fingerprint-required` |
 | `app` | `app-list/default`, `app-show/default`, `app-create/created`, `app-destroy/removed` |
 | `instance` | `instance-list/default`, `instance-show/default`, `instance-create/created`, `instance-create/candidate-required` |
+| `realtime` | `realtime-show/configured`, `realtime-show/unconfigured` |
 
 Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. `bin/cli-contract --coverage` shows what is left.

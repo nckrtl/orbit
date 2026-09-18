@@ -146,6 +146,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'process:stop',
         'process:update',
         'profile',
+        'realtime:show',
         'realtime:tail',
         'route:create',
         'route:destroy',
@@ -283,7 +284,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(116);
+    expect($orbitCommands)->toHaveCount(117);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -755,6 +756,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ],
         ],
         'profile' => [['url'], ['as-first-user' => false, 'user' => null, 'json' => false]],
+        'realtime:show' => [[], ['json' => false]],
         'realtime:tail' => [[], ['types' => null, 'json' => false]],
         'route:list' => [[], ['json' => false]],
         'route:create' => [
@@ -1060,6 +1062,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'profile.validation_failed',
             'message' => 'URL to profile must be an absolute HTTP or HTTPS URL.',
         ],
+        'realtime:show' => [[], ...$profileMissing],
         'realtime:tail' => [[], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
         'route:create' => [['app' => '1', 'domain' => 'app.test', '--node' => '1'], ...$profileMissing],
