@@ -154,7 +154,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 92;
+        $preScheduleOperationCount = 93;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
