@@ -40,6 +40,7 @@ use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use Illuminate\Broadcasting\BroadcastController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -47,6 +48,11 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
         ->name('gateway:trust');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+    ])->match(['get', 'post'], 'broadcasting/auth', [BroadcastController::class, 'authenticate'])
+        ->name('realtime:auth');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

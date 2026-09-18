@@ -51,14 +51,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 JwksController::class,
                 'show',
             ])->name('jwks:show');
+            require __DIR__.'/../routes/channels.php';
         },
-    )
-    ->withBroadcasting(
-        channels: __DIR__.'/../routes/channels.php',
-        attributes: [
-            'prefix' => 'api/v1',
-            'middleware' => ['api', RequireActiveWireGuardPeer::class],
-        ],
     )
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

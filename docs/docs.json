@@ -399,6 +399,14 @@
             ]
           },
           {
+            "group": "Realtime",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/broadcasting/auth",
+              "GET /api/v1/realtime"
+            ]
+          },
+          {
             "group": "Node callbacks",
             "openapi": "/openapi.json",
             "pages": [
