@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Data\Nodes\NodeData;
 use App\Data\Nodes\NodeSettingsData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -23,6 +26,7 @@ final readonly class UpdateNodeSettingsAction
         private ConfiguredStoragePathValidator $validator,
         private ManagedUserAccountResolver $accounts,
         private NodeStorageRootPreparer $preparer,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(Node $node, NodeSettingsPatch $patch): Node
@@ -31,7 +35,15 @@ final readonly class UpdateNodeSettingsAction
         $normalized = $this->normalizer->normalize($merged);
         $this->apply($node, $normalized);
 
-        return $node->refresh();
+        $result = $node->refresh();
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeUpdated,
+            $result->id,
+            NodeData::fromModel($result)->toArray(),
+        );
+
+        return $result;
     }
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void

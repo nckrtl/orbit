@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\CreateRouteData;
+use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\CustomProxyUpstream;
@@ -38,6 +41,7 @@ final readonly class CreateRouteAction
         private RouteAssociationGuard $associations,
         private CustomProxyRouteProjector $customProxies,
         private CustomProxyProcessListener $listeners = new CustomProxyProcessListener,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     /** @return array{route: Route, created: bool} */
@@ -46,11 +50,19 @@ final readonly class CreateRouteAction
         $domain = RouteDomain::validate($data->domain);
         ReservedPrivateHostname::assertAvailable($domain);
 
-        if ($data->isCustomProxy()) {
-            return $this->persistCustomProxy($data, $domain);
+        $result = $data->isCustomProxy()
+            ? $this->persistCustomProxy($data, $domain)
+            : $this->persistExplicit($data, $domain);
+
+        if ($result['created']) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::RouteCreated,
+                $result['route']->id,
+                RouteData::fromModel($result['route'])->toArray(),
+            );
         }
 
-        return $this->persistExplicit($data, $domain);
+        return $result;
     }
 
     public function ensureForAppInstance(AppInstance $appInstance, ?string $domain): Route

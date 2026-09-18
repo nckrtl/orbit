@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Data\Nodes\NodeData;
 use App\Data\Nodes\RetargetNodeData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
@@ -44,6 +47,7 @@ final readonly class RetargetNodeAction
         private SshExecutor $ssh,
         private WireGuardPeerConverger $wireGuard,
         private NodeProvisioningLock $provisioningLock,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(RetargetNodeData $data): Node
@@ -210,7 +214,15 @@ final readonly class RetargetNodeAction
             throw $failure;
         }
 
-        return $node->refresh();
+        $result = $node->refresh();
+
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeUpdated,
+            $result->id,
+            NodeData::fromModel($result)->toArray(),
+        );
+
+        return $result;
     }
 
     private function wireGuardAddress(Node $node): string

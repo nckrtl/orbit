@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
+use App\Data\Nodes\NodeData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -43,6 +46,7 @@ final readonly class RemoveNodeRoleAction
         private NodeSideResidue $residue,
         private NodeRoleFirewallManager $firewall,
         private ?RouteRemovalGuard $routes = null,
+        private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
     public function execute(
@@ -55,7 +59,7 @@ final readonly class RemoveNodeRoleAction
         $this->routeGuard()->assertRoleRemovable($node, $role);
 
         if ($role === RoleName::Ingress) {
-            return $this->removeIngress($node, $force);
+            return $this->announceUpdated($node, $this->removeIngress($node, $force));
         }
 
         if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
@@ -89,10 +93,21 @@ final readonly class RemoveNodeRoleAction
         $degradation = $offline ? $this->reachability->degradation($node) : null;
 
         if ($this->isAppRole($role)) {
-            return $this->removeAppRole($node, $role, $purgeData, $degradation);
+            return $this->announceUpdated($node, $this->removeAppRole($node, $role, $purgeData, $degradation));
         }
 
-        return $this->removeClaimedRole($node, $role, $purgeData, $degradation);
+        return $this->announceUpdated($node, $this->removeClaimedRole($node, $role, $purgeData, $degradation));
+    }
+
+    private function announceUpdated(Node $node, NodeRoleRemovalOutcome $outcome): NodeRoleRemovalOutcome
+    {
+        ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+            RecordEventType::NodeUpdated,
+            $node->id,
+            NodeData::fromModel($node->refresh())->toArray(),
+        );
+
+        return $outcome;
     }
 
     private function removeIngress(Node $node, bool $force): NodeRoleRemovalOutcome

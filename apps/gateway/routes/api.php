@@ -29,6 +29,8 @@ use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\RealtimeAuthController;
+use App\Http\Controllers\Api\RealtimeConfigController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
@@ -46,6 +48,18 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
         ->name('gateway:trust');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
+    ])->match(['get', 'post'], 'broadcasting/auth', [RealtimeAuthController::class, 'authenticate'])
+        ->name('realtime:auth');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
+    ])->get('realtime', [RealtimeConfigController::class, 'show'])
+        ->name('realtime:show');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

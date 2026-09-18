@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
+use App\Data\Processes\ProcessData;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
@@ -20,12 +23,16 @@ final readonly class StartProcessAction
 
     private ProcessRuntimeLease $lease;
 
+    private RecordEventBroadcaster $broadcaster;
+
     public function __construct(
         private ProcessRuntimeManager $runtime,
         private ProcessAdmissionLock $admissions,
         ?ProcessRuntimeLease $lease = null,
+        ?RecordEventBroadcaster $broadcaster = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
+        $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
     }
 
     public function execute(#[SensitiveParameter] Process $process): Process
@@ -67,7 +74,15 @@ final readonly class StartProcessAction
                 'error_code' => null,
             ]);
 
-            return $fresh->refresh();
+            $result = $fresh->refresh();
+
+            $this->broadcaster->broadcast(
+                RecordEventType::ProcessStatus,
+                $result->id,
+                ProcessData::fromModel($result, $this->runtime->status($result))->toArray(),
+            );
+
+            return $result;
         });
     }
 }
