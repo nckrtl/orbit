@@ -80,12 +80,20 @@ final class RealtimeConnection
                 : [CURLOPT_RESOLVE => ["{$connection->host}:{$connection->port}:{$connection->resolveAddress}"]],
         ]);
 
-        // Channel callbacks live on the resolved driver. Boot registered `orbit` on the
-        // default `null` connection; after the flip to `reverb`, drop any stale instance
-        // and register the channel on the connection `Broadcast::auth()` will use.
+        return true;
+    }
+
+    /**
+     * Registers the private `orbit` channel on the current default driver.
+     *
+     * Channel callbacks live on the resolved driver. Boot registers `orbit` on
+     * the default `null` connection; after {@see configureBroadcasting()} flips
+     * the default to `reverb`, auth must register the channel on that driver or
+     * `Broadcast::auth()` throws and the API renders `gateway.unhandled`.
+     */
+    public function registerChannelAuthorizers(): void
+    {
         Broadcast::purge('reverb');
         require base_path('routes/channels.php');
-
-        return true;
     }
 }
