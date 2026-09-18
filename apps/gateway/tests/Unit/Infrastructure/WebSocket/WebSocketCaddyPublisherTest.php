@@ -30,6 +30,7 @@ it('restores the previous Caddyfile when Caddy rejects the new one', function (s
         ->toContain('previous_target=$(readlink -- "$live_caddyfile" || true)')
         ->toContain('if ! systemctl reload-or-restart "$caddy_service"; then')
         ->toContain('ln -s -- "$previous_target" "$candidate_link"')
+        ->toContain('systemctl restart "$caddy_service" || true')
         ->toContain('rm -rf -- "$published"')
         ->toContain('exit 1');
 })->with([

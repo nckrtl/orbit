@@ -46,6 +46,7 @@ final class RealtimeConnection
             key: $credentials->appKey,
             secret: $credentials->appSecret,
             caCertificatePath: rtrim($this->orbitHome, '/').'/ca/root.pem',
+            resolveAddress: $credentials->servingAddress,
         );
     }
 
@@ -73,6 +74,9 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.options.scheme' => $connection->scheme,
             'broadcasting.connections.reverb.options.useTLS' => $connection->scheme === 'https',
             'broadcasting.connections.reverb.client_options.verify' => $connection->caCertificatePath,
+            'broadcasting.connections.reverb.client_options.curl' => $connection->resolveAddress === null
+                ? []
+                : [CURLOPT_RESOLVE => ["{$connection->host}:{$connection->port}:{$connection->resolveAddress}"]],
         ]);
 
         return true;

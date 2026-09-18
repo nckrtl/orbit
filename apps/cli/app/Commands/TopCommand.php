@@ -21,10 +21,7 @@ use App\Support\Tui\Sources\GatewayNodeMetricsSource;
 use App\Support\Tui\State;
 use App\Support\Tui\UiState;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
-use Orbit\Sdk\Responses\Realtime\RealtimeResponse;
 use PhpTui\Term\Actions;
 use PhpTui\Term\Event\CharKeyEvent;
 use PhpTui\Term\Event\CodedKeyEvent;
@@ -121,7 +118,7 @@ final class TopCommand extends GatewayCommand
         $progress->complete('load', ProgressState::Success);
         $progress->dismiss();
 
-        $subscriber = RealtimeSubscriber::forProfile($this->realtimeProfile($connector, $profile), app()->version(), $transport);
+        $subscriber = RealtimeSubscriber::forProfile($this->discoveredRealtimeProfile($connector, $profile), app()->version(), $transport);
         $subscriber->connect();
 
         $ui = new UiState;
@@ -197,35 +194,6 @@ final class TopCommand extends GatewayCommand
         }
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Asks the Gateway for its realtime endpoint first; when it answers with a configured
-     * `url`/`key`, those win. Otherwise RealtimeSubscriber::forProfile() falls back to the
-     * profile's own `realtime_url`/`realtime_key` or the `ORBIT_REALTIME_URL`/
-     * `ORBIT_REALTIME_KEY` environment override, exactly as `realtime:tail` does. Any transport
-     * failure while asking is treated the same as "not configured" rather than failing the
-     * whole command.
-     */
-    private function realtimeProfile(GatewayConnector $connector, GatewayProfile $profile): GatewayProfile
-    {
-        try {
-            $realtime = $this->sendOrThrow($connector, new ShowRealtimeRequest, RealtimeResponse::class);
-        } catch (GatewayApiException) {
-            return $profile;
-        }
-
-        if (! $realtime instanceof RealtimeResponse || $realtime->url === null || $realtime->key === null) {
-            return $profile;
-        }
-
-        return new GatewayProfile(
-            name: $profile->name,
-            url: $profile->url,
-            caPath: $profile->caPath,
-            realtimeUrl: $realtime->url,
-            realtimeKey: $realtime->key,
-        );
     }
 
     /**

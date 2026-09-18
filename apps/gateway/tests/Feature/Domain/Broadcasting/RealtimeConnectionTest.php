@@ -72,3 +72,12 @@ it('configures the reverb broadcaster and the Orbit CA verification path', funct
         ->and(config('broadcasting.connections.reverb.options.useTLS'))->toBeTrue()
         ->and(config('broadcasting.connections.reverb.client_options.verify'))->toEndWith('/ca/root.pem');
 });
+
+it('connects to the serving node by address, because the Gateway host cannot resolve reverb.orbit', function (): void {
+    activate_websocket_role();
+
+    app(RealtimeConnection::class)->configureBroadcasting();
+
+    expect(config('broadcasting.connections.reverb.client_options.curl'))
+        ->toBe([CURLOPT_RESOLVE => ['reverb.orbit:443:10.44.0.90']]);
+});

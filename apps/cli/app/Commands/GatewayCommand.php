@@ -31,7 +31,9 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Realtime\RealtimeResponse;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Response;
 use Symfony\Component\Console\Exception\ExceptionInterface;
@@ -124,6 +126,33 @@ abstract class GatewayCommand extends Command
         $profile = $this->activeGatewayProfile($repository);
 
         return $profile instanceof GatewayProfile ? $connectors->make($profile) : null;
+    }
+
+    /**
+     * Asks the Gateway for its realtime endpoint and returns the profile with that `url`/`key`.
+     * When the Gateway has none, or cannot be asked, the profile comes back unchanged, so
+     * RealtimeSubscriber::forProfile() still honours the profile's own `realtime_url`/
+     * `realtime_key` and the `ORBIT_REALTIME_URL`/`ORBIT_REALTIME_KEY` environment override.
+     */
+    protected function discoveredRealtimeProfile(GatewayConnector $connector, GatewayProfile $profile): GatewayProfile
+    {
+        try {
+            $realtime = $this->sendOrThrow($connector, new ShowRealtimeRequest, RealtimeResponse::class);
+        } catch (GatewayApiException) {
+            return $profile;
+        }
+
+        if (! $realtime instanceof RealtimeResponse || $realtime->url === null || $realtime->key === null) {
+            return $profile;
+        }
+
+        return new GatewayProfile(
+            name: $profile->name,
+            url: $profile->url,
+            caPath: $profile->caPath,
+            realtimeUrl: $realtime->url,
+            realtimeKey: $realtime->key,
+        );
     }
 
     protected function activeGatewayProfile(GatewayConfigRepository $repository): ?GatewayProfile
