@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationCleanup;
@@ -23,17 +24,21 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         private MetricsPublicationManager $publication,
         private MetricsGatewayResolver $gateways,
         private MetricsPublicationReport $report,
+        private MetricsCadvisorLifecycle $cadvisors,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
         $gateway = $this->gateways->resolve();
         $exporters = false;
+        $cadvisors = false;
         $runtime = false;
 
         try {
             $this->exporters->converge($node, $assignment);
             $exporters = true;
+            $this->cadvisors->converge($node, $assignment);
+            $cadvisors = true;
             $this->runtime->converge($node, $assignment);
             $runtime = true;
             $this->publication->converge($gateway, $node);
@@ -41,6 +46,10 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
             try {
                 if ($runtime) {
                     $this->runtime->remove($node, $assignment, false);
+                }
+
+                if ($cadvisors) {
+                    $this->cadvisors->remove($node, $assignment);
                 }
 
                 if ($exporters) {
@@ -84,6 +93,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         if ($gateway instanceof Node) {
             $this->publication->remove($gateway, $node);
             $this->exporters->remove($node, $assignment);
+            $this->cadvisors->remove($node, $assignment);
             $this->runtime->remove($node, $assignment, $purgeData);
             $this->report->record(MetricsPublicationCleanup::Cleaned);
 
@@ -91,6 +101,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         }
 
         $this->exporters->remove($node, $assignment);
+        $this->cadvisors->remove($node, $assignment);
         $this->runtime->remove($node, $assignment, $purgeData);
 
         try {

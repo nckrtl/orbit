@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -13,44 +14,35 @@ use App\Models\Node;
 
 it('does nothing while Metrics is disabled', function (): void {
     $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
     $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
     $exporters->shouldNotReceive('converge');
+    $cadvisors->shouldNotReceive('converge');
     $runtime->shouldNotReceive('converge');
 
-    new NativeMetricsFleetReconciler($exporters, $runtime)->reconcile();
+    new NativeMetricsFleetReconciler($exporters, $cadvisors, $runtime)->reconcile();
 });
 
-it('converges exporters before refreshing the Metrics runtime', function (): void {
+it('converges exporters and cadvisors before refreshing the Metrics runtime', function (): void {
     $node = metrics_fleet_node('metrics');
     $assignment = $node->roles()->create([
         'role' => RoleName::Metrics,
         'status' => LifecycleStatus::Active,
     ]);
     $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
     $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
-    $exporters
-        ->shouldReceive('converge')
-        ->once()
-        ->withArgs(
-            static fn (Node $actualNode, $actualAssignment): bool => (
-                $actualNode->is($node) && $actualAssignment->is($assignment)
-            ),
-        )
-        ->ordered();
-    $runtime
-        ->shouldReceive('converge')
-        ->once()
-        ->withArgs(
-            static fn (Node $actualNode, $actualAssignment): bool => (
-                $actualNode->is($node) && $actualAssignment->is($assignment)
-            ),
-        )
-        ->ordered();
+    $matches = static fn (Node $actualNode, $actualAssignment): bool => (
+        $actualNode->is($node) && $actualAssignment->is($assignment)
+    );
+    $exporters->shouldReceive('converge')->once()->withArgs($matches)->ordered();
+    $cadvisors->shouldReceive('converge')->once()->withArgs($matches)->ordered();
+    $runtime->shouldReceive('converge')->once()->withArgs($matches)->ordered();
 
-    new NativeMetricsFleetReconciler($exporters, $runtime)->reconcile();
+    new NativeMetricsFleetReconciler($exporters, $cadvisors, $runtime)->reconcile();
 });
 
-it('retires one node before converging the remaining exporter projection', function (): void {
+it('retires one node before converging the remaining exporter and cadvisor projection', function (): void {
     $metricsNode = metrics_fleet_node('metrics');
     $assignment = $metricsNode
         ->roles()
@@ -61,36 +53,21 @@ it('retires one node before converging the remaining exporter projection', funct
     $retiringNode = metrics_fleet_node('retiring');
     $retiringNode->update(['status' => LifecycleStatus::Removing]);
     $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
     $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
-    $exporters
-        ->shouldReceive('removeNode')
-        ->once()
-        ->withArgs(
-            static fn (Node $actualNode, Node $actualMetricsNode): bool => (
-                $actualNode->is($retiringNode) && $actualMetricsNode->is($metricsNode)
-            ),
-        )
-        ->ordered();
-    $exporters
-        ->shouldReceive('converge')
-        ->once()
-        ->withArgs(
-            static fn (Node $actualNode, $actualAssignment): bool => (
-                $actualNode->is($metricsNode) && $actualAssignment->is($assignment)
-            ),
-        )
-        ->ordered();
-    $runtime
-        ->shouldReceive('converge')
-        ->once()
-        ->withArgs(
-            static fn (Node $actualNode, $actualAssignment): bool => (
-                $actualNode->is($metricsNode) && $actualAssignment->is($assignment)
-            ),
-        )
-        ->ordered();
+    $removeNodeMatches = static fn (Node $actualNode, Node $actualMetricsNode): bool => (
+        $actualNode->is($retiringNode) && $actualMetricsNode->is($metricsNode)
+    );
+    $convergeMatches = static fn (Node $actualNode, $actualAssignment): bool => (
+        $actualNode->is($metricsNode) && $actualAssignment->is($assignment)
+    );
+    $exporters->shouldReceive('removeNode')->once()->withArgs($removeNodeMatches)->ordered();
+    $cadvisors->shouldReceive('removeNode')->once()->withArgs($removeNodeMatches)->ordered();
+    $exporters->shouldReceive('converge')->once()->withArgs($convergeMatches)->ordered();
+    $cadvisors->shouldReceive('converge')->once()->withArgs($convergeMatches)->ordered();
+    $runtime->shouldReceive('converge')->once()->withArgs($convergeMatches)->ordered();
 
-    new NativeMetricsFleetReconciler($exporters, $runtime)->retire($retiringNode);
+    new NativeMetricsFleetReconciler($exporters, $cadvisors, $runtime)->retire($retiringNode);
 });
 
 it('retires an unreachable node without aborting the removal', function (): void {
@@ -104,8 +81,9 @@ it('retires an unreachable node without aborting the removal', function (): void
     $unreachable = metrics_fleet_node('unreachable');
     $unreachable->update(['status' => LifecycleStatus::Removing]);
     $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $cadvisors = Mockery::mock(MetricsCadvisorLifecycle::class);
     $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
-    // The node is on its way out of the fleet, so its own exporter teardown is
+    // The node is on its way out of the fleet, so its own exporter and cadvisor teardown are
     // best effort. The remaining projection must still converge.
     $exporters
         ->shouldReceive('removeNode')
@@ -114,6 +92,17 @@ it('retires an unreachable node without aborting the removal', function (): void
             new ResourceOperationException(
                 'metrics.exporter_configuration_inspection_failed',
                 'The Metrics exporter configuration could not be inspected.',
+                502,
+            ),
+        )
+        ->ordered();
+    $cadvisors
+        ->shouldReceive('removeNode')
+        ->once()
+        ->andThrow(
+            new ResourceOperationException(
+                'metrics.cadvisor_configuration_inspection_failed',
+                'The cAdvisor configuration could not be inspected.',
                 502,
             ),
         )
@@ -127,9 +116,10 @@ it('retires an unreachable node without aborting the removal', function (): void
             ),
         )
         ->ordered();
+    $cadvisors->shouldReceive('converge')->once()->ordered();
     $runtime->shouldReceive('converge')->once()->ordered();
 
-    new NativeMetricsFleetReconciler($exporters, $runtime)->retire($unreachable);
+    new NativeMetricsFleetReconciler($exporters, $cadvisors, $runtime)->retire($unreachable);
 });
 
 it('fails closed when active Metrics assignments drift', function (): void {
@@ -142,6 +132,7 @@ it('fails closed when active Metrics assignments drift', function (): void {
 
     $reconciler = new NativeMetricsFleetReconciler(
         Mockery::mock(MetricsExporterLifecycle::class),
+        Mockery::mock(MetricsCadvisorLifecycle::class),
         Mockery::mock(MetricsRuntimeLifecycle::class),
     );
 

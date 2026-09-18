@@ -36,20 +36,21 @@ it('projects selected exporter and Gateway-only publication expectations in cata
     expect(array_column($provider->for($metrics), 'resourceId'))
         ->toBe([
             'orbit:metrics-node-exporter',
+            'orbit:metrics-cadvisor',
             'orbit:metrics-grafana-upstream',
             'orbit:metrics-grafana-isolation',
         ])
         ->and(array_column($provider->for($gateway), 'resourceId'))
-        ->toBe(['orbit:metrics-node-exporter'])
+        ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor'])
         ->and(array_column($provider->for($app), 'resourceId'))
-        ->toBe(['orbit:metrics-node-exporter'])
+        ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor'])
         ->and($provider->for($excluded))
         ->toBe([]);
 
     $gateway->roles()->update(['status' => 'failed']);
 
     expect(array_column($provider->for($metrics), 'resourceId'))
-        ->toBe(['orbit:metrics-node-exporter']);
+        ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor']);
 });
 
 it('returns no expectations for absent or ambiguous active Metrics assignment state', function (): void {
@@ -124,7 +125,7 @@ it('uses the direct node projection and retains its firewall expectations', func
     );
 
     expect(array_column($provider->for($node), 'resourceId'))
-        ->toBe(['orbit:metrics-node-exporter'])
+        ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor'])
         ->and($projection->fleetCalls)
         ->toBe(0)
         ->and($projection->nodeCalls)

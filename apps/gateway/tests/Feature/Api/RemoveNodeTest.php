@@ -28,6 +28,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
+use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
@@ -510,6 +511,7 @@ it('removes an unreachable node while Metrics is enabled', function (): void {
     // node is powered off.
     $exporters = new RemoveNodeUnreachableExporterRuntime('unreachable');
     app()->instance(MetricsExporterRuntime::class, $exporters);
+    app()->instance(MetricsCadvisorRuntime::class, $exporters);
     app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
 
     $this
@@ -550,7 +552,9 @@ it('reconciles a fleet peer that is unreachable without failing the removal', fu
         'status' => LifecycleStatus::Active->value,
     ]);
     $caller->accessibleNodes()->attach($target);
-    app()->instance(MetricsExporterRuntime::class, new RemoveNodeUnreachableExporterRuntime('dead-peer'));
+    $exporters = new RemoveNodeUnreachableExporterRuntime('dead-peer');
+    app()->instance(MetricsExporterRuntime::class, $exporters);
+    app()->instance(MetricsCadvisorRuntime::class, $exporters);
     app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
 
     $this
@@ -1224,7 +1228,7 @@ final class RemoveNodeFakeMetricsRuntime implements MetricsRuntimeLifecycle
     }
 }
 
-final class RemoveNodeUnreachableExporterRuntime implements MetricsExporterRuntime
+final class RemoveNodeUnreachableExporterRuntime implements MetricsCadvisorRuntime, MetricsExporterRuntime
 {
     /** @var list<string> */
     public array $events = [];
