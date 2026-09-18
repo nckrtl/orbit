@@ -23,6 +23,12 @@ final readonly class WebSocketEnvironmentRenderer
             'APP_ENV=production',
             'APP_DEBUG=false',
             "APP_KEY={$credentials->laravelAppKey}",
+            'LOG_CHANNEL=stderr',
+            'BROADCAST_CONNECTION=reverb',
+            // The app has no database, so every store Laravel defaults to `database` is pinned.
+            'CACHE_STORE=file',
+            'SESSION_DRIVER=file',
+            'QUEUE_CONNECTION=sync',
             "REVERB_APP_ID={$credentials->appId}",
             "REVERB_APP_KEY={$credentials->appKey}",
             "REVERB_APP_SECRET={$credentials->appSecret}",
