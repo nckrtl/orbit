@@ -1206,8 +1206,20 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('keeps optional gateway proof scripts out of the required guest inventory', function (): void {
+        $directory = dirname(__DIR__, 3).'/resources/proofs';
+        $scripts = glob($directory.'/*.sh');
+
+        expect($scripts)->not->toBeFalse()->not->toBeEmpty();
+        expect(glob(dirname(__DIR__, 3).'/resources/guest/*gateway-role*.sh'))->toBe([]);
+
+        foreach ($scripts as $script) {
+            expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
+        }
+    });
+
     it('smokes leftover gateway /up after relocating the role off vpn', function (): void {
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/relocate-gateway-role.sh');
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/proofs/relocate-gateway-role.sh');
 
         expect($source)->toContain(
             'node:role:relocate',
@@ -1224,7 +1236,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('renames source to vpn and target to gateway around relocate', function (): void {
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/rename-and-relocate-gateway-role.sh');
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/proofs/rename-and-relocate-gateway-role.sh');
 
         expect($source)->toContain(
             'node:rename',

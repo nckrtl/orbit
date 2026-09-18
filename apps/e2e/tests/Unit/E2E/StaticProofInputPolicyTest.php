@@ -40,6 +40,9 @@ describe('StaticProofInputPolicy', function (): void {
         'documentation tooling' => ['apps/docs/app/Rules/Rule.php', 'non-runtime'],
         'agent instructions' => ['apps/e2e/.agents/skills/example/SKILL.md', 'non-runtime'],
         'tests' => ['apps/e2e/tests/Unit/ExampleTest.php', 'non-runtime'],
+        'CLI design fixture' => ['apps/cli/design/Flows/NodeAddFlowCommand.php', 'non-runtime'],
+        'SDK response fixture' => ['packages/php-sdk/fixtures/nodes/node-list/default.json', 'non-runtime'],
+        'optional gateway proof script' => ['apps/e2e/resources/proofs/rename-and-relocate-gateway-role.sh', 'non-runtime'],
         'unknown governed path' => ['apps/cli/extensions/Extension.php', 'indeterminate'],
         'unknown root path' => ['unexpected.txt', 'indeterminate'],
     ]);
