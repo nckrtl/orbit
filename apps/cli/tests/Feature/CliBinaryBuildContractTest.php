@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Http\Client\Factory;
+
 function cli_binary_repo_root(): string
 {
     return dirname(base_path(), 2);
@@ -93,6 +95,26 @@ it('keeps the workflow artifact names, dest paths, and hosts aligned with the bu
         ->and($builder)->not->toContain('compressFiles')
         ->and(cli_binary_repo_root().'/apps/cli/box.json')->toBeFile()
         ->and((string) file_get_contents(cli_binary_repo_root().'/apps/cli/box.json'))->toContain('"compression": "GZ"');
+});
+
+it('keeps Laravel HTTP client in the packed production install', function (): void {
+    $composer = json_decode((string) file_get_contents(base_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
+    $lock = json_decode((string) file_get_contents(base_path('composer.lock')), true, flags: JSON_THROW_ON_ERROR);
+    $provider = (string) file_get_contents(base_path('app/Providers/AppServiceProvider.php'));
+    $productionPackages = array_column($lock['packages'] ?? [], 'name');
+
+    expect($composer['require']['illuminate/http'] ?? null)->toBe('^13.0')
+        ->and($productionPackages)->toContain('illuminate/http')
+        ->and($provider)->toContain('Illuminate\\Http\\Client\\Factory')
+        ->and($provider)->toContain('HttpFactory::class');
+});
+
+it('binds the Laravel HTTP client factory as a singleton', function (): void {
+    $first = app(Factory::class);
+    $second = app(Factory::class);
+
+    expect($first)->toBeInstanceOf(Factory::class)
+        ->and($first)->toBe($second);
 });
 
 it('prints a git describe version', function (): void {

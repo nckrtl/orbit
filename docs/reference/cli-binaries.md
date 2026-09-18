@@ -78,6 +78,8 @@ bin/orbit-build-cli-binary linux x64
 
 The builder stages `apps/cli` and `packages/php-sdk`, installs production Composer dependencies, writes `apps/cli/builds/orbit.phar`, and asks PHPacker for PHP 8.5. Host PHP must provide the zlib extension. The command requires Composer, PHP, rsync, and `apps/cli/phpacker/vendor/bin/phpacker`. PHPacker stays in that isolated project because it requires Symfony 7.
 
+That production install uses `--no-dev`. Laravel Zero keeps `illuminate/http` as a framework require-dev, so a packed binary does not receive Laravel's HTTP client unless the CLI requires the package itself. `orbit top` and `realtime:tail` authorize the Reverb channel with `Http` after the WebSocket connects (`POST /api/v1/broadcasting/auth`). The CLI therefore requires `illuminate/http` as a production dependency and binds `Illuminate\Http\Client\Factory` so that call works on every packed platform. A binary built without that package loads the fleet Dashboard, then exits with `Target class [Illuminate\Http\Client\Factory] does not exist`.
+
 Build macos-arm64 on mini. Do not treat a Mach-O file produced on Linux as the contract binary.
 
 ## Limits
