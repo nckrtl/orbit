@@ -19,6 +19,7 @@ final class NodeRoleServiceCatalog
             RoleName::AppDev, RoleName::AppProd => ['caddy', 'docker'],
             RoleName::Metrics => ['docker'],
             RoleName::Database => ['docker'],
+            RoleName::WebSocket => ['caddy', 'orbit-websocket'],
         };
     }
 }

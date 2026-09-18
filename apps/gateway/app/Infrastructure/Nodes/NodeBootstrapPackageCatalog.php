@@ -35,6 +35,7 @@ final class NodeBootstrapPackageCatalog
             ],
             RoleName::Metrics => ['docker.io', 'openssl'],
             RoleName::Database => ['docker.io'],
+            RoleName::WebSocket => ['caddy', 'composer', 'git', 'openssl'],
         };
     }
 }

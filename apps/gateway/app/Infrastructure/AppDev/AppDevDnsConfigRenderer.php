@@ -134,6 +134,33 @@ final readonly class AppDevDnsConfigRenderer
             }
         }
 
+        $websocket = Node::query()
+            ->where(static function (Builder $q) use ($pendingNode): void {
+                $q->where('status', LifecycleStatus::Active->value);
+
+                if ($pendingNode instanceof Node && $pendingNode->exists) {
+                    $q->orWhere('id', $pendingNode->id);
+                }
+            })
+            ->whereNotNull('wireguard_ip')
+            ->whereHas('roles', static function (Builder $q) use ($pendingNode): void {
+                $q->where('role', RoleName::WebSocket->value)
+                    ->where(static function (Builder $q) use ($pendingNode): void {
+                        $q->where('status', LifecycleStatus::Active->value);
+
+                        if ($pendingNode instanceof Node && $pendingNode->exists) {
+                            $q->orWhere(static fn (Builder $q): Builder => $q
+                                ->where('node_id', $pendingNode->id)
+                                ->where('status', LifecycleStatus::Provisioning->value));
+                        }
+                    });
+            })
+            ->first();
+
+        if ($websocket instanceof Node) {
+            $records->push("host-record=reverb.orbit,{$websocket->wireguard_ip}");
+        }
+
         foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
             $records->push($record);
         }

@@ -28,6 +28,8 @@ it('covers exact package and service matrices', function (): void {
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
         ->and($p->forRole($node, RoleName::Database))
         ->toBe(['docker.io'])
+        ->and($p->forRole($node, RoleName::WebSocket))
+        ->toBe(['caddy', 'composer', 'git', 'openssl'])
         ->and($s->forRole(RoleName::Gateway))
         ->toBe(['caddy', 'php8.5-fpm'])
         ->and($s->forRole(RoleName::Vpn))
@@ -39,7 +41,32 @@ it('covers exact package and service matrices', function (): void {
         ->and($s->forRole(RoleName::AppProd))
         ->toBe(['caddy', 'docker'])
         ->and($s->forRole(RoleName::Database))
-        ->toBe(['docker']);
+        ->toBe(['docker'])
+        ->and($s->forRole(RoleName::WebSocket))
+        ->toBe(['caddy', 'orbit-websocket']);
+});
+
+it('scopes the websocket role https listener to the node own WireGuard address', function (): void {
+    $rules = new NodeFirewallRuleCatalog()->forRole(
+        new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.44.0.9']),
+        RoleName::WebSocket,
+    );
+
+    expect($rules)
+        ->toHaveCount(1)
+        ->and($rules[0]->shape)
+        ->toEqual(new UfwRuleShape(
+            comment: 'orbit:websocket-https',
+            action: 'allow',
+            direction: 'in',
+            source: 'any',
+            destination: '10.44.0.9',
+            port: '443',
+            protocol: 'tcp',
+            inInterface: 'orbit',
+            outInterface: null,
+            family: 'v4',
+        ));
 });
 
 it('gives Database no firewall projection', function (): void {

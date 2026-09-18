@@ -75,6 +75,11 @@ final readonly class NodeSideResidue
                 '/etc/orbit/metrics including the Orbit ownership marker',
                 'Grafana upstream firewall rule',
             ],
+            RoleName::WebSocket => [
+                'Reverb checkout, its systemd unit and its Caddy site for the websocket role',
+                'Orbit firewall rule for the websocket role',
+                'Stored Reverb application credentials and generated APP_KEY',
+            ],
             // Gateway and VPN are protected from removal. Router, Ingress, and
             // Database leave no role-owned host projection; Docker stays installed.
             RoleName::Gateway, RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Database => [],
