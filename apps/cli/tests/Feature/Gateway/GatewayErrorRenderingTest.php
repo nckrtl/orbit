@@ -420,6 +420,27 @@ it('renders a safe json failure for a corrupted persisted gateway profile', func
     expect($mock->getLastPendingRequest())->toBeNull();
 });
 
+it('names the privacy failure when the persisted gateway configuration is readable by others', function (): void {
+    $filesystem = new Filesystem;
+    $filesystem->put(
+        $this->orbitHome.'/config.json',
+        json_encode(['active_gateway' => null, 'gateways' => []], JSON_THROW_ON_ERROR),
+    );
+    $filesystem->chmod($this->orbitHome.'/config.json', 0o644);
+
+    $exitCode = Artisan::call('gateway:status', ['--json' => true]);
+
+    expect($exitCode)->toBe(1);
+    expect(json_decode(trim(Artisan::output()), associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe([
+            'error' => [
+                'code' => 'gateway.config_not_private',
+                'message' => 'Orbit gateway configuration is not private.',
+                'request_id' => null,
+            ],
+        ]);
+});
+
 it('replaces unsafe gateway error metadata in json output', function (): void {
     MockClient::global([
         ListActivitiesRequest::class => MockResponse::make(
