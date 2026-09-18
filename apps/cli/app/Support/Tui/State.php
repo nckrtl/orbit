@@ -459,6 +459,7 @@ final class State
                 : in_array($p['target_id'], $instanceIds, true))),
             'schedules' => array_values(array_filter($this->schedules, static fn (array $s): bool => $s['target_type'] === 'instance' && in_array($s['target_id'], $instanceIds, true))),
             'databases' => array_values(array_filter($this->databases, fn (array $d): bool => $nodeFilter === null || $this->nodeName((int) $d['node_id']) === $nodeFilter)),
+            'firewall' => array_values(array_filter($this->firewall, static fn (array $f): bool => $nodeFilter === null || $f['node'] === $nodeFilter)),
             default => [],
         };
     }
@@ -505,7 +506,7 @@ final class State
         return $rows;
     }
 
-    /** @return array{Nodes: array{int,int}, Apps: array{int,int}, Instances: array{int,int}, Processes: array{int,int}, Schedules: array{int,int}, Firewall: array{int,int}} */
+    /** @return array{Nodes: array{int,int}, Apps: array{int,int}, Instances: array{int,int}, Processes: array{int,int}, Schedules: array{int,int}, Databases: array{int,int}, Firewall: array{int,int}} */
     public function counts(): array
     {
         $off = static fn (array $rows, callable $ok): int => count(array_filter($rows, static fn (array $row): bool => ! $ok($row)));
@@ -516,6 +517,9 @@ final class State
             'Instances' => [count($this->instances), $off($this->instances, self::instanceHealthy(...))],
             'Processes' => [count($this->processes), $off($this->processes, self::processHealthy(...))],
             'Schedules' => [count($this->schedules), $off($this->schedules, self::scheduleHealthy(...))],
+            // Databases has no health concept today (no request surfaces a connection's runtime
+            // state), so its warn count is always 0.
+            'Databases' => [count($this->databases), 0],
             'Firewall' => [count($this->firewall), $off($this->firewall, self::firewallHealthy(...))],
         ];
     }

@@ -33,7 +33,7 @@ use PhpTui\Tui\DisplayBuilder;
 
 /**
  * `orbit top`: the fleet as a live, sectioned screen (Dashboard, Nodes, Apps, Instances,
- * Processes, Schedules, Databases). It is the real command the `design:top` sketch specified
+ * Processes, Schedules, Databases, Firewall). It is the real command the `design:top` sketch specified
  * (`apps/cli/design/README.md`); the rendering and interaction live in `App\Support\Tui\Screen`
  * and `App\Support\Tui\Interaction`, driven by fleet data in `App\Support\Tui\State`.
  *
@@ -240,7 +240,7 @@ final class TopCommand extends GatewayCommand
             $ui->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
             $ui->form !== null => '  ↑↓ or Tab move between fields · Space toggles a role · Enter confirms a field · Esc cancels',
             $ui->page() !== null && $ui->focus === null => '  ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions · q leave',
-            $ui->focus === null => '  ↑↓ sections · → into the page · 1-7 jump · '.($ui->section === 'nodes' ? 'c or + create · ' : '').($ui->hasFilters() ? 'n/p filters · ' : '').'q leave',
+            $ui->focus === null => '  ↑↓ sections · → into the page · 1-8 jump · '.($ui->section === 'nodes' ? 'c or + create · ' : '').($ui->hasFilters() ? 'n/p filters · ' : '').'q leave',
             default => '  ↑↓ move · Enter or click again opens · a or right-click actions · Esc back to panes · q leave',
         };
 

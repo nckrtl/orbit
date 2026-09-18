@@ -45,7 +45,7 @@ use RuntimeException;
  */
 final class Screen
 {
-    private const int NAV_WIDTH = 16;
+    private const int NAV_WIDTH = 20;
 
     private const int MENU_WIDTH = 40;
 
@@ -79,24 +79,36 @@ final class Screen
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(self::NAV_WIDTH), Constraint::min(40))
-                    ->widgets($this->nav($ui), $body),
+                    ->widgets($this->nav($state, $ui), $body),
                 ParagraphWidget::fromString($footer)->style($dim),
             );
 
         return $ui->menu === null ? $screen : CompositeWidget::fromWidgets($screen, $this->menuPopup($ui, $area));
     }
 
-    private function nav(UiState $ui): Widget
+    /**
+     * The sidebar: one row per section, its count right-aligned in yellow when that family has
+     * something needing a look, using the same lastColumnWidth()/alignLast() mechanism pane()
+     * uses for a data pane's last column. Dashboard has no family of its own, so its count cell
+     * is left blank.
+     */
+    private function nav(State $state, UiState $ui): Widget
     {
         $hovered = $ui->hover === 'nav' && $ui->focus === null && $ui->form === null;
+        $counts = $state->counts();
+        $widths = [Constraint::length(11), Constraint::length(4)];
+        $lastWidth = $this->lastColumnWidth($ui, 'nav', $widths);
         $rows = [];
 
-        foreach (UiState::SECTIONS as $title) {
-            $rows[] = TableRow::fromStrings($title);
+        foreach (UiState::SECTIONS as $key => $title) {
+            $countCell = $key === 'dashboard' ? TableCell::fromString('') : $this->cell((string) $counts[ucfirst($key)][0], $counts[ucfirst($key)][1] > 0);
+            $rows[] = $this->alignLast(TableRow::fromCells(TableCell::fromString($title), $countCell), $lastWidth);
         }
 
-        $table = TableWidget::default()
-            ->widths(Constraint::percentage(96))
+        $table = TableWidget::default();
+        $table->columnSpacing = 1;
+        $table
+            ->widths(...$widths)
             ->rows(...$rows)
             ->select((int) array_search($ui->section, array_keys(UiState::SECTIONS), true))
             ->highlightSymbol('› ')
@@ -188,33 +200,35 @@ final class Screen
                 [Constraint::percentage(20), Constraint::percentage(12), Constraint::percentage(16), Constraint::percentage(28), Constraint::percentage(24)],
                 array_map(fn (array $d): TableRow => $this->row([$d['slug'], $d['driver'], $state->nodeName((int) $d['node_id'])], $d['host'] !== null ? "{$d['host']}:{$d['port']}" : (string) ($d['path'] ?? '—'), false), $rows),
             ],
+            'firewall' => [
+                ['Node', 'Port', 'Action', 'Source', 'Status'],
+                [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(30), Constraint::percentage(18)],
+                array_map(fn (array $f): TableRow => $this->row([$f['node'], "{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $rows),
+            ],
             default => [[], [], []],
         };
     }
 
     /**
-     * The dashboard: counts, one compact table row per node, and everything that needs a look.
-     * The node table is sized to its content (one line per node, plus its border and header) so
-     * "Needs attention" keeps the rest of the screen, with its own selection-following scroll,
-     * regardless of how many nodes the fleet has.
+     * The dashboard: one compact table row per node, and everything that needs a look. Fleet
+     * counts live in the sidebar (see nav()), not here. The node table is sized to its content
+     * (one line per node, plus its border and header) so "Needs attention" keeps the rest of the
+     * screen, with its own selection-following scroll, regardless of how many nodes the fleet has.
      */
     private function dashboard(State $state, UiState $ui, Area $area): Widget
     {
-        $dim = Style::default()->fg(AnsiColor::DarkGray);
         $nodesHeight = count($state->nodes) + 3;
-        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(3), Constraint::length($nodesHeight), Constraint::min(5)])->split($area);
-        $ui->drawn['attention'] = ['area' => $split->get(2), 'header' => true];
+        $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length($nodesHeight), Constraint::min(5)])->split($area);
+        $ui->drawn['attention'] = ['area' => $split->get(1), 'header' => true];
         $ui->paneOrder = ['attention'];
 
         $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $state->attentionRows());
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
-            ->constraints(Constraint::length(3), Constraint::length($nodesHeight), Constraint::min(5))
+            ->constraints(Constraint::length($nodesHeight), Constraint::min(5))
             ->widgets(
-                BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)
-                    ->widget(ParagraphWidget::fromText(Text::fromLines($this->stats($state, $area->width - 2)))),
-                $this->nodeSummaryTable($state, $split->get(1)),
+                $this->nodeSummaryTable($state, $split->get(0)),
                 $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, 'Nothing needs attention.'),
             );
     }
@@ -363,27 +377,6 @@ final class Screen
                             ->widgets(ParagraphWidget::fromText(Text::fromLines(...$left)), BlockWidget::default(), ParagraphWidget::fromText(Text::fromLines(...$right))),
                     ),
             );
-    }
-
-    /** Counts for the whole network, a count in yellow when something in it needs a look. */
-    private function stats(State $state, int $width): Line
-    {
-        $segments = $state->counts();
-        $texts = array_map(fn (string $label) => "{$label} {$segments[$label][0]}", array_keys($segments));
-        $slack = max(0, $width - 2 - array_sum(array_map(strlen(...), $texts)));
-        $gaps = max(1, count($texts) - 1);
-        $spans = [Span::fromString(' ')];
-        $index = 0;
-
-        foreach ($segments as $label => [$count, $warn]) {
-            if ($index > 0) {
-                $spans[] = Span::fromString(str_repeat(' ', intdiv($slack * $index, $gaps) - intdiv($slack * ($index - 1), $gaps)));
-            }
-            $spans[] = Span::styled($texts[$index], $warn > 0 ? Style::default()->fg(AnsiColor::Yellow) : Style::default());
-            $index++;
-        }
-
-        return Line::fromSpans(...$spans);
     }
 
     /** One record: crumbs, properties, and the panes the family has. */

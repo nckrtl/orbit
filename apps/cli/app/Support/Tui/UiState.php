@@ -22,6 +22,7 @@ final class UiState
         'processes' => 'Processes',
         'schedules' => 'Schedules',
         'databases' => 'Databases',
+        'firewall' => 'Firewall',
     ];
 
     public string $section = 'dashboard';
