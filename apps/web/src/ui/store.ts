@@ -25,6 +25,8 @@ export type UiState = {
     focus: string | null;
     selected: Record<string, number>;
     menu: MenuState | null;
+    /** The output of an action that prints a report, such as a profile; `output` is null while it runs. */
+    modal: { title: string; output: string | null; failed: boolean } | null;
     message: string;
 };
 
@@ -36,7 +38,14 @@ export type PaneHandle = {
     leaf: boolean;
 };
 
-const initial: UiState = { hover: "nav", focus: null, selected: {}, menu: null, message: "" };
+const initial: UiState = {
+    hover: "nav",
+    focus: null,
+    selected: {},
+    menu: null,
+    modal: null,
+    message: "",
+};
 let state: UiState = initial;
 const listeners = new Set<() => void>();
 

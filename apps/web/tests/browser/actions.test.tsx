@@ -1,4 +1,4 @@
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { setTransport } from "../../src/api/client";
 import { queryClient } from "../../src/api/queryClient";
@@ -48,6 +48,26 @@ it("destroys a process only after it is confirmed", async () => {
         method: "DELETE",
         path: "/api/v1/processes/2",
     });
+});
+
+it("profiles an instance and shows what the command printed in a modal", async () => {
+    const report = "GET https://charlie-shop.test 200 in 41.20ms\n\nTotal ....... 41.20ms";
+    const fetched = vi.spyOn(window, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ ok: true, output: report }), {
+            headers: { "content-type": "application/json" },
+        }),
+    );
+
+    await openApp("/instances/1");
+    await page.getByText("actions ▾").click();
+    await page.getByRole("menuitem", { name: "profile", exact: true }).click();
+
+    await expect.element(page.getByRole("dialog")).toHaveTextContent("Total ....... 41.20ms");
+    expect(fetched).toHaveBeenCalledWith("/__orbit/profile?instance=1");
+
+    await userEvent.keyboard("{Escape}");
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    fetched.mockRestore();
 });
 
 it("asks before a destructive action and sends nothing until it is confirmed", async () => {

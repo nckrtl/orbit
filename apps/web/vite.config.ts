@@ -7,6 +7,7 @@ import { defineConfig, type Plugin } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
 import { gatewayProfile, grafanaTarget, realtimeTarget } from "./dev/gateway-profile.ts";
 import { commanderOneShot } from "./dev/commander-oneshot.ts";
+import { orbitProfile } from "./dev/profile.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -68,7 +69,7 @@ function orbitGateway(): Plugin {
 }
 
 export default defineConfig({
-    plugins: [react(), tailwindcss(), orbitGateway(), commanderOneShot()],
+    plugins: [react(), tailwindcss(), orbitGateway(), commanderOneShot(), orbitProfile()],
     resolve: { alias: { "@": path.join(rootDir, "src") } },
     define: { __ORBIT_GATEWAY__: "null" },
     // The demo Gateway imports recorded fixtures from the SDK package, outside this app.

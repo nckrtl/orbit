@@ -43,6 +43,26 @@ export function chooseAction(index?: number): void {
         return;
     }
 
+    if (action.report !== undefined) {
+        const title = `${action.label} · ${menu.title}`;
+
+        ui.set({ menu: null, modal: { title, output: null, failed: false } });
+        void action
+            .report()
+            .then(
+                ({ ok, output }) => ({ output, failed: !ok }),
+                (error: unknown) => ({ output: String(error), failed: true }),
+            )
+            .then((result) => {
+                // The reader may have closed the modal while the command ran; leave it closed.
+                if (ui.get().modal?.title === title) {
+                    ui.set({ modal: { title, ...result } });
+                }
+            });
+
+        return;
+    }
+
     if (action.run === undefined) {
         const command = action.command ?? "";
         void navigator.clipboard?.writeText(command).catch(() => {});

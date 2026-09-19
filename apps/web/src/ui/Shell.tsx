@@ -10,6 +10,7 @@ import { Frame } from "./Frame";
 import { FILTERED_SECTIONS, SECTION_TITLES, SECTIONS, type Section, useGo } from "./go";
 import { useKeyboard } from "./keyboard";
 import { MenuPopup } from "./MenuPopup";
+import { Modal } from "./Modal";
 import { pageTarget } from "./page";
 import { ui, useUi } from "./store";
 
@@ -139,6 +140,7 @@ export function Shell() {
                 </span>
             </footer>
             <MenuPopup />
+            <Modal />
         </div>
     );
 }

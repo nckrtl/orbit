@@ -26,6 +26,8 @@ export type Action = {
     destructive?: boolean;
     command?: string;
     run?: () => Promise<string>;
+    /** An action that prints a report: the menu shows what this resolves to in a modal. */
+    report?: () => Promise<{ ok: boolean; output: string }>;
 };
 
 const leaves = (label: string, command: string, description: string): Action => ({
@@ -107,6 +109,25 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     `orbit instance:deploy ${target}`,
                     "A deploy streams for minutes; it is not run from inside the live screen.",
                 ),
+                {
+                    label: "profile",
+                    description: `Profile one request to [${target}] from this machine.`,
+                    // `orbit profile` sends its GET from the operator's machine, never through the
+                    // Gateway, and a browser cannot read another origin's timings. The dev server
+                    // runs the command here and returns what it printed.
+                    report: async () => {
+                        const response = await fetch(`/__orbit/profile?instance=${instance.id}`);
+
+                        if (!response.headers.get("content-type")?.includes("json")) {
+                            return {
+                                ok: false,
+                                output: `This page has no local server to run the command. Run it in a terminal:\n\norbit profile --instance=${instance.id}`,
+                            };
+                        }
+
+                        return (await response.json()) as { ok: boolean; output: string };
+                    },
+                },
             ];
         }
         case "processes": {

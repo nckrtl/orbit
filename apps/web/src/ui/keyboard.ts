@@ -37,6 +37,17 @@ export function useKeyboard(pageTarget: () => Target | null): void {
             const onList = second === undefined;
             const handled = () => event.preventDefault();
 
+            // A modal owns the keys while it is open, and Esc is the only one it answers.
+            if (state.modal !== null) {
+                handled();
+
+                if (event.key === "Escape" || event.key === "Enter") {
+                    ui.set({ modal: null });
+                }
+
+                return;
+            }
+
             if (state.menu !== null) {
                 const menu = state.menu;
                 handled();
