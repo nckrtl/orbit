@@ -74,7 +74,15 @@ export function useNodeTables(wide = false) {
             },
             ...(wide
                 ? ([
-                      { header: "Roles", width: 20, fit: true, value: (n) => n.roles.join(", ") },
+                      {
+                          header: "Roles",
+                          width: 8,
+                          fit: true,
+                          value: (n) => String(n.roles.length),
+                          sort: (n) => n.roles.length,
+                          // The count keeps the column narrow; the names show on hover.
+                          cell: (n) => <span title={n.roles.join(", ")}>{n.roles.length}</span>,
+                      },
                       {
                           header: "WireGuard IP",
                           width: 12,
