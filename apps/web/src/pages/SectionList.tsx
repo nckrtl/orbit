@@ -26,6 +26,7 @@ import {
 import { Frame, Note } from "../ui/Frame";
 import { FILTERED_SECTIONS, SECTION_TITLES, type Section, useGo } from "../ui/go";
 import { type Column, Pane } from "../ui/Pane";
+import { Status } from "../ui/Status";
 import { processListColumns, scheduleListColumns } from "./columns";
 
 type ListKind = Exclude<Kind, "deployments">;
@@ -34,7 +35,12 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
     const columns: { [K in ListKind]: () => Column<never>[] } = {
         nodes: (): Column<Node>[] => [
             { header: "Name", width: 20, value: (n) => n.name },
-            { header: "Status", width: 14, value: (n) => n.status },
+            {
+                header: "Status",
+                width: 14,
+                value: (n) => n.status,
+                cell: (n) => <Status value={n.status} />,
+            },
             { header: "Roles", width: 24, value: (n) => n.roles.join(", ") },
             { header: "WireGuard IP", width: 20, value: (n) => n.wireguard_ip ?? "—" },
             {
@@ -61,7 +67,12 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
             { header: "Environment", width: 14, value: (i) => i.environment },
             { header: "Node", width: 12, value: (i) => i.node.name },
             { header: "Domain", width: 28, value: (i) => i.domain ?? "—" },
-            { header: "Status", width: 10, value: (i) => i.status },
+            {
+                header: "Status",
+                width: 10,
+                value: (i) => i.status,
+                cell: (i) => <Status value={i.status} />,
+            },
         ],
         processes: () => processListColumns(fleet),
         schedules: () => scheduleListColumns(fleet),

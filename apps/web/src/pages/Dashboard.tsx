@@ -15,6 +15,7 @@ import type { NodeMetrics } from "../metrics/prometheus";
 import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { type Column, Pane } from "../ui/Pane";
+import { Status } from "../ui/Status";
 import { processDashboardColumns, scheduleColumns } from "./columns";
 
 /**
@@ -71,7 +72,12 @@ export function Dashboard() {
 
         return [
             { header: "Name", width: 14, value: (n) => n.name },
-            { header: "Status", width: 9, value: (n) => n.status },
+            {
+                header: "Status",
+                width: 9,
+                value: (n) => n.status,
+                cell: (n) => <Status value={n.status} />,
+            },
             {
                 header: "CPU",
                 width: 21,
@@ -124,7 +130,12 @@ export function Dashboard() {
             { header: "Name", width: 26, value: (i) => i.name },
             { header: "App", width: 26, value: (i) => i.app.slug },
             { header: "Node", width: 24, value: (i) => i.node.name },
-            { header: "Status", width: 24, value: (i) => i.status },
+            {
+                header: "Status",
+                width: 24,
+                value: (i) => i.status,
+                cell: (i) => <Status value={i.status} />,
+            },
         ],
         [],
     );
