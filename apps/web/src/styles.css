@@ -265,8 +265,11 @@ body {
 
 /* ---- form fields: square boxes with the label in the border, as Laravel Prompts draws them ---- */
 
+/* One prompt box, as Laravel Prompts draws it: square corners, the label in the top border, 60
+   columns wide. It is dim at rest, cyan while it has the focus, and yellow while its value is refused. */
 .field {
     position: relative;
+    width: min(60ch, 100%);
     border: 1px solid var(--line);
     padding: calc(var(--lh) / 2) 1ch;
 }
@@ -275,7 +278,11 @@ body {
     border-color: var(--cyan);
 }
 
-.field > label {
+.field[data-error] {
+    border-color: var(--yellow);
+}
+
+.field > .field-label {
     position: absolute;
     top: calc(var(--lh) / -2 - 1px);
     left: 1ch;
@@ -284,8 +291,27 @@ body {
     color: var(--dim);
 }
 
-.field:focus-within > label {
+.field:focus-within > .field-label {
     color: var(--cyan);
+}
+
+.field[data-error] > .field-label {
+    color: var(--yellow);
+}
+
+/* One option of a multiselect: a pointer on the option the keys are on, and a filled box when it is picked. */
+.option {
+    display: block;
+    cursor: pointer;
+}
+
+.option > .pointer {
+    visibility: hidden;
+    color: var(--cyan);
+}
+
+.option:focus-within > .pointer {
+    visibility: visible;
 }
 
 .field input[type="text"] {

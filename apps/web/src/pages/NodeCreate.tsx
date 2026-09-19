@@ -5,6 +5,7 @@ import type { Node } from "../api/types";
 import { applyRow } from "../realtime/apply";
 import { Frame } from "../ui/Frame";
 import { useGo } from "../ui/go";
+import { PageHeader } from "../ui/PageHeader";
 import { ui } from "../ui/store";
 
 const ROLES = [
@@ -67,11 +68,11 @@ function Field({
 }) {
     return (
         <div>
-            <div className="field">
-                <label>{label}</label>
+            <div className="field" data-error={error === undefined ? undefined : ""}>
+                <span className="field-label">{label}</span>
                 {children}
             </div>
-            <div className="h-[20px] px-[1ch]">
+            <div className="min-h-[20px] px-[1ch] whitespace-normal">
                 {error !== undefined ? (
                     <span className="text-yellow">⚠ {error}</span>
                 ) : (
@@ -132,15 +133,15 @@ export function NodeCreate() {
 
     return (
         <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-y-[16px]">
-            <div className="flex gap-[2ch] px-[1ch]">
-                <span className="cursor-pointer text-cyan" onClick={() => go.back()}>
-                    ‹ back
-                </span>
-                <span className="font-bold">Create node</span>
-            </div>
-            <Frame title="node:add" state="focused">
+            <PageHeader
+                trail={[
+                    { label: "Nodes", open: () => go.section("nodes") },
+                    { label: "Create node" },
+                ]}
+            />
+            <Frame title="New node" state="focused">
                 <form
-                    className="mx-[1ch] flex max-w-[100ch] flex-col gap-y-[6px] pt-[10px]"
+                    className="mx-[2ch] flex flex-col gap-y-[10px] pt-[30px] pb-[20px]"
                     onSubmit={(event) => void submit(event)}
                 >
                     <Field label="Node name" error={errors.name}>
@@ -171,15 +172,16 @@ export function NodeCreate() {
                     <Field label="SSH user" error={errors.user}>
                         <input type="text" value={values.user} onChange={set("user")} />
                     </Field>
-                    <Field label="Roles" error={errors.roles} hint="Space toggles a role.">
+                    <Field
+                        label="Roles"
+                        error={errors.roles}
+                        hint="Use the space bar to select options."
+                    >
                         {ROLES.map(([role, does]) => {
                             const on = values.roles.includes(role);
 
                             return (
-                                <label
-                                    key={role}
-                                    className="block cursor-pointer focus-within:font-bold"
-                                >
+                                <label key={role} className="option">
                                     <input
                                         type="checkbox"
                                         className="sr-only"
@@ -193,6 +195,7 @@ export function NodeCreate() {
                                             })
                                         }
                                     />
+                                    <span className="pointer">›</span>{" "}
                                     <span className={on ? "text-cyan" : "text-dim"}>
                                         {on ? "◼" : "◻"}
                                     </span>{" "}

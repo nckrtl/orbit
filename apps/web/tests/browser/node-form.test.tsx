@@ -16,7 +16,7 @@ it("opens from the Nodes list with c and refuses an empty form", async () => {
     await expect.poll(app.url).toBe("/nodes/create");
 
     await page.getByRole("button", { name: "Create node" }).click();
-    await expect.element(pane("node:add")).toHaveTextContent("⚠ Required.");
+    await expect.element(pane("New node")).toHaveTextContent("⚠ Required.");
     expect(app.gateway.requests.some((request) => request.method === "POST")).toBe(false);
 });
 
@@ -27,16 +27,16 @@ it("applies the node:add rules to each field", async () => {
     await page.getByRole("button", { name: "Create node" }).click();
 
     await expect
-        .element(pane("node:add"))
+        .element(pane("New node"))
         .toHaveTextContent("Use lowercase letters, digits, and dashes.");
-    await expect.element(pane("node:add")).toHaveTextContent("A port is a number from 1 to 65535.");
+    await expect.element(pane("New node")).toHaveTextContent("A port is a number from 1 to 65535.");
 });
 
 it("shows the Gateway's refusal, then creates the node and opens it", async () => {
     const app = await openApp("/nodes/create");
     await userEvent.fill(field("Node name"), "spare");
     await page.getByRole("button", { name: "Create node" }).click();
-    await expect.element(pane("node:add")).toHaveTextContent("An app-dev TLD is required");
+    await expect.element(pane("New node")).toHaveTextContent("An app-dev TLD is required");
 
     await userEvent.fill(field("TLD for its domains"), "spare.test");
     await page.getByRole("button", { name: "Create node" }).click();
