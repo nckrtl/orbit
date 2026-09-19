@@ -7,7 +7,15 @@ import { counts } from "../fleet/fleet";
 import { connectRealtime } from "../realtime/connect";
 import { useLiveness, usePollingReason } from "../realtime/liveness";
 import { Frame } from "./Frame";
-import { FILTERED_SECTIONS, SECTION_TITLES, SECTIONS, type Section, useGo } from "./go";
+import {
+    FILTERED_SECTIONS,
+    NAV,
+    navFor,
+    SECTION_TITLES,
+    SECTIONS,
+    type Section,
+    useGo,
+} from "./go";
 import { useKeyboard } from "./keyboard";
 import { MenuPopup } from "./MenuPopup";
 import { Modal } from "./Modal";
@@ -29,7 +37,7 @@ function Sidebar({ section }: { section: Section }) {
             className="w-[18ch]"
             onMouseDown={() => ui.set({ hover: "nav", focus: null })}
         >
-            {SECTIONS.map((key) => {
+            {NAV.map((key) => {
                 const [count, warn] = key === "dashboard" ? [null, 0] : totals[key];
 
                 return (
@@ -38,13 +46,13 @@ function Sidebar({ section }: { section: Section }) {
                         className="row"
                         data-link=""
                         style={{ gridTemplateColumns: "minmax(0, 1fr) 4ch" }}
-                        data-selected={key === section ? "" : undefined}
+                        data-selected={key === navFor(section) ? "" : undefined}
                         data-focused={hovered ? "" : undefined}
                         onClick={() => go.section(key)}
                     >
                         <span>{SECTION_TITLES[key]}</span>
                         <span
-                            className={`text-right ${warn > 0 && !(key === section && hovered) ? "text-yellow" : ""}`}
+                            className={`text-right ${warn > 0 && !(key === navFor(section) && hovered) ? "text-yellow" : ""}`}
                         >
                             {count ?? ""}
                         </span>
@@ -76,7 +84,7 @@ function footerHint(section: Section, onList: boolean, onForm: boolean): string 
         return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions";
     }
 
-    return `↑↓ sections · → into the page · 1-8 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
+    return `↑↓ sections · → into the page · 1-5 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
 }
 
 /** The screen: the sidebar beside the open page, and one footer line with the key hints and the Gateway's WebSocket status. */

@@ -15,6 +15,23 @@ export const SECTIONS = [
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
+/** The sections the sidebar lists. The others have no list of their own: their records open from what owns them. */
+export const NAV = [
+    "dashboard",
+    "nodes",
+    "apps",
+    "processes",
+    "databases",
+] as const satisfies readonly Section[];
+
+/** The sidebar entry a section belongs under: an App owns its instances and their schedules, and a node owns its firewall rules. */
+export const navFor = (section: Section): (typeof NAV)[number] =>
+    section === "instances" || section === "schedules"
+        ? "apps"
+        : section === "firewall"
+          ? "nodes"
+          : section;
+
 export const SECTION_TITLES: Record<Section, string> = {
     dashboard: "Dashboard",
     nodes: "Nodes",

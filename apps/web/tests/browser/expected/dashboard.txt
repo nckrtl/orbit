@@ -2,11 +2,8 @@
 │› Dashboard │
 │  Nodes │ 3
 │  Apps │ 3
-│  Instances │ 4
 │  Processes │ 4
-│  Schedules │ 2
 │  Databases │ 2
-│  Firewall │ 3
 ╰─
 
 ╭─ Worker nodes
@@ -58,4 +55,4 @@
 │  Firewall │ 22/tcp allow 10.44.0.0/16 │ app-prod │ failed !
 ╰─
 
-↑↓ sections · → into the page · 1-8 jump    demo fleet
+↑↓ sections · → into the page · 1-5 jump    demo fleet

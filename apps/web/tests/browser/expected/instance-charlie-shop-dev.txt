@@ -1,12 +1,9 @@
 ╭─ Navigation
 │  Dashboard │
 │  Nodes │ 3
-│  Apps │ 3
-│› Instances │ 4
+│› Apps │ 3
 │  Processes │ 4
-│  Schedules │ 2
 │  Databases │ 2
-│  Firewall │ 3
 ╰─
 
 ╭─ Properties
