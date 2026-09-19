@@ -126,7 +126,7 @@ const firewallLineColumns: Column<FirewallLine>[] = [
     { header: "Name", width: 34, value: (line) => line.name },
     { header: "Port", width: 16, fit: true, value: (line) => line.port },
     { header: "Action", width: 10, fit: true, value: (line) => line.action },
-    { header: "Source", width: 26, value: (line) => line.source },
+    { header: "Source", width: 26, fit: true, value: (line) => line.source },
     {
         header: "Status",
         width: 14,
