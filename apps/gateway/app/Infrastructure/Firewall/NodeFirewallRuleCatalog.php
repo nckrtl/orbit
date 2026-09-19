@@ -32,6 +32,39 @@ final readonly class NodeFirewallRuleCatalog
         ];
     }
 
+    /**
+     * Baseline rules role converge keeps on the Node right now.
+     *
+     * `forNode()` still returns both constructors so bootstrap and public-SSH restore can apply
+     * the recovery rule after roles exist. The first active role closes public SSH.
+     *
+     * @return list<UfwManagedRule>
+     */
+    public function desiredBaseline(Node $node): array
+    {
+        $wireguard = $this->wireguardMemberTrust($node);
+
+        if ($this->activeRoleClosesPublicSsh($node)) {
+            return [$wireguard];
+        }
+
+        return [
+            $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
+            $wireguard,
+        ];
+    }
+
+    private function activeRoleClosesPublicSsh(Node $node): bool
+    {
+        if ($node->relationLoaded('roles')) {
+            return $node->roles->contains(
+                static fn (NodeRole $assignment): bool => $assignment->status === LifecycleStatus::Active,
+            );
+        }
+
+        return $node->roles()->where('status', LifecycleStatus::Active)->exists();
+    }
+
     /** @return list<UfwManagedRule> */
     public function forRole(Node $node, RoleName $role): array
     {

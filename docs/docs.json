@@ -245,6 +245,7 @@
               "POST /api/v1/nodes/{node}/firewall-rules/allow",
               "POST /api/v1/nodes/{node}/firewall-rules/deny",
               "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}",
+              "GET /api/v1/nodes/{node}/live-firewall-rules",
               "GET /api/v1/nodes/{node}/managed-firewall-rules"
             ]
           },
@@ -539,7 +540,8 @@
               "decisions/0089-index-appinstance-dependencies",
               "decisions/0090-relocate-the-gateway-role-independently-of-vpn",
               "decisions/0091-rename-a-node-without-changing-wireguard-identity",
-              "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate"
+              "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
+              "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge"
             ]
           }
         ]

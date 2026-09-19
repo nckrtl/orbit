@@ -1,5 +1,5 @@
 import type { Method, Transport } from "../api/client";
-import type { Database, FirewallRule, Node, Process, Schedule } from "../api/types";
+import type { Database, FirewallRule, ManagedFirewallRule, Node, Process, Schedule } from "../api/types";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
 type Answer = { status: number; payload: unknown };
@@ -64,6 +64,85 @@ export function createDemoGateway() {
     const databases = list<Database>("GET /api/v1/database-connections");
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
+    const nodeById = (id: string): Node | undefined =>
+        nodes.find((candidate) => String(candidate.id) === id);
+    const hasActiveRole = (id: string): boolean => (nodeById(id)?.roles?.length ?? 0) > 0;
+    const wireguardMembers = (id: string) => ({
+        name: "orbit:wireguard-members",
+        role: null,
+        action: "allow",
+        source: "any",
+        destination: nodeById(id)?.wireguard_ip ?? "10.44.0.2",
+        port: "any",
+        protocol: "any",
+        interface: "orbit",
+    });
+    const publicSshRecovery = {
+        name: "orbit:public-ssh-recovery",
+        role: null,
+        action: "allow",
+        source: "any",
+        destination: "any",
+        port: "22",
+        protocol: "tcp",
+        interface: null,
+    };
+    const gatewayHttps = {
+        name: "orbit:gateway-https",
+        role: "gateway",
+        action: "allow",
+        source: "any",
+        destination: "any",
+        port: "443",
+        protocol: "tcp",
+        interface: "orbit",
+    };
+    const managedRules = (id: string) => {
+        const rows: ManagedFirewallRule[] = hasActiveRole(id)
+            ? [wireguardMembers(id)]
+            : [publicSshRecovery, wireguardMembers(id)];
+
+        if (nodeById(id)?.roles?.includes("gateway")) {
+            rows.push(gatewayHttps);
+        }
+
+        return rows;
+    };
+    const liveRules = (id: string) => {
+        const managed = managedRules(id);
+        const operator = rules(id);
+
+        return {
+            backend_status: "active",
+            live: [
+                ...operator.map((rule) => ({
+                    name: rule.name,
+                    comment: `orbit:node:${id}:firewall:${rule.name}`,
+                    action: rule.action,
+                    source: rule.source,
+                    destination: "any",
+                    port: rule.port,
+                    protocol: rule.protocol,
+                    interface: null,
+                    family: "v4",
+                    match: "exact",
+                })),
+                ...managed.map((rule) => ({
+                    name: rule.name,
+                    comment: rule.name,
+                    action: rule.action,
+                    source: rule.source,
+                    destination: rule.destination,
+                    port: rule.port,
+                    protocol: rule.protocol,
+                    interface: rule.interface,
+                    family: "v4",
+                    match: "exact",
+                })),
+            ],
+            missing: [],
+        };
+    };
 
     const routes: [Method, RegExp, (params: string[], body: Record<string, unknown>) => Answer][] =
         [
@@ -78,29 +157,12 @@ export function createDemoGateway() {
             [
                 "GET",
                 /^\/api\/v1\/nodes\/(\d+)\/managed-firewall-rules$/,
-                () =>
-                    ok([
-                        {
-                            name: "orbit:public-ssh-recovery",
-                            role: null,
-                            action: "allow",
-                            source: "any",
-                            destination: "any",
-                            port: "22",
-                            protocol: "tcp",
-                            interface: null,
-                        },
-                        {
-                            name: "orbit:wireguard-members",
-                            role: null,
-                            action: "allow",
-                            source: "any",
-                            destination: "10.44.0.2",
-                            port: "any",
-                            protocol: "any",
-                            interface: "orbit",
-                        },
-                    ]),
+                ([node = ""]) => ok(managedRules(node)),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/nodes\/(\d+)\/live-firewall-rules$/,
+                ([node = ""]) => ok(liveRules(node)),
             ],
             [
                 "GET",

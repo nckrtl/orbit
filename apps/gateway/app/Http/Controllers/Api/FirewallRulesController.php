@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Firewall\ListFirewallRulesAction;
+use App\Actions\Firewall\ListLiveFirewallRulesAction;
 use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
@@ -47,6 +48,18 @@ final class FirewallRulesController extends Controller
         Request $request,
         Node $node,
         ListManagedFirewallRulesAction $action,
+    ): JsonResponse {
+        return response()->json([
+            'data' => $action->execute($node),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    /** Live UFW on the Node, classified against the desired managed set and operator records. */
+    public function live(
+        Request $request,
+        Node $node,
+        ListLiveFirewallRulesAction $action,
     ): JsonResponse {
         return response()->json([
             'data' => $action->execute($node),

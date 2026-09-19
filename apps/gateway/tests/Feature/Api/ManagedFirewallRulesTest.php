@@ -55,8 +55,26 @@ describe('firewall:managed:list', function (): void {
         $rules = $this->getJson($this->url)->assertOk()->json('data');
 
         expect(array_column($rules, 'name'))
-            ->toBe(['orbit:public-ssh-recovery', 'orbit:wireguard-members', 'orbit:gateway-https'])
-            ->and($rules[2])->toMatchArray(['role' => 'gateway', 'port' => '443', 'interface' => 'orbit']);
+            ->toBe(['orbit:wireguard-members', 'orbit:gateway-https'])
+            ->and($rules[1])->toMatchArray(['role' => 'gateway', 'port' => '443', 'interface' => 'orbit']);
+    });
+
+    it('stops advertising public SSH recovery after an active role has closed it', function (): void {
+        NodeRole::query()->create(['node_id' => $this->node->id, 'role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+
+        $names = array_column($this->getJson($this->url)->assertOk()->json('data'), 'name');
+
+        expect($names)
+            ->toBe(['orbit:wireguard-members'])
+            ->and($names)
+            ->not->toContain('orbit:public-ssh-recovery');
+    });
+
+    it('keeps public SSH recovery while a role is still provisioning', function (): void {
+        NodeRole::query()->create(['node_id' => $this->node->id, 'role' => RoleName::Gateway, 'status' => LifecycleStatus::Provisioning]);
+
+        expect(array_column($this->getJson($this->url)->assertOk()->json('data'), 'name'))
+            ->toBe(['orbit:public-ssh-recovery', 'orbit:wireguard-members']);
     });
 
     it('lists nothing for a Node that has no WireGuard address yet', function (): void {

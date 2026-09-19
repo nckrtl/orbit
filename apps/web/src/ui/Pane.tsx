@@ -39,6 +39,8 @@ type PaneProps<T> = {
     rows: T[];
     rowId: (row: T) => string;
     warn?: (row: T) => boolean;
+    /** Drift or another failure that must read as red, not yellow. */
+    danger?: (row: T) => boolean;
     /** The record a row opens and acts on; omit for a leaf pane whose rows go nowhere. */
     target?: (row: T) => Target | null;
     /** What a click on a row does when the row is not a record, such as opening a page elsewhere. */
@@ -66,6 +68,7 @@ export function Pane<T extends Record<string, any>>({
     rows,
     rowId,
     warn,
+    danger,
     target,
     onRowClick,
     bottomLeft,
@@ -206,7 +209,10 @@ export function Pane<T extends Record<string, any>>({
                                 }
                                 data-selected={index === selected ? "" : undefined}
                                 data-focused={focused ? "" : undefined}
-                                data-warn={warn?.(row.original) ? "" : undefined}
+                                data-warn={
+                                    danger?.(row.original) ? undefined : warn?.(row.original) ? "" : undefined
+                                }
+                                data-danger={danger?.(row.original) ? "" : undefined}
                                 onMouseDown={(event) => {
                                     event.stopPropagation();
 

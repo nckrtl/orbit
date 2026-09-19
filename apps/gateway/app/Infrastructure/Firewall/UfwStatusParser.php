@@ -38,6 +38,24 @@ final class UfwStatusParser
     }
 
     /** @return list<UfwRuleShape> */
+    public function liveShapes(string $output): array
+    {
+        $shapes = [];
+
+        foreach (explode("\n", $output) as $line) {
+            $line = trim($line);
+            $comment = $this->comment($line) ?? '';
+            $shape = $this->parseLine($line, $comment);
+
+            if ($shape instanceof UfwRuleShape && $shape->family !== 'v6') {
+                $shapes[] = $shape;
+            }
+        }
+
+        return $shapes;
+    }
+
+    /** @return list<UfwRuleShape> */
     public function familyShapes(string $output, string $prefix): array
     {
         $shapes = [];
@@ -132,7 +150,7 @@ final class UfwStatusParser
             $matches,
         );
 
-        if ($matched !== 1 || ($matches[5] ?? null) !== $comment) {
+        if ($matched !== 1 || ($matches[5] ?? '') !== $comment) {
             return null;
         }
 

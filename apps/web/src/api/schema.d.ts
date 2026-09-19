@@ -1390,6 +1390,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node}/live-firewall-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List live UFW rules
+         * @description Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.
+         */
+        get: operations["firewall-live-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node}/managed-firewall-rules": {
         parameters: {
             query?: never;
@@ -1397,7 +1417,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Orbit's own firewall rules */
+        /**
+         * List Orbit's own firewall rules
+         * @description Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.
+         */
         get: operations["firewall-managed-list"];
         put?: never;
         post?: never;
@@ -7955,6 +7978,88 @@ export interface operations {
             };
         };
     };
+    "firewall-live-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * @description Whether UFW answered on the Node. `unreachable` means the Gateway could not read `ufw status numbered`.
+                             * @enum {string}
+                             */
+                            backend_status: "active" | "inactive" | "absent" | "unreachable";
+                            /** @description IPv4 UFW rules currently on the Node, in status order. */
+                            live: {
+                                /** @description Operator rule name, `orbit:` comment, or `unmanaged` when UFW has no comment. */
+                                name?: string;
+                                comment?: string;
+                                action?: string;
+                                source?: string;
+                                destination?: string;
+                                port?: string;
+                                protocol?: string;
+                                interface?: string | null;
+                                family?: string | null;
+                                /**
+                                 * @description `exact` matches a desired managed or operator rule. `drift` has a known comment with a different shape. `unmanaged` is not an Orbit managed or operator rule.
+                                 * @enum {string}
+                                 */
+                                match?: "exact" | "drift" | "unmanaged";
+                            }[];
+                            /** @description Desired managed or operator rules that are absent from live UFW. */
+                            missing: {
+                                name?: string;
+                                comment?: string;
+                                action?: string;
+                                source?: string;
+                                destination?: string;
+                                port?: string;
+                                protocol?: string;
+                                interface?: string | null;
+                                family?: string | null;
+                                /** @enum {string} */
+                                match?: "missing";
+                            }[];
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "firewall-managed-list": {
         parameters: {
             query?: never;
@@ -7974,11 +8079,11 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        /** @description The rules Orbit intends on the Node. No request adds, changes, or removes one. */
+                        /** @description The rules Orbit intends on the Node after role converge. Public SSH recovery is omitted once an active role has closed it. No request adds, changes, or removes one. */
                         data: {
                             /** @description The `orbit:` comment that identifies the rule in UFW. */
                             name?: string;
-                            /** @description The role that needs the rule, or null for a rule every managed Node has. */
+                            /** @description The role that needs the rule, or null for a baseline rule the Node still intends. */
                             role?: string | null;
                             action?: string;
                             source?: string;

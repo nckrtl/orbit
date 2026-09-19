@@ -10,6 +10,7 @@ import type {
     DeploymentEvent,
     FirewallRule,
     Instance,
+    LiveFirewallSnapshot,
     ManagedFirewallRule,
     Node,
     Process,
@@ -161,6 +162,15 @@ export const managedFirewallQuery = (nodeId: number) =>
         queryKey: ["managed-firewall", nodeId],
         queryFn: () => get<ManagedFirewallRule[]>(`/api/v1/nodes/${nodeId}/managed-firewall-rules`),
         staleTime: 60_000,
+        retry: false,
+    });
+
+/** Live UFW on a Node, classified against the desired managed set and operator records. */
+export const liveFirewallQuery = (nodeId: number) =>
+    queryOptions({
+        queryKey: ["live-firewall", nodeId],
+        queryFn: () => get<LiveFirewallSnapshot>(`/api/v1/nodes/${nodeId}/live-firewall-rules`),
+        refetchInterval: 15_000,
         retry: false,
     });
 

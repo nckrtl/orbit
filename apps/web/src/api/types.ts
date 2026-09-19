@@ -66,3 +66,20 @@ export type ManagedFirewallRule = Required<
         operations["firewall-managed-list"]["responses"][200]["content"]["application/json"]["data"]
     >[number]
 >;
+
+type LiveFirewallData = Required<
+    NonNullable<
+        operations["firewall-live-list"]["responses"][200]["content"]["application/json"]["data"]
+    >
+>;
+
+export type LiveFirewallSnapshot = {
+    backend_status: LiveFirewallData["backend_status"];
+    live: Array<Required<NonNullable<LiveFirewallData["live"]>[number]>>;
+    missing: Array<Required<NonNullable<LiveFirewallData["missing"]>[number]>>;
+};
+
+export type LiveFirewallRule =
+    | LiveFirewallSnapshot["live"][number]
+    | LiveFirewallSnapshot["missing"][number];
+export type LiveFirewallMatch = LiveFirewallRule["match"];

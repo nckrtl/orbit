@@ -30,4 +30,5 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Tool** — A package that Orbit manages on a Node through a specific package manager. See [Tools](/reference/tools).
 - **Tool Manager** — Orbit's adapter for a package manager on a Node. Orbit prepares it on demand, independently of Node roles. See [Tools](/reference/tools).
 - **Proof topology** — Disposable Incus machines for one issue and exact commit. The harness captures an immutable result before it may retain the machines for interactive review. See [Incus topologies](/reference/incus-topologies) and [ADR 0056](/decisions/0056-retain-proof-topologies-for-interactive-review).
+- **Firewall rule** — A named UFW rule on one Node. See [firewall](/cli/firewall) and [ADR 0093](/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge).
 - **Documentation context** — The ordered list of pages that `composer docs-context` selects for a component or concept. A contributor or agent reads it before changing that part of Orbit.
