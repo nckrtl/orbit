@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the recorded Gateway response fixtures against docs/openapi.json.
+"""Check the Gateway response fixtures against docs/openapi.json.
 
 Run from any directory:
 
@@ -8,6 +8,9 @@ Run from any directory:
 Every file under packages/php-sdk/fixtures names its route and status. The check finds the response schema
 for that route and status in the generated OpenAPI document and validates the recorded body against it, so
 a fixture, the Gateway code it was recorded from, and the API reference cannot drift apart silently.
+
+The files under apps/web/fixtures use the same format. They are written by hand as one coherent fleet for
+the web app's demo mode and tests, so this check is what ties them to the API reference.
 """
 
 import json
@@ -17,6 +20,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / 'packages/php-sdk/fixtures'
+WEB_FIXTURES = ROOT / 'apps/web/fixtures'
 OPENAPI = ROOT / 'docs/openapi.json'
 
 TYPES = {
@@ -83,9 +87,10 @@ def main():
     files = sorted(FIXTURES.rglob('*.json'))
     if not files:
         sys.exit('packages/php-sdk/fixtures holds no fixtures.')
+    files += sorted(WEB_FIXTURES.rglob('*.json'))
     failures = []
     for file in files:
-        name = file.relative_to(FIXTURES).with_suffix('').as_posix()
+        name = file.relative_to(ROOT).with_suffix('').as_posix()
         fixture = json.loads(file.read_text(encoding='utf-8'))
         if not re.fullmatch(r'(GET|POST|PUT|PATCH|DELETE) /api/v1/\S+', fixture.get('route', '')):
             failures.append(f'{name}: route {fixture.get("route")!r} is not METHOD /api/v1/path')

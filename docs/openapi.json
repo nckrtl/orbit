@@ -9951,6 +9951,36 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "No Node has the Metrics role (`metrics.assignment_missing`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Grafana or Prometheus did not answer, or Prometheus has no samples for this Node, as for a Node without an enabled exporter (`node.metrics_unreachable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -11543,10 +11573,8 @@
                           "type": "integer"
                         },
                         "logs": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
+                          "type": "string",
+                          "description": "The last `lines` log lines as one newline-separated string, with environment values redacted."
                         }
                       }
                     },
