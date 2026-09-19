@@ -72,7 +72,7 @@ function footerHint(section: Section, onList: boolean, onForm: boolean): string 
     }
 
     if (!onList) {
-        return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions";
+        return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions";
     }
 
     return `↑↓ sections · → into the page · 1-8 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;

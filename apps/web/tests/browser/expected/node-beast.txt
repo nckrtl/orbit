@@ -52,4 +52,4 @@
 │  443/tcp │ allow │ 0.0.0.0/0 │ active
 ╰─
 
-←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions    demo fleet
+←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    demo fleet
