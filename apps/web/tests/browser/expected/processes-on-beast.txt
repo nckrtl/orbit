@@ -9,7 +9,7 @@
 │  Firewall │ 3
 ╰─
 
-╭─ Processes ── node: beast ▾app: all ▾
+╭─ Processes
 │  Name │ Owner │ Node │ Runtime │ Status │ CPU/MEM
 │› horizon │ charlie-shop/dev │ beast │ systemd │ active │ 20%/1.2G
 │  vite │ charlie-shop/dev │ beast │ systemd │ inactive │ — !

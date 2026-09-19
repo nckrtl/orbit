@@ -10,7 +10,7 @@ const field = (label: string) =>
 
 it("opens from the Nodes list with c and refuses an empty form", async () => {
     const app = await openApp("/nodes");
-    await expect.element(pane("Nodes")).toBeVisible();
+    await expect.element(pane("Worker nodes")).toBeVisible();
 
     await userEvent.keyboard("c");
     await expect.poll(app.url).toBe("/nodes/create");
@@ -54,7 +54,7 @@ it("shows the Gateway's refusal, then creates the node and opens it", async () =
 
 it("leaves the form with Esc", async () => {
     const app = await openApp("/nodes");
-    await expect.element(pane("Nodes")).toBeVisible();
+    await expect.element(pane("Worker nodes")).toBeVisible();
     await userEvent.keyboard("c");
     await expect.poll(app.url).toBe("/nodes/create");
 

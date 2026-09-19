@@ -4,9 +4,8 @@ import type { AnyRecord, Deployment, Instance, Kind } from "../api/types";
 import { recordTitle } from "../fleet/fleet";
 import { SECTION_TITLES, type Section, useGo } from "../ui/go";
 import { openMenu } from "../ui/menu";
+import { type Crumb, PageHeader } from "../ui/PageHeader";
 import { setPageTarget } from "../ui/page";
-
-type Crumb = { label: string; open?: () => void };
 
 /**
  * The way to a record: its section, the records that own it, then the record itself. Every crumb
@@ -76,36 +75,10 @@ export function RecordLayout({
 
     return (
         <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-y-[16px]">
-            <div className="flex gap-[2ch] px-[1ch]">
-                <nav aria-label="Breadcrumb" className="flex min-w-0 gap-[1ch]">
-                    {trail.map((crumb, index) => {
-                        const last = index === trail.length - 1;
-
-                        return (
-                            <span key={index} className="flex min-w-0 gap-[1ch]">
-                                {index > 0 && <span className="text-dim">›</span>}
-                                {last || crumb.open === undefined ? (
-                                    <span
-                                        className={`selectable truncate ${last ? "font-bold" : "text-dim"}`}
-                                        aria-current={last ? "page" : undefined}
-                                    >
-                                        {crumb.label}
-                                    </span>
-                                ) : (
-                                    <span
-                                        className="cursor-pointer truncate text-dim hover:text-fg"
-                                        onClick={crumb.open}
-                                    >
-                                        {crumb.label}
-                                    </span>
-                                )}
-                            </span>
-                        );
-                    })}
-                </nav>
+            <PageHeader trail={trail}>
                 {kind !== "deployments" && (
                     <span
-                        className="ml-auto cursor-pointer text-dim hover:text-fg"
+                        className="cursor-pointer text-dim hover:text-fg"
                         onClick={(event) => {
                             const button = event.currentTarget.getBoundingClientRect();
 
@@ -115,7 +88,7 @@ export function RecordLayout({
                         actions ▾
                     </span>
                 )}
-            </div>
+            </PageHeader>
             {children}
         </div>
     );

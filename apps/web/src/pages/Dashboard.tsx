@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useFleet } from "../api/queries";
-import type { App, Instance, Node } from "../api/types";
+import type { App, Instance } from "../api/types";
 import {
     type AttentionRow,
     attentionRows,
@@ -10,13 +10,11 @@ import {
     processHealthy,
     scheduleHealthy,
 } from "../fleet/fleet";
-import { useFleetMetrics, useFleetReach } from "../metrics/grafana";
-import type { NodeMetrics } from "../metrics/prometheus";
-import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { type Column, Pane } from "../ui/Pane";
-import { Status, statusText } from "../ui/Status";
+import { Status } from "../ui/Status";
 import { processDashboardColumns, scheduleColumns } from "./columns";
+import { useNodeTables } from "./nodeTables";
 
 /**
  * The dashboard: one compact row per node, a pane per family, and everything that needs a look.
@@ -24,116 +22,9 @@ import { processDashboardColumns, scheduleColumns } from "./columns";
  */
 export function Dashboard() {
     const fleet = useFleet();
-    const metrics = useFleetMetrics();
-    const reach = useFleetReach();
     const attention = useMemo(() => attentionRows(fleet), [fleet]);
 
-    const nodeColumns = useMemo<Column<Node>[]>(() => {
-        const reachOf = (node: Node): boolean | null => reach[node.wireguard_ip ?? ""] ?? null;
-        const of = (node: Node): NodeMetrics | null => metrics[node.wireguard_ip ?? ""] ?? null;
-        const cpu = (m: NodeMetrics): number =>
-            m.cores.reduce((sum, core) => sum + core, 0) / Math.max(1, m.cores.length);
-        const mem = (m: NodeMetrics): number => (m.mem[1] > 0 ? m.mem[0] / m.mem[1] : 0);
-        const disk = (m: NodeMetrics): number => {
-            const [, used, total] = m.disks[0] ?? ["/", 0, 0];
-
-            return total > 0 ? used / total : 0;
-        };
-        const none = <span className="text-dim">—</span>;
-        // One meter per reading; a node with no exporter has no metrics and shows a dash.
-        const meter = (
-            reading: (m: NodeMetrics) => string,
-            ratio: (m: NodeMetrics) => number,
-            options: { label?: (m: NodeMetrics) => string; thresholds?: [number, number] } = {},
-        ) => ({
-            value: (node: Node) => {
-                const m = of(node);
-
-                return m === null ? "—" : reading(m).trim();
-            },
-            sort: (node: Node) => {
-                const m = of(node);
-
-                return m === null ? -1 : ratio(m);
-            },
-            cell: (node: Node) => {
-                const m = of(node);
-
-                return m === null ? (
-                    none
-                ) : (
-                    <Bar
-                        label={options.label?.(m)}
-                        ratio={ratio(m)}
-                        reading={reading(m)}
-                        thresholds={options.thresholds}
-                    />
-                );
-            },
-        });
-
-        return [
-            { header: "Name", width: 14, fit: true, value: (n) => n.name },
-            {
-                header: "Status",
-                width: 9,
-                fit: true,
-                value: (n) => statusText({ value: n.status, reach: reachOf(n) }),
-                cell: (n) => <Status value={n.status} reach={reachOf(n)} />,
-            },
-            {
-                header: "CPU",
-                width: 17,
-                ...meter((m) => `${(cpu(m) * 100).toFixed(0).padStart(3)}%`, cpu),
-            },
-            {
-                header: "Mem",
-                width: 25,
-                ...meter(
-                    (m) => `${m.mem[0].toFixed(1)}G/${m.mem[1].toFixed(0)}G`.padStart(10),
-                    mem,
-                ),
-            },
-            {
-                header: "Disk",
-                width: 25,
-                ...meter(
-                    (m) => {
-                        const [, used, total] = m.disks[0] ?? ["/", 0, 0];
-
-                        return `${used.toFixed(0)}G/${total.toFixed(0)}G`.padStart(10);
-                    },
-                    disk,
-                    { label: (m) => m.disks[0]?.[0] ?? "/", thresholds: [80, 90] },
-                ),
-            },
-            {
-                header: "Uptime",
-                width: 10,
-                fit: true,
-                value: (n) => of(n)?.uptime ?? "—",
-                cell: (n) => <span className="text-dim">{of(n)?.uptime ?? "—"}</span>,
-            },
-        ];
-    }, [metrics, reach]);
-    // A node with a role serves the fleet and is scraped; one without is a machine that only joins the network.
-    const servers = useMemo(() => fleet.nodes.filter((n) => n.roles.length > 0), [fleet.nodes]);
-    const clients = useMemo(() => fleet.nodes.filter((n) => n.roles.length === 0), [fleet.nodes]);
-    const clientColumns = useMemo<Column<Node>[]>(
-        () => [
-            { header: "Name", width: 30, fit: true, value: (n) => n.name },
-            {
-                header: "Status",
-                width: 22,
-                fit: true,
-                value: (n) => n.status,
-                cell: (n) => <Status value={n.status} reach={null} />,
-            },
-            { header: "User", width: 20, fit: true, value: (n) => n.user ?? "—" },
-            { header: "WireGuard IP", width: 28, value: (n) => n.wireguard_ip ?? "—" },
-        ],
-        [],
-    );
+    const { workers, clients, workerColumns, clientColumns, offline } = useNodeTables();
     const appColumns = useMemo<Column<App>[]>(
         () => [
             { header: "Slug", width: 44, value: (a) => a.slug },
@@ -188,10 +79,10 @@ export function Dashboard() {
                 order={0}
                 title="Worker nodes"
                 className="col-span-4 max-h-[34vh]"
-                columns={nodeColumns}
-                rows={servers}
+                columns={workerColumns}
+                rows={workers}
                 rowId={(n) => String(n.id)}
-                warn={(n) => !nodeHealthy(n) || reach[n.wireguard_ip ?? ""] === false}
+                warn={(n) => !nodeHealthy(n) || offline(n)}
                 target={(row) => ({ kind: "nodes", row })}
                 empty={fleet.loading ? "Loading fleet data…" : "No worker nodes."}
             />

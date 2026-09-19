@@ -18,17 +18,17 @@ it("jumps to a section with its digit and walks the sidebar with the arrows", as
 
 it("hovers a pane, focuses it, moves the selection, and opens the row", async () => {
     const app = await openApp("/nodes");
-    await expect.element(row("Nodes", "beast")).toBeVisible();
+    await expect.element(row("Worker nodes", "beast")).toBeVisible();
 
     await userEvent.keyboard("{ArrowRight}");
-    await expect.element(pane("Nodes")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Worker nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{Enter}");
-    await expect.element(pane("Nodes")).toHaveAttribute("data-state", "focused");
+    await expect.element(pane("Worker nodes")).toHaveAttribute("data-state", "focused");
     await expect.element(footer()).toHaveTextContent("Enter or click opens");
 
     await userEvent.keyboard("{ArrowDown}");
-    await expect.element(row("Nodes", "beast")).toHaveAttribute("aria-selected", "true");
+    await expect.element(row("Worker nodes", "beast")).toHaveAttribute("aria-selected", "true");
 
     await userEvent.keyboard("{Enter}");
     await expect.poll(app.url).toBe("/nodes/2");
@@ -63,13 +63,13 @@ it("moves between the dashboard panes by where they are on the screen", async ()
 
 it("goes back with Esc and finds the row it left selected", async () => {
     const app = await openApp("/nodes");
-    await expect.element(row("Nodes", "beast")).toBeVisible();
+    await expect.element(row("Worker nodes", "beast")).toBeVisible();
     await userEvent.keyboard("{ArrowRight}{Enter}{ArrowDown}{Enter}");
     await expect.poll(app.url).toBe("/nodes/2");
 
     await userEvent.keyboard("{Escape}");
     await expect.poll(app.url).toBe("/nodes");
-    await expect.element(row("Nodes", "beast")).toHaveAttribute("aria-selected", "true");
+    await expect.element(row("Worker nodes", "beast")).toHaveAttribute("aria-selected", "true");
 });
 
 it("cycles the node filter with n and keeps it in the URL", async () => {
