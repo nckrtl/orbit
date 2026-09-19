@@ -4,7 +4,7 @@ import AnnotationHighlight from "@/annotation/components/AnnotationHighlight";
 import AnnotationMarker from "@/annotation/components/AnnotationMarker";
 import AnnotationPopup from "@/annotation/components/AnnotationPopup";
 import { useAnnotationAccent } from "@/annotation/accent";
-import { ANNOTATION_ROOT_ID } from "@/annotation/host";
+import { getAnnotationRootElement } from "@/annotation/host";
 import { hoverLabelPosition, percentToViewportX } from "@/annotation/dom";
 import {
     annotationMode,
@@ -30,7 +30,7 @@ export default function AnnotationOverlay() {
     const { color: accentColor, textColor: accentTextColor } = useAnnotationAccent();
 
     useEffect(() => {
-        const root = document.getElementById(ANNOTATION_ROOT_ID);
+        const root = getAnnotationRootElement();
         root?.setAttribute("data-toolbar-font-size", fontSize);
     }, [fontSize]);
 
