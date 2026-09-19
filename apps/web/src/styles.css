@@ -10,18 +10,6 @@
 :root {
     --lh: 20px;
     --inset: 4px;
-    --bg: #fbfbfa;
-    --fg: #24292f;
-    --dim: #8b929b;
-    --line: #c9ced6;
-    --cyan: #0b7285;
-    --yellow: #9a6700;
-    --green: #2b8a3e;
-    --red: #c92a2a;
-}
-
-/* Light is the theme. Dark is there for whoever sets `data-theme="dark"` on the root element; the system setting does not pick it. */
-:root[data-theme="dark"] {
     --bg: #0d0f12;
     --fg: #d4d7dc;
     --dim: #6b7280;
@@ -30,6 +18,18 @@
     --yellow: #e5c07b;
     --green: #8bd49c;
     --red: #e06c75;
+}
+
+/* Dark is the theme. Light is there for whoever sets `data-theme="light"` on the root element; the system setting does not pick it. */
+:root[data-theme="light"] {
+    --bg: #fbfbfa;
+    --fg: #24292f;
+    --dim: #8b929b;
+    --line: #c9ced6;
+    --cyan: #0b7285;
+    --yellow: #9a6700;
+    --green: #2b8a3e;
+    --red: #c92a2a;
 }
 
 @theme inline {
