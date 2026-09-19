@@ -173,6 +173,7 @@ export function Dashboard() {
                 rowId={(n) => String(n.id)}
                 warn={(n) => !nodeHealthy(n) || reach[n.wireguard_ip ?? ""] === false}
                 target={(row) => ({ kind: "nodes", row })}
+                divide={{ label: "Clients", below: (n) => n.roles.length === 0 }}
                 empty={fleet.loading ? "Loading fleet data…" : "No nodes."}
             />
             <Pane

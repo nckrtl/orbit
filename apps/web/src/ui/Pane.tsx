@@ -6,7 +6,7 @@ import {
     tableFeatures,
     useTable,
 } from "@tanstack/react-table";
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import { Frame, Note } from "./Frame";
 import { useGo } from "./go";
 import { openMenu } from "./menu";
@@ -40,6 +40,8 @@ type PaneProps<T> = {
     /** The record a row opens and acts on; omit for a leaf pane whose rows go nowhere. */
     target?: (row: T) => Target | null;
     empty?: string;
+    /** Rows that belong below a labelled divider; each group keeps the sort within itself. */
+    divide?: { label: string; below: (row: T) => boolean };
     topRight?: React.ReactNode;
     className?: string;
 };
@@ -60,6 +62,7 @@ export function Pane<T extends Record<string, any>>({
     warn,
     target,
     empty = "None.",
+    divide,
     topRight,
     className,
 }: PaneProps<T>) {
@@ -85,7 +88,10 @@ export function Pane<T extends Record<string, any>>({
         data: rows,
         getRowId: rowId,
     });
-    const sorted = table.getRowModel().rows;
+    const model = table.getRowModel().rows;
+    const above = divide === undefined ? model : model.filter((row) => !divide.below(row.original));
+    const sorted = [...above, ...model.filter((row) => !above.includes(row))];
+    const dividerAt = above.length > 0 && above.length < sorted.length ? above.length : -1;
     const selected = Math.min(selectedIndex, Math.max(0, sorted.length - 1));
     const template = `${columns.map((column) => `minmax(0, ${column.width}fr)`).join(" ")}`;
 
@@ -167,36 +173,42 @@ export function Pane<T extends Record<string, any>>({
                         ))}
                     </div>
                     {sorted.map((row, index) => (
-                        <div
-                            key={row.id}
-                            ref={index === selected ? selectedRow : undefined}
-                            className="row"
-                            role="row"
-                            aria-selected={index === selected}
-                            data-link={target === undefined ? undefined : ""}
-                            style={{ gridTemplateColumns: template }}
-                            data-selected={index === selected ? "" : undefined}
-                            data-focused={focused ? "" : undefined}
-                            data-warn={warn?.(row.original) ? "" : undefined}
-                            onMouseDown={(event) => {
-                                event.stopPropagation();
+                        <Fragment key={row.id}>
+                            {index === dividerAt && (
+                                <div className="divider" role="presentation">
+                                    {divide?.label}
+                                </div>
+                            )}
+                            <div
+                                ref={index === selected ? selectedRow : undefined}
+                                className="row"
+                                role="row"
+                                aria-selected={index === selected}
+                                data-link={target === undefined ? undefined : ""}
+                                style={{ gridTemplateColumns: template }}
+                                data-selected={index === selected ? "" : undefined}
+                                data-focused={focused ? "" : undefined}
+                                data-warn={warn?.(row.original) ? "" : undefined}
+                                onMouseDown={(event) => {
+                                    event.stopPropagation();
 
-                                if (event.button === 0) {
-                                    click(index, row.original);
-                                }
-                            }}
-                            onContextMenu={(event) => context(index, row.original, event)}
-                        >
-                            {columns.map((column, cell) => (
-                                <span
-                                    key={cell}
-                                    role="cell"
-                                    className={`min-w-0 ${cell === columns.length - 1 ? "text-right" : ""}`}
-                                >
-                                    {column.cell?.(row.original) ?? column.value(row.original)}
-                                </span>
-                            ))}
-                        </div>
+                                    if (event.button === 0) {
+                                        click(index, row.original);
+                                    }
+                                }}
+                                onContextMenu={(event) => context(index, row.original, event)}
+                            >
+                                {columns.map((column, cell) => (
+                                    <span
+                                        key={cell}
+                                        role="cell"
+                                        className={`min-w-0 ${cell === columns.length - 1 ? "text-right" : ""}`}
+                                    >
+                                        {column.cell?.(row.original) ?? column.value(row.original)}
+                                    </span>
+                                ))}
+                            </div>
+                        </Fragment>
                     ))}
                 </div>
             )}

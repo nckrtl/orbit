@@ -190,6 +190,11 @@ export function SectionList() {
             rowId={(row) => String(row.id)}
             warn={WARN[kind] as (row: AnyRecord) => boolean}
             target={(row) => ({ kind, row })}
+            divide={
+                kind === "nodes"
+                    ? { label: "Clients", below: (row) => (row as Node).roles.length === 0 }
+                    : undefined
+            }
             empty={
                 fleet.loading || (kind === "processes" && !fleet.processesLoaded)
                     ? "Loading…"
