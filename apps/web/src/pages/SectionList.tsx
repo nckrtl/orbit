@@ -23,23 +23,30 @@ import {
     processHealthy,
     scheduleHealthy,
 } from "../fleet/fleet";
+import { useFleetReach } from "../metrics/grafana";
 import { Frame, Note } from "../ui/Frame";
 import { FILTERED_SECTIONS, SECTION_TITLES, type Section, useGo } from "../ui/go";
 import { type Column, Pane } from "../ui/Pane";
-import { Status } from "../ui/Status";
+import { Status, statusText } from "../ui/Status";
 import { processListColumns, scheduleListColumns } from "./columns";
 
 type ListKind = Exclude<Kind, "deployments">;
 
-function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
+function columnsFor(
+    section: ListKind,
+    fleet: Fleet,
+    reach: Record<string, boolean>,
+): Column<AnyRecord>[] {
+    const reachOf = (node: Node): boolean | null => reach[node.wireguard_ip ?? ""] ?? null;
+
     const columns: { [K in ListKind]: () => Column<never>[] } = {
         nodes: (): Column<Node>[] => [
             { header: "Name", width: 20, value: (n) => n.name },
             {
                 header: "Status",
                 width: 14,
-                value: (n) => n.status,
-                cell: (n) => <Status value={n.status} />,
+                value: (n) => statusText({ value: n.status, reach: reachOf(n) }),
+                cell: (n) => <Status value={n.status} reach={reachOf(n)} />,
             },
             { header: "Roles", width: 24, value: (n) => n.roles.join(", ") },
             { header: "WireGuard IP", width: 20, value: (n) => n.wireguard_ip ?? "—" },
@@ -120,13 +127,17 @@ export function SectionList() {
     const search = useSearch({ from: "/$section" });
     const go = useGo();
     const fleet = useFleet();
+    const reach = useFleetReach();
     const known = section in WARN;
     const kind = section as ListKind;
     const rows = useMemo(
         () => (known ? listRows(fleet, kind, search.node, search.app) : []),
         [fleet, kind, known, search.node, search.app],
     );
-    const columns = useMemo(() => (known ? columnsFor(kind, fleet) : []), [fleet, kind, known]);
+    const columns = useMemo(
+        () => (known ? columnsFor(kind, fleet, reach) : []),
+        [fleet, kind, known, reach],
+    );
 
     if (!known) {
         return (

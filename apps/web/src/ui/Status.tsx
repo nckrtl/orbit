@@ -1,7 +1,24 @@
-/** A record's status in its colour: green when it is active, red when it failed, yellow while it is anything else. */
-export function Status({ value }: { value: string }) {
-    const colour =
-        value === "active" ? "text-green" : value === "failed" ? "text-red" : "text-yellow";
+type StatusProps = {
+    value: string;
+    /** For a node: whether it answered its last metrics scrape, or null when nothing scrapes it. */
+    reach?: boolean | null;
+};
 
-    return <span className={colour}>{value}</span>;
+/** What the status column shows: an active node that is scraped reads online or offline; every other state reads as itself. */
+export const statusText = ({ value, reach }: StatusProps): string =>
+    value === "active" && typeof reach === "boolean" ? (reach ? "online" : "offline") : value;
+
+/** A status in its colour: green when it is known good, red offline or failed, yellow in between, and plain for an active node nothing checks. */
+export function Status(props: StatusProps) {
+    const text = statusText(props);
+    const colour =
+        text === "online" || (text === "active" && props.reach === undefined)
+            ? "text-green"
+            : text === "offline" || text === "failed"
+              ? "text-red"
+              : text === "active"
+                ? ""
+                : "text-yellow";
+
+    return <span className={colour}>{text}</span>;
 }

@@ -2,7 +2,13 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import { queryClient } from "../api/queryClient";
 import type { Node } from "../api/types";
-import { mapMetrics, type NodeMetrics, type PrometheusResponse, queries } from "./prometheus";
+import {
+    mapMetrics,
+    mapReach,
+    type NodeMetrics,
+    type PrometheusResponse,
+    queries,
+} from "./prometheus";
 
 /**
  * Node metrics, read the way `orbit top` reads them: straight from the Metrics role's Grafana,
@@ -105,6 +111,29 @@ export function useFleetMetrics(): Record<string, NodeMetrics> {
     const { data } = useQuery({
         queryKey: ["metrics", "fleet"],
         queryFn: () => readMetrics(null),
+        refetchInterval: interval(10),
+        retry: false,
+        staleTime: 0,
+    });
+
+    return data ?? {};
+}
+
+/** Which Nodes Prometheus reached on its last scrape. Look a Node up by its `wireguard_ip`. */
+export function useFleetReach(): Record<string, boolean> {
+    const { data } = useQuery({
+        queryKey: ["metrics", "reach"],
+        queryFn: async () => {
+            const uid = await queryClient.ensureQueryData(datasourceQuery);
+
+            return mapReach(
+                (await transport(
+                    `/api/datasources/proxy/uid/${uid}/api/v1/query`,
+                    { query: queries.up() },
+                    await authorization(),
+                )) as PrometheusResponse,
+            );
+        },
         refetchInterval: interval(10),
         retry: false,
         staleTime: 0,

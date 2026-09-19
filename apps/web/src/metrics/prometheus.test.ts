@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatUptime, mapMetrics, type PrometheusResponse, queries } from "./prometheus";
+import { formatUptime, mapMetrics, mapReach, type PrometheusResponse, queries } from "./prometheus";
 
 // Ported from the CLI's PrometheusNodeMetricsMapperTest, so both clients read Prometheus alike.
 
@@ -151,5 +151,25 @@ describe("formatUptime", () => {
         expect(formatUptime(59)).toBe("0m");
         expect(formatUptime(3 * 3600 + 120)).toBe("3h 2m");
         expect(formatUptime(5 * 86400 + 60)).toBe("5d 0h 1m");
+    });
+});
+
+describe("mapReach", () => {
+    it("names the scraped Nodes by address, online or offline, and no others", () => {
+        const sample = (instance: string, value: string) => ({
+            metric: { __name__: "up", instance },
+            value: [0, value] as [number, string],
+        });
+
+        expect(
+            mapReach({
+                status: "success",
+                data: {
+                    resultType: "vector",
+                    result: [sample("10.44.0.1:9100", "1"), sample("10.44.0.2:9100", "0")],
+                },
+            }),
+        ).toEqual({ "10.44.0.1": true, "10.44.0.2": false });
+        expect(mapReach({})).toEqual({});
     });
 });

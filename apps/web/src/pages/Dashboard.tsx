@@ -10,12 +10,12 @@ import {
     processHealthy,
     scheduleHealthy,
 } from "../fleet/fleet";
-import { useFleetMetrics } from "../metrics/grafana";
+import { useFleetMetrics, useFleetReach } from "../metrics/grafana";
 import type { NodeMetrics } from "../metrics/prometheus";
 import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { type Column, Pane } from "../ui/Pane";
-import { Status } from "../ui/Status";
+import { Status, statusText } from "../ui/Status";
 import { processDashboardColumns, scheduleColumns } from "./columns";
 
 /**
@@ -25,9 +25,11 @@ import { processDashboardColumns, scheduleColumns } from "./columns";
 export function Dashboard() {
     const fleet = useFleet();
     const metrics = useFleetMetrics();
+    const reach = useFleetReach();
     const attention = useMemo(() => attentionRows(fleet), [fleet]);
 
     const nodeColumns = useMemo<Column<Node>[]>(() => {
+        const reachOf = (node: Node): boolean | null => reach[node.wireguard_ip ?? ""] ?? null;
         const of = (node: Node): NodeMetrics | null => metrics[node.wireguard_ip ?? ""] ?? null;
         const cpu = (m: NodeMetrics): number =>
             m.cores.reduce((sum, core) => sum + core, 0) / Math.max(1, m.cores.length);
@@ -75,8 +77,8 @@ export function Dashboard() {
             {
                 header: "Status",
                 width: 9,
-                value: (n) => n.status,
-                cell: (n) => <Status value={n.status} />,
+                value: (n) => statusText({ value: n.status, reach: reachOf(n) }),
+                cell: (n) => <Status value={n.status} reach={reachOf(n)} />,
             },
             {
                 header: "CPU",
@@ -111,7 +113,7 @@ export function Dashboard() {
                 cell: (n) => <span className="text-dim">{of(n)?.uptime ?? "—"}</span>,
             },
         ];
-    }, [metrics]);
+    }, [metrics, reach]);
     const appColumns = useMemo<Column<App>[]>(
         () => [
             { header: "Slug", width: 44, value: (a) => a.slug },
@@ -169,7 +171,7 @@ export function Dashboard() {
                 columns={nodeColumns}
                 rows={fleet.nodes}
                 rowId={(n) => String(n.id)}
-                warn={(n) => !nodeHealthy(n)}
+                warn={(n) => !nodeHealthy(n) || reach[n.wireguard_ip ?? ""] === false}
                 target={(row) => ({ kind: "nodes", row })}
                 empty={fleet.loading ? "Loading fleet data…" : "No nodes."}
             />

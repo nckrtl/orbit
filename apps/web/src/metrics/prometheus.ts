@@ -44,6 +44,8 @@ export const queries = {
         `1 - rate(node_cpu_seconds_total{mode="idle"${clause(instance)}}[${RATE_WINDOW}])`,
     disks: (instance: string | null = null): string =>
         `{__name__=~"node_filesystem_size_bytes|node_filesystem_avail_bytes"${clause(instance)}}`,
+    /** Whether the last scrape of each Node's exporter answered. */
+    up: (): string => `up{instance=~".+:9100"}`,
 };
 
 type Sample = { metric?: Record<string, string>; value?: [number, string | number] };
@@ -222,4 +224,22 @@ export function mapMetrics(
     }
 
     return metrics;
+}
+
+/**
+ * Which Nodes answered their last scrape, keyed by WireGuard address. Prometheus only scrapes the
+ * Nodes whose exporter is enabled, so a Node it does not name is neither online nor offline here.
+ */
+export function mapReach(up: PrometheusResponse): Record<string, boolean> {
+    const reach: Record<string, boolean> = {};
+
+    for (const sample of vector(up)) {
+        const found = address(sample);
+
+        if (found !== null) {
+            reach[found] = Number(sample.value?.[1]) === 1;
+        }
+    }
+
+    return reach;
 }

@@ -29,7 +29,7 @@ const EXPORTERS: Exporter[] = [
     },
 ];
 
-/** A Grafana that answers the datasource list and the three queries the app sends, as Prometheus vectors. */
+/** A Grafana that answers the datasource list and the queries the app sends, as Prometheus vectors. */
 export const demoGrafana: GrafanaTransport = (path, params) => {
     if (path === "/api/datasources") {
         return Promise.resolve([{ type: "prometheus", uid: "demo" }]);
@@ -49,7 +49,9 @@ export const demoGrafana: GrafanaTransport = (path, params) => {
             continue;
         }
 
-        if (promql.includes("node_cpu_seconds_total")) {
+        if (promql.startsWith("up{")) {
+            sample({ __name__: "up" }, 1);
+        } else if (promql.includes("node_cpu_seconds_total")) {
             exporter.cores.forEach((load, cpu) => sample({ cpu: String(cpu) }, load));
         } else if (promql.includes("node_filesystem")) {
             sample(
