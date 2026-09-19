@@ -43,9 +43,11 @@
 ╰─
 
 ╭─ Firewall
-│  Port │ Action │ Source │ Status
-│› 22/tcp │ allow │ 10.44.0.0/16 │ active
-│  443/tcp │ allow │ 0.0.0.0/0 │ active
+│  Name │ Port │ Action │ Source │ Status
+│› ssh-wireguard │ 22/tcp │ allow │ 10.44.0.0/16 │ active
+│  https-public │ 443/tcp │ allow │ 0.0.0.0/0 │ active
+│  orbit:public-ssh-recovery │ 22/tcp │ allow │ any │ locked
+│  orbit:wireguard-members │ any │ allow │ any on orbit │ locked
 ╰─
 
 ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    demo fleet

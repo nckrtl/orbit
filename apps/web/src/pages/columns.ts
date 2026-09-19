@@ -1,5 +1,5 @@
 import type { Fleet } from "../api/queries";
-import type { FirewallRule, Instance, Process, Schedule } from "../api/types";
+import type { Instance, Process, Schedule } from "../api/types";
 import {
     instanceName,
     instanceNodeName,
@@ -56,18 +56,6 @@ export const scheduleListColumns = (fleet: Fleet): Column<Schedule>[] => [
     { header: "Node", width: 12, value: (s) => instanceNodeName(fleet, s.target_id) },
     { header: "Calendar", width: 30, value: (s) => s.calendar },
     { header: "Last run", width: 20, value: (s) => s.last_run_status ?? "never" },
-];
-
-export const firewallColumns: Column<FirewallRule>[] = [
-    {
-        header: "Port",
-        width: 22,
-        value: (f) => `${f.port}/${f.protocol}`,
-        sort: (f) => Number(f.port) || 0,
-    },
-    { header: "Action", width: 16, value: (f) => f.action },
-    { header: "Source", width: 40, value: (f) => f.source },
-    { header: "Status", width: 18, value: (f) => f.status },
 ];
 
 export const instanceColumns = (show: "app" | "node"): Column<Instance>[] => [

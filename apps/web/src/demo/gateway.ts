@@ -77,6 +77,33 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
             [
                 "GET",
+                /^\/api\/v1\/nodes\/(\d+)\/managed-firewall-rules$/,
+                () =>
+                    ok([
+                        {
+                            name: "orbit:public-ssh-recovery",
+                            role: null,
+                            action: "allow",
+                            source: "any",
+                            destination: "any",
+                            port: "22",
+                            protocol: "tcp",
+                            interface: null,
+                        },
+                        {
+                            name: "orbit:wireguard-members",
+                            role: null,
+                            action: "allow",
+                            source: "any",
+                            destination: "10.44.0.2",
+                            port: "any",
+                            protocol: "any",
+                            interface: "orbit",
+                        },
+                    ]),
+            ],
+            [
+                "GET",
                 /^\/api\/v1\/metrics\/credentials$/,
                 () => ok(byRoute.get("GET /api/v1/metrics/credentials#")),
             ],

@@ -59,3 +59,10 @@ export type QueueJob = Required<NonNullable<QueueBody["jobs"]>[number]>;
 /** An instance's Horizon queue. Only `available` and `state` are there when it has none. */
 export type QueueReport = Omit<QueueBody, "jobs"> & { jobs?: QueueJob[] };
 export type QueueState = QueueReport["state"];
+
+/** One of Orbit's own firewall rules on a Node. The Gateway has no request that changes one. */
+export type ManagedFirewallRule = Required<
+    NonNullable<
+        operations["firewall-managed-list"]["responses"][200]["content"]["application/json"]["data"]
+    >[number]
+>;

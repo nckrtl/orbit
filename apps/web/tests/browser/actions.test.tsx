@@ -103,6 +103,23 @@ it("shows no queue panel for an instance without Horizon", async () => {
     await expect.element(page.getByRole("tablist")).not.toBeInTheDocument();
 });
 
+it("lists Orbit's own firewall rules on a node as locked rows without actions", async () => {
+    const app = await openApp("/nodes/2");
+    const locked = row("Firewall", "orbit:wireguard-members");
+
+    await expect.element(locked).toHaveTextContent("any on orbit");
+    await expect.element(locked).toHaveTextContent("locked");
+
+    // A locked rule opens nothing and offers no menu; an operator rule still does both.
+    await locked.click();
+    expect(app.url()).toBe("/nodes/2");
+    await locked.click({ button: "right" });
+    await expect.element(page.getByRole("menuitem")).not.toBeInTheDocument();
+
+    await row("Firewall", "https-public").click({ button: "right" });
+    await expect.element(page.getByRole("menuitem", { name: "remove" })).toBeVisible();
+});
+
 it("asks before a destructive action and sends nothing until it is confirmed", async () => {
     const app = await openApp("/firewall");
     await row("Firewall", "443/tcp").click({ button: "right" });

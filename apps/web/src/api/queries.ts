@@ -10,6 +10,7 @@ import type {
     DeploymentEvent,
     FirewallRule,
     Instance,
+    ManagedFirewallRule,
     Node,
     Process,
     QueueReport,
@@ -151,6 +152,15 @@ export const processLogsQuery = (id: number) =>
         queryFn: async () =>
             logLines((await get<{ logs?: string }>(`/api/v1/processes/${id}/logs`)).logs),
         refetchInterval: 10_000,
+        retry: false,
+    });
+
+/** Orbit's own firewall rules for a Node. They change only when its roles do, so they reload rarely. */
+export const managedFirewallQuery = (nodeId: number) =>
+    queryOptions({
+        queryKey: ["managed-firewall", nodeId],
+        queryFn: () => get<ManagedFirewallRule[]>(`/api/v1/nodes/${nodeId}/managed-firewall-rules`),
+        staleTime: 60_000,
         retry: false,
     });
 

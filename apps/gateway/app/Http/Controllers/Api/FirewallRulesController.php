@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Firewall\ListFirewallRulesAction;
+use App\Actions\Firewall\ListManagedFirewallRulesAction;
 use App\Actions\Firewall\RemoveFirewallRuleAction;
 use App\Actions\Firewall\StoreFirewallRuleAction;
 use App\Data\Firewall\FirewallRuleData;
@@ -37,6 +38,18 @@ final class FirewallRulesController extends Controller
                     return $data;
                 })
                 ->all(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    /** Orbit's own rules for the Node, read-only: no request adds, changes, or removes one. */
+    public function managed(
+        Request $request,
+        Node $node,
+        ListManagedFirewallRulesAction $action,
+    ): JsonResponse {
+        return response()->json([
+            'data' => $action->execute($node),
             'meta' => $this->meta($request),
         ]);
     }

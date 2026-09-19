@@ -244,7 +244,8 @@
               "GET /api/v1/nodes/{node}/firewall-rules",
               "POST /api/v1/nodes/{node}/firewall-rules/allow",
               "POST /api/v1/nodes/{node}/firewall-rules/deny",
-              "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}"
+              "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}",
+              "GET /api/v1/nodes/{node}/managed-firewall-rules"
             ]
           },
           {

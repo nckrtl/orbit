@@ -8,6 +8,7 @@ import {
     deploymentsQuery,
     type Fleet,
     instanceLogsQuery,
+    managedFirewallQuery,
     processLogsQuery,
     scheduleLogsQuery,
     useFleet,
@@ -50,7 +51,8 @@ import { LogPane } from "../ui/LogPane";
 import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
 import { Properties } from "../ui/Properties";
-import { firewallColumns, instanceColumns, processColumns, scheduleColumns } from "./columns";
+import { Status } from "../ui/Status";
+import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { QueuePanel } from "./QueuePanel";
 import { RecordLayout } from "./RecordLayout";
 
@@ -109,6 +111,87 @@ function NodeMetricsPanel({ node }: { node: Node }) {
     );
 }
 
+/** One line of a node's firewall: a rule an operator added, or one Orbit keeps itself. */
+type FirewallLine = {
+    key: string;
+    name: string;
+    port: string;
+    action: string;
+    source: string;
+    state: string;
+    rule: FirewallRule | null;
+};
+
+const firewallLineColumns: Column<FirewallLine>[] = [
+    { header: "Name", width: 34, value: (line) => line.name },
+    { header: "Port", width: 16, fit: true, value: (line) => line.port },
+    { header: "Action", width: 10, fit: true, value: (line) => line.action },
+    { header: "Source", width: 26, value: (line) => line.source },
+    {
+        header: "Status",
+        width: 14,
+        fit: true,
+        value: (line) => line.state,
+        cell: (line) =>
+            line.rule === null ? (
+                <span className="text-dim">{line.state}</span>
+            ) : (
+                <Status value={line.state} />
+            ),
+    },
+];
+
+/**
+ * A node's firewall: the rules an operator added, then Orbit's own rules for SSH recovery, WireGuard
+ * trust, and each role. Orbit's rules are locked: they open nothing and have no actions, because the
+ * Gateway has no request that changes one.
+ */
+function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
+    const managed = useQuery(managedFirewallQuery(node.id)).data;
+    const lines = useMemo<FirewallLine[]>(
+        () => [
+            ...fleet.firewall
+                .filter((rule) => rule.node_id === node.id)
+                .map((rule) => ({
+                    key: `rule-${rule.id}`,
+                    name: rule.name,
+                    port: `${rule.port}/${rule.protocol}`,
+                    action: rule.action,
+                    source: rule.source,
+                    state: rule.status,
+                    rule,
+                })),
+            ...(managed ?? []).map((rule, index) => ({
+                key: `orbit-${index}`,
+                name: rule.name,
+                port: rule.port === "any" ? "any" : `${rule.port}/${rule.protocol}`,
+                action: rule.action,
+                // A rule on the WireGuard interface only admits members of the network.
+                source:
+                    rule.interface === null ? rule.source : `${rule.source} on ${rule.interface}`,
+                state: "locked",
+                rule: null,
+            })),
+        ],
+        [fleet.firewall, managed, node.id],
+    );
+
+    return (
+        <Pane
+            name="firewall"
+            order={3}
+            title="Firewall"
+            columns={firewallLineColumns}
+            rows={lines}
+            rowId={(line) => line.key}
+            warn={(line) => line.rule !== null && !firewallHealthy(line.rule)}
+            target={(line) => (line.rule === null ? null : { kind: "firewall", row: line.rule })}
+            divide={{ label: "Orbit's own rules · locked", below: (line) => line.rule === null }}
+            empty="No firewall rules."
+        />
+    );
+}
+
 function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
     const columns = useMemo(() => instanceColumns("app"), []);
 
@@ -156,19 +239,7 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                 warn={(p) => !processHealthy(p)}
                 target={(row) => ({ kind: "processes", row })}
             />
-            <Pane
-                name="firewall"
-                order={3}
-                title="Firewall"
-                // Only the rules an operator added. Orbit's own `orbit:` rules for SSH recovery,
-                // WireGuard trust, and each role are on the node but not in this list.
-                empty="No operator rules. Orbit's own rules are not listed here."
-                columns={firewallColumns}
-                rows={fleet.firewall.filter((rule) => rule.node_id === node.id)}
-                rowId={(f) => String(f.id)}
-                warn={(f) => !firewallHealthy(f)}
-                target={(row) => ({ kind: "firewall", row })}
-            />
+            <NodeFirewall fleet={fleet} node={node} />
         </div>
     );
 }

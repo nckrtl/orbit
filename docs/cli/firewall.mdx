@@ -16,6 +16,8 @@ The Gateway applies each rule over SSH, verifies it in the UFW status output, an
 | [`firewall:list`](#orbit-firewalllist) | List the named rules of one Node. |
 | [`firewall:remove`](#orbit-firewallremove) | Remove one named rule. |
 
+`GET /api/v1/nodes/{node}/managed-firewall-rules` lists the `orbit:` rules for one Node: the ones every managed Node has, then the ones each active role needs, with the role named. They come from the same catalog that convergence applies, so the list is what Orbit intends for the Node, and [Doctor](/cli/doctor) compares it with the Node. No request adds, changes, or removes one of these rules. The Orbit web page shows them on the Node page as locked rows; the CLI has no command for them yet.
+
 Every command accepts `--json` and requires `--node` with a numeric Node ID. A rule name is 1 through 63 characters of lowercase letters, digits, dots, underscores, and hyphens, starting and ending with a letter or digit; it cannot contain a colon, so an operator name never collides with an `orbit:` rule. The Gateway tags each UFW rule with the comment `orbit:node:<node-id>:firewall:<name>` and uses that comment for every later change.
 
 All targets and rule values are explicit; these commands do not prompt for missing arguments or options. Human requests show an indeterminate progress tree while the Gateway works, then the verified result and request ID. Piped output has no animation or escape codes. JSON contains only the existing response or error.

@@ -1688,6 +1688,32 @@
       }
     },
     {
+      "name": "firewall-managed-list",
+      "title": "List Orbit's own firewall rules",
+      "description": "List Orbit's own firewall rules",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}/managed-firewall-rules",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
       "name": "firewall-remove",
       "title": "Remove a firewall rule",
       "description": "Remove one named UFW rule through the gateway.",
