@@ -1,0 +1,40 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/nodes/{node}/firewall-rules",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 1,
+                "node_id": 2,
+                "node": "beast",
+                "name": "ssh-wireguard",
+                "action": "allow",
+                "source": "10.44.0.0/16",
+                "protocol": "tcp",
+                "port": "22",
+                "status": "active",
+                "backend_status": "applied",
+                "failed_step": null,
+                "error_code": null
+            },
+            {
+                "id": 2,
+                "node_id": 2,
+                "node": "beast",
+                "name": "https-public",
+                "action": "allow",
+                "source": "0.0.0.0/0",
+                "protocol": "tcp",
+                "port": "443",
+                "status": "active",
+                "backend_status": "applied",
+                "failed_step": null,
+                "error_code": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

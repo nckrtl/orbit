@@ -1,0 +1,20 @@
+╭─ Navigation
+│  Dashboard │
+│  Nodes │ 3
+│  Apps │ 3
+│  Instances │ 4
+│› Processes │ 4
+│  Schedules │ 2
+│  Databases │ 2
+│  Firewall │ 3
+╰─
+
+╭─ Processes ── node: beast ▾app: all ▾
+│  Name │ Owner │ Node │ Runtime │ Status │ CPU/MEM
+│› horizon │ charlie-shop/dev │ beast │ systemd │ active │ 20%/1.2G
+│  vite │ charlie-shop/dev │ beast │ systemd │ inactive │ — !
+│  queue │ charlie-shop/staging │ beast │ systemd │ inactive │ —
+│  valkey │ node beast │ beast │ docker │ running │ 1%/0.1G
+╰─
+
+↑↓ sections · → into the page · 1-8 jump · n/p filters    demo fleet

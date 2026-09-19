@@ -1,0 +1,42 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/schedules",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "backup",
+                "target_type": "instance",
+                "target_id": 1,
+                "name": "backup",
+                "calendar": "*-*-* 03:00:00",
+                "command": "php artisan backup:run",
+                "timeout_seconds": 600,
+                "desired_timer_state": "enabled",
+                "status": "active",
+                "failed_step": null,
+                "error_code": null,
+                "last_run_at": "2026-01-01T03:00:00+00:00",
+                "last_run_status": "succeeded"
+            },
+            {
+                "id": "prune",
+                "target_type": "instance",
+                "target_id": 2,
+                "name": "prune",
+                "calendar": "Mon *-*-* 04:00:00",
+                "command": "php artisan model:prune",
+                "timeout_seconds": 600,
+                "desired_timer_state": "disabled",
+                "status": "active",
+                "failed_step": null,
+                "error_code": null,
+                "last_run_at": null,
+                "last_run_status": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

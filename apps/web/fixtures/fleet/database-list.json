@@ -1,0 +1,36 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/database-connections",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 1,
+                "slug": "charlie-shop",
+                "driver": "mysql",
+                "node_id": 2,
+                "host": "10.44.0.2",
+                "port": 3306,
+                "database": "app",
+                "path": null,
+                "username": "app",
+                "has_password": true
+            },
+            {
+                "id": 2,
+                "slug": "acme-local",
+                "driver": "sqlite",
+                "node_id": 2,
+                "host": null,
+                "port": null,
+                "database": null,
+                "path": "/home/orbit/apps/acme/dev/database/database.sqlite",
+                "username": null,
+                "has_password": false
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

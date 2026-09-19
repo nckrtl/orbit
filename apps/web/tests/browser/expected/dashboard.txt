@@ -1,0 +1,57 @@
+╭─ Navigation
+│› Dashboard │
+│  Nodes │ 3
+│  Apps │ 3
+│  Instances │ 4
+│  Processes │ 4
+│  Schedules │ 2
+│  Databases │ 2
+│  Firewall │ 3
+╰─
+
+╭─ Nodes
+│  Name │ Status │ CPU │ Mem │ Disk │ Uptime
+│  gateway │ active │ [] 19% │ [] 3.2G/8G │ / [] 6G/80G │ 12d 4h 43m
+│  beast │ active │ [] 33% │ [] 70.0G/128G │ / [] 1440G/1760G │ 12d 4h 43m
+│  app-prod │ failed │ — │ — │ — │ — !
+╰─
+
+╭─ Apps
+│  Slug │ Branch │ Instances
+│› acme │ main │ 2
+│  bravo-docs │ main │ 0
+│  charlie-shop │ release │ 2
+╰─
+
+╭─ Instances
+│  Name │ App │ Node │ Status
+│› dev │ charlie-shop │ beast │ active
+│  staging │ charlie-shop │ beast │ active
+│  dev │ acme │ beast │ active
+│  production │ acme │ app-prod │ reserved !
+╰─
+
+╭─ Processes
+│  Name │ Where │ Status │ CPU/MEM
+│› horizon │ charlie-shop/dev │ active │ 20%/1.2G
+│  vite │ charlie-shop/dev │ inactive │ — !
+│  queue │ charlie-shop/staging │ inactive │ —
+│  valkey │ node beast │ running │ 1%/0.1G
+╰─
+
+╭─ Schedules
+│  Name │ Instance │ Calendar │ Last run
+│› backup │ charlie-shop/dev │ *-*-* 03:00:00 │ succeeded
+│  prune │ charlie-shop/staging │ Mon *-*-* 04:00:00 │ never !
+╰─
+
+╭─ Needs attention
+│  Kind │ Name │ Where │ State
+│› Node │ app-prod │ — │ failed !
+│  Instance │ acme/production │ app-prod │ reserved !
+│  Process │ vite │ charlie-shop/dev │ inactive, wanted running !
+│  Schedule │ prune │ charlie-shop/staging │ disabled !
+│  Firewall │ 22/tcp allow 10.44.0.0/16 │ app-prod │ failed !
+╰─
+
+↑↓ sections · → into the page · 1-8 jump    demo fleet
