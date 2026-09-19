@@ -302,11 +302,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     target={(row) => ({ kind: "schedules", row })}
                 />
             </div>
-            <LogPane
-                title="Application log · storage/logs/laravel.log"
-                lines={logs.data}
-                loading={logs.isPending}
-            />
+            <LogPane title="Application log" lines={logs.data} loading={logs.isPending} />
         </div>
     );
 }
@@ -347,7 +343,7 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
             <Pane
                 name="tables"
                 order={1}
-                title="Tables · database:tables"
+                title="Tables"
                 columns={tableColumns}
                 rows={tableRows}
                 rowId={(table) => table.name}
@@ -372,6 +368,16 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
     );
 }
 
+/** The command as a shell would show it: the arguments in order, and the image first for a Docker process. */
+function processCommand(process: Process): string | null {
+    const config = process.runtime_config as { command?: string[]; image?: string } | null;
+    const parts = [config?.image, ...(config?.command ?? [])].filter(
+        (part): part is string => typeof part === "string" && part !== "",
+    );
+
+    return parts.length === 0 ? null : parts.join(" ");
+}
+
 function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
     const logs = useQuery(processLogsQuery(process.id));
 
@@ -383,6 +389,7 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
                     { name: "Owner", value: processOwner(fleet, process) },
                     { name: "Node", value: processNodeName(fleet, process) },
                     { name: "Runtime", value: process.runtime },
+                    { name: "Command", value: processCommand(process) },
                     { name: "Working directory", value: process.working_directory },
                     { name: "Restart policy", value: process.restart_policy },
                     { name: "Desired state", value: process.desired_state },
@@ -394,7 +401,7 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
                     { name: "CPU/MEM", value: processUsage(process) },
                 ]}
             />
-            <LogPane title="Log · process:logs" lines={logs.data} loading={logs.isPending} />
+            <LogPane title="Log" lines={logs.data} loading={logs.isPending} />
         </div>
     );
 }
@@ -421,7 +428,7 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
                     { name: "Last run status", value: schedule.last_run_status },
                 ]}
             />
-            <LogPane title="Log · schedule:logs" lines={logs.data} loading={logs.isPending} />
+            <LogPane title="Log" lines={logs.data} loading={logs.isPending} />
         </div>
     );
 }
@@ -591,11 +598,7 @@ export function DeploymentPage() {
                         { name: "Triggered by", value: deployment.triggered_by },
                     ]}
                 />
-                <LogPane
-                    title="Log · instance:deployment:show"
-                    lines={log.data}
-                    loading={log.isPending}
-                />
+                <LogPane title="Log" lines={log.data} loading={log.isPending} />
             </div>
         </RecordLayout>
     );

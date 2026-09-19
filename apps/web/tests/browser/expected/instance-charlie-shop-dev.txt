@@ -38,7 +38,7 @@
 │› backup │ *-*-* 03:00:00 │ succeeded
 ╰─
 
-╭─ Application log · storage/logs/laravel.log
+╭─ Application log
 │ [2026-09-19 10:00:00] local.INFO: Order 1042 paid.[2026-09-19 10:00:04] local.ERROR: Mail to [REDACTED] failed.
 ╰─ 2 lines
 
