@@ -107,16 +107,6 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     `orbit instance:deploy ${target}`,
                     "A deploy streams for minutes; it is not run from inside the live screen.",
                 ),
-                leaves(
-                    "logs",
-                    `orbit instance:logs ${target}`,
-                    "Tail the release log from a terminal.",
-                ),
-                leaves(
-                    "profile",
-                    `orbit instance:profile ${target}`,
-                    "No request captures a profile; run this from a terminal.",
-                ),
             ];
         }
         case "processes": {
