@@ -4,7 +4,7 @@ import { footer, openApp, pane, row } from "./app";
 
 it("jumps to a section with its digit and walks the sidebar with the arrows", async () => {
     const app = await openApp("/");
-    await expect.element(row("Nodes", "beast")).toBeVisible();
+    await expect.element(row("Worker nodes", "beast")).toBeVisible();
 
     await userEvent.keyboard("2");
     await expect.poll(app.url).toBe("/nodes");
@@ -37,10 +37,10 @@ it("hovers a pane, focuses it, moves the selection, and opens the row", async ()
 
 it("moves between the dashboard panes by where they are on the screen", async () => {
     await openApp("/");
-    await expect.element(row("Nodes", "beast")).toBeVisible();
+    await expect.element(row("Worker nodes", "beast")).toBeVisible();
 
     await userEvent.keyboard("{ArrowRight}");
-    await expect.element(pane("Nodes")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Worker nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowDown}");
     await expect.element(pane("Apps")).toHaveAttribute("data-state", "hovered");
@@ -55,10 +55,10 @@ it("moves between the dashboard panes by where they are on the screen", async ()
     await expect.element(pane("Processes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowUp}{ArrowUp}");
-    await expect.element(pane("Nodes")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Worker nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowLeft}");
-    await expect.element(pane("Nodes")).not.toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Worker nodes")).not.toHaveAttribute("data-state", "hovered");
 });
 
 it("goes back with Esc and finds the row it left selected", async () => {

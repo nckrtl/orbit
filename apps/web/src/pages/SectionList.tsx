@@ -192,7 +192,7 @@ export function SectionList() {
             target={(row) => ({ kind, row })}
             divide={
                 kind === "nodes"
-                    ? { label: "Clients", below: (row) => (row as Node).roles.length === 0 }
+                    ? { label: "Client nodes", below: (row) => (row as Node).roles.length === 0 }
                     : undefined
             }
             empty={

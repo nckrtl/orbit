@@ -186,26 +186,26 @@ export function Dashboard() {
             <Pane
                 name="nodes"
                 order={0}
-                title="Nodes"
+                title="Worker nodes"
                 className="col-span-4 max-h-[34vh]"
                 columns={nodeColumns}
                 rows={servers}
                 rowId={(n) => String(n.id)}
                 warn={(n) => !nodeHealthy(n) || reach[n.wireguard_ip ?? ""] === false}
                 target={(row) => ({ kind: "nodes", row })}
-                empty={fleet.loading ? "Loading fleet data…" : "No nodes."}
+                empty={fleet.loading ? "Loading fleet data…" : "No worker nodes."}
             />
             <Pane
                 name="clients"
                 order={1}
-                title="Clients"
+                title="Client nodes"
                 className="col-span-2 max-h-[34vh]"
                 columns={clientColumns}
                 rows={clients}
                 rowId={(n) => String(n.id)}
                 warn={(n) => !nodeHealthy(n)}
                 target={(row) => ({ kind: "nodes", row })}
-                empty={fleet.loading ? "Loading fleet data…" : "No clients."}
+                empty={fleet.loading ? "Loading fleet data…" : "No client nodes."}
             />
             <Pane
                 name="apps"

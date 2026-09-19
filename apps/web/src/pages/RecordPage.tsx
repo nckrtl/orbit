@@ -245,33 +245,39 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
-        <div className={`grid h-full grid-rows-[auto_auto_minmax(0,1fr)] ${GAPS}`}>
-            <div className={`grid max-h-[40vh] grid-cols-[40fr_26fr_34fr] ${GAPS}`}>
-                <Properties
-                    properties={[
-                        { name: "Name", value: instance.name },
-                        {
-                            name: "App",
-                            value: instance.app.slug,
-                            onOpen: app === undefined ? undefined : () => go.record("apps", app),
-                        },
-                        {
-                            name: "Node",
-                            value: instance.node.name,
-                            onOpen: node === undefined ? undefined : () => go.record("nodes", node),
-                        },
-                        { name: "Environment", value: instance.environment },
-                        { name: "Domain", value: instance.domain },
-                        {
-                            name: "Status",
-                            value: instance.status,
-                            warn: !instanceHealthy(instance),
-                        },
-                        { name: "Checkout", value: instance.checkout_path },
-                        { name: "Selected branch", value: instance.selected_branch },
-                        { name: "Deploy steps", value: `${instance.deploy_steps.length} steps` },
-                    ]}
-                />
+        <div className={`grid h-full grid-rows-[auto_auto_auto_minmax(0,1fr)] ${GAPS}`}>
+            <Properties
+                properties={[
+                    { name: "Name", value: instance.name },
+                    {
+                        name: "App",
+                        value: instance.app.slug,
+                        onOpen: app === undefined ? undefined : () => go.record("apps", app),
+                    },
+                    {
+                        name: "Node",
+                        value: instance.node.name,
+                        onOpen: node === undefined ? undefined : () => go.record("nodes", node),
+                    },
+                    { name: "Environment", value: instance.environment },
+                    {
+                        name: "Domain",
+                        value: instance.domain,
+                        // Caddy terminates TLS for every route, so the site answers on https.
+                        onOpen: () =>
+                            window.open(`https://${instance.domain}`, "_blank", "noopener"),
+                    },
+                    {
+                        name: "Status",
+                        value: instance.status,
+                        warn: !instanceHealthy(instance),
+                    },
+                    { name: "Checkout", value: instance.checkout_path },
+                    { name: "Selected branch", value: instance.selected_branch },
+                    { name: "Deploy steps", value: `${instance.deploy_steps.length} steps` },
+                ]}
+            />
+            <div className={`grid max-h-[30vh] grid-cols-2 ${GAPS}`}>
                 <Pane
                     name="processes"
                     order={1}
