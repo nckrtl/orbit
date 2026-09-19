@@ -9,7 +9,6 @@ import { useLiveness, usePollingReason } from "../realtime/liveness";
 import { Frame } from "./Frame";
 import { FILTERED_SECTIONS, SECTION_TITLES, SECTIONS, type Section, useGo } from "./go";
 import { useKeyboard } from "./keyboard";
-import { AnnotationChrome } from "@/annotation/AnnotationChrome";
 import { MenuPopup } from "./MenuPopup";
 import { pageTarget } from "./page";
 import { ui, useUi } from "./store";
@@ -124,7 +123,6 @@ export function Shell() {
                     {message !== "" && <span className="selectable text-fg"> │ {message}</span>}
                 </span>
                 <span className="flex items-center gap-[1ch]">
-                    <AnnotationChrome />
                     {gateway}
                     <span
                         role="status"
