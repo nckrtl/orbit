@@ -106,7 +106,11 @@ export function RecordLayout({
                 {kind !== "deployments" && (
                     <span
                         className="ml-auto cursor-pointer text-dim hover:text-fg"
-                        onClick={(event) => openMenu({ kind, row }, [event.clientX, event.clientY])}
+                        onClick={(event) => {
+                            const button = event.currentTarget.getBoundingClientRect();
+
+                            openMenu({ kind, row }, [button.right, button.bottom + 4], true);
+                        }}
                     >
                         actions ▾
                     </span>

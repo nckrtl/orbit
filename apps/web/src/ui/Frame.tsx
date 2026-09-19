@@ -13,6 +13,8 @@ type FrameProps = {
     onMouseDown?: () => void;
     /** The name the keyboard knows this frame by, so the arrows can find it on the screen. */
     pane?: string;
+    /** The accessible name of a frame that shows no title. */
+    label?: string;
 };
 
 /** A box with its labels in the border: title top left, and optional labels on the other corners. */
@@ -28,11 +30,12 @@ export function Frame({
     children,
     onMouseDown,
     pane,
+    label,
 }: FrameProps) {
     return (
         <section
             className={`frame ${className}`}
-            aria-label={typeof title === "string" ? title : undefined}
+            aria-label={label ?? (typeof title === "string" ? title : undefined)}
             data-state={state}
             data-pane={pane}
             onMouseDown={onMouseDown}

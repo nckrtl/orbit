@@ -11,6 +11,8 @@ export type MenuState = Target & {
     confirm: boolean;
     running: boolean;
     at: [number, number] | null;
+    /** `at` is the corner the menu hangs from on its right side, as under the actions button. */
+    hangsRight: boolean;
 };
 
 /**

@@ -14,10 +14,14 @@ it("runs an action from the menu and shows the row the Gateway answered with", a
     await userEvent.keyboard("{ArrowRight}{Enter}{ArrowDown}");
     await expect.element(row("Processes", "vite")).toHaveAttribute("aria-selected", "true");
     await userEvent.keyboard("x");
-    await expect.element(pane("vite")).toHaveTextContent("Restart process [vite].");
+    await expect
+        .element(pane("vite").getByRole("menuitem", { name: "restart", exact: true }))
+        .toHaveAttribute("data-selected");
 
     await userEvent.keyboard("{ArrowDown}");
-    await expect.element(pane("vite")).toHaveTextContent("Start process [vite].");
+    await expect
+        .element(pane("vite").getByRole("menuitem", { name: "start", exact: true }))
+        .toHaveAttribute("data-selected");
     await userEvent.keyboard("{Enter}");
 
     await expect.element(footer()).toHaveTextContent("Process [vite] started.");

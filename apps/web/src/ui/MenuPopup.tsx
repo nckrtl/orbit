@@ -2,9 +2,10 @@ import { Frame } from "./Frame";
 import { chooseAction } from "./menu";
 import { ui, useUi } from "./store";
 
-const WIDTH_CH = 44;
+/** A plain list of verbs is narrow; the question before a destructive action needs room to read. */
+const WIDTH_CH = { list: 20, confirm: 40 };
 
-/** A small box over the screen listing the actions for the chosen row, at the pointer or in the middle. */
+/** A drop-down over the screen listing the actions for the chosen row, at the pointer or in the middle. It only grows text to ask before a destructive action. */
 export function MenuPopup() {
     const menu = useUi((state) => state.menu);
 
@@ -13,13 +14,16 @@ export function MenuPopup() {
     }
 
     const active = menu.actions[menu.selected];
+    const width = menu.confirm ? WIDTH_CH.confirm : WIDTH_CH.list;
     const position =
         menu.at === null
             ? { left: "50%", top: "50%", transform: "translate(-50%, -50%)" }
-            : {
-                  left: `min(${menu.at[0]}px, calc(100vw - ${WIDTH_CH + 2}ch))`,
-                  top: `min(${menu.at[1]}px, calc(100vh - ${(menu.actions.length + 5) * 20}px))`,
-              };
+            : menu.hangsRight
+              ? { right: `calc(100vw - ${menu.at[0]}px)`, top: `${menu.at[1]}px` }
+              : {
+                    left: `min(${menu.at[0]}px, calc(100vw - ${WIDTH_CH.confirm + 2}ch))`,
+                    top: `min(${menu.at[1]}px, calc(100vh - ${(menu.actions.length + 5) * 20}px))`,
+                };
 
     return (
         <div
@@ -29,19 +33,18 @@ export function MenuPopup() {
         >
             <div
                 className="absolute bg-bg"
-                style={{ width: `${WIDTH_CH}ch`, ...position }}
+                style={{ width: `${width}ch`, ...position }}
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 <Frame
-                    title={menu.title}
+                    label={menu.title}
                     state="focused"
-                    bottomRight={
-                        menu.confirm ? "Enter confirms · Esc cancels" : "Enter runs · Esc closes"
-                    }
+                    bottomRight={menu.confirm ? "Enter confirms · Esc cancels" : undefined}
                 >
                     {menu.actions.map((action, index) => (
                         <div
                             key={action.label}
+                            role="menuitem"
                             className="row cursor-pointer"
                             style={{ gridTemplateColumns: "minmax(0, 1fr)" }}
                             data-selected={index === menu.selected ? "" : undefined}
@@ -55,13 +58,11 @@ export function MenuPopup() {
                             <span>{action.label}</span>
                         </div>
                     ))}
-                    <div className="mt-[20px] whitespace-normal text-dim">
-                        {menu.running
-                            ? "Running…"
-                            : menu.confirm
-                              ? `Confirm? ${active?.description ?? ""}`
-                              : (active?.description ?? "")}
-                    </div>
+                    {(menu.running || menu.confirm) && (
+                        <div className="mt-[10px] whitespace-normal text-dim">
+                            {menu.running ? "Running…" : `Confirm? ${active?.description ?? ""}`}
+                        </div>
+                    )}
                 </Frame>
             </div>
         </div>

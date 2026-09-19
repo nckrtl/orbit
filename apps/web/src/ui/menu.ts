@@ -11,7 +11,11 @@ const menuTitle = (target: Target): string =>
         : recordTitle(target.kind, target.row);
 
 /** Opens the actions menu for a record, at the pointer or in the middle of the screen. */
-export function openMenu(target: Target, at: [number, number] | null = null): void {
+export function openMenu(
+    target: Target,
+    at: [number, number] | null = null,
+    hangsRight = false,
+): void {
     const actions = actionsFor(target.kind, target.row);
 
     if (actions.length > 0) {
@@ -24,6 +28,7 @@ export function openMenu(target: Target, at: [number, number] | null = null): vo
                 confirm: false,
                 running: false,
                 at,
+                hangsRight,
             },
         });
     }
