@@ -1,6 +1,15 @@
 import { type ReactNode, useEffect } from "react";
 import { type Fleet, useFleet } from "../api/queries";
-import type { AnyRecord, Deployment, Instance, Kind } from "../api/types";
+import type {
+    AnyRecord,
+    Deployment,
+    FirewallRule,
+    Instance,
+    Kind,
+    Node,
+    Process,
+    Schedule,
+} from "../api/types";
 import { recordTitle } from "../fleet/fleet";
 import { SECTION_TITLES, type Section, useGo } from "../ui/go";
 import { openMenu } from "../ui/menu";
@@ -8,8 +17,9 @@ import { type Crumb, PageHeader } from "../ui/PageHeader";
 import { setPageTarget } from "../ui/page";
 
 /**
- * The way to a record: its section, the records that own it, then the record itself. Every crumb
- * but the last opens what it names, so the line also takes the reader back up.
+ * The way to a record by what owns it, not by the clicks that led there: an App owns its instances,
+ * an instance or a node owns its processes and schedules, and a node owns its firewall rules. Every
+ * crumb but the last opens what it names, so the line also takes the reader back up.
  */
 function crumbs(kind: Kind, row: AnyRecord, fleet: Fleet, go: ReturnType<typeof useGo>): Crumb[] {
     const section = (name: Section): Crumb => ({
@@ -24,6 +34,7 @@ function crumbs(kind: Kind, row: AnyRecord, fleet: Fleet, go: ReturnType<typeof 
         const app = fleet.apps.find((candidate) => candidate.id === instance.app.id);
 
         return [
+            section("apps"),
             {
                 label: instance.app.slug,
                 open: app === undefined ? undefined : () => go.record("apps", app),
@@ -31,25 +42,39 @@ function crumbs(kind: Kind, row: AnyRecord, fleet: Fleet, go: ReturnType<typeof 
             { label: instance.name, open: () => go.record("instances", instance) },
         ];
     };
+    const nodeCrumbs = (node: Node | undefined): Crumb[] =>
+        node === undefined
+            ? []
+            : [section("nodes"), { label: node.name, open: () => go.record("nodes", node) }];
+    const instanceById = (id: number | undefined) =>
+        fleet.instances.find((candidate) => candidate.id === id);
+    const nodeById = (id: number | undefined) =>
+        fleet.nodes.find((candidate) => candidate.id === id);
+    // The owner's crumbs, or the record's own section when the owner is not in the fleet.
+    const under = (owner: Crumb[]): Crumb[] => [
+        ...(owner.length > 0 ? owner : [section(kind as Section)]),
+        { label: recordTitle(kind, row) },
+    ];
 
     switch (kind) {
         case "instances":
-            return [section("instances"), ...instanceCrumbs(row as Instance)];
-        case "deployments": {
-            const deployment = row as Deployment;
+            return instanceCrumbs(row as Instance);
+        case "deployments":
+            return under(instanceCrumbs(instanceById((row as Deployment).app_instance_id)));
+        case "processes":
+        case "schedules": {
+            const owned = row as Process | Schedule;
 
-            return [
-                section("instances"),
-                ...instanceCrumbs(
-                    fleet.instances.find(
-                        (candidate) => candidate.id === deployment.app_instance_id,
-                    ),
-                ),
-                { label: recordTitle(kind, row) },
-            ];
+            return under(
+                owned.target_type === "node"
+                    ? nodeCrumbs(nodeById(owned.target_id))
+                    : instanceCrumbs(instanceById(owned.target_id)),
+            );
         }
+        case "firewall":
+            return under(nodeCrumbs(nodeById((row as FirewallRule).node_id)));
         default:
-            return [section(kind as Section), { label: recordTitle(kind, row) }];
+            return under([]);
     }
 }
 

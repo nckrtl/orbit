@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { footer, openApp, pane, row } from "./app";
 
 it("jumps to a section with its digit and walks the sidebar with the arrows", async () => {
@@ -112,4 +112,17 @@ it("sorts a pane by a column header", async () => {
     await pane("Apps").getByRole("columnheader", { name: "Slug" }).click();
 
     await expect.element(pane("Apps").getByRole("row").nth(1)).toHaveTextContent("charlie-shop");
+});
+
+it("names the way to a record by what owns it", async () => {
+    const app = await openApp("/processes/2");
+    const crumbs = page.getByRole("navigation", { name: "Breadcrumb" });
+
+    await expect.element(crumbs).toHaveTextContent("Apps›charlie-shop›dev›vite");
+
+    await crumbs.getByText("dev", { exact: true }).click();
+    await expect.poll(app.url).toBe("/instances/1");
+
+    await openApp("/processes/4");
+    await expect.element(crumbs).toHaveTextContent("Nodes›beast›valkey");
 });
