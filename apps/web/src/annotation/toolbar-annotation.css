@@ -1,0 +1,53 @@
+/*
+ * Annotation overlay tokens from laravel-toolbar resources/css/toolbar.css.
+ * Orbit hosts the annotation root in the light DOM, so these must be on the
+ * document (not only inside the old Shadow DOM stylesheet).
+ */
+
+#laravel-toolbar-annotation-root {
+    --toolbar-font-size: 0.75rem;
+    --toolbar-line-height: 1rem;
+    --toolbar-annotation-line-height: 1.25rem;
+    --toolbar-control-size: 26px;
+    --toolbar-icon-size: 13px;
+    font-size: var(--toolbar-font-size);
+    line-height: var(--toolbar-line-height);
+}
+
+#laravel-toolbar-annotation-root[data-toolbar-font-size="small"] {
+    --toolbar-font-size: 0.625rem;
+    --toolbar-line-height: 0.875rem;
+    --toolbar-annotation-line-height: 1.125rem;
+    --toolbar-control-size: 24px;
+    --toolbar-icon-size: 12px;
+}
+
+#laravel-toolbar-annotation-root[data-toolbar-font-size="large"] {
+    --toolbar-font-size: 0.875rem;
+    --toolbar-line-height: 1.25rem;
+    --toolbar-annotation-line-height: 1.375rem;
+    --toolbar-control-size: 28px;
+    --toolbar-icon-size: 14px;
+}
+
+#laravel-toolbar-annotation-root {
+    --radius: 0.625rem;
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+}

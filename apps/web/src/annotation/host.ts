@@ -1,3 +1,5 @@
+import "./toolbar-annotation.css";
+
 export const ANNOTATION_HOST_ID = "laravel-toolbar-annotation-host";
 export const ANNOTATION_ROOT_ID = "laravel-toolbar-annotation-root";
 export const ANNOTATION_STYLE_ID = "laravel-toolbar-annotation-page-styles";
