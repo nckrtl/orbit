@@ -51,7 +51,12 @@ export function Frame({
                 )}
                 {topRight !== undefined && <span className="frame-label">{topRight}</span>}
             </div>
-            <div className={`frame-body ${bodyClassName}`}>{children}</div>
+            {/* With labels in the bottom border, the body ends above them, so no row scrolls under a label. */}
+            <div
+                className={`frame-body ${bodyClassName} ${bottomLeft !== undefined || bottomRight !== undefined ? "mb-[10px]" : ""}`}
+            >
+                {children}
+            </div>
             {(bottomLeft !== undefined || bottomRight !== undefined) && (
                 <div className="frame-edge" data-edge="bottom">
                     {bottomLeft === undefined ? (

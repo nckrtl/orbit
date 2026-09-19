@@ -67,7 +67,7 @@ final readonly class ShowAppInstanceQueueAction
                     'pushed_at' => $this->time($job['pushed_at'] ?? null),
                     'completed_at' => $this->time($job['completed_at'] ?? null),
                     'failed_at' => $this->time($job['failed_at'] ?? null),
-                    'exception' => isset($job['exception']) ? $this->text($job['exception'], 300) : null,
+                    'exception' => $this->text($job['exception'] ?? '', 300) ?: null,
                     'url' => $dashboard === null || preg_match('/\A[A-Za-z0-9-]+\z/', $id) !== 1
                         ? null
                         : $dashboard.($state === 'failed' ? '/failed/' : "/jobs/{$state}/").$id,

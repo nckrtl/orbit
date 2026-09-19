@@ -152,8 +152,11 @@ describe('instance:queue', function (): void {
             ->assertJsonPath('data.jobs_per_minute', 0);
     });
 
-    it('links pending and completed jobs under the jobs path', function (): void {
+    it('links pending and completed jobs under the jobs path, and reports no exception as null', function (): void {
         queue_api_process($this->fixture->instance, 'horizon', 'horizon');
+        $this->reader->report['jobs'][0]['exception'] = '';
+
+        ($this->read)('?state=completed')->assertJsonPath('data.jobs.0.exception', null);
 
         $url = ($this->read)('?state=completed')->json('data.jobs.0.url');
 

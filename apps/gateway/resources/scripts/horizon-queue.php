@@ -69,7 +69,7 @@ if ($report['installed']) {
                 'completed_at' => $time($job->completed_at ?? null),
                 'failed_at' => $time($job->failed_at ?? null),
                 // The first line names the exception; the rest is a stack trace with arguments.
-                'exception' => ($job->exception ?? '') === '' ? null : mb_substr(strtok((string) $job->exception, "\n") ?: '', 0, 300),
+                'exception' => empty($job->exception) ? null : mb_substr(strtok((string) $job->exception, "\n") ?: '', 0, 300),
             ];
         })->values()->all(),
     ];
