@@ -2,7 +2,6 @@
 │› Dashboard │
 │  Nodes │ 3
 │  Apps │ 3
-│  Processes │ 4
 │  Databases │ 2
 ╰─
 
@@ -55,4 +54,4 @@
 │  Firewall │ 22/tcp allow 10.44.0.0/16 │ app-prod │ failed !
 ╰─
 
-↑↓ sections · → into the page · 1-5 jump    demo fleet
+↑↓ sections · → into the page · 1-4 jump    demo fleet

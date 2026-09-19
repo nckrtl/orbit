@@ -1,8 +1,7 @@
 ╭─ Navigation
 │  Dashboard │
 │  Nodes │ 3
-│  Apps │ 3
-│› Processes │ 4
+│› Apps │ 3
 │  Databases │ 2
 ╰─
 
@@ -14,4 +13,4 @@
 │  valkey │ node beast │ beast │ docker │ running │ 1%/0.1G
 ╰─
 
-↑↓ sections · → into the page · 1-5 jump · n/p filters    demo fleet
+↑↓ sections · → into the page · 1-4 jump · n/p filters    demo fleet

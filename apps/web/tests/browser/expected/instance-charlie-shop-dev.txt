@@ -2,7 +2,6 @@
 │  Dashboard │
 │  Nodes │ 3
 │› Apps │ 3
-│  Processes │ 4
 │  Databases │ 2
 ╰─
 

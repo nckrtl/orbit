@@ -1,7 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { queryClient } from "../api/queryClient";
-import type { App, Node } from "../api/types";
+import type { App, Node, Process, Schedule } from "../api/types";
 import { FILTERED_SECTIONS, NAV, navFor, type Section, useGo } from "./go";
 import { chooseAction, openMenu } from "./menu";
 import { paneBeside, paneOrder, panes, selectionKey, type Target, ui } from "./store";
@@ -160,14 +160,19 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                 return handled();
             }
 
-            if (/^[1-5]$/.test(event.key)) {
+            if (/^[1-4]$/.test(event.key)) {
                 go.section(NAV[Number(event.key) - 1] as Section);
 
                 return handled();
             }
 
             if (state.hover === "nav") {
-                const index = NAV.indexOf(navFor(section));
+                const index = NAV.indexOf(
+                    navFor(section, second, {
+                        processes: queryClient.getQueryData<Process[]>(["processes"]) ?? [],
+                        schedules: queryClient.getQueryData<Schedule[]>(["schedules"]) ?? [],
+                    }),
+                );
 
                 switch (event.key) {
                     case "ArrowDown":

@@ -20,17 +20,34 @@ export const NAV = [
     "dashboard",
     "nodes",
     "apps",
-    "processes",
     "databases",
 ] as const satisfies readonly Section[];
 
-/** The sidebar entry a section belongs under: an App owns its instances and their schedules, and a node owns its firewall rules. */
-export const navFor = (section: Section): (typeof NAV)[number] =>
-    section === "instances" || section === "schedules"
-        ? "apps"
-        : section === "firewall"
-          ? "nodes"
-          : section;
+type Owned = { id: number | string; target_type: string };
+
+/**
+ * The sidebar entry a page belongs under. An App owns its instances, a node owns its firewall
+ * rules, and a process or a schedule belongs to a node or, through its instance, to an App.
+ */
+export function navFor(
+    section: Section,
+    id: string | undefined,
+    owned: { processes: Owned[]; schedules: Owned[] },
+): (typeof NAV)[number] {
+    switch (section) {
+        case "instances":
+            return "apps";
+        case "firewall":
+            return "nodes";
+        case "processes":
+        case "schedules":
+            return owned[section].find((row) => String(row.id) === id)?.target_type === "node"
+                ? "nodes"
+                : "apps";
+        default:
+            return section;
+    }
+}
 
 export const SECTION_TITLES: Record<Section, string> = {
     dashboard: "Dashboard",

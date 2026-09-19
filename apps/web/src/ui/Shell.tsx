@@ -24,11 +24,12 @@ import { ui, useUi } from "./store";
 
 declare const __ORBIT_GATEWAY__: string | null;
 
-function Sidebar({ section }: { section: Section }) {
+function Sidebar({ section, id }: { section: Section; id: string | undefined }) {
     const go = useGo();
     const fleet = useFleet();
     const hovered = useUi((state) => state.hover === "nav" && state.focus === null);
     const totals = counts(fleet);
+    const active = navFor(section, id, fleet);
 
     return (
         <Frame
@@ -46,13 +47,13 @@ function Sidebar({ section }: { section: Section }) {
                         className="row"
                         data-link=""
                         style={{ gridTemplateColumns: "minmax(0, 1fr) 4ch" }}
-                        data-selected={key === navFor(section) ? "" : undefined}
+                        data-selected={key === active ? "" : undefined}
                         data-focused={hovered ? "" : undefined}
                         onClick={() => go.section(key)}
                     >
                         <span>{SECTION_TITLES[key]}</span>
                         <span
-                            className={`text-right ${warn > 0 && !(key === navFor(section) && hovered) ? "text-yellow" : ""}`}
+                            className={`text-right ${warn > 0 && !(key === active && hovered) ? "text-yellow" : ""}`}
                         >
                             {count ?? ""}
                         </span>
@@ -84,7 +85,7 @@ function footerHint(section: Section, onList: boolean, onForm: boolean): string 
         return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions";
     }
 
-    return `↑↓ sections · → into the page · 1-5 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
+    return `↑↓ sections · → into the page · 1-4 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
 }
 
 /** The screen: the sidebar beside the open page, and one footer line with the key hints and the Gateway's WebSocket status. */
@@ -121,7 +122,7 @@ export function Shell() {
     return (
         <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[14px] pb-[4px]">
             <div className="grid min-h-0 grid-cols-[auto_minmax(0,1fr)] gap-x-[1ch]">
-                <Sidebar section={section} />
+                <Sidebar section={section} id={second} />
                 <main className="min-h-0 min-w-0">
                     <Outlet />
                 </main>
