@@ -11,8 +11,8 @@
 
 ╭─ Nodes
 │  Name │ Status │ CPU │ Mem │ Disk │ Uptime
-│  gateway │ active │ [] 19% │ [] 3.2G/8G │ / [] 6G/80G │ 12d 4h 43m
-│  beast │ active │ [] 33% │ [] 70.0G/128G │ / [] 1440G/1760G │ 12d 4h 43m
+│  gateway │ active │ 19% │ 3.2G/8G │ / 6G/80G │ 12d 4h 43m
+│  beast │ active │ 33% │ 70.0G/128G │ / 1440G/1760G │ 12d 4h 43m
 │  app-prod │ failed │ — │ — │ — │ — !
 ╰─
 

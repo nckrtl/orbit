@@ -54,12 +54,14 @@ function NodeSummaryRow({ node, metrics }: { node: Node; metrics: NodeMetrics | 
                     <Bar ratio={cpu} reading={`${(cpu * 100).toFixed(0).padStart(3)}%`} />
                     <Bar
                         ratio={metrics.mem[1] > 0 ? metrics.mem[0] / metrics.mem[1] : 0}
-                        reading={`${metrics.mem[0].toFixed(1)}G/${metrics.mem[1].toFixed(0)}G`}
+                        reading={`${metrics.mem[0].toFixed(1)}G/${metrics.mem[1].toFixed(0)}G`.padStart(
+                            10,
+                        )}
                     />
                     <Bar
                         label={mount}
                         ratio={total > 0 ? used / total : 0}
-                        reading={`${used.toFixed(0)}G/${total.toFixed(0)}G`}
+                        reading={`${used.toFixed(0)}G/${total.toFixed(0)}G`.padStart(10)}
                         thresholds={[80, 90]}
                     />
                     <span className="text-right text-dim">{metrics.uptime}</span>
