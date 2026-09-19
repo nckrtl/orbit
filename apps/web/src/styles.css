@@ -20,19 +20,7 @@
     --red: #c92a2a;
 }
 
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-        --bg: #0d0f12;
-        --fg: #d4d7dc;
-        --dim: #6b7280;
-        --line: #3a414b;
-        --cyan: #56c8d8;
-        --yellow: #e5c07b;
-        --green: #8bd49c;
-        --red: #e06c75;
-    }
-}
-
+/* Light is the theme. Dark is there for whoever sets `data-theme="dark"` on the root element; the system setting does not pick it. */
 :root[data-theme="dark"] {
     --bg: #0d0f12;
     --fg: #d4d7dc;
