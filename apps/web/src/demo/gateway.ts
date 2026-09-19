@@ -191,6 +191,15 @@ export function createDemoGateway() {
             ["POST", /^\/api\/v1\/doctor$/, () => ok(byRoute.get("POST /api/v1/doctor#"))],
             [
                 "DELETE",
+                /^\/api\/v1\/processes\/(\d+)$/,
+                ([id = ""]) => {
+                    const index = processes.findIndex((candidate) => String(candidate.id) === id);
+
+                    return index === -1 ? notFound("Process") : ok(processes.splice(index, 1)[0]);
+                },
+            ],
+            [
+                "DELETE",
                 /^\/api\/v1\/database-connections\/([^/]+)$/,
                 ([slug = ""]) => {
                     const index = databases.findIndex((candidate) => candidate.slug === slug);

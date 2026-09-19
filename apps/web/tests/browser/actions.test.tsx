@@ -28,6 +28,24 @@ it("runs an action from the menu and shows the row the Gateway answered with", a
     });
 });
 
+it("destroys a process only after it is confirmed", async () => {
+    const app = await openApp("/processes");
+    await row("Processes", "vite").click({ button: "right" });
+    await expect.element(pane("vite")).toBeVisible();
+
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await expect.element(pane("vite")).toHaveTextContent("Confirm? Destroy process [vite]?");
+    expect(app.gateway.requests.some((request) => request.method === "DELETE")).toBe(false);
+
+    await userEvent.keyboard("{Enter}");
+    await expect.element(footer()).toHaveTextContent("Process [vite] destroyed.");
+    await expect.element(row("Processes", "vite")).not.toBeInTheDocument();
+    expect(app.gateway.requests.at(-1)).toMatchObject({
+        method: "DELETE",
+        path: "/api/v1/processes/2",
+    });
+});
+
 it("asks before a destructive action and sends nothing until it is confirmed", async () => {
     const app = await openApp("/firewall");
     await row("Firewall", "443/tcp").click({ button: "right" });

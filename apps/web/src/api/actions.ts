@@ -139,6 +139,17 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                           description: `Start process [${process.name}].`,
                           run: () => processAction(process, "start", "started"),
                       },
+                {
+                    label: "destroy",
+                    destructive: true,
+                    description: `Destroy process [${process.name}]? Its unit or container is removed from the node.`,
+                    run: async () => {
+                        await api("DELETE", `/api/v1/processes/${process.id}`);
+                        applyRow(queryClient, "processes", "deleted", { id: process.id });
+
+                        return `Process [${process.name}] destroyed.`;
+                    },
+                },
             ];
         }
         case "schedules": {
