@@ -60,6 +60,12 @@ Each identity or architecture failure names the boundary that stopped the reques
 | `node.architecture_unavailable` | The Gateway could not read a machine architecture from the Node as the managed user. |
 | `node.architecture_mismatch` | The request names an architecture that differs from the observed one for a Node without a record. The Gateway records no architecture and converges no role. |
 
+## Converge an existing Node
+
+`node:add` for a recorded Node converges that machine again. The Gateway may record the Node as `provisioning` while that work runs. When the Node was already `active` and a later step fails, the Gateway restores `active`, including when private DNS or Router LAN cleanup also fails. It does not leave a serving Gateway in `provisioning`. A non-active Gateway hides the peer from fleet authority, so clients then receive `node_access.required` until an operator repairs the status by hand.
+
+A Node that was never `active` still becomes `failed` at the step that stopped. A private DNS failure uses step `private-dns`.
+
 ## Public SSH after provisioning
 
 Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](/reference/node-retarget#two-boundaries) describes the same two boundaries.

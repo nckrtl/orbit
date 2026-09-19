@@ -3272,7 +3272,8 @@
                 "Herdr session",
                 "Node",
                 "Process",
-                "Route"
+                "Route",
+                "Router"
             ],
             "governing_adrs": [
                 "0072"
