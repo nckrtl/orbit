@@ -128,7 +128,8 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                         { name: "WireGuard IP", value: node.wireguard_ip },
                         {
                             name: "SSH",
-                            value: `${node.user}@${node.public_ssh_host}:${node.public_ssh_port}`,
+                            // Over WireGuard, as Orbit itself connects. A managed node closes its public port 22.
+                            value: `${node.user}@${node.wireguard_ip ?? node.public_ssh_host}:${node.wireguard_ip == null ? node.public_ssh_port : 22}`,
                         },
                     ]}
                 />
@@ -159,6 +160,9 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                 name="firewall"
                 order={3}
                 title="Firewall"
+                // Only the rules an operator added. Orbit's own `orbit:` rules for SSH recovery,
+                // WireGuard trust, and each role are on the node but not in this list.
+                empty="No operator rules. Orbit's own rules are not listed here."
                 columns={firewallColumns}
                 rows={fleet.firewall.filter((rule) => rule.node_id === node.id)}
                 rowId={(f) => String(f.id)}
