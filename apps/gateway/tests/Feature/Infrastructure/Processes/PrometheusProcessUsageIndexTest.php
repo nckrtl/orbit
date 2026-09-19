@@ -46,8 +46,33 @@ function usage_index(): PrometheusProcessUsageIndex
 }
 
 /**
- * @param  list<array{name: string, value: float}>  $cpu
- * @param  list<array{name: string, value: float}>  $memory
+ * A cAdvisor series as cAdvisor actually labels a container: `name` is the container name, and
+ * `id` is the opaque docker scope carrying nothing identifying.
+ *
+ * @return array{labels: array<string, string>, value: float}
+ */
+function cadvisor_container(string $container, float $value): array
+{
+    return [
+        'labels' => ['name' => $container, 'id' => '/system.slice/docker-'.str_repeat('a', 64).'.scope'],
+        'value' => $value,
+    ];
+}
+
+/**
+ * A cAdvisor series as cAdvisor actually labels a systemd unit: a raw cgroup with no `name` label
+ * at all, identified only by the unit name its `id` path ends in. Measured against the live fleet.
+ *
+ * @return array{labels: array<string, string>, value: float}
+ */
+function cadvisor_unit(string $unit, float $value): array
+{
+    return ['labels' => ['id' => '/system.slice/'.$unit], 'value' => $value];
+}
+
+/**
+ * @param  list<array{labels: array<string, string>, value: float}>  $cpu
+ * @param  list<array{labels: array<string, string>, value: float}>  $memory
  */
 function prometheus_process_usage(array $cpu, array $memory): void
 {
@@ -57,7 +82,7 @@ function prometheus_process_usage(array $cpu, array $memory): void
             'resultType' => 'vector',
             'result' => array_map(
                 static fn (array $sample): array => [
-                    'metric' => ['name' => $sample['name']],
+                    'metric' => $sample['labels'],
                     'value' => [1789700000, (string) $sample['value']],
                 ],
                 $samples,
@@ -97,14 +122,17 @@ describe(PrometheusProcessUsageIndex::class, function (): void {
     });
 
     it('reads CPU and memory for every Process from one query pair', function (): void {
+        // A systemd unit answers with no `name` label, a container with one: reading only `name`
+        // reports the container's usage and leaves the unit at null, which is the whole fleet's
+        // systemd Processes showing nothing.
         prometheus_process_usage(
             cpu: [
-                ['name' => 'orbit-process-1-horizon.service', 'value' => 0.42],
-                ['name' => 'orbit-process-2-valkey', 'value' => 0.05],
+                cadvisor_unit('orbit-process-1-horizon.service', 0.42),
+                cadvisor_container('orbit-process-2-valkey', 0.05),
             ],
             memory: [
-                ['name' => 'orbit-process-1-horizon.service', 'value' => 134217728],
-                ['name' => 'orbit-process-2-valkey', 'value' => 20971520],
+                cadvisor_unit('orbit-process-1-horizon.service', 134217728),
+                cadvisor_container('orbit-process-2-valkey', 20971520),
             ],
         );
 
@@ -139,13 +167,40 @@ describe(PrometheusProcessUsageIndex::class, function (): void {
         expect($usage)->toBe([1 => ['cpu' => null, 'memory_bytes' => null]]);
     });
 
-    it('queries only the process cgroups, in one rate() window sized off the cadvisor scrape interval', function (): void {
+    it('ignores a cgroup that is neither a container nor a Process unit', function (): void {
+        // The `id` arm matches by path, so a series for some other cgroup must not be read as the
+        // usage of whichever Process happens to be asked for.
+        prometheus_process_usage(
+            cpu: [cadvisor_unit('ssh.service', 0.9)],
+            memory: [cadvisor_unit('ssh.service', 1048576)],
+        );
+
+        $usage = usage_index()->usage(new Collection([usage_index_process(1, 'horizon')]));
+
+        expect($usage)->toBe([1 => ['cpu' => null, 'memory_bytes' => null]]);
+    });
+
+    it('asks for both cgroup shapes, in one rate() window sized off the cadvisor scrape interval', function (): void {
+        // cAdvisor names a container and leaves a systemd unit identified only by its cgroup path,
+        // so a query matching one label shape silently covers only half the fleet.
         expect(PrometheusProcessMetricsQueries::cpu())
             ->toContain('container_cpu_usage_seconds_total')
             ->toContain('name=~"orbit-process-.*"')
+            ->toContain('id=~".*/orbit-process-.*\\\\.service"')
             ->toContain('['.PrometheusProcessMetricsQueries::CpuRateWindow.']')
             ->and(PrometheusProcessMetricsQueries::memory())
             ->toContain('container_memory_usage_bytes')
-            ->toContain('name=~"orbit-process-.*"');
+            ->toContain('name=~"orbit-process-.*"')
+            ->toContain('id=~".*/orbit-process-.*\\\\.service"');
+    });
+
+    it('escapes every backslash, which Prometheus refuses a query without', function (): void {
+        // A PromQL string is Go-quoted before it compiles as a regex, so a lone `\` is not an
+        // escape Prometheus knows and it rejects the whole query with a parse error rather than
+        // returning no series. Writing the selector by hand makes that a one-character mistake
+        // that no assertion on the query's text would catch, because the text still looks right.
+        foreach ([PrometheusProcessMetricsQueries::cpu(), PrometheusProcessMetricsQueries::memory()] as $query) {
+            expect(preg_match('/(?<!\\\\)\\\\(?!\\\\)/', $query))->toBe(0, "lone backslash in: {$query}");
+        }
     });
 });

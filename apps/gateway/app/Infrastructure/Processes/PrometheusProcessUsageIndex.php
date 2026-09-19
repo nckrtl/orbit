@@ -16,11 +16,15 @@ use Throwable;
  * Reads every Process's live CPU and memory from the Metrics role's cAdvisor, through the same
  * Grafana datasource proxy `PrometheusProcessRuntimeStatusIndex` reads runtime status through.
  *
- * cAdvisor keys every series by the cgroup's `name` label, which for a Process is exactly
- * `SystemdProcessRenderer::unitName()` or `DockerProcessRenderer::containerName()` — both are
- * `orbit-process-{id}-{name}[.service]`, so one CPU query and one memory query (see
- * `PrometheusProcessMetricsQueries`) cover the whole fleet, and the two lookups this class builds
- * from them are keyed the same way `PrometheusProcessRuntimeStatusIndex` keys its unit states.
+ * One CPU query and one memory query (see `PrometheusProcessMetricsQueries`) cover the whole fleet,
+ * and the two lookups this class builds from them are keyed by `orbit-process-{id}-{name}` for a
+ * container and by `orbit-process-{id}-{name}.service` for a unit — the latter the same key
+ * `PrometheusProcessRuntimeStatusIndex` uses for its unit states.
+ *
+ * Reading that key back out of a series takes both labels, because cAdvisor only labels containers
+ * by `name`. A systemd unit is a raw cgroup with no `name` at all, so its key is the last segment
+ * of the `id` path (`/system.slice/orbit-process-69-agentation.service`). Keying on `name` alone
+ * leaves every systemd Process reporting no usage while containers report theirs.
  *
  * A Process cAdvisor has no series for — not running, cAdvisor unreachable, or the Metrics role is
  * not assigned — reports null for that field rather than zero: a stopped Process has no usage, and
@@ -55,9 +59,8 @@ final readonly class PrometheusProcessUsageIndex implements ProcessUsageIndex
     }
 
     /**
-     * The cAdvisor `name` label value cAdvisor would report this Process's cgroup under, or null
-     * when it cannot be rendered (an unpersisted or malformed Process, which has no cgroup to
-     * measure anyway).
+     * The key cAdvisor would report this Process's cgroup under, or null when it cannot be rendered
+     * (an unpersisted or malformed Process, which has no cgroup to measure anyway).
      */
     private function name(Process $process): ?string
     {
@@ -70,16 +73,16 @@ final readonly class PrometheusProcessUsageIndex implements ProcessUsageIndex
         }
     }
 
-    /** @return array<string, float|int> Value keyed by the series' `name` label. */
+    /** @return array<string, float|int> Value keyed by container name or systemd unit name. */
     private function series(string $promql): array
     {
         $values = [];
 
         foreach ($this->prometheus->series($promql) as $entry) {
             $metric = $entry['metric'] ?? null;
-            $name = is_array($metric) ? ($metric['name'] ?? null) : null;
+            $name = is_array($metric) ? self::key($metric) : null;
 
-            if (! is_string($name) || $name === '') {
+            if ($name === null) {
                 continue;
             }
 
@@ -94,5 +97,31 @@ final readonly class PrometheusProcessUsageIndex implements ProcessUsageIndex
         }
 
         return $values;
+    }
+
+    /**
+     * One series' lookup key: a container's `name`, or the unit name a raw cgroup's `id` path ends
+     * in. Anything else — a cgroup that is neither, or a series carrying neither label — has no key
+     * and is skipped, so an unrelated series can never be read as some Process's usage.
+     *
+     * @param  array<string, mixed>  $metric
+     */
+    private static function key(array $metric): ?string
+    {
+        $name = $metric['name'] ?? null;
+
+        if (is_string($name) && $name !== '') {
+            return $name;
+        }
+
+        $id = $metric['id'] ?? null;
+
+        if (! is_string($id)) {
+            return null;
+        }
+
+        $unit = substr($id, (int) strrpos($id, '/') + 1);
+
+        return str_starts_with($unit, 'orbit-process-') ? $unit : null;
     }
 }
