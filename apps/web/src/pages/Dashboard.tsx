@@ -114,6 +114,23 @@ export function Dashboard() {
             },
         ];
     }, [metrics, reach]);
+    // A node with a role serves the fleet and is scraped; one without is a machine that only joins the network.
+    const servers = useMemo(() => fleet.nodes.filter((n) => n.roles.length > 0), [fleet.nodes]);
+    const clients = useMemo(() => fleet.nodes.filter((n) => n.roles.length === 0), [fleet.nodes]);
+    const clientColumns = useMemo<Column<Node>[]>(
+        () => [
+            { header: "Name", width: 30, value: (n) => n.name },
+            {
+                header: "Status",
+                width: 22,
+                value: (n) => n.status,
+                cell: (n) => <Status value={n.status} reach={null} />,
+            },
+            { header: "User", width: 20, value: (n) => n.user ?? "—" },
+            { header: "WireGuard IP", width: 28, value: (n) => n.wireguard_ip ?? "—" },
+        ],
+        [],
+    );
     const appColumns = useMemo<Column<App>[]>(
         () => [
             { header: "Slug", width: 44, value: (a) => a.slug },
@@ -162,23 +179,35 @@ export function Dashboard() {
     }
 
     return (
-        <div className="grid h-full grid-cols-2 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-[1ch] gap-y-[16px]">
+        <div className="grid h-full grid-cols-6 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-[1ch] gap-y-[16px]">
             <Pane
                 name="nodes"
                 order={0}
                 title="Nodes"
-                className="col-span-2 max-h-[34vh]"
+                className="col-span-4 max-h-[34vh]"
                 columns={nodeColumns}
-                rows={fleet.nodes}
+                rows={servers}
                 rowId={(n) => String(n.id)}
                 warn={(n) => !nodeHealthy(n) || reach[n.wireguard_ip ?? ""] === false}
                 target={(row) => ({ kind: "nodes", row })}
-                divide={{ label: "Clients", below: (n) => n.roles.length === 0 }}
                 empty={fleet.loading ? "Loading fleet data…" : "No nodes."}
             />
             <Pane
-                name="apps"
+                name="clients"
                 order={1}
+                title="Clients"
+                className="col-span-2 max-h-[34vh]"
+                columns={clientColumns}
+                rows={clients}
+                rowId={(n) => String(n.id)}
+                warn={(n) => !nodeHealthy(n)}
+                target={(row) => ({ kind: "nodes", row })}
+                empty={fleet.loading ? "Loading fleet data…" : "No clients."}
+            />
+            <Pane
+                name="apps"
+                className="col-span-3"
+                order={2}
                 title="Apps"
                 columns={appColumns}
                 rows={fleet.apps}
@@ -188,7 +217,8 @@ export function Dashboard() {
             />
             <Pane
                 name="instances"
-                order={2}
+                className="col-span-3"
+                order={3}
                 title="Instances"
                 columns={instanceColumns}
                 rows={fleet.instances}
@@ -199,7 +229,8 @@ export function Dashboard() {
             />
             <Pane
                 name="processes"
-                order={3}
+                className="col-span-3"
+                order={4}
                 title="Processes"
                 columns={processColumns}
                 rows={fleet.processes}
@@ -210,7 +241,8 @@ export function Dashboard() {
             />
             <Pane
                 name="schedules"
-                order={4}
+                className="col-span-3"
+                order={5}
                 title="Schedules"
                 columns={scheduleCols}
                 rows={fleet.schedules}
@@ -221,9 +253,9 @@ export function Dashboard() {
             />
             <Pane
                 name="attention"
-                order={5}
+                order={6}
                 title="Needs attention"
-                className="col-span-2"
+                className="col-span-6"
                 columns={attentionColumns}
                 rows={attention}
                 rowId={(a) => a.id}

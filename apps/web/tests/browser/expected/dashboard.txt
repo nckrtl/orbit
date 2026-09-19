@@ -16,6 +16,10 @@
 │  app-prod │ failed │ — │ — │ — │ — !
 ╰─
 
+╭─ Clients
+│ No clients.
+╰─
+
 ╭─ Apps
 │  Slug │ Branch │ Instances
 │› acme │ main │ 2
