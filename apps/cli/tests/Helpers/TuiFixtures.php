@@ -109,6 +109,10 @@ function tui_test_state(
         'runtime_status' => 'active',
         'failed_step' => null,
         'error_code' => null,
+        // A running Process reports usage, so the screens' CPU/MEM column renders a real reading
+        // rather than the dash a stopped one shows.
+        'cpu' => 0.2031,
+        'memory_bytes' => 1320702444,
     ], '0198e15d-16c4-7855-8eb2-182b53ad28ba');
 
     // SchedulesResponse::fromGatewayData() builds each ScheduleResponse itself (with

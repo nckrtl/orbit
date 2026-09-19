@@ -51,6 +51,13 @@ final class Screen
 
     private const int BYTES_PER_GIB = 1024 ** 3;
 
+    /**
+     * Width of the CPU/MEM column, which is fixed rather than a share of the pane: a Process pane
+     * is often half a split, where any workable percentage rounds down to fewer columns than
+     * `400%/12.34GB` needs, and the reading is then silently cut mid-number.
+     */
+    private const int USAGE_WIDTH = 12;
+
     public function screen(State $state, UiState $ui, string $header, string $footer, Area $area): Widget
     {
         $ui->drawn = [];
@@ -189,7 +196,7 @@ final class Screen
             ],
             'processes' => [
                 ['Name', 'Owner', 'Node', 'Runtime', 'Status', 'CPU/MEM'],
-                [Constraint::percentage(18), Constraint::percentage(26), Constraint::percentage(14), Constraint::percentage(12), Constraint::percentage(14), Constraint::percentage(14)],
+                [Constraint::percentage(18), Constraint::percentage(24), Constraint::percentage(13), Constraint::percentage(10), Constraint::percentage(13), Constraint::min(self::USAGE_WIDTH)],
                 array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $state->processNodeName($p), $p['runtime'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $rows),
             ],
             'schedules' => [
@@ -260,7 +267,7 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Where', 'Status', 'CPU/MEM'], [Constraint::percentage(24), Constraint::percentage(30), Constraint::percentage(22), Constraint::percentage(20)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processes), $state->processesLoaded ? 'No processes.' : 'Checking processes…'),
+                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Where', 'Status', 'CPU/MEM'], [Constraint::percentage(20), Constraint::percentage(24), Constraint::percentage(20), Constraint::min(self::USAGE_WIDTH)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $state->processOwner($p), $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processes), $state->processesLoaded ? 'No processes.' : 'Checking processes…'),
                         $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Where', 'Calendar', 'Last run'], [Constraint::percentage(22), Constraint::percentage(28), Constraint::percentage(26), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $state->schedules), 'No schedules.'),
                     ),
                 $this->pane($ui, 'attention', ' Needs attention ', ['Kind', 'Name', 'Where', 'State'], [Constraint::percentage(12), Constraint::percentage(32), Constraint::percentage(26), Constraint::percentage(28)], $attention, $state->processesLoaded ? 'Nothing needs attention.' : 'Checking processes…'),
@@ -510,7 +517,7 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(46), Constraint::percentage(28), Constraint::percentage(22)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processesForNode($node['id']))),
+                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(40), Constraint::percentage(27), Constraint::min(self::USAGE_WIDTH)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processesForNode($node['id']))),
                         $this->pane($ui, 'firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row(["{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $state->firewallForNode($node['id']))),
                     ),
             );
@@ -549,7 +556,7 @@ final class Screen
         $stepsHeight = count($deploySteps) + 3;
         $constraints = [Constraint::length($topHeight), Constraint::length($stepsHeight), Constraint::min(4)];
         $rows = Layout::default()->direction(Direction::Vertical)->constraints($constraints)->split($body);
-        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34)])->split($rows->get(0));
+        $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(34), Constraint::percentage(34), Constraint::percentage(32)])->split($rows->get(0));
         $ui->drawn['processes'] = ['area' => $columns->get(1), 'header' => true];
         $ui->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
         $ui->drawn['deploysteps'] = ['area' => $rows->get(1), 'header' => true];
@@ -571,10 +578,10 @@ final class Screen
             ->widgets(
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
-                    ->constraints(Constraint::percentage(40), Constraint::percentage(26), Constraint::percentage(34))
+                    ->constraints(Constraint::percentage(34), Constraint::percentage(34), Constraint::percentage(32))
                     ->widgets(
                         $properties,
-                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(46), Constraint::percentage(28), Constraint::percentage(22)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $processes)),
+                        $this->pane($ui, 'processes', ' Processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(26), Constraint::percentage(22), Constraint::min(self::USAGE_WIDTH)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $processes)),
                         $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Calendar', 'Last run'], [Constraint::percentage(30), Constraint::percentage(42), Constraint::percentage(24)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $schedules)),
                     ),
                 $this->pane($ui, 'deploysteps', ' Deploy steps in the order they run ', ['Phase', '#', 'Name', 'Timeout'], [Constraint::percentage(24), Constraint::percentage(8), Constraint::percentage(38), Constraint::percentage(30)], array_map(fn (int $index, array $s): TableRow => $this->row([$s['phase'], (string) ($index + 1), $s['name']], "{$s['timeout_seconds']} s", false), array_keys($deploySteps), $deploySteps), 'No deploy steps. instance:deploy-step:create adds one.'),
@@ -949,7 +956,9 @@ final class Screen
             return '—';
         }
 
-        return sprintf('%.0f%%/%.1fG', $cpu * 100, $memoryBytes / self::BYTES_PER_GIB);
+        // Two decimals, because a Process's memory is small enough that one rounds most of the
+        // fleet to the same 0.0G: the node columns measure whole machines, these measure one unit.
+        return sprintf('%.0f%%/%.2fGB', $cpu * 100, $memoryBytes / self::BYTES_PER_GIB);
     }
 
     /**

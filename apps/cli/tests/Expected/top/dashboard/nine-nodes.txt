@@ -20,8 +20,8 @@
 │                  ││                                                ││                                                │
 │                  │╰────────────────────────────────────────────────╯╰────────────────────────────────────────────────╯
 │                  │╭ Processes ─────────────────────────────────────╮╭ Schedules ─────────────────────────────────────╮
-│                  ││  Name        Where          Status      CPU/MEM││  Name       Where          Calendar     Last ru│
-│                  ││› horizon     charlie-shop/d active           — ││› backup     charlie-shop/d 0 3 * * *     never │
+│                  ││  Name      Where        Status         CPU/MEM ││  Name       Where          Calendar     Last ru│
+│                  ││› horizon   charlie-shop active      20%/1.23GB ││› backup     charlie-shop/d 0 3 * * *     never │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
