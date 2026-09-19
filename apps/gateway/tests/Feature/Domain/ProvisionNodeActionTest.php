@@ -451,6 +451,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBeNull()
             ->and($gateway->roles()->sole()->status)
             ->toBe(LifecycleStatus::Active);
+
         expect($authorizer->isGatewayNode($gateway))
             ->toBeTrue()
             ->and($authorizer->hasGatewayAuthority($consumer))
