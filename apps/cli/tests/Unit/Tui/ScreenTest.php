@@ -238,6 +238,21 @@ describe(Screen::class, function (): void {
         expect_output($screen, 'top/record/database-users.txt');
     });
 
+    it('renders a whole CPU/MEM reading on the narrowest pane that carries one', function (): void {
+        // The instance page splits three ways, so its Processes pane is the tightest place this
+        // column appears. The reading itself always survives, because the column grows into
+        // whatever is left; what gets eaten instead is everything beside it, and a pane too narrow
+        // for both renders the Process as `ho` next to a perfectly formatted number.
+        $state = tui_test_state();
+        $ui = new UiState;
+        $ui->goTo('instances');
+        $ui->open('instances', $state->instances[0]);
+
+        expect(render_top_screen($ui, $state))
+            ->toContain('20%/1.23GB')
+            ->toContain('horizon');
+    });
+
     it('renders a node record page with live metrics', function (): void {
         $state = tui_test_state(nodeMetrics: new FakeNodeMetricsSource([
             'cores' => [0.1, 0.2],

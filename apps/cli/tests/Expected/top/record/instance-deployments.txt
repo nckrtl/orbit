@@ -1,16 +1,16 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮  ‹ back  App instance: charlie-shop/dev                                                            
-│  Dashboard       │╭ Properties ──────────────────────────╮╭ Processes ─────────────╮╭ Schedules ─────────────────────╮
-│  Nodes         1 ││ Name               dev               ││  Name        Status CPU││  Name      Calendar       Last │
-│  Apps          1 ││ App                charlie-shop      ││› horizon     active  — ││› backup    0 3 * * *      never│
-│› Instances     1 ││ Node               beast             ││                        ││                                │
-│  Processes     1 ││ Environment        production        ││                        ││                                │
-│  Schedules     1 ││ Domain             charlie-shop.test ││                        ││                                │
-│  Databases     1 ││ Status             active            ││                        ││                                │
-│  Firewall      1 ││ Checkout           /srv/charlie-shop ││                        ││                                │
-│                  ││ Selected branch    main              ││                        ││                                │
-│                  ││ Deploy steps       0 steps           ││                        ││                                │
-│                  │╰──────────────────────────────────────╯╰────────────────────────╯╰────────────────────────────────╯
+│  Dashboard       │╭ Properties ────────────────────╮╭ Processes ─────────────────────╮╭ Schedules ───────────────────╮
+│  Nodes         1 ││ Name               dev         ││  Name     Status       CPU/MEM ││  Name      Calendar     Last │
+│  Apps          1 ││ App                charlie-sho ││› horizon  active    20%/1.23GB ││› backup    0 3 * * *    never│
+│› Instances     1 ││ Node               beast       ││                                ││                              │
+│  Processes     1 ││ Environment        production  ││                                ││                              │
+│  Schedules     1 ││ Domain             charlie-sho ││                                ││                              │
+│  Databases     1 ││ Status             active      ││                                ││                              │
+│  Firewall      1 ││ Checkout           /srv/charli ││                                ││                              │
+│                  ││ Selected branch    main        ││                                ││                              │
+│                  ││ Deploy steps       0 steps     ││                                ││                              │
+│                  │╰────────────────────────────────╯╰────────────────────────────────╯╰──────────────────────────────╯
 │                  │╭ Deploy steps in the order they run ──────────────────────────────────────────────────────────────╮
 │                  ││ No deploy steps. instance:deploy-step:create adds one.                                           │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
