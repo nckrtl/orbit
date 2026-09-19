@@ -1,0 +1,55 @@
+╭─ Navigation
+│  Dashboard │
+│› Nodes │ 3
+│  Apps │ 3
+│  Instances │ 4
+│  Processes │ 4
+│  Schedules │ 2
+│  Databases │ 2
+│  Firewall │ 3
+╰─
+
+╭─ Properties
+│  Name │ beast
+│  Status │ active
+│  Roles │ app-dev, database
+│  Platform │ linux
+│  Architecture │ x86_64
+│  TLD │ test
+│  WireGuard IP │ 10.44.0.2
+│  SSH │ orbit@203.0.113.2:22
+╰─
+
+╭─ beast · active · metrics
+│  0 [] 91%
+│  1 [] 42%
+│  2 [] 18%
+│  3 [] 7%
+│  4 [] 66%
+│  5 [] 12%
+│  6 [] 3%
+│  7 [] 25%
+│  Mem[] 70.0G/128G
+│  / [] 1440G/1760G
+│  Swp[] 1.0G/8G
+╰─ up 12d 4h 43m
+
+╭─ Instances on this node
+│  App │ Name │ Environment │ Domain │ Status
+│› charlie-shop │ dev │ development │ dev.charlie-shop.test │ active
+│  charlie-shop │ staging │ development │ staging.charlie-shop.test │ active
+│  acme │ dev │ development │ dev.acme.test │ active
+╰─
+
+╭─ Node processes
+│  Name │ Status │ CPU/MEM
+│› valkey │ running │ 1%/0.1G
+╰─
+
+╭─ Firewall
+│  Port │ Action │ Source │ Status
+│› 22/tcp │ allow │ 10.44.0.0/16 │ active
+│  443/tcp │ allow │ 0.0.0.0/0 │ active
+╰─
+
+←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions    demo fleet

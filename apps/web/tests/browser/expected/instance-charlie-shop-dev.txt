@@ -1,0 +1,47 @@
+╭─ Navigation
+│  Dashboard │
+│  Nodes │ 3
+│  Apps │ 3
+│› Instances │ 4
+│  Processes │ 4
+│  Schedules │ 2
+│  Databases │ 2
+│  Firewall │ 3
+╰─
+
+╭─ Properties
+│  Name │ dev
+│  App │ charlie-shop
+│  Node │ beast
+│  Environment │ development
+│  Domain │ dev.charlie-shop.test
+│  Status │ active
+│  Checkout │ /home/orbit/apps/charlie-shop/dev
+│  Selected branch │ main
+│  Deploy steps │ 2 steps
+╰─
+
+╭─ Processes
+│  Name │ Status │ CPU/MEM
+│› horizon │ active │ 20%/1.2G
+│  vite │ inactive │ — !
+╰─
+
+╭─ Schedules
+│  Name │ Calendar │ Last run
+│› backup │ *-*-* 03:00:00 │ succeeded
+╰─
+
+╭─ Deploy steps in the order they run
+│  Phase │ # │ Name │ Timeout
+│› before_activation │ 1 │ migrate │ 300 s
+│  after_activation │ 2 │ cache │ 120 s
+╰─
+
+╭─ Deployments
+│  Started │ Release │ Branch │ Commit │ By │ Duration │ Status
+│› 2026-01-02T00:00:00+00:00 │ 20260102000000 │ main │ bbbbbbb │ nick │ 9s │ failed !
+│  2026-01-01T00:00:00+00:00 │ 20260101000000 │ main │ aaaaaaa │ gateway │ 42s │ succeeded
+╰─
+
+←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions    demo fleet

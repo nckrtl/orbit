@@ -1,0 +1,254 @@
+import type { Method, Transport } from "../api/client";
+import type { Database, FirewallRule, Node, Process, Schedule } from "../api/types";
+
+type Fixture = { route: string; status: number; body: { data: unknown } };
+type Answer = { status: number; payload: unknown };
+
+// The fleet: hand-written fixtures that refer to each other, validated by bin/api-fixtures.
+const fleet = import.meta.glob<Fixture>("../../fixtures/fleet/*.json", {
+    eager: true,
+    import: "default",
+});
+// Recorded Gateway responses, for the answers one record is enough for.
+const recorded = import.meta.glob<Fixture>(
+    [
+        "../../../../packages/php-sdk/fixtures/nodes/node-add/*.json",
+        "../../../../packages/php-sdk/fixtures/realtime/realtime-show/unconfigured.json",
+        "../../../../packages/php-sdk/fixtures/instances/instance-deployment-show/default.json",
+        "../../../../packages/php-sdk/fixtures/database-connections/database-user-list/default.json",
+    ],
+    { eager: true, import: "default" },
+);
+
+const recordedFixture = (name: string): Fixture => {
+    const found = Object.entries(recorded).find(([path]) => path.endsWith(`${name}.json`));
+
+    if (found === undefined) {
+        throw new Error(`Recorded fixture ${name} is missing.`);
+    }
+
+    return found[1];
+};
+
+const META = { request_id: "0198e15c-bf97-7c23-8f1f-61b8fe67a844" };
+const ok = (data: unknown, status = 200): Answer => ({ status, payload: { data, meta: META } });
+const failure = (status: number, code: string, message: string): Answer => ({
+    status,
+    payload: { error: { code, message, request_id: META.request_id } },
+});
+const notFound = (what: string): Answer =>
+    failure(404, "resource.not_found", `${what} was not found.`);
+
+export type DemoRequest = { method: Method; path: string; body: unknown };
+
+/**
+ * A Gateway that lives in the page. It answers the routes the web app calls from the fixture
+ * fleet, and it applies the record actions to its own copy of that fleet, so a stopped process
+ * stays stopped. Demo mode (`bun run demo`) and the tests both run against it.
+ */
+export function createDemoGateway() {
+    const requests: DemoRequest[] = [];
+    // A fixture file named `operation.key.json` answers the route whose last parameter is `key`.
+    const byRoute = new Map<string, unknown>();
+
+    for (const [path, fixture] of Object.entries(fleet)) {
+        const [, key] = (path.split("/").pop() ?? "").replace(/\.json$/, "").split(".");
+        byRoute.set(`${fixture.route}#${key ?? ""}`, structuredClone(fixture.body.data));
+    }
+
+    const list = <T>(route: string, key = ""): T[] =>
+        (byRoute.get(`${route}#${key}`) as T[] | undefined) ?? [];
+    const nodes = list<Node>("GET /api/v1/nodes");
+    const processes = list<Process>("GET /api/v1/processes");
+    const schedules = list<Schedule>("GET /api/v1/schedules");
+    const databases = list<Database>("GET /api/v1/database-connections");
+    const rules = (node: string) =>
+        list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
+
+    const routes: [Method, RegExp, (params: string[], body: Record<string, unknown>) => Answer][] =
+        [
+            ["GET", /^\/api\/v1\/realtime$/, () => ok(recordedFixture("unconfigured").body.data)],
+            ["GET", /^\/api\/v1\/nodes$/, () => ok(nodes)],
+            ["GET", /^\/api\/v1\/apps$/, () => ok(list("GET /api/v1/apps"))],
+            ["GET", /^\/api\/v1\/instances$/, () => ok(list("GET /api/v1/instances"))],
+            ["GET", /^\/api\/v1\/processes$/, () => ok(processes)],
+            ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],
+            ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
+            ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
+            [
+                "GET",
+                /^\/api\/v1\/metrics\/credentials$/,
+                () => ok(byRoute.get("GET /api/v1/metrics/credentials#")),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/instances\/(\d+)\/deployments$/,
+                ([instance = ""]) =>
+                    ok(list("GET /api/v1/instances/{instance}/deployments", instance)),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/deployments\/(\d+)$/,
+                () => ok(recordedFixture("instance-deployment-show/default").body.data),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/database-connections\/([^/]+)\/tables$/,
+                ([slug = ""]) =>
+                    ok(
+                        byRoute.get(
+                            `GET /api/v1/database-connections/{database_connection}/tables#${slug}`,
+                        ) ?? { slug, driver: "sqlite", tables: [] },
+                    ),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/database-connections\/([^/]+)\/users$/,
+                ([slug = ""]) =>
+                    ok(
+                        slug === "charlie-shop"
+                            ? recordedFixture("database-user-list/default").body.data
+                            : [],
+                    ),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/processes\/(\d+)\/logs$/,
+                ([id = ""]) => {
+                    const process = processes.find((candidate) => String(candidate.id) === id);
+
+                    return process === undefined
+                        ? notFound("Process")
+                        : ok({
+                              id: process.id,
+                              name: process.name,
+                              lines: 3,
+                              logs: `Starting ${process.name}.\n${process.name} is ready.\nProcessed 12 jobs.\n`,
+                          });
+                },
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/schedules\/([^/]+)\/logs$/,
+                ([id = ""]) =>
+                    ok({
+                        output:
+                            id === "backup" ? "Backup started.\nBackup finished in 12 s.\n" : "",
+                        truncated: false,
+                    }),
+            ],
+            [
+                "POST",
+                /^\/api\/v1\/processes\/(\d+)\/(start|stop|restart)$/,
+                ([id = "", verb = ""]) => {
+                    const process = processes.find((candidate) => String(candidate.id) === id);
+
+                    if (process === undefined) {
+                        return notFound("Process");
+                    }
+
+                    const [active, inactive] =
+                        process.runtime === "docker"
+                            ? ["running", "exited"]
+                            : ["active", "inactive"];
+                    process.desired_state = verb === "stop" ? "stopped" : "running";
+                    process.runtime_status = verb === "stop" ? inactive : active;
+
+                    return ok(process);
+                },
+            ],
+            [
+                "POST",
+                /^\/api\/v1\/schedules\/([^/]+)\/(run|activate)$/,
+                ([id = "", verb = ""]) => {
+                    const schedule = schedules.find((candidate) => candidate.id === id);
+
+                    if (schedule === undefined) {
+                        return notFound("Schedule");
+                    }
+
+                    if (verb === "activate") {
+                        schedule.desired_timer_state = "enabled";
+                    } else {
+                        schedule.last_run_at = "2026-01-02T00:00:00+00:00";
+                        schedule.last_run_status = "succeeded";
+                    }
+
+                    return ok(schedule);
+                },
+            ],
+            ["POST", /^\/api\/v1\/doctor$/, () => ok(byRoute.get("POST /api/v1/doctor#"))],
+            [
+                "DELETE",
+                /^\/api\/v1\/database-connections\/([^/]+)$/,
+                ([slug = ""]) => {
+                    const index = databases.findIndex((candidate) => candidate.slug === slug);
+
+                    return index === -1
+                        ? notFound("Database connection")
+                        : ok(databases.splice(index, 1)[0]);
+                },
+            ],
+            [
+                "DELETE",
+                /^\/api\/v1\/nodes\/(\d+)\/firewall-rules\/([^/]+)$/,
+                ([node = "", name = ""]) => {
+                    const onNode = rules(node);
+                    const index = onNode.findIndex(
+                        (candidate) => candidate.name === decodeURIComponent(name),
+                    );
+
+                    return index === -1
+                        ? notFound("Firewall rule")
+                        : ok(onNode.splice(index, 1)[0]);
+                },
+            ],
+            [
+                "POST",
+                /^\/api\/v1\/nodes$/,
+                (_, body) => {
+                    const roles = Array.isArray(body.roles) ? (body.roles as string[]) : [];
+
+                    // The one refusal the form can reach: an app-dev Node needs a TLD.
+                    if (roles.includes("app-dev") && typeof body.tld !== "string") {
+                        const refusal = recordedFixture("tld-required");
+
+                        return { status: refusal.status, payload: refusal.body };
+                    }
+
+                    const created = {
+                        ...(recordedFixture("created").body.data as Node),
+                        id: Math.max(...nodes.map((node) => node.id)) + 1,
+                        name: String(body.name),
+                        roles,
+                        tld: typeof body.tld === "string" ? body.tld : null,
+                    };
+                    nodes.push(created);
+
+                    return ok(created, 201);
+                },
+            ],
+        ];
+
+    const transport: Transport = (method, path, body) => {
+        requests.push({ method, path, body });
+
+        for (const [routeMethod, pattern, answer] of routes) {
+            const match = method === routeMethod ? pattern.exec(path) : null;
+
+            if (match !== null) {
+                return Promise.resolve(
+                    structuredClone(
+                        answer(match.slice(1), (body ?? {}) as Record<string, unknown>),
+                    ),
+                );
+            }
+        }
+
+        return Promise.resolve(
+            failure(404, "route.not_found", `The demo Gateway has no route ${method} ${path}.`),
+        );
+    };
+
+    return { transport, requests };
+}

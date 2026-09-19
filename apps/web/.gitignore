@@ -1,0 +1,6 @@
+*.local
+.DS_Store
+.vitest-attachments
+dist
+node_modules
+tests/browser/__screenshots__

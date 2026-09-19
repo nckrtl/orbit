@@ -1,0 +1,190 @@
+import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useLiveness } from "../realtime/liveness";
+import { get } from "./client";
+import { queryClient } from "./queryClient";
+import type {
+    App,
+    Database,
+    DatabaseUser,
+    Deployment,
+    DeploymentEvent,
+    FirewallRule,
+    Instance,
+    Node,
+    Process,
+    Schedule,
+} from "./types";
+
+/** How often the lists reload while realtime is down. `orbit top --tick` has the same default. */
+export const POLL_SECONDS = 10;
+
+const nodesQuery = queryOptions({
+    queryKey: ["nodes"],
+    queryFn: () => get<Node[]>("/api/v1/nodes"),
+});
+
+export const lists = {
+    nodes: nodesQuery,
+    apps: queryOptions({ queryKey: ["apps"], queryFn: () => get<App[]>("/api/v1/apps") }),
+    instances: queryOptions({
+        queryKey: ["instances"],
+        queryFn: () => get<Instance[]>("/api/v1/instances"),
+    }),
+    processes: queryOptions({
+        queryKey: ["processes"],
+        queryFn: () => get<Process[]>("/api/v1/processes"),
+    }),
+    schedules: queryOptions({
+        queryKey: ["schedules"],
+        queryFn: () => get<Schedule[]>("/api/v1/schedules"),
+    }),
+    databases: queryOptions({
+        queryKey: ["databases"],
+        queryFn: () => get<Database[]>("/api/v1/database-connections"),
+    }),
+    // Firewall rules are scoped per Node, so the fleet's list is one request per Node.
+    firewall: queryOptions({
+        queryKey: ["firewall"],
+        queryFn: async () => {
+            const nodes = await queryClient.ensureQueryData(nodesQuery);
+            const rules = await Promise.all(
+                nodes.map((node) =>
+                    get<FirewallRule[]>(`/api/v1/nodes/${node.id}/firewall-rules`).catch(() => []),
+                ),
+            );
+
+            return rules.flat();
+        },
+    }),
+};
+
+export type Fleet = {
+    nodes: Node[];
+    apps: App[];
+    instances: Instance[];
+    processes: Process[];
+    schedules: Schedule[];
+    databases: Database[];
+    firewall: FirewallRule[];
+    processesLoaded: boolean;
+    loading: boolean;
+    error: Error | null;
+};
+
+const EMPTY: never[] = [];
+
+/** Every fleet-wide list. Realtime events patch these caches; they poll only while it is down. */
+export function useFleet(): Fleet {
+    const live = useLiveness() === "live";
+    const refetchInterval = live ? false : POLL_SECONDS * 1000;
+    const nodes = useQuery({ ...lists.nodes, refetchInterval });
+    const apps = useQuery({ ...lists.apps, refetchInterval });
+    const instances = useQuery({ ...lists.instances, refetchInterval });
+    // No event carries a Process's CPU and memory, so this list reloads on its own clock.
+    const processes = useQuery({ ...lists.processes, refetchInterval: 15_000 });
+    const schedules = useQuery({ ...lists.schedules, refetchInterval });
+    const databases = useQuery({ ...lists.databases, refetchInterval });
+    const firewall = useQuery({ ...lists.firewall, refetchInterval });
+
+    return {
+        nodes: nodes.data ?? EMPTY,
+        apps: apps.data ?? EMPTY,
+        instances: instances.data ?? EMPTY,
+        processes: processes.data ?? EMPTY,
+        schedules: schedules.data ?? EMPTY,
+        databases: databases.data ?? EMPTY,
+        firewall: firewall.data ?? EMPTY,
+        processesLoaded: processes.data !== undefined || processes.isError,
+        loading: nodes.isPending || apps.isPending || instances.isPending,
+        error: nodes.error ?? apps.error ?? instances.error,
+    };
+}
+
+export const deploymentsQuery = (instanceId: number) =>
+    queryOptions({
+        queryKey: ["deployments", instanceId],
+        queryFn: () => get<Deployment[]>(`/api/v1/instances/${instanceId}/deployments`),
+        refetchInterval: 15_000,
+        retry: false,
+    });
+
+export const databaseUsersQuery = (slug: string) =>
+    queryOptions({
+        queryKey: ["database-users", slug],
+        queryFn: () =>
+            get<DatabaseUser[]>(`/api/v1/database-connections/${encodeURIComponent(slug)}/users`),
+        refetchInterval: 15_000,
+        retry: false,
+    });
+
+export const databaseTablesQuery = (slug: string) =>
+    queryOptions({
+        queryKey: ["database-tables", slug],
+        queryFn: async () => {
+            const data = await get<{ tables?: ({ name?: string } | string)[] }>(
+                `/api/v1/database-connections/${encodeURIComponent(slug)}/tables`,
+            );
+
+            return (data.tables ?? []).map((table) =>
+                typeof table === "string" ? table : (table.name ?? ""),
+            );
+        },
+        retry: false,
+    });
+
+/** Log text as lines, without the trailing newlines. */
+export function logLines(text: string | undefined): string[] {
+    return text === undefined || text === "" ? [] : text.replace(/\n+$/, "").split("\n");
+}
+
+export const processLogsQuery = (id: number) =>
+    queryOptions({
+        queryKey: ["process-logs", id],
+        queryFn: async () =>
+            logLines((await get<{ logs?: string }>(`/api/v1/processes/${id}/logs`)).logs),
+        refetchInterval: 10_000,
+        retry: false,
+    });
+
+export const scheduleLogsQuery = (id: string) =>
+    queryOptions({
+        queryKey: ["schedule-logs", id],
+        queryFn: async () =>
+            logLines(
+                (await get<{ output?: string }>(`/api/v1/schedules/${encodeURIComponent(id)}/logs`))
+                    .output,
+            ),
+        retry: false,
+    });
+
+/** Phase markers and output lines from a deployment's events, as instance:deployment:show prints them. */
+export function deploymentLogLines(events: DeploymentEvent[]): string[] {
+    const out: string[] = [];
+
+    for (const event of events) {
+        if (event.type === "phase") {
+            const phase = (event.phase ?? "").replaceAll("_", " ");
+            out.push(event.step_name ? `== ${phase}: ${event.step_name} ==` : `== ${phase} ==`);
+        } else if (event.type === "output" && event.value_base64) {
+            const text = new TextDecoder().decode(
+                Uint8Array.from(atob(event.value_base64), (char) => char.charCodeAt(0)),
+            );
+            out.push(...logLines(text).map((line) => `${event.stream}: ${line}`));
+        } else if (event.type === "output_truncated") {
+            out.push("[output truncated]");
+        }
+    }
+
+    return out;
+}
+
+export const deploymentLogQuery = (id: number) =>
+    queryOptions({
+        queryKey: ["deployment-log", id],
+        queryFn: async () =>
+            deploymentLogLines(
+                (await get<{ events?: DeploymentEvent[] }>(`/api/v1/deployments/${id}`)).events ??
+                    [],
+            ),
+        retry: false,
+    });

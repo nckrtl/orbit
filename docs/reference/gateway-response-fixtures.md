@@ -56,6 +56,10 @@ bin/cli-contract --coverage
 
 The change cycle is: change the Gateway, re-record the fixtures, review the fixture diff, run `bin/cli-contract --changed`, fix or accept each command's output, and update the expected files.
 
+## Web app fixtures
+
+The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. `bin/api-fixtures --check` validates them together with the recorded fixtures.
+
 ## Families with fixtures
 
 These families have recorded fixtures and contract tests.

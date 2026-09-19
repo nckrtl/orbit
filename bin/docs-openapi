@@ -824,7 +824,7 @@ def error_response(desc):
 
 RESPONSE_OVERRIDES = {
     'RootCaCertificatesController@show': {'type': 'object', 'properties': {'root_ca': {'type': 'string', 'description': 'PEM-encoded root certificate.'}, 'sha256': {'type': 'string', 'description': 'SHA-256 fingerprint of the certificate.'}}},
-    'ProcessesController@logs': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'name': {'type': 'string'}, 'lines': {'type': 'integer'}, 'logs': {'type': 'array', 'items': {'type': 'string'}}}},
+    'ProcessesController@logs': {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'name': {'type': 'string'}, 'lines': {'type': 'integer'}, 'logs': {'type': 'string', 'description': 'The last `lines` log lines as one newline-separated string, with environment values redacted.'}}},
     'DatabaseConnectionsController@query': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'write': {'type': 'boolean'}, 'columns': {'type': 'array', 'items': {'type': 'string'}}, 'rows': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': True}}, 'row_count': {'type': 'integer'}, 'truncated': {'type': 'boolean'}}},
     'DatabaseConnectionsController@tables': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'tables': {'type': 'array', 'items': {'type': 'string'}}}},
     'DatabaseConnectionsController@schema': {'type': 'object', 'properties': {'slug': {'type': 'string'}, 'driver': {'type': 'string'}, 'tables': {'type': 'array', 'items': {'type': 'object', 'properties': {'name': {'type': 'string'}, 'columns': {'type': 'array', 'items': {'type': 'object'}}}}}}},
@@ -994,6 +994,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
+    if route['name'] == 'node:metrics':
+        responses['409'] = error_response('No Node has the Metrics role (`metrics.assignment_missing`).')
+        responses['422'] = error_response('The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).')
+        responses['502'] = error_response('Grafana or Prometheus did not answer, or Prometheus has no samples for this Node, as for a Node without an enabled exporter (`node.metrics_unreachable`).')
     op['responses'] = responses
     request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if (stream or body_schema is not None) else None
     samples = [{'lang': 'bash', 'label': 'curl', 'source': bash_sample(route, path, request_schema, query, tag)}]

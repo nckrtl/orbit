@@ -1,0 +1,266 @@
+@import "tailwindcss";
+/* The variable face ships with the app, so every weight from 100 to 800 exists on every machine. */
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+ * The terminal look: one monospace face, one line height, a small ANSI palette, and frames whose
+ * titles sit in the border. Every size is a multiple of --lh (one row) or 1ch (one column), so
+ * the page keeps the grid a TUI has while the browser does the scrolling and the layout.
+ */
+:root {
+    --lh: 20px;
+    --inset: 4px;
+    --bg: #fbfbfa;
+    --fg: #24292f;
+    --dim: #8b929b;
+    --line: #c9ced6;
+    --cyan: #0b7285;
+    --yellow: #9a6700;
+    --green: #2b8a3e;
+    --red: #c92a2a;
+}
+
+/* Light is the theme. Dark is there for whoever sets `data-theme="dark"` on the root element; the system setting does not pick it. */
+:root[data-theme="dark"] {
+    --bg: #0d0f12;
+    --fg: #d4d7dc;
+    --dim: #6b7280;
+    --line: #3a414b;
+    --cyan: #56c8d8;
+    --yellow: #e5c07b;
+    --green: #8bd49c;
+    --red: #e06c75;
+}
+
+@theme inline {
+    --font-mono:
+        "JetBrains Mono Variable", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas,
+        monospace;
+    --color-bg: var(--bg);
+    --color-fg: var(--fg);
+    --color-dim: var(--dim);
+    --color-line: var(--line);
+    --color-cyan: var(--cyan);
+    --color-yellow: var(--yellow);
+    --color-green: var(--green);
+    --color-red: var(--red);
+}
+
+html,
+body,
+#app {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    /* Grayscale smoothing draws thinner strokes than the macOS default, so the text sits a step above regular. */
+    font-weight: 450;
+    line-height: var(--lh);
+    font-variant-ligatures: none;
+    font-variant-numeric: tabular-nums;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    cursor: default;
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+
+/* ---- frame: a box whose labels sit in its border, as btop and lazygit draw them ---- */
+
+.frame {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    /* A frame's state shows in its border and in the title in it. At rest the title sits a step darker than the border, so it stays legible while grayed out. */
+    --frame: var(--line);
+    --frame-title: color-mix(in srgb, var(--line) 40%, var(--dim));
+    border: 1px solid var(--frame);
+    border-radius: 5px;
+}
+
+.frame[data-state="hovered"] {
+    --frame: var(--fg);
+    --frame-title: var(--fg);
+}
+
+.frame[data-state="focused"] {
+    --frame: var(--cyan);
+    --frame-title: var(--cyan);
+}
+
+.frame[data-state="warn"] {
+    --frame: var(--yellow);
+    --frame-title: var(--yellow);
+}
+
+.frame-edge {
+    position: absolute;
+    left: 1ch;
+    right: 1ch;
+    display: flex;
+    justify-content: space-between;
+    gap: 2ch;
+    height: var(--lh);
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.frame-edge[data-edge="top"] {
+    top: calc(var(--lh) / -2 - 1px);
+}
+
+.frame-edge[data-edge="bottom"] {
+    bottom: calc(var(--lh) / -2 - 1px);
+}
+
+.frame-label {
+    padding: 0 var(--inset);
+    background: var(--bg);
+    color: var(--dim);
+    pointer-events: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.frame-label[data-role="title"] {
+    color: var(--frame-title);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.frame-label sup {
+    color: var(--cyan);
+    font-size: 0.8em;
+    margin-right: 0.2ch;
+}
+
+/* Content starts where the title's text starts: the edge offset plus the label's inset. */
+.frame-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: calc(var(--lh) / 2) calc(1ch + var(--inset));
+}
+
+/* ---- rows ---- */
+
+/* A row's text lines up with the title; its highlight reaches one inset past the text on both sides. */
+.row {
+    margin: 0 calc(var(--inset) * -1);
+    padding: 0 var(--inset);
+    display: grid;
+    align-items: center;
+    column-gap: 1ch;
+    height: var(--lh);
+    white-space: nowrap;
+}
+
+.row > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.row[data-head] {
+    position: sticky;
+    top: calc(var(--lh) / -2);
+    z-index: 1;
+    background: var(--bg);
+    color: var(--dim);
+}
+
+.row[data-warn] {
+    color: var(--yellow);
+}
+
+.row[data-selected] {
+    font-weight: 700;
+}
+
+.row[data-selected][data-focused] {
+    background: var(--fg);
+    color: var(--bg);
+}
+
+.row[data-selected][data-focused][data-warn] {
+    background: var(--yellow);
+}
+
+/* A row that opens something answers the pointer with a lighter cut of the selected row's highlight. */
+.row[data-link] {
+    cursor: pointer;
+}
+
+.row[data-link]:hover:not([data-selected][data-focused]) {
+    background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.row[data-link][data-warn]:hover:not([data-selected][data-focused]) {
+    background: color-mix(in srgb, var(--yellow) 14%, transparent);
+}
+
+.link {
+    color: var(--cyan);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+/* ---- form fields: square boxes with the label in the border, as Laravel Prompts draws them ---- */
+
+.field {
+    position: relative;
+    border: 1px solid var(--line);
+    padding: calc(var(--lh) / 2) 1ch;
+}
+
+.field:focus-within {
+    border-color: var(--cyan);
+}
+
+.field > label {
+    position: absolute;
+    top: calc(var(--lh) / -2 - 1px);
+    left: 1ch;
+    padding: 0 0.5ch;
+    background: var(--bg);
+    color: var(--dim);
+}
+
+.field:focus-within > label {
+    color: var(--cyan);
+}
+
+.field input[type="text"] {
+    width: 100%;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    border: 0;
+    outline: 0;
+    user-select: text;
+}
+
+.field input::placeholder {
+    color: var(--dim);
+}
+
+.selectable {
+    user-select: text;
+    cursor: text;
+}
