@@ -44,4 +44,4 @@
 │  2026-01-01T00:00:00+00:00 │ 20260101000000 │ main │ aaaaaaa │ gateway │ 42s │ succeeded
 ╰─
 
-←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions    demo fleet
+←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions    demo fleet

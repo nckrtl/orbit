@@ -13,7 +13,7 @@ it("runs an action from the menu and shows the row the Gateway answered with", a
     // Into the list, down to vite, then its actions.
     await userEvent.keyboard("{ArrowRight}{Enter}{ArrowDown}");
     await expect.element(row("Processes", "vite")).toHaveAttribute("aria-selected", "true");
-    await userEvent.keyboard("a");
+    await userEvent.keyboard("x");
     await expect.element(pane("vite")).toHaveTextContent("Restart process [vite].");
 
     await userEvent.keyboard("{ArrowDown}");
@@ -61,7 +61,7 @@ it("names the command for an action that has no request", async () => {
     await openApp("/nodes/2");
     await expect.element(pane("Instances on this node")).toBeVisible();
 
-    await userEvent.keyboard("a{ArrowDown}{Enter}");
+    await userEvent.keyboard("x{ArrowDown}{Enter}");
 
     await expect.element(footer()).toHaveTextContent("orbit node:ssh beast");
 });

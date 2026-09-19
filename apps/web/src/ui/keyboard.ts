@@ -96,7 +96,7 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                     case "Escape":
                         ui.set({ focus: null });
                         return handled();
-                    case "a": {
+                    case "x": {
                         const target = pane?.target(index) ?? null;
 
                         if (target !== null) {
@@ -110,7 +110,7 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                 return;
             }
 
-            if (event.key === "a") {
+            if (event.key === "x") {
                 const target = pageTarget();
 
                 if (target !== null) {

@@ -68,11 +68,11 @@ function footerHint(section: Section, onList: boolean, onForm: boolean): string 
     }
 
     if (focus !== null) {
-        return "↑↓ move · Enter or click opens · a or right-click actions · Esc back to panes";
+        return "↑↓ move · Enter or click opens · x or right-click actions · Esc back to panes";
     }
 
     if (!onList) {
-        return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions";
+        return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions";
     }
 
     return `↑↓ sections · → into the page · 1-8 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
