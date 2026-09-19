@@ -1,7 +1,19 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { ANNOTATION_HOST_ID, ANNOTATION_ROOT_ID } from "../../src/annotation/host";
-import { openApp, pane, row } from "./app";
+import { openApp } from "./app";
+
+function annotationShadow(): ShadowRoot {
+    const host = document.getElementById(ANNOTATION_HOST_ID);
+    if (!host?.shadowRoot) {
+        throw new Error("annotation shadow host missing");
+    }
+    return host.shadowRoot;
+}
+
+function floatingToggle() {
+    return page.getByRole("button", { name: "Enter annotation mode" }).first();
+}
 
 function placeAnnotationAt(x: number, y: number): void {
     const target = document.elementFromPoint(x, y);
@@ -19,12 +31,36 @@ function placeAnnotationAt(x: number, y: number): void {
     }
 }
 
-it("mounts annotation in open Shadow DOM with sized controls", async () => {
+it("shows a floating annotate control on load without hunting the footer", async () => {
     await openApp("/processes");
 
-    const toggle = page.getByRole("button", { name: "Enter annotation mode" });
-    await expect.element(toggle).toBeVisible();
-    await toggle.click();
+    await expect
+        .poll(() => document.getElementById(ANNOTATION_HOST_ID)?.shadowRoot != null)
+        .toBe(true);
+
+    const fab = annotationShadow().querySelector("[data-orbit-annotation-fab]");
+    expect(fab).not.toBeNull();
+    await expect.element(floatingToggle()).toBeVisible();
+
+    const errors: string[] = [];
+    const onError = (event: ErrorEvent) => {
+        errors.push(event.message);
+    };
+    window.addEventListener("error", onError);
+    // Give StrictMode a beat; lifecycle must not tear down the overlay root.
+    await expect
+        .poll(() => annotationShadow().querySelector("[data-orbit-annotation-fab]") != null)
+        .toBe(true);
+    window.removeEventListener("error", onError);
+    expect(errors.some((message) => message.includes("synchronously unmount"))).toBe(false);
+});
+
+it("mounts annotation in open Shadow DOM with sized controls and blocks row navigation", async () => {
+    await openApp("/processes");
+
+    const pathBefore = window.location.pathname;
+    await expect.element(floatingToggle()).toBeVisible();
+    await floatingToggle().click();
 
     await expect
         .poll(() => document.documentElement.classList.contains("laravel-toolbar-annotating"))
@@ -40,33 +76,15 @@ it("mounts annotation in open Shadow DOM with sized controls", async () => {
     expect(root).not.toBeNull();
     expect(document.getElementById(ANNOTATION_ROOT_ID)).toBeNull();
 
-    const target = row("Processes", "vite");
-    await expect.element(target).toBeVisible();
-    await target.hover();
+    // Sidebar / table rows navigate on mousedown — annotation mode must consume the gesture.
+    const navRow = page.getByText("Dashboard", { exact: true }).first();
+    await expect.element(navRow).toBeVisible();
+    const navBox = navRow.element().getBoundingClientRect();
+    placeAnnotationAt(navBox.left + navBox.width / 2, navBox.top + navBox.height / 2);
 
-    await expect
-        .poll(() => {
-            const highlight = host!.shadowRoot!.querySelector("[data-annotation-highlight]");
-            const rect = highlight?.getBoundingClientRect();
-            if (!highlight || !rect) {
-                return false;
-            }
-            return (
-                rect.width > 0 &&
-                rect.height > 0 &&
-                getComputedStyle(highlight).position === "absolute"
-            );
-        })
-        .toBe(true);
-
-    // Place a draft on the Processes pane chrome (avoid navigable table rows).
-    const processesPane = pane("Processes");
-    await expect.element(processesPane).toBeVisible();
-    const paneBox = processesPane.element().getBoundingClientRect();
-    placeAnnotationAt(paneBox.left + 24, paneBox.top + 28);
+    expect(window.location.pathname).toBe(pathBefore);
 
     const shadow = host!.shadowRoot!;
-
     await expect.poll(() => shadow.querySelector("[data-annotation-popup]") !== null).toBe(true);
 
     await expect

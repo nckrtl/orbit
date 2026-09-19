@@ -506,8 +506,14 @@ export function toggleAnnotationMode(): void {
     setAnnotationMode(!annotationMode.value);
 }
 
+function consumeAnnotationGesture(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+}
+
 export function handleDocumentMouseDown(event: MouseEvent): void {
-    if (event.button !== 0 || !annotationMode.value || draft.value) {
+    if (event.button !== 0 || !annotationMode.value) {
         return;
     }
 
@@ -515,6 +521,13 @@ export function handleDocumentMouseDown(event: MouseEvent): void {
         (event.composedPath()[0] as Element | undefined) ?? (event.target as Element | null);
 
     if (isAnnotationUi(pathTarget)) {
+        return;
+    }
+
+    // Pane rows navigate on mousedown — consume before Orbit handlers run.
+    consumeAnnotationGesture(event);
+
+    if (draft.value) {
         return;
     }
 
@@ -538,8 +551,7 @@ export function handleDocumentClick(event: MouseEvent): void {
     }
 
     if (draft.value) {
-        event.preventDefault();
-        event.stopPropagation();
+        consumeAnnotationGesture(event);
         shakeDraft();
         return;
     }
@@ -548,8 +560,7 @@ export function handleDocumentClick(event: MouseEvent): void {
         return;
     }
 
-    event.preventDefault();
-    event.stopPropagation();
+    consumeAnnotationGesture(event);
 
     const nextDraft = pendingPlacement ?? draftFromPoint(event.clientX, event.clientY);
     const prepared = pendingPlacement;

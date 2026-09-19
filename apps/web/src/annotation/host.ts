@@ -14,6 +14,10 @@ html.laravel-toolbar-annotating * {
 }
 html.laravel-toolbar-annotating [data-feedback-toolbar],
 html.laravel-toolbar-annotating [data-feedback-toolbar] *,
+html.laravel-toolbar-annotating [data-orbit-annotation-fab],
+html.laravel-toolbar-annotating [data-orbit-annotation-fab] *,
+html.laravel-toolbar-annotating [data-orbit-annotation-chrome],
+html.laravel-toolbar-annotating [data-orbit-annotation-chrome] *,
 html.laravel-toolbar-annotating [data-annotation-popup],
 html.laravel-toolbar-annotating [data-annotation-popup] *,
 html.laravel-toolbar-annotating [data-annotation-marker],

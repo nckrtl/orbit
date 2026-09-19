@@ -1,6 +1,8 @@
 const IGNORED_SELECTORS = [
     "[data-feedback-toolbar]",
     "[data-agentation-toolbar]",
+    "[data-orbit-annotation-chrome]",
+    "[data-orbit-annotation-fab]",
     "[data-annotation-popup]",
     "[data-annotation-marker]",
     "#toolbar-agentation-root",

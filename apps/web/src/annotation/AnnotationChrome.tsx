@@ -1,44 +1,24 @@
-import { useEffect } from "react";
-import {
-    annotationMode,
-    annotations,
-    ensureAnnotationRuntime,
-    teardownAnnotationRuntime,
-    toggleAnnotationMode,
-} from "@/annotation/runtime";
+import { annotationMode, annotations, toggleAnnotationMode } from "@/annotation/runtime";
 import { useRefValue } from "@/annotation/state";
-import { configureCommander } from "@/annotation/commander";
 
 export type AnnotationChromeProps = {
-    /** Commander project for one-shot tasks (TOOLBAR_COMMANDER_PROJECT / VITE_COMMANDER_PROJECT). */
+    /** Kept for call-site compatibility; commander is configured at app entry. */
     commanderProject?: string;
     commanderEnabled?: boolean;
 };
 
 /**
- * Footer chrome matching laravel-toolbar tools/Annotation.tsx: chat icon, toggle mode, open count.
+ * Optional footer chrome — toggles the same annotation mode as the floating FAB.
+ * Runtime mount/teardown lives in main.tsx / ensureAnnotationRuntime (once).
  */
-export function AnnotationChrome({
-    commanderProject = import.meta.env.VITE_COMMANDER_PROJECT || "commander",
-    commanderEnabled = import.meta.env.VITE_COMMANDER_ENABLED !== "0",
-}: AnnotationChromeProps) {
+export function AnnotationChrome(_props: AnnotationChromeProps = {}) {
     const isActive = useRefValue(annotationMode);
     const count = useRefValue(annotations).length;
-
-    useEffect(() => {
-        configureCommander({
-            enabled: commanderEnabled,
-            project: commanderProject,
-        });
-        ensureAnnotationRuntime();
-        return () => {
-            teardownAnnotationRuntime();
-        };
-    }, [commanderEnabled, commanderProject]);
 
     return (
         <button
             type="button"
+            data-feedback-toolbar=""
             data-orbit-annotation-chrome=""
             data-active={isActive ? "" : undefined}
             aria-pressed={isActive}

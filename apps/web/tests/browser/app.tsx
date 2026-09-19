@@ -3,6 +3,8 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-react";
 import { queryClient } from "../../src/api/queryClient";
+import { configureCommander } from "../../src/annotation/commander";
+import { ensureAnnotationRuntime, teardownAnnotationRuntime } from "../../src/annotation/runtime";
 import { installDemo } from "../../src/demo/install";
 import { createAppRouter } from "../../src/router";
 import { ui } from "../../src/ui/store";
@@ -16,6 +18,15 @@ export async function openApp(path = "/") {
     document.getElementById("app")?.remove();
     queryClient.clear();
     ui.reset();
+
+    // Annotation runtime is owned by app entry (main.tsx). Tests bypass main, so mount here
+    // once per openApp — never from AnnotationChrome (StrictMode teardown races).
+    teardownAnnotationRuntime();
+    configureCommander({
+        enabled: import.meta.env.VITE_COMMANDER_ENABLED !== "0",
+        project: import.meta.env.VITE_COMMANDER_PROJECT || "commander",
+    });
+    ensureAnnotationRuntime();
 
     const gateway = installDemo();
 
