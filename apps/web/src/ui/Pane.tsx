@@ -22,6 +22,8 @@ export type Column<T> = {
     header: string;
     /** Share of the pane's width, as the `orbit top` tables give their columns. */
     width: number;
+    /** Size the column to its widest cell, and leave the shares to the others. */
+    fit?: boolean;
     value: (row: T) => string;
     /** What the cell draws, when that is more than its text. */
     cell?: (row: T) => React.ReactNode;
@@ -93,7 +95,9 @@ export function Pane<T extends Record<string, any>>({
     const sorted = [...above, ...model.filter((row) => !above.includes(row))];
     const dividerAt = above.length > 0 && above.length < sorted.length ? above.length : -1;
     const selected = Math.min(selectedIndex, Math.max(0, sorted.length - 1));
-    const template = `${columns.map((column) => `minmax(0, ${column.width}fr)`).join(" ")}`;
+    const template = columns
+        .map((column) => (column.fit ? "max-content" : `minmax(0, ${column.width}fr)`))
+        .join(" ");
 
     useEffect(() => {
         panes.set(name, {
@@ -151,13 +155,13 @@ export function Pane<T extends Record<string, any>>({
             {sorted.length === 0 ? (
                 <Note>{empty}</Note>
             ) : (
-                <div role="table" aria-label={title}>
-                    <div
-                        className="row"
-                        role="row"
-                        data-head
-                        style={{ gridTemplateColumns: template }}
-                    >
+                <div
+                    role="table"
+                    aria-label={title}
+                    className="table-grid"
+                    style={{ gridTemplateColumns: template }}
+                >
+                    <div className="row" role="row" data-head>
                         {table.getHeaderGroups()[0]?.headers.map((header, index) => (
                             <span
                                 key={header.id}
@@ -185,7 +189,6 @@ export function Pane<T extends Record<string, any>>({
                                 role="row"
                                 aria-selected={index === selected}
                                 data-link={target === undefined ? undefined : ""}
-                                style={{ gridTemplateColumns: template }}
                                 data-selected={index === selected ? "" : undefined}
                                 data-focused={focused ? "" : undefined}
                                 data-warn={warn?.(row.original) ? "" : undefined}

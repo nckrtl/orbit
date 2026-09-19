@@ -62,24 +62,22 @@ export function Dashboard() {
                 return m === null ? (
                     none
                 ) : (
-                    // Room after the reading, so it does not run into the next meter; the disk meter is the last one.
-                    <span className={options.label === undefined ? "block pr-[2ch]" : "block"}>
-                        <Bar
-                            label={options.label?.(m)}
-                            ratio={ratio(m)}
-                            reading={reading(m)}
-                            thresholds={options.thresholds}
-                        />
-                    </span>
+                    <Bar
+                        label={options.label?.(m)}
+                        ratio={ratio(m)}
+                        reading={reading(m)}
+                        thresholds={options.thresholds}
+                    />
                 );
             },
         });
 
         return [
-            { header: "Name", width: 14, value: (n) => n.name },
+            { header: "Name", width: 14, fit: true, value: (n) => n.name },
             {
                 header: "Status",
                 width: 9,
+                fit: true,
                 value: (n) => statusText({ value: n.status, reach: reachOf(n) }),
                 cell: (n) => <Status value={n.status} reach={reachOf(n)} />,
             },
@@ -112,6 +110,7 @@ export function Dashboard() {
             {
                 header: "Uptime",
                 width: 10,
+                fit: true,
                 value: (n) => of(n)?.uptime ?? "—",
                 cell: (n) => <span className="text-dim">{of(n)?.uptime ?? "—"}</span>,
             },
@@ -122,14 +121,15 @@ export function Dashboard() {
     const clients = useMemo(() => fleet.nodes.filter((n) => n.roles.length === 0), [fleet.nodes]);
     const clientColumns = useMemo<Column<Node>[]>(
         () => [
-            { header: "Name", width: 30, value: (n) => n.name },
+            { header: "Name", width: 30, fit: true, value: (n) => n.name },
             {
                 header: "Status",
                 width: 22,
+                fit: true,
                 value: (n) => n.status,
                 cell: (n) => <Status value={n.status} reach={null} />,
             },
-            { header: "User", width: 20, value: (n) => n.user ?? "—" },
+            { header: "User", width: 20, fit: true, value: (n) => n.user ?? "—" },
             { header: "WireGuard IP", width: 28, value: (n) => n.wireguard_ip ?? "—" },
         ],
         [],

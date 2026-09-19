@@ -169,6 +169,23 @@ body {
     white-space: nowrap;
 }
 
+/* A table's columns belong to the table, so a column sized to its content is as wide in every row, and the gap between two columns is the same everywhere. */
+.table-grid {
+    display: grid;
+    --gap: 3ch;
+    column-gap: var(--gap);
+}
+
+.table-grid > .row,
+.table-grid > .divider {
+    grid-column: 1 / -1;
+}
+
+.table-grid > .row {
+    grid-template-columns: subgrid;
+    column-gap: var(--gap);
+}
+
 .row > * {
     min-width: 0;
     overflow: hidden;
