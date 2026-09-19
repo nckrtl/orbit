@@ -23,12 +23,14 @@ const text = (value: Property["value"]): string => {
 export function Properties({
     properties,
     className,
+    title = "Properties",
 }: {
     properties: Property[];
     className?: string;
+    title?: string;
 }) {
     return (
-        <Frame title="Properties" className={className}>
+        <Frame title={title} className={className}>
             {properties.map((property) => {
                 const value = text(property.value);
 

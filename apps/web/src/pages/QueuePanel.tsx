@@ -4,6 +4,7 @@ import { instanceQueueQuery } from "../api/queries";
 import type { Instance, QueueJob, QueueState } from "../api/types";
 import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
+import { Properties } from "../ui/Properties";
 
 const STATES: QueueState[] = ["pending", "completed", "failed"];
 
@@ -66,40 +67,50 @@ export function QueuePanel({ instance }: { instance: Instance }) {
             ))}
         </span>
     );
-    const workload = (queue.queues ?? [])
-        .map((entry) => `${entry.name} ${entry.length}`)
-        .join(" · ");
+    const dashboard = queue.dashboard_url ?? null;
 
     return (
-        <Pane
-            name="queue"
-            order={3}
-            title={`Queue · ${queue.status}`}
-            className="max-h-[30vh]"
-            topRight={tabs}
-            bottomLeft={`${queue.jobs_per_minute} jobs/min · ${queue.processes} processes · ${workload}`}
-            bottomRight={
-                queue.dashboard_url == null ? undefined : (
-                    <a
-                        className="hover:text-fg"
-                        href={queue.dashboard_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        horizon ↗
-                    </a>
-                )
-            }
-            columns={columns}
-            rows={queue.jobs ?? []}
-            rowId={(job) => job.id}
-            warn={(job) => job.status === "failed"}
-            onRowClick={(job) => {
-                if (job.url !== null) {
-                    openInNewTab(job.url);
-                }
-            }}
-            empty={`No ${state} jobs.`}
-        />
+        <div className="grid max-h-[30vh] grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-[1ch]">
+            <Properties
+                title="Queue"
+                properties={[
+                    { name: "Status", value: queue.status, warn: queue.status !== "running" },
+                    { name: "Jobs per minute", value: queue.jobs_per_minute },
+                    { name: "Recent jobs", value: queue.recent_jobs },
+                    {
+                        name: "Recently failed",
+                        value: queue.recently_failed_jobs,
+                        warn: (queue.recently_failed_jobs ?? 0) > 0,
+                    },
+                    { name: "Processes", value: queue.processes },
+                    ...(queue.queues ?? []).map((entry) => ({
+                        name: `Queue ${entry.name}`,
+                        // Waiting jobs, how long a new job waits, and the workers on this queue.
+                        value: `${entry.length} jobs · ${entry.wait_seconds ?? 0}s wait · ${entry.processes} workers`,
+                    })),
+                    {
+                        name: "Dashboard",
+                        value: dashboard === null ? null : dashboard.replace(/^https?:\/\//, ""),
+                        onOpen: dashboard === null ? undefined : () => openInNewTab(dashboard),
+                    },
+                ]}
+            />
+            <Pane
+                name="queue"
+                order={3}
+                title="Jobs"
+                topRight={tabs}
+                columns={columns}
+                rows={queue.jobs ?? []}
+                rowId={(job) => job.id}
+                warn={(job) => job.status === "failed"}
+                onRowClick={(job) => {
+                    if (job.url !== null) {
+                        openInNewTab(job.url);
+                    }
+                }}
+                empty={`No ${state} jobs.`}
+            />
+        </div>
     );
 }

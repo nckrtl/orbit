@@ -80,15 +80,16 @@ it("shows an instance's Horizon queue by job state and opens a job in Horizon", 
         });
 
     await openApp("/instances/1");
-    await expect.element(pane("Queue · running")).toHaveTextContent("No pending jobs.");
-    await expect.element(pane("Queue · running")).toHaveTextContent("12 jobs/min");
+    await expect.element(pane("Jobs")).toHaveTextContent("No pending jobs.");
+    await expect.element(pane("Queue")).toHaveTextContent("Jobs per minute12");
+    await expect
+        .element(pane("Queue"))
+        .toHaveTextContent("Queue default0 jobs · 0s wait · 3 workers");
 
     await page.getByRole("tab", { name: "failed 1" }).click();
-    await expect
-        .element(row("Queue · running", "SendReceipt"))
-        .toHaveTextContent("mail server refused");
+    await expect.element(row("Jobs", "SendReceipt")).toHaveTextContent("mail server refused");
 
-    await row("Queue · running", "SendReceipt").click();
+    await row("Jobs", "SendReceipt").click();
     expect(opened).toEqual([
         { href: "https://charlie-shop.test/horizon/failed/f1", target: "_blank" },
     ]);
