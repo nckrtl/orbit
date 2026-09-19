@@ -34,7 +34,7 @@ export function LogPane({
     }, [count]);
 
     return (
-        <section className={`frame ${className}`}>
+        <section className={`frame ${className}`} aria-label={title}>
             <div className="frame-edge" data-edge="top">
                 <span className="frame-label" data-role="title">
                     {title}

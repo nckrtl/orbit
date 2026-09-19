@@ -7,6 +7,7 @@ import {
     deploymentLogQuery,
     deploymentsQuery,
     type Fleet,
+    instanceLogsQuery,
     processLogsQuery,
     scheduleLogsQuery,
     useFleet,
@@ -236,6 +237,7 @@ const deploymentColumns: Column<Deployment>[] = [
 function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
     const go = useGo();
     const deployments = useQuery(deploymentsQuery(instance.id));
+    const logs = useQuery(instanceLogsQuery(instance.id));
     const schedules = useMemo(() => scheduleColumns(fleet, "none"), [fleet]);
     const steps = useMemo(
         () => instance.deploy_steps.map((step, index) => ({ ...step, index })),
@@ -299,33 +301,39 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     target={(row) => ({ kind: "schedules", row })}
                 />
             </div>
-            <Pane
-                name="deploysteps"
-                order={3}
-                title="Deploy steps in the order they run"
-                className="max-h-[30vh]"
-                columns={deployStepColumns}
-                rows={steps}
-                rowId={(s) => String(s.index)}
-                empty="No deploy steps. instance:deploy-step:create adds one."
-            />
-            {deployments.isError ? (
-                <Frame title="Deployments">
-                    <Note>Deployment history unavailable right now.</Note>
-                </Frame>
-            ) : (
+            <div className={`grid max-h-[30vh] grid-cols-2 ${GAPS}`}>
                 <Pane
-                    name="deployments"
-                    order={4}
-                    title="Deployments"
-                    columns={deploymentColumns}
-                    rows={deployments.data ?? []}
-                    rowId={(d) => String(d.id)}
-                    warn={(d) => !deploymentHealthy(d)}
-                    target={(row) => ({ kind: "deployments", row })}
-                    empty={deployments.isPending ? "Loading…" : "Not deployed yet."}
+                    name="deploysteps"
+                    order={3}
+                    title="Deploy steps in the order they run"
+                    columns={deployStepColumns}
+                    rows={steps}
+                    rowId={(s) => String(s.index)}
+                    empty="No deploy steps. instance:deploy-step:create adds one."
                 />
-            )}
+                {deployments.isError ? (
+                    <Frame title="Deployments">
+                        <Note>Deployment history unavailable right now.</Note>
+                    </Frame>
+                ) : (
+                    <Pane
+                        name="deployments"
+                        order={4}
+                        title="Deployments"
+                        columns={deploymentColumns}
+                        rows={deployments.data ?? []}
+                        rowId={(d) => String(d.id)}
+                        warn={(d) => !deploymentHealthy(d)}
+                        target={(row) => ({ kind: "deployments", row })}
+                        empty={deployments.isPending ? "Loading…" : "Not deployed yet."}
+                    />
+                )}
+            </div>
+            <LogPane
+                title="Application log · storage/logs/laravel.log"
+                lines={logs.data}
+                loading={logs.isPending}
+            />
         </div>
     );
 }

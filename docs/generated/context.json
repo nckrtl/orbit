@@ -3200,6 +3200,20 @@
             ]
         },
         {
+            "path": "docs/reference/instance-logs.md",
+            "title": "App instance logs",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/local-resolver-overrides.md",
             "title": "Local resolver overrides",
             "kind": "reference",

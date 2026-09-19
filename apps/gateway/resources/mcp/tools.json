@@ -2502,6 +2502,44 @@
       }
     },
     {
+      "name": "instance-logs",
+      "title": "Read App instance logs",
+      "description": "Read App instance logs",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/logs",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [
+        "lines",
+        "follow"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "lines": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "follow": {
+            "type": "string",
+            "description": "Must be absent."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-register",
       "title": "Register an App instance",
       "description": "Adopt the current Git source as a managed App instance.",

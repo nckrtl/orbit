@@ -113,6 +113,17 @@ export function createDemoGateway() {
             ],
             [
                 "GET",
+                /^\/api\/v1\/instances\/(\d+)\/logs(?:\?.*)?$/,
+                ([id = ""]) =>
+                    ok({
+                        id: Number(id),
+                        name: "main",
+                        lines: 2,
+                        logs: "[2026-09-19 10:00:00] local.INFO: Order 1042 paid.\n[2026-09-19 10:00:04] local.ERROR: Mail to [REDACTED] failed.\n",
+                    }),
+            ],
+            [
+                "GET",
                 /^\/api\/v1\/processes\/(\d+)\/logs$/,
                 ([id = ""]) => {
                     const process = processes.find((candidate) => String(candidate.id) === id);

@@ -37,6 +37,9 @@ it("draws a node record", async () => {
 it("draws an instance record with its deployments", async () => {
     await openApp("/instances/1");
     await expect.element(row("Deployments", "20260102000000")).toBeVisible();
+    await expect
+        .element(pane("Application log · storage/logs/laravel.log"))
+        .toHaveTextContent("Order 1042 paid.");
 
     await expect(screenText()).toMatchFileSnapshot("./expected/instance-charlie-shop-dev.txt");
 });

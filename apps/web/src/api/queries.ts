@@ -146,6 +146,16 @@ export const processLogsQuery = (id: number) =>
         retry: false,
     });
 
+/** The instance's own application log, `storage/logs/laravel.log`, as the Gateway redacts it. */
+export const instanceLogsQuery = (id: number) =>
+    queryOptions({
+        queryKey: ["instance-logs", id],
+        queryFn: async () =>
+            logLines((await get<{ logs?: string }>(`/api/v1/instances/${id}/logs?lines=500`)).logs),
+        refetchInterval: 10_000,
+        retry: false,
+    });
+
 export const scheduleLogsQuery = (id: string) =>
     queryOptions({
         queryKey: ["schedule-logs", id],

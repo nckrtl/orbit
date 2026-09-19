@@ -44,4 +44,8 @@
 │  2026-01-01T00:00:00+00:00 │ 20260101000000 │ main │ aaaaaaa │ gateway │ 42s │ succeeded
 ╰─
 
+╭─ Application log · storage/logs/laravel.log
+│ [2026-09-19 10:00:00] local.INFO: Order 1042 paid.[2026-09-19 10:00:04] local.ERROR: Mail to [REDACTED] failed.
+╰─ 2 lines
+
 ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · x or right-click actions    demo fleet

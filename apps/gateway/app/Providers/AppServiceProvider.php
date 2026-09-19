@@ -36,6 +36,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
+use App\Domain\AppInstances\Logs\AppInstanceLogReader;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionCloneRouteProjector;
@@ -162,6 +163,7 @@ use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetentio
 use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
+use App\Infrastructure\AppInstances\RemoteAppInstanceLogReader;
 use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
 use App\Infrastructure\AppInstances\RemoteAppInstanceTransferSource;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
@@ -379,6 +381,7 @@ final class AppServiceProvider extends ServiceProvider
         VitePortRuntime::class => RemoteVitePortRuntime::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         AppInstanceCheckoutInspector::class => RemoteAppInstanceCheckoutInspector::class,
+        AppInstanceLogReader::class => RemoteAppInstanceLogReader::class,
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
         HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,
