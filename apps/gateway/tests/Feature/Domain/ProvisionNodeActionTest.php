@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
+use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -35,6 +37,7 @@ use App\Models\NodeRole;
 use App\Models\ToolManagerRecord;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeToolManagerMaterializer;
 
 describe(ProvisionNodeAction::class, function (): void {
@@ -379,6 +382,116 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe('prior-key')
             ->and($projection->keys)
             ->toBe(['replacement-key', 'prior-key']);
+    });
+
+    it('restores an active gateway when private DNS expansion and cleanup fail', function (): void {
+        app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64'));
+        $dns = provision_node_dns_reconciler();
+        $dns->expandFailure = new RuntimeConvergenceException(
+            step: 'private-dns',
+            errorCode: 'app-dev.dns_config_failed',
+            message: 'DNS selection failed.',
+        );
+        $dns->pruneFailure = new RuntimeConvergenceException(
+            step: 'private-dns',
+            errorCode: 'app-dev.dns_config_failed',
+            message: 'DNS prune failed.',
+        );
+        $cluster = Cluster::query()->create([
+            'name' => 'edge',
+            'state' => ClusterState::Active,
+        ]);
+        $gateway = Node::query()->create([
+            'name' => 'active-gateway',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'cluster_id' => $cluster->id,
+            'public_ssh_host' => '192.0.2.14',
+            'wireguard_ip' => '10.44.0.14',
+            'user' => 'orbit',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        $gateway->roles()->create([
+            'role' => RoleName::Gateway,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $consumer = Node::query()->create([
+            'name' => 'operator',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.15',
+            'wireguard_ip' => '10.44.0.15',
+            'user' => 'orbit',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        $consumer->accessibleNodes()->attach($gateway);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $gateway->name,
+            publicSshHost: $gateway->public_ssh_host,
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'private-dns'
+                    && $exception->errorCode === 'app-dev.dns_config_failed'
+                    && $exception->getMessage() === "Could not reconcile Cluster Router DNS selection for node [{$gateway->name}]."
+                ),
+            );
+
+        $gateway->refresh();
+        $authorizer = app(NodeAccessAuthorizer::class);
+
+        expect($gateway->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($gateway->getAttribute('failed_step'))
+            ->toBeNull()
+            ->and($gateway->getAttribute('error_code'))
+            ->toBeNull()
+            ->and($gateway->roles()->sole()->status)
+            ->toBe(LifecycleStatus::Active);
+        expect($authorizer->isGatewayNode($gateway))
+            ->toBeTrue()
+            ->and($authorizer->hasGatewayAuthority($consumer))
+            ->toBeTrue();
+    });
+
+    it('marks a new node failed when private DNS expansion and cleanup fail', function (): void {
+        app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64'));
+        $dns = provision_node_dns_reconciler();
+        $dns->expandFailure = new RuntimeConvergenceException(
+            step: 'private-dns',
+            errorCode: 'app-dev.dns_config_failed',
+            message: 'DNS selection failed.',
+        );
+        $dns->pruneFailure = new RuntimeConvergenceException(
+            step: 'private-dns',
+            errorCode: 'app-dev.dns_config_failed',
+            message: 'DNS prune failed.',
+        );
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'fresh-dns-failure',
+            publicSshHost: '192.0.2.16',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'private-dns'
+                    && $exception->errorCode === 'app-dev.dns_config_failed'
+                ),
+            );
+
+        $node = Node::query()->where('name', 'fresh-dns-failure')->sole();
+
+        expect($node->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($node->failed_step)
+            ->toBe('private-dns')
+            ->and($node->error_code)
+            ->toBe('app-dev.dns_config_failed');
     });
 
     it('returns a bounded rollback failure when gateway peer restoration fails', function (): void {
@@ -2394,6 +2507,14 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe('prod');
     });
 });
+
+function provision_node_dns_reconciler(): FakeClusterRouterDnsSelectionReconciler
+{
+    $dns = app(ClusterRouterDnsSelectionReconciler::class);
+    assert($dns instanceof FakeClusterRouterDnsSelectionReconciler);
+
+    return $dns;
+}
 
 function provision_node_observing_converger(string $architecture): NodeConverger
 {

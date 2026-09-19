@@ -423,15 +423,12 @@ final readonly class ProvisionNodeAction
                 ]);
             });
         } catch (Throwable $exception) {
-            $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
-            $this->lanIngress()->prune(clusterIds: $lanClusterIds);
+            $this->bestEffortPruneNetwork($lanClusterIds);
 
             if ($priorActiveState !== null) {
                 $this->restorePriorActiveState($node, $priorActiveState);
-                $this->lanIngress()->expand(clusterIds: $lanClusterIds);
-                $this->lanIngress()->prune(clusterIds: $lanClusterIds);
-                $this->dnsSelection()->expand(clusterIds: $lanClusterIds);
-                $this->dnsSelection()->prune(clusterIds: $lanClusterIds);
+                $this->bestEffortExpandNetwork($lanClusterIds);
+                $this->bestEffortPruneNetwork($lanClusterIds);
             }
 
             throw $exception;
@@ -749,10 +746,36 @@ final readonly class ProvisionNodeAction
             return;
         }
 
-        $this->lanIngress()->expand(clusterIds: [$clusterId]);
-        $this->lanIngress()->prune(clusterIds: [$clusterId]);
-        $this->dnsSelection()->expand(clusterIds: [$clusterId]);
-        $this->dnsSelection()->prune(clusterIds: [$clusterId]);
+        $this->bestEffortExpandNetwork([$clusterId]);
+        $this->bestEffortPruneNetwork([$clusterId]);
+    }
+
+    /** @param list<int> $clusterIds */
+    private function bestEffortExpandNetwork(array $clusterIds): void
+    {
+        try {
+            $this->lanIngress()->expand(clusterIds: $clusterIds);
+        } catch (Throwable) {
+        }
+
+        try {
+            $this->dnsSelection()->expand(clusterIds: $clusterIds);
+        } catch (Throwable) {
+        }
+    }
+
+    /** @param list<int> $clusterIds */
+    private function bestEffortPruneNetwork(array $clusterIds): void
+    {
+        try {
+            $this->dnsSelection()->prune(clusterIds: $clusterIds);
+        } catch (Throwable) {
+        }
+
+        try {
+            $this->lanIngress()->prune(clusterIds: $clusterIds);
+        } catch (Throwable) {
+        }
     }
 
     /**
@@ -765,8 +788,7 @@ final readonly class ProvisionNodeAction
         ?array $priorActiveState,
         array $clusterIds,
     ): never {
-        $this->lanIngress()->prune(clusterIds: $clusterIds);
-        $this->dnsSelection()->prune(clusterIds: $clusterIds);
+        $this->bestEffortPruneNetwork($clusterIds);
 
         $failure = new NodeProvisioningException(
             step: 'router-lan-ingress',
@@ -792,8 +814,7 @@ final readonly class ProvisionNodeAction
         ?array $priorActiveState,
         array $clusterIds,
     ): never {
-        $this->dnsSelection()->prune(clusterIds: $clusterIds);
-        $this->lanIngress()->prune(clusterIds: $clusterIds);
+        $this->bestEffortPruneNetwork($clusterIds);
 
         $failure = new NodeProvisioningException(
             step: 'private-dns',
