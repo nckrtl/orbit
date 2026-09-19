@@ -17,7 +17,6 @@ import type {
     Database,
     DatabaseUser,
     Deployment,
-    DeployStep,
     FirewallRule,
     Instance,
     Node,
@@ -207,18 +206,6 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
     );
 }
 
-const deployStepColumns: Column<DeployStep & { index: number }>[] = [
-    { header: "Phase", width: 24, value: (s) => s.phase },
-    { header: "#", width: 8, value: (s) => String(s.index + 1), sort: (s) => s.index },
-    { header: "Name", width: 38, value: (s) => s.name },
-    {
-        header: "Timeout",
-        width: 30,
-        value: (s) => `${s.timeout_seconds} s`,
-        sort: (s) => s.timeout_seconds,
-    },
-];
-
 const deploymentColumns: Column<Deployment>[] = [
     { header: "Started", width: 20, value: (d) => d.started_at },
     { header: "Release", width: 18, value: (d) => d.release ?? "—" },
@@ -238,47 +225,61 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const go = useGo();
     const deployments = useQuery(deploymentsQuery(instance.id));
     const logs = useQuery(instanceLogsQuery(instance.id));
+    const hasDeployments = (deployments.data?.length ?? 0) > 0;
     const schedules = useMemo(() => scheduleColumns(fleet, "none"), [fleet]);
-    const steps = useMemo(
-        () => instance.deploy_steps.map((step, index) => ({ ...step, index })),
-        [instance.deploy_steps],
-    );
     const app = fleet.apps.find((candidate) => candidate.id === instance.app.id);
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
-        <div className={`grid h-full grid-rows-[auto_auto_auto_minmax(0,1fr)] ${GAPS}`}>
-            <Properties
-                properties={[
-                    { name: "Name", value: instance.name },
-                    {
-                        name: "App",
-                        value: instance.app.slug,
-                        onOpen: app === undefined ? undefined : () => go.record("apps", app),
-                    },
-                    {
-                        name: "Node",
-                        value: instance.node.name,
-                        onOpen: node === undefined ? undefined : () => go.record("nodes", node),
-                    },
-                    { name: "Environment", value: instance.environment },
-                    {
-                        name: "Domain",
-                        value: instance.domain,
-                        // Caddy terminates TLS for every route, so the site answers on https.
-                        onOpen: () =>
-                            window.open(`https://${instance.domain}`, "_blank", "noopener"),
-                    },
-                    {
-                        name: "Status",
-                        value: instance.status,
-                        warn: !instanceHealthy(instance),
-                    },
-                    { name: "Checkout", value: instance.checkout_path },
-                    { name: "Selected branch", value: instance.selected_branch },
-                    { name: "Deploy steps", value: `${instance.deploy_steps.length} steps` },
-                ]}
-            />
+        <div className={`grid h-full grid-rows-[auto_auto_minmax(0,1fr)] ${GAPS}`}>
+            {/* The deployment history sits beside the properties, and only once there is one. */}
+            <div
+                className={`grid max-h-[40vh] ${hasDeployments ? "grid-cols-2" : "grid-cols-1"} ${GAPS}`}
+            >
+                <Properties
+                    properties={[
+                        { name: "Name", value: instance.name },
+                        {
+                            name: "App",
+                            value: instance.app.slug,
+                            onOpen: app === undefined ? undefined : () => go.record("apps", app),
+                        },
+                        {
+                            name: "Node",
+                            value: instance.node.name,
+                            onOpen: node === undefined ? undefined : () => go.record("nodes", node),
+                        },
+                        { name: "Environment", value: instance.environment },
+                        {
+                            name: "Domain",
+                            value: instance.domain,
+                            // Caddy terminates TLS for every route, so the site answers on https.
+                            onOpen: () =>
+                                window.open(`https://${instance.domain}`, "_blank", "noopener"),
+                        },
+                        {
+                            name: "Status",
+                            value: instance.status,
+                            warn: !instanceHealthy(instance),
+                        },
+                        { name: "Checkout", value: instance.checkout_path },
+                        { name: "Selected branch", value: instance.selected_branch },
+                        { name: "Deploy steps", value: `${instance.deploy_steps.length} steps` },
+                    ]}
+                />
+                {hasDeployments && (
+                    <Pane
+                        name="deployments"
+                        order={0}
+                        title="Deployments"
+                        columns={deploymentColumns}
+                        rows={deployments.data ?? []}
+                        rowId={(d) => String(d.id)}
+                        warn={(d) => !deploymentHealthy(d)}
+                        target={(row) => ({ kind: "deployments", row })}
+                    />
+                )}
+            </div>
             <div className={`grid max-h-[30vh] grid-cols-2 ${GAPS}`}>
                 <Pane
                     name="processes"
@@ -300,34 +301,6 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     warn={(s) => !scheduleHealthy(s)}
                     target={(row) => ({ kind: "schedules", row })}
                 />
-            </div>
-            <div className={`grid max-h-[30vh] grid-cols-2 ${GAPS}`}>
-                <Pane
-                    name="deploysteps"
-                    order={3}
-                    title="Deploy steps in the order they run"
-                    columns={deployStepColumns}
-                    rows={steps}
-                    rowId={(s) => String(s.index)}
-                    empty="No deploy steps. instance:deploy-step:create adds one."
-                />
-                {deployments.isError ? (
-                    <Frame title="Deployments">
-                        <Note>Deployment history unavailable right now.</Note>
-                    </Frame>
-                ) : (
-                    <Pane
-                        name="deployments"
-                        order={4}
-                        title="Deployments"
-                        columns={deploymentColumns}
-                        rows={deployments.data ?? []}
-                        rowId={(d) => String(d.id)}
-                        warn={(d) => !deploymentHealthy(d)}
-                        target={(row) => ({ kind: "deployments", row })}
-                        empty={deployments.isPending ? "Loading…" : "Not deployed yet."}
-                    />
-                )}
             </div>
             <LogPane
                 title="Application log · storage/logs/laravel.log"

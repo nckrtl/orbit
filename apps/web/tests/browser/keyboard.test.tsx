@@ -97,13 +97,11 @@ it("opens a record with one click and keeps the row selected for the way back", 
 });
 
 it("only selects a row that leads nowhere", async () => {
-    const app = await openApp("/instances/1");
+    const app = await openApp("/databases/1");
 
-    await row("Deploy steps in the order they run", "cache").click();
-    await expect
-        .element(row("Deploy steps in the order they run", "cache"))
-        .toHaveAttribute("aria-selected", "true");
-    expect(app.url()).toBe("/instances/1");
+    await row("Users", "app").click();
+    await expect.element(row("Users", "app")).toHaveAttribute("aria-selected", "true");
+    expect(app.url()).toBe("/databases/1");
 });
 
 it("sorts a pane by a column header", async () => {
