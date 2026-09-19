@@ -39,7 +39,6 @@ The URL carries the section, the open record, and the node and app filters. Hove
 - `src/demo`: the in-memory Gateway for demo mode and tests.
 - `tests/browser`: the browser tests and the expected screens.
 
-
 ## Annotation (toolbar pin tool)
 
 The SPA includes the laravel-toolbar **Annotation** overlay (pin / comment / overlay), not the stock `agentation` npm package. Footer chrome: the ✎ control toggles annotation mode (also press `A`); the open pin count shows beside it.
@@ -57,6 +56,7 @@ Environment (dev machine / shell that runs `vp dev`):
 export COMMANDER_URL=https://commander.test          # default
 export COMMANDER_MCP_TOKEN=…                         # required for a live task
 export VITE_COMMANDER_PROJECT=commander              # project id (toolbar default)
+export COMMANDER_CA_PATH=/path/to/herd-ca.pem     # optional; *.test defaults to insecure TLS for Node
 # VITE_COMMANDER_ENABLED=0                           # disable one-shot submit
 ```
 

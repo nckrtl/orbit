@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { Agent, fetch as undiciFetch } from "undici";
 import type { Plugin } from "vite-plus";
 
 type OneShotBody = {
@@ -18,14 +20,36 @@ function readBody(req: IncomingMessage): Promise<string> {
     });
 }
 
+function commanderDispatcher(baseUrl: string): Agent | undefined {
+    const caPath = process.env.COMMANDER_CA_PATH;
+    if (caPath) {
+        return new Agent({ connect: { ca: readFileSync(caPath) } });
+    }
+
+    const host = new URL(baseUrl).hostname;
+    const insecure =
+        process.env.COMMANDER_TLS_INSECURE === "1" ||
+        host.endsWith(".test") ||
+        host === "localhost" ||
+        host === "127.0.0.1";
+
+    if (insecure) {
+        return new Agent({ connect: { rejectUnauthorized: false } });
+    }
+
+    return undefined;
+}
+
 /**
- * Dev/prod-static adapter: browser POSTs here; we call Commander MCP create-task
- * with kind=one-shot (public surface that mirrors SubmitOneShotTask).
+ * Dev adapter: browser POSTs here; we call Commander MCP create-task with
+ * kind=one-shot (public surface that mirrors SubmitOneShotTask).
  *
  * Env:
- *   COMMANDER_URL          default https://commander.test
- *   COMMANDER_MCP_TOKEN    Bearer token (required for live submit)
- *   VITE_COMMANDER_PROJECT default project id when body omits project_id
+ *   COMMANDER_URL           default https://commander.test
+ *   COMMANDER_MCP_TOKEN     Bearer token (required for a live submit)
+ *   COMMANDER_CA_PATH       optional PEM for Node trust
+ *   COMMANDER_TLS_INSECURE  force insecure TLS (*.test defaults insecure)
+ *   VITE_COMMANDER_PROJECT  default project id when body omits project_id
  */
 export function commanderOneShot(): Plugin {
     return {
@@ -77,7 +101,6 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
     const base = (process.env.COMMANDER_URL || "https://commander.test").replace(/\/$/, "");
 
     if (!token) {
-        // Local demo without a token: acknowledge so the SPA UX still works.
         res.statusCode = 200;
         res.setHeader("Content-Type", "application/json");
         res.end(
@@ -101,8 +124,10 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
             ? body.description
             : JSON.stringify(body.description ?? {});
 
-    const mcpResponse = await fetch(`${base}/mcp`, {
+    const dispatcher = commanderDispatcher(base);
+    const mcpResponse = await undiciFetch(`${base}/mcp`, {
         method: "POST",
+        dispatcher,
         headers: {
             Accept: "application/json, text/event-stream",
             "Content-Type": "application/json",
@@ -134,7 +159,6 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
         return;
     }
 
-    // Laravel MCP may return JSON or SSE-framed JSON.
     let payload: unknown = null;
     try {
         payload = JSON.parse(text);
