@@ -1,5 +1,12 @@
 import type { Method, Transport } from "../api/client";
-import type { Database, FirewallRule, ManagedFirewallRule, Node, Process, Schedule } from "../api/types";
+import type {
+    Database,
+    FirewallRule,
+    ManagedFirewallRule,
+    Node,
+    Process,
+    Schedule,
+} from "../api/types";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
 type Answer = { status: number; payload: unknown };

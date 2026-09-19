@@ -210,7 +210,11 @@ export function Pane<T extends Record<string, any>>({
                                 data-selected={index === selected ? "" : undefined}
                                 data-focused={focused ? "" : undefined}
                                 data-warn={
-                                    danger?.(row.original) ? undefined : warn?.(row.original) ? "" : undefined
+                                    danger?.(row.original)
+                                        ? undefined
+                                        : warn?.(row.original)
+                                          ? ""
+                                          : undefined
                                 }
                                 data-danger={danger?.(row.original) ? "" : undefined}
                                 onMouseDown={(event) => {
