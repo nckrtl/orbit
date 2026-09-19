@@ -62,12 +62,15 @@ export function Dashboard() {
                 return m === null ? (
                     none
                 ) : (
-                    <Bar
-                        label={options.label?.(m)}
-                        ratio={ratio(m)}
-                        reading={reading(m)}
-                        thresholds={options.thresholds}
-                    />
+                    // Room after the reading, so it does not run into the next meter; the disk meter is the last one.
+                    <span className={options.label === undefined ? "block pr-[2ch]" : "block"}>
+                        <Bar
+                            label={options.label?.(m)}
+                            ratio={ratio(m)}
+                            reading={reading(m)}
+                            thresholds={options.thresholds}
+                        />
+                    </span>
                 );
             },
         });
@@ -82,12 +85,12 @@ export function Dashboard() {
             },
             {
                 header: "CPU",
-                width: 21,
+                width: 17,
                 ...meter((m) => `${(cpu(m) * 100).toFixed(0).padStart(3)}%`, cpu),
             },
             {
                 header: "Mem",
-                width: 21,
+                width: 25,
                 ...meter(
                     (m) => `${m.mem[0].toFixed(1)}G/${m.mem[1].toFixed(0)}G`.padStart(10),
                     mem,
