@@ -32,7 +32,7 @@
 │  Mem70.0G/128G
 │  / 1440G/1760G
 │  Swp1.0G/8G
-╰─ up 12d 4h 43m
+╰─ up 12:04:43
 
 ╭─ Instances on this node
 │  App │ Name │ Environment │ Domain │ Status

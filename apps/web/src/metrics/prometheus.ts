@@ -91,15 +91,10 @@ function value(sample: Sample): number {
 const bytes = (number: number): number => Math.round(Math.max(0, number));
 
 export function formatUptime(seconds: number): string {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const two = (value: number) => String(Math.floor(value)).padStart(2, "0");
 
-    return days > 0
-        ? `${days}d ${hours}h ${minutes}m`
-        : hours > 0
-          ? `${hours}h ${minutes}m`
-          : `${minutes}m`;
+    // Days, hours, and minutes as DD:HH:MM, so every uptime has the same width.
+    return `${two(seconds / 86400)}:${two((seconds % 86400) / 3600)}:${two((seconds % 3600) / 60)}`;
 }
 
 /**

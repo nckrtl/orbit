@@ -61,7 +61,7 @@ describe("mapMetrics", () => {
             cores: [0.12, 0.34, 0.08, 0.21],
             mem: [3_435_973_836 / GIB, 8],
             swap: [0, 2],
-            uptime: "12d 4h 43m",
+            uptime: "12:04:43",
             disks: [["/", 6, 80]],
         });
     });
@@ -97,7 +97,11 @@ describe("mapMetrics", () => {
             NOW,
         );
 
-        expect(metrics["10.44.0.8"]).toMatchObject({ mem: [10, 16], swap: [2, 2], uptime: "0m" });
+        expect(metrics["10.44.0.8"]).toMatchObject({
+            mem: [10, 16],
+            swap: [2, 2],
+            uptime: "00:00:00",
+        });
     });
 
     it("leaves out an instance that sent no total memory, and everything when the query failed", () => {
@@ -147,10 +151,10 @@ describe("queries", () => {
 });
 
 describe("formatUptime", () => {
-    it("drops the units that are zero at the front", () => {
-        expect(formatUptime(59)).toBe("0m");
-        expect(formatUptime(3 * 3600 + 120)).toBe("3h 2m");
-        expect(formatUptime(5 * 86400 + 60)).toBe("5d 0h 1m");
+    it("writes days, hours, and minutes as DD:HH:MM", () => {
+        expect(formatUptime(59)).toBe("00:00:00");
+        expect(formatUptime(3 * 3600 + 120)).toBe("00:03:02");
+        expect(formatUptime(5 * 86400 + 60)).toBe("05:00:01");
     });
 });
 

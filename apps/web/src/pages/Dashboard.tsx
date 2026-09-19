@@ -95,7 +95,7 @@ export function Dashboard() {
             },
             {
                 header: "Disk",
-                width: 19,
+                width: 25,
                 ...meter(
                     (m) => {
                         const [, used, total] = m.disks[0] ?? ["/", 0, 0];
@@ -108,7 +108,7 @@ export function Dashboard() {
             },
             {
                 header: "Uptime",
-                width: 16,
+                width: 10,
                 value: (n) => of(n)?.uptime ?? "—",
                 cell: (n) => <span className="text-dim">{of(n)?.uptime ?? "—"}</span>,
             },
