@@ -113,6 +113,8 @@ body {
     height: var(--lh);
     pointer-events: none;
     white-space: nowrap;
+    /* Above a table's sticky head, whose shadow reaches up to the border. */
+    z-index: 2;
 }
 
 .frame-edge[data-edge="top"] {
@@ -174,10 +176,12 @@ body {
 }
 
 .row[data-head] {
+    /* The head stays where it is drawn, below the frame's padding; its shadow hides the rows that scroll through that padding. */
     position: sticky;
-    top: calc(var(--lh) / -2);
+    top: 0;
     z-index: 1;
     background: var(--bg);
+    box-shadow: 0 calc(var(--lh) / -2) 0 var(--bg);
     color: var(--dim);
     /* The same small capitals as the title in the frame's border. */
     font-size: 11px;
