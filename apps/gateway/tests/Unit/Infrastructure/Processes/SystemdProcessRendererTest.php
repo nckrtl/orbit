@@ -325,5 +325,8 @@ it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): voi
         ->toContain('Environment=AGENTATION_URL=https://commander.test/__orbit/agentation')
         ->toContain('"/usr/local/bin/agy"')
         ->toContain('"--dangerously-skip-permissions"')
+        ->toContain('"--print-timeout"')
+        ->toContain('"60m"')
+        ->toContain('"Call agentation_watch_annotations in a loop. For each annotation: acknowledge it, apply the requested UI/frontend change only (do not run Pest, artisan test, or other test commands), then call agentation_resolve with a summary. Continue watching until this process is stopped."')
         ->toContain('Restart=always');
 });
