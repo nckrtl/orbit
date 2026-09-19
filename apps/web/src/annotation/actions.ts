@@ -609,32 +609,8 @@ export function handleMouseMove(event: MouseEvent): void {
     };
 }
 
-function isEditableKeyTarget(event: KeyboardEvent): boolean {
-    for (const node of event.composedPath()) {
-        if (
-            node instanceof Element &&
-            node.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
-        ) {
-            return true;
-        }
-    }
-
-    return isUnrelatedEditable(event.target) || isUnrelatedEditable(document.activeElement);
-}
-
 export function handleKeyDown(event: KeyboardEvent): void {
     if (event.isComposing) {
-        return;
-    }
-
-    if (event.key.toLowerCase() === "a" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        if (isEditableKeyTarget(event) || annotationMode.value) {
-            return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        setAnnotationMode(true);
         return;
     }
 

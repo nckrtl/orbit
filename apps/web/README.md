@@ -41,7 +41,7 @@ The URL carries the section, the open record, and the node and app filters. Hove
 
 ## Annotation (toolbar pin tool)
 
-The SPA includes the laravel-toolbar **Annotation** overlay (pin / comment / overlay), not the stock `agentation` npm package. Footer chrome: the ✎ control toggles annotation mode (also press `A`); the open pin count shows beside it.
+The SPA includes the laravel-toolbar **Annotation** overlay (pin / comment / overlay), not the stock `agentation` npm package. Footer chrome: the ✎ control toggles annotation mode; the open pin count shows beside it.
 
 ### Commander one-shot
 

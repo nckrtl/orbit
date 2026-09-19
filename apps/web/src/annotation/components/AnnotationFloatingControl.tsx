@@ -20,7 +20,7 @@ export function AnnotationFloatingControl() {
                 data-active={isActive ? "" : undefined}
                 aria-pressed={isActive}
                 aria-label={isActive ? "Exit annotation mode" : "Enter annotation mode"}
-                title={isActive ? "Annotation mode on (Esc to exit)" : "Annotate the page (A)"}
+                title={isActive ? "Annotation mode on (Esc to exit)" : "Annotate the page"}
                 className={cn(
                     "relative inline-flex size-11 items-center justify-center rounded-full border border-white/10 shadow-lg backdrop-blur-xl transition-colors",
                     isActive

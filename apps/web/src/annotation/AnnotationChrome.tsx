@@ -23,7 +23,7 @@ export function AnnotationChrome(_props: AnnotationChromeProps = {}) {
             data-active={isActive ? "" : undefined}
             aria-pressed={isActive}
             aria-label={isActive ? "Exit annotation mode" : "Enter annotation mode"}
-            title={isActive ? "Annotation mode on (Esc to exit)" : "Annotate the page (A)"}
+            title={isActive ? "Annotation mode on (Esc to exit)" : "Annotate the page"}
             className={`inline-flex items-center gap-[0.5ch] rounded px-[0.5ch] ${
                 isActive ? "bg-fg text-bg" : "hover:text-fg"
             }`}
