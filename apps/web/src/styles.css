@@ -91,14 +91,11 @@ body {
     border-radius: 5px;
 }
 
-.frame[data-state="hovered"] {
+/* Hovered and focused frames share the highlight; a focused pane also shows its selected row. */
+.frame[data-state="hovered"],
+.frame[data-state="focused"] {
     --frame: var(--fg);
     --frame-title: var(--fg);
-}
-
-.frame[data-state="focused"] {
-    --frame: var(--cyan);
-    --frame-title: var(--cyan);
 }
 
 .frame[data-state="warn"] {
