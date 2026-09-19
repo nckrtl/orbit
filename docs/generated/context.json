@@ -3214,6 +3214,20 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/instance-queue.md",
+            "title": "App instance queue",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/local-resolver-overrides.md",
             "title": "Local resolver overrides",
             "kind": "reference",

@@ -70,6 +70,34 @@ it("profiles an instance and shows what the command printed in a modal", async (
     fetched.mockRestore();
 });
 
+it("shows an instance's Horizon queue by job state and opens a job in Horizon", async () => {
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+
+    await openApp("/instances/1");
+    await expect.element(pane("Queue · running")).toHaveTextContent("No pending jobs.");
+    await expect.element(pane("Queue · running")).toHaveTextContent("12 jobs/min");
+
+    await page.getByRole("tab", { name: "failed 1" }).click();
+    await expect
+        .element(row("Queue · running", "SendReceipt"))
+        .toHaveTextContent("mail server refused");
+
+    await row("Queue · running", "SendReceipt").click();
+    expect(opened).toHaveBeenCalledWith(
+        "https://charlie-shop.test/horizon/failed/f1",
+        "_blank",
+        "noopener",
+    );
+    opened.mockRestore();
+});
+
+it("shows no queue panel for an instance without Horizon", async () => {
+    await openApp("/instances/2");
+    await expect.element(pane("Application log")).toBeVisible();
+
+    await expect.element(page.getByRole("tablist")).not.toBeInTheDocument();
+});
+
 it("asks before a destructive action and sends nothing until it is confirmed", async () => {
     const app = await openApp("/firewall");
     await row("Firewall", "443/tcp").click({ button: "right" });

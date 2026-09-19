@@ -7898,6 +7898,241 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/queue": {
+      "get": {
+        "operationId": "instance-queue",
+        "summary": "Read the App instance queue",
+        "tags": [
+          "App instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric App instance ID."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "completed",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "available",
+                        "state"
+                      ],
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "description": "False when the App instance has no systemd Process that runs `artisan horizon`, or the application has no Horizon; every other field but `state` is then absent."
+                        },
+                        "process_id": {
+                          "type": "integer",
+                          "description": "The Process that runs Horizon."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "paused",
+                            "inactive"
+                          ]
+                        },
+                        "jobs_per_minute": {
+                          "type": "integer"
+                        },
+                        "recent_jobs": {
+                          "type": "integer"
+                        },
+                        "recently_failed_jobs": {
+                          "type": "integer"
+                        },
+                        "processes": {
+                          "type": "integer",
+                          "description": "Worker processes across all supervisors."
+                        },
+                        "totals": {
+                          "type": "object",
+                          "properties": {
+                            "pending": {
+                              "type": "integer"
+                            },
+                            "completed": {
+                              "type": "integer"
+                            },
+                            "failed": {
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        "queues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "length": {
+                                "type": "integer"
+                              },
+                              "wait_seconds": {
+                                "type": "integer"
+                              },
+                              "processes": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "dashboard_url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "completed",
+                            "failed"
+                          ]
+                        },
+                        "jobs": {
+                          "type": "array",
+                          "description": "The newest jobs in `state`. A job payload is never part of the response.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string",
+                                "description": "The job class."
+                              },
+                              "queue": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "pushed_at": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              },
+                              "completed_at": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              },
+                              "failed_at": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              },
+                              "exception": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The first line of the exception of a failed job."
+                              },
+                              "url": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "The page of this job in the Horizon dashboard."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/queue?state=active&limit=25\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/releases": {
       "get": {
         "operationId": "instance-release-list",

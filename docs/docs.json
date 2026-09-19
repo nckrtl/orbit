@@ -82,6 +82,7 @@
               "reference/appinstance-cloning",
               "reference/deployments",
               "reference/instance-logs",
+              "reference/instance-queue",
               "reference/instance-dependencies",
               "reference/instance-dependency-contracts",
               "reference/appinstance-removal",
@@ -308,6 +309,7 @@
               "PATCH /api/v1/instances/{instance}/deploy-steps/{step}",
               "GET /api/v1/instances/{instance}/deployments",
               "GET /api/v1/instances/{instance}/logs",
+              "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/transfer"

@@ -12,6 +12,8 @@ import type {
     Instance,
     Node,
     Process,
+    QueueReport,
+    QueueState,
     Schedule,
 } from "./types";
 
@@ -148,6 +150,15 @@ export const processLogsQuery = (id: number) =>
         queryKey: ["process-logs", id],
         queryFn: async () =>
             logLines((await get<{ logs?: string }>(`/api/v1/processes/${id}/logs`)).logs),
+        refetchInterval: 10_000,
+        retry: false,
+    });
+
+/** The instance's Horizon queue: its summary, its queues, and the newest jobs in one state. */
+export const instanceQueueQuery = (id: number, state: QueueState) =>
+    queryOptions({
+        queryKey: ["instance-queue", id, state],
+        queryFn: () => get<QueueReport>(`/api/v1/instances/${id}/queue?state=${state}`),
         refetchInterval: 10_000,
         retry: false,
     });

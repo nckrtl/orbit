@@ -41,6 +41,10 @@ type PaneProps<T> = {
     warn?: (row: T) => boolean;
     /** The record a row opens and acts on; omit for a leaf pane whose rows go nowhere. */
     target?: (row: T) => Target | null;
+    /** What a click on a row does when the row is not a record, such as opening a page elsewhere. */
+    onRowClick?: (row: T) => void;
+    bottomLeft?: React.ReactNode;
+    bottomRight?: React.ReactNode;
     empty?: string;
     /** Rows that belong below a labelled divider; each group keeps the sort within itself. */
     divide?: { label: string; below: (row: T) => boolean };
@@ -63,6 +67,9 @@ export function Pane<T extends Record<string, any>>({
     rowId,
     warn,
     target,
+    onRowClick,
+    bottomLeft,
+    bottomRight,
     empty = "None.",
     divide,
     topRight,
@@ -130,6 +137,8 @@ export function Pane<T extends Record<string, any>>({
         if (found !== null) {
             go.record(found.kind, found.row);
         }
+
+        onRowClick?.(row);
     };
 
     const context = (index: number, row: T, event: React.MouseEvent) => {
@@ -147,6 +156,8 @@ export function Pane<T extends Record<string, any>>({
         <Frame
             title={title}
             topRight={topRight}
+            bottomLeft={bottomLeft}
+            bottomRight={bottomRight}
             state={focused ? "focused" : hovered ? "hovered" : undefined}
             className={className}
             pane={name}
@@ -188,7 +199,11 @@ export function Pane<T extends Record<string, any>>({
                                 className="row"
                                 role="row"
                                 aria-selected={index === selected}
-                                data-link={target === undefined ? undefined : ""}
+                                data-link={
+                                    target === undefined && onRowClick === undefined
+                                        ? undefined
+                                        : ""
+                                }
                                 data-selected={index === selected ? "" : undefined}
                                 data-focused={focused ? "" : undefined}
                                 data-warn={warn?.(row.original) ? "" : undefined}

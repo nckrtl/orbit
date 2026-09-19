@@ -38,6 +38,10 @@
 │› backup │ *-*-* 03:00:00 │ succeeded
 ╰─
 
+╭─ Queue · running ── pending 0completed 2failed 1
+│ No pending jobs.
+╰─ 12 jobs/min · 3 processes · default 0 ── horizon ↗
+
 ╭─ Application log
 │ [2026-09-19 10:00:00] local.INFO: Order 1042 paid.[2026-09-19 10:00:04] local.ERROR: Mail to [REDACTED] failed.
 ╰─ 2 lines

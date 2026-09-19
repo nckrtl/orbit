@@ -1054,6 +1054,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the App instance queue */
+        get: operations["instance-queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/releases": {
         parameters: {
             query?: never;
@@ -6678,6 +6695,97 @@ export interface operations {
                             lines?: number;
                             /** @description The last `lines` lines of `storage/logs/laravel.log`, or of the newest `laravel-*.log`, as one newline-separated string with environment values redacted. Empty when the App instance has no such file. */
                             logs?: string;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-queue": {
+        parameters: {
+            query?: {
+                state?: "pending" | "completed" | "failed";
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric App instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description False when the App instance has no systemd Process that runs `artisan horizon`, or the application has no Horizon; every other field but `state` is then absent. */
+                            available: boolean;
+                            /** @description The Process that runs Horizon. */
+                            process_id?: number;
+                            /** @enum {string} */
+                            status?: "running" | "paused" | "inactive";
+                            jobs_per_minute?: number;
+                            recent_jobs?: number;
+                            recently_failed_jobs?: number;
+                            /** @description Worker processes across all supervisors. */
+                            processes?: number;
+                            totals?: {
+                                pending?: number;
+                                completed?: number;
+                                failed?: number;
+                            };
+                            queues?: {
+                                name?: string;
+                                length?: number;
+                                wait_seconds?: number;
+                                processes?: number;
+                            }[];
+                            dashboard_url?: string | null;
+                            /** @enum {string} */
+                            state: "pending" | "completed" | "failed";
+                            /** @description The newest jobs in `state`. A job payload is never part of the response. */
+                            jobs?: {
+                                id?: string;
+                                /** @description The job class. */
+                                name?: string;
+                                queue?: string;
+                                status?: string;
+                                /** Format: date-time */
+                                pushed_at?: string | null;
+                                /** Format: date-time */
+                                completed_at?: string | null;
+                                /** Format: date-time */
+                                failed_at?: string | null;
+                                /** @description The first line of the exception of a failed job. */
+                                exception?: string | null;
+                                /** @description The page of this job in the Horizon dashboard. */
+                                url?: string | null;
+                            }[];
                         };
                         meta: components["schemas"]["Meta"];
                     };

@@ -50,6 +50,7 @@ import { LogPane } from "../ui/LogPane";
 import { type Column, Pane } from "../ui/Pane";
 import { Properties } from "../ui/Properties";
 import { firewallColumns, instanceColumns, processColumns, scheduleColumns } from "./columns";
+import { QueuePanel } from "./QueuePanel";
 import { RecordLayout } from "./RecordLayout";
 
 const GAPS = "gap-x-[1ch] gap-y-[16px]";
@@ -231,7 +232,8 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
-        <div className={`grid h-full grid-rows-[auto_auto_minmax(0,1fr)] ${GAPS}`}>
+        // A column, not a grid: the queue panel is only there for an instance with Horizon, and the log takes what is left either way.
+        <div className={`flex h-full flex-col ${GAPS}`}>
             {/* The deployment history sits beside the properties, and only once there is one. */}
             <div
                 className={`grid max-h-[40vh] ${hasDeployments ? "grid-cols-2" : "grid-cols-1"} ${GAPS}`}
@@ -302,7 +304,13 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     target={(row) => ({ kind: "schedules", row })}
                 />
             </div>
-            <LogPane title="Application log" lines={logs.data} loading={logs.isPending} />
+            <QueuePanel instance={instance} />
+            <LogPane
+                title="Application log"
+                className="min-h-0 flex-1"
+                lines={logs.data}
+                loading={logs.isPending}
+            />
         </div>
     );
 }

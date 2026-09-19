@@ -43,6 +43,7 @@ use App\Domain\AppInstances\ProductionCloneRouteProjector;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
+use App\Domain\AppInstances\Queue\AppInstanceQueueReader;
 use App\Domain\AppInstances\Registration\RegistrationSourceManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
@@ -164,6 +165,7 @@ use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
 use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
 use App\Infrastructure\AppInstances\RemoteAppInstanceLogReader;
+use App\Infrastructure\AppInstances\RemoteAppInstanceQueueReader;
 use App\Infrastructure\AppInstances\RemoteAppInstanceSqliteSeeder;
 use App\Infrastructure\AppInstances\RemoteAppInstanceTransferSource;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
@@ -382,6 +384,7 @@ final class AppServiceProvider extends ServiceProvider
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         AppInstanceCheckoutInspector::class => RemoteAppInstanceCheckoutInspector::class,
         AppInstanceLogReader::class => RemoteAppInstanceLogReader::class,
+        AppInstanceQueueReader::class => RemoteAppInstanceQueueReader::class,
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         HerdrObserverPublisher::class => ComposedHerdrObserverPublisher::class,
         HerdrObserverSitePublisher::class => RemoteHerdrObserverSitePublisher::class,

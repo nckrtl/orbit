@@ -2540,6 +2540,48 @@
       }
     },
     {
+      "name": "instance-queue",
+      "title": "Read the App instance queue",
+      "description": "Read the App instance queue",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/queue",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [
+        "state",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-register",
       "title": "Register an App instance",
       "description": "Adopt the current Git source as a managed App instance.",

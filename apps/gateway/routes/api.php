@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
 use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
 use App\Http\Controllers\Api\AppInstanceLogsController;
+use App\Http\Controllers\Api\AppInstanceQueueController;
 use App\Http\Controllers\Api\AppInstanceReleasesController;
 use App\Http\Controllers\Api\AppInstanceRollbacksController;
 use App\Http\Controllers\Api\AppInstancesController;
@@ -250,6 +251,10 @@ Route::prefix('v1')->group(function (): void {
             'instances/{instance}/releases',
             [AppInstanceReleasesController::class, 'index'],
         )->name('instance:release:list');
+        Route::get(
+            'instances/{instance}/queue',
+            [AppInstanceQueueController::class, 'show'],
+        )->whereNumber('instance')->name('instance:queue');
         Route::get(
             'instances/{instance}/logs',
             [AppInstanceLogsController::class, 'show'],
