@@ -37,8 +37,8 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
         // The Nodes page draws its own two tables; see NodesList.
         nodes: (): Column<Node>[] => [],
         apps: (): Column<App>[] => [
-            { header: "Slug", width: 24, value: (a) => a.slug },
             { header: "Name", width: 34, value: (a) => a.name },
+            { header: "Slug", width: 24, value: (a) => a.slug },
             { header: "Default branch", width: 22, value: (a) => a.default_branch ?? "main" },
             {
                 header: "Instances",

@@ -74,11 +74,17 @@ export type Fleet = {
 const EMPTY: never[] = [];
 
 /** Every fleet-wide list. Realtime events patch these caches; they poll only while it is down. */
+/** Apps in alphabetical order of their name, whatever order the Gateway lists them in. */
+const byName = (apps: App[]): App[] =>
+    [...apps].sort((a, b) =>
+        (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }),
+    );
+
 export function useFleet(): Fleet {
     const live = useLiveness() === "live";
     const refetchInterval = live ? false : POLL_SECONDS * 1000;
     const nodes = useQuery({ ...lists.nodes, refetchInterval });
-    const apps = useQuery({ ...lists.apps, refetchInterval });
+    const apps = useQuery({ ...lists.apps, refetchInterval, select: byName });
     const instances = useQuery({ ...lists.instances, refetchInterval });
     // No event carries a Process's CPU and memory, so this list reloads on its own clock.
     const processes = useQuery({ ...lists.processes, refetchInterval: 15_000 });
