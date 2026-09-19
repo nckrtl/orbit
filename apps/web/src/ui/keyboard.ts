@@ -4,7 +4,7 @@ import { queryClient } from "../api/queryClient";
 import type { App, Node } from "../api/types";
 import { FILTERED_SECTIONS, SECTIONS, type Section, useGo } from "./go";
 import { chooseAction, openMenu } from "./menu";
-import { paneOrder, panes, selectionKey, type Target, ui } from "./store";
+import { paneBeside, paneOrder, panes, selectionKey, type Target, ui } from "./store";
 
 /**
  * The keys `orbit top` answers, ported from its Interaction class. While nothing is focused the
@@ -180,17 +180,14 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                 return;
             }
 
-            const index = order.indexOf(state.hover);
-
             switch (event.key) {
                 case "ArrowLeft":
-                    ui.set({ hover: "nav" });
+                    ui.set({ hover: paneBeside(state.hover, event.key) ?? "nav" });
                     return handled();
+                case "ArrowRight":
                 case "ArrowDown":
-                    ui.set({ hover: order[Math.min(order.length - 1, index + 1)] ?? "nav" });
-                    return handled();
                 case "ArrowUp":
-                    ui.set({ hover: order[Math.max(0, index - 1)] ?? "nav" });
+                    ui.set({ hover: paneBeside(state.hover, event.key) ?? state.hover });
                     return handled();
                 case "Enter":
                     ui.set({ focus: state.hover });

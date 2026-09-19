@@ -35,6 +35,32 @@ it("hovers a pane, focuses it, moves the selection, and opens the row", async ()
     await expect.element(pane("Instances on this node")).toBeVisible();
 });
 
+it("moves between the dashboard panes by where they are on the screen", async () => {
+    await openApp("/");
+    await expect.element(row("Nodes", "beast")).toBeVisible();
+
+    await userEvent.keyboard("{ArrowRight}");
+    await expect.element(pane("Nodes")).toHaveAttribute("data-state", "hovered");
+
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.element(pane("Apps")).toHaveAttribute("data-state", "hovered");
+
+    await userEvent.keyboard("{ArrowRight}");
+    await expect.element(pane("Instances")).toHaveAttribute("data-state", "hovered");
+
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.element(pane("Schedules")).toHaveAttribute("data-state", "hovered");
+
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect.element(pane("Processes")).toHaveAttribute("data-state", "hovered");
+
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+    await expect.element(pane("Nodes")).toHaveAttribute("data-state", "hovered");
+
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect.element(pane("Nodes")).not.toHaveAttribute("data-state", "hovered");
+});
+
 it("goes back with Esc and finds the row it left selected", async () => {
     const app = await openApp("/nodes");
     await expect.element(row("Nodes", "beast")).toBeVisible();

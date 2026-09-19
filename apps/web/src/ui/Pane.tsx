@@ -23,6 +23,8 @@ export type Column<T> = {
     /** Share of the pane's width, as the `orbit top` tables give their columns. */
     width: number;
     value: (row: T) => string;
+    /** What the cell draws, when that is more than its text. */
+    cell?: (row: T) => React.ReactNode;
     /** What the column sorts by, when that is not the text it shows. */
     sort?: (row: T) => string | number;
 };
@@ -137,6 +139,7 @@ export function Pane<T extends Record<string, any>>({
             topRight={topRight}
             state={focused ? "focused" : hovered ? "hovered" : undefined}
             className={className}
+            pane={name}
             onMouseDown={() => ui.set({ hover: name, focus: name })}
         >
             {sorted.length === 0 ? (
@@ -188,9 +191,9 @@ export function Pane<T extends Record<string, any>>({
                                 <span
                                     key={cell}
                                     role="cell"
-                                    className={cell === columns.length - 1 ? "text-right" : ""}
+                                    className={`min-w-0 ${cell === columns.length - 1 ? "text-right" : ""}`}
                                 >
-                                    {column.value(row.original)}
+                                    {column.cell?.(row.original) ?? column.value(row.original)}
                                 </span>
                             ))}
                         </div>

@@ -11,6 +11,8 @@ type FrameProps = {
     bodyClassName?: string;
     children: ReactNode;
     onMouseDown?: () => void;
+    /** The name the keyboard knows this frame by, so the arrows can find it on the screen. */
+    pane?: string;
 };
 
 /** A box with its labels in the border: title top left, and optional labels on the other corners. */
@@ -25,12 +27,14 @@ export function Frame({
     bodyClassName = "",
     children,
     onMouseDown,
+    pane,
 }: FrameProps) {
     return (
         <section
             className={`frame ${className}`}
             aria-label={typeof title === "string" ? title : undefined}
             data-state={state}
+            data-pane={pane}
             onMouseDown={onMouseDown}
         >
             <div className="frame-edge" data-edge="top">

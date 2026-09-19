@@ -70,3 +70,58 @@ export function useUi<T>(selector: (state: UiState) => T): T {
 
 /** A pane's selection is kept per page, so going back finds the row that was opened. */
 export const selectionKey = (pathname: string, pane: string): string => `${pathname}|${pane}`;
+
+type Direction = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown";
+
+/**
+ * The pane the arrow points at from `from`, by where the panes are on the screen: the nearest one
+ * in that direction that shares a row or a column with it, the top or left one when two tie.
+ */
+export function paneBeside(from: string, direction: Direction): string | null {
+    const rects = new Map<string, DOMRect>();
+
+    for (const element of document.querySelectorAll<HTMLElement>("[data-pane]")) {
+        const name = element.dataset.pane ?? "";
+
+        if (panes.has(name)) {
+            rects.set(name, element.getBoundingClientRect());
+        }
+    }
+
+    const current = rects.get(from);
+
+    if (current === undefined) {
+        return null;
+    }
+
+    const horizontal = direction === "ArrowLeft" || direction === "ArrowRight";
+    let best: [number, number, string] | null = null;
+
+    for (const [name, rect] of rects) {
+        const distance = {
+            ArrowLeft: current.left - rect.right,
+            ArrowRight: rect.left - current.right,
+            ArrowUp: current.top - rect.bottom,
+            ArrowDown: rect.top - current.bottom,
+        }[direction];
+        const overlaps = horizontal
+            ? rect.top < current.bottom && rect.bottom > current.top
+            : rect.left < current.right && rect.right > current.left;
+
+        if (name === from || distance < -1 || !overlaps) {
+            continue;
+        }
+
+        const cross = horizontal ? rect.top : rect.left;
+
+        if (
+            best === null ||
+            distance < best[0] - 1 ||
+            (distance < best[0] + 1 && cross < best[1])
+        ) {
+            best = [distance, cross, name];
+        }
+    }
+
+    return best?.[2] ?? null;
+}

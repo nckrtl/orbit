@@ -14,62 +14,8 @@ import { useFleetMetrics } from "../metrics/grafana";
 import type { NodeMetrics } from "../metrics/prometheus";
 import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
-import { useGo } from "../ui/go";
 import { type Column, Pane } from "../ui/Pane";
 import { processDashboardColumns, scheduleColumns } from "./columns";
-
-const NODE_TEMPLATE =
-    "minmax(0, 14fr) minmax(0, 9fr) minmax(0, 21fr) minmax(0, 21fr) minmax(0, 19fr) minmax(0, 16fr)";
-
-/** One line per node: name, status, cpu/mem/disk bars, and uptime; a yellow row means the node needs a look. */
-function NodeSummaryRow({ node, metrics }: { node: Node; metrics: NodeMetrics | null }) {
-    const go = useGo();
-    const cpu =
-        metrics === null
-            ? 0
-            : metrics.cores.reduce((sum, core) => sum + core, 0) /
-              Math.max(1, metrics.cores.length);
-    const [mount, used, total] = metrics?.disks[0] ?? ["/", 0, 0];
-
-    return (
-        <div
-            role="row"
-            className="row"
-            data-link=""
-            style={{ gridTemplateColumns: NODE_TEMPLATE }}
-            data-warn={nodeHealthy(node) ? undefined : ""}
-            onClick={() => go.record("nodes", node)}
-        >
-            <span>{node.name}</span>
-            <span>{node.status}</span>
-            {metrics === null ? (
-                <>
-                    <span className="text-dim">—</span>
-                    <span className="text-dim">—</span>
-                    <span className="text-dim">—</span>
-                    <span className="text-right text-dim">—</span>
-                </>
-            ) : (
-                <>
-                    <Bar ratio={cpu} reading={`${(cpu * 100).toFixed(0).padStart(3)}%`} />
-                    <Bar
-                        ratio={metrics.mem[1] > 0 ? metrics.mem[0] / metrics.mem[1] : 0}
-                        reading={`${metrics.mem[0].toFixed(1)}G/${metrics.mem[1].toFixed(0)}G`.padStart(
-                            10,
-                        )}
-                    />
-                    <Bar
-                        label={mount}
-                        ratio={total > 0 ? used / total : 0}
-                        reading={`${used.toFixed(0)}G/${total.toFixed(0)}G`.padStart(10)}
-                        thresholds={[80, 90]}
-                    />
-                    <span className="text-right text-dim">{metrics.uptime}</span>
-                </>
-            )}
-        </div>
-    );
-}
 
 /**
  * The dashboard: one compact row per node, a pane per family, and everything that needs a look.
@@ -80,6 +26,86 @@ export function Dashboard() {
     const metrics = useFleetMetrics();
     const attention = useMemo(() => attentionRows(fleet), [fleet]);
 
+    const nodeColumns = useMemo<Column<Node>[]>(() => {
+        const of = (node: Node): NodeMetrics | null => metrics[node.wireguard_ip ?? ""] ?? null;
+        const cpu = (m: NodeMetrics): number =>
+            m.cores.reduce((sum, core) => sum + core, 0) / Math.max(1, m.cores.length);
+        const mem = (m: NodeMetrics): number => (m.mem[1] > 0 ? m.mem[0] / m.mem[1] : 0);
+        const disk = (m: NodeMetrics): number => {
+            const [, used, total] = m.disks[0] ?? ["/", 0, 0];
+
+            return total > 0 ? used / total : 0;
+        };
+        const none = <span className="text-dim">—</span>;
+        // One meter per reading; a node with no exporter has no metrics and shows a dash.
+        const meter = (
+            reading: (m: NodeMetrics) => string,
+            ratio: (m: NodeMetrics) => number,
+            options: { label?: (m: NodeMetrics) => string; thresholds?: [number, number] } = {},
+        ) => ({
+            value: (node: Node) => {
+                const m = of(node);
+
+                return m === null ? "—" : reading(m).trim();
+            },
+            sort: (node: Node) => {
+                const m = of(node);
+
+                return m === null ? -1 : ratio(m);
+            },
+            cell: (node: Node) => {
+                const m = of(node);
+
+                return m === null ? (
+                    none
+                ) : (
+                    <Bar
+                        label={options.label?.(m)}
+                        ratio={ratio(m)}
+                        reading={reading(m)}
+                        thresholds={options.thresholds}
+                    />
+                );
+            },
+        });
+
+        return [
+            { header: "Name", width: 14, value: (n) => n.name },
+            { header: "Status", width: 9, value: (n) => n.status },
+            {
+                header: "CPU",
+                width: 21,
+                ...meter((m) => `${(cpu(m) * 100).toFixed(0).padStart(3)}%`, cpu),
+            },
+            {
+                header: "Mem",
+                width: 21,
+                ...meter(
+                    (m) => `${m.mem[0].toFixed(1)}G/${m.mem[1].toFixed(0)}G`.padStart(10),
+                    mem,
+                ),
+            },
+            {
+                header: "Disk",
+                width: 19,
+                ...meter(
+                    (m) => {
+                        const [, used, total] = m.disks[0] ?? ["/", 0, 0];
+
+                        return `${used.toFixed(0)}G/${total.toFixed(0)}G`.padStart(10);
+                    },
+                    disk,
+                    { label: (m) => m.disks[0]?.[0] ?? "/", thresholds: [80, 90] },
+                ),
+            },
+            {
+                header: "Uptime",
+                width: 16,
+                value: (n) => of(n)?.uptime ?? "—",
+                cell: (n) => <span className="text-dim">{of(n)?.uptime ?? "—"}</span>,
+            },
+        ];
+    }, [metrics]);
     const appColumns = useMemo<Column<App>[]>(
         () => [
             { header: "Slug", width: 44, value: (a) => a.slug },
@@ -124,32 +150,18 @@ export function Dashboard() {
 
     return (
         <div className="grid h-full grid-cols-2 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-[1ch] gap-y-[16px]">
-            <Frame title="Nodes" className="col-span-2 max-h-[34vh]">
-                <div
-                    className="row"
-                    role="row"
-                    data-head
-                    style={{ gridTemplateColumns: NODE_TEMPLATE }}
-                >
-                    <span>Name</span>
-                    <span>Status</span>
-                    <span>CPU</span>
-                    <span>Mem</span>
-                    <span>Disk</span>
-                    <span className="text-right">Uptime</span>
-                </div>
-                {fleet.loading ? (
-                    <Note>Loading fleet data…</Note>
-                ) : (
-                    fleet.nodes.map((node) => (
-                        <NodeSummaryRow
-                            key={node.id}
-                            node={node}
-                            metrics={metrics[node.wireguard_ip ?? ""] ?? null}
-                        />
-                    ))
-                )}
-            </Frame>
+            <Pane
+                name="nodes"
+                order={0}
+                title="Nodes"
+                className="col-span-2 max-h-[34vh]"
+                columns={nodeColumns}
+                rows={fleet.nodes}
+                rowId={(n) => String(n.id)}
+                warn={(n) => !nodeHealthy(n)}
+                target={(row) => ({ kind: "nodes", row })}
+                empty={fleet.loading ? "Loading fleet data…" : "No nodes."}
+            />
             <Pane
                 name="apps"
                 order={1}
