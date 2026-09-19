@@ -47,6 +47,7 @@ import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
 import { LogPane } from "../ui/LogPane";
+import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
 import { Properties } from "../ui/Properties";
 import { firewallColumns, instanceColumns, processColumns, scheduleColumns } from "./columns";
@@ -256,8 +257,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                             name: "Domain",
                             value: instance.domain,
                             // Caddy terminates TLS for every route, so the site answers on https.
-                            onOpen: () =>
-                                window.open(`https://${instance.domain}`, "_blank", "noopener"),
+                            onOpen: () => openInNewTab(`https://${instance.domain}`),
                         },
                         {
                             name: "Status",

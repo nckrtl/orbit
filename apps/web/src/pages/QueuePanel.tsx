@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { instanceQueueQuery } from "../api/queries";
 import type { Instance, QueueJob, QueueState } from "../api/types";
+import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
 
 const STATES: QueueState[] = ["pending", "completed", "failed"];
@@ -83,7 +84,7 @@ export function QueuePanel({ instance }: { instance: Instance }) {
                         className="hover:text-fg"
                         href={queue.dashboard_url}
                         target="_blank"
-                        rel="noopener"
+                        rel="noopener noreferrer"
                     >
                         horizon ↗
                     </a>
@@ -95,7 +96,7 @@ export function QueuePanel({ instance }: { instance: Instance }) {
             warn={(job) => job.status === "failed"}
             onRowClick={(job) => {
                 if (job.url !== null) {
-                    window.open(job.url, "_blank", "noopener");
+                    openInNewTab(job.url);
                 }
             }}
             empty={`No ${state} jobs.`}
