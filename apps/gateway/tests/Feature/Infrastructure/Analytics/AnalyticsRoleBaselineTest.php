@@ -8,6 +8,7 @@ use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -15,6 +16,7 @@ use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
+use Tests\Support\FakeNodeRoleFirewallManager;
 
 /** What the baseline asked of its two collaborators, in order. */
 final class AnalyticsRoleEvents
@@ -91,6 +93,8 @@ beforeEach(function (): void {
     $this->collaborators = new AnalyticsRoleEvents;
     $this->app->instance(PlausibleRuntimeLifecycle::class, new RecordingPlausibleRuntime($this->collaborators));
     $this->app->instance(AnalyticsPublicationManager::class, new RecordingAnalyticsPublication($this->collaborators));
+    $this->firewall = new FakeNodeRoleFirewallManager;
+    $this->app->instance(NodeRoleFirewallManager::class, $this->firewall);
 });
 
 describe(AnalyticsRoleBaseline::class, function (): void {
@@ -105,6 +109,7 @@ describe(AnalyticsRoleBaseline::class, function (): void {
         app(AnalyticsRoleBaseline::class)->converge($node, $assignment);
 
         expect($this->collaborators->events)->toBe(['runtime:converge:3.2.1', 'publication:converge'])
+            ->and($this->firewall->commands)->toBe(['converge:analytics'])
             ->and($this->collaborators->storage?->databaseUrl)
             ->toBe('postgres://postgres:postgres-secret@10.44.0.200:5432/plausible_db')
             ->and($this->collaborators->storage?->clickhouseDatabaseUrl)
@@ -164,6 +169,7 @@ describe(AnalyticsRoleBaseline::class, function (): void {
         app(AnalyticsRoleBaseline::class)->remove($node, $assignment, purgeData: true);
 
         expect($this->collaborators->events)->toBe(['publication:remove', 'runtime:remove'])
+            ->and($this->firewall->commands)->toBe(['remove:analytics'])
             ->and($settings->find($node))->toBeNull()
             ->and(app(AnalyticsSecretManager::class)->secretKeyBase($node))->not->toBe($secret);
     });

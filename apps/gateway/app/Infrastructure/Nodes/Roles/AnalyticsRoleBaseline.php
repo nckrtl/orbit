@@ -10,7 +10,9 @@ use App\Domain\Analytics\AnalyticsSecretManager;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
+use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -27,6 +29,7 @@ final readonly class AnalyticsRoleBaseline implements RoleBaseline
         private AnalyticsSecretManager $secrets,
         private PlausibleRuntimeLifecycle $runtime,
         private AnalyticsPublicationManager $publication,
+        private NodeRoleFirewallManager $firewall,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -43,6 +46,10 @@ final readonly class AnalyticsRoleBaseline implements RoleBaseline
 
         $processes = $this->storage->assert($settings->postgresProcessId, $settings->clickhouseProcessId);
 
+        // Before Plausible starts: a storage Process on this Node is only reachable from the
+        // `plausible` container once the role's own rules admit the Docker bridge.
+        $this->firewall->converge($node, RoleName::Analytics, $node->user);
+
         $this->runtime->converge(
             $node,
             $this->settings->version($node),
@@ -57,6 +64,8 @@ final readonly class AnalyticsRoleBaseline implements RoleBaseline
     {
         $this->publication->remove($node);
         $this->runtime->remove($node);
+        // While the settings still name the storage Processes, so the local rules are known.
+        $this->firewall->remove($node, RoleName::Analytics, $node->user);
         $this->secrets->purge($node);
         $this->settings->purge($node);
     }

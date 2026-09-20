@@ -11,6 +11,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -32,6 +33,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
     public function converge(Node $node): void
     {
         $address = $this->address($node);
+        $this->awaitPlausible($node, $address);
         $certificate = $this->certificates->issue(AnalyticsHostname::Value, $address);
         $certificatePem = $this->read($certificate->certificatePath);
         $privateKeyPem = $this->read($certificate->privateKeyPath);
@@ -68,6 +70,40 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         }
 
         $this->dns->converge($node);
+    }
+
+    /**
+     * A started container is not a working Plausible: it first creates and migrates its database,
+     * and it restarts forever when it cannot reach its storage. The dashboard is published only
+     * once Plausible answers its own health check.
+     */
+    private function awaitPlausible(Node $node, string $address): void
+    {
+        $result = $this->ssh->execute(
+            $this->connection($node, $address),
+            new RemoteCommand(
+                ['bash', '-seu', '--', "http://{$address}:".PlausibleProcess::PORT.'/api/health'],
+                <<<'BASH'
+                    for attempt in $(seq 1 90); do
+                        if curl --fail --silent --show-error --max-time 3 --output /dev/null "$1"; then
+                            exit 0
+                        fi
+                        sleep 2
+                    done
+                    exit 1
+                    BASH,
+            ),
+        );
+
+        if (! $result->succeeded()) {
+            throw new NodeRoleOperationException(
+                'analytics-health',
+                'node_role.convergence_failed',
+                'analytics.plausible_unhealthy',
+                "Plausible did not become healthy on node [{$node->name}]. Read the logs of its plausible Process.",
+                $result,
+            );
+        }
     }
 
     public function remove(Node $node): void

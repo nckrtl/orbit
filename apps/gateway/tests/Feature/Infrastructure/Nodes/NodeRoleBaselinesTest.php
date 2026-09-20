@@ -1021,6 +1021,7 @@ function analytics_role_baseline(): AnalyticsRoleBaseline
             public function forget(Node $node): void {}
         },
         Mockery::mock(AnalyticsPublicationManager::class)->shouldIgnoreMissing(),
+        Mockery::mock(NodeRoleFirewallManager::class)->shouldIgnoreMissing(),
     );
 }
 

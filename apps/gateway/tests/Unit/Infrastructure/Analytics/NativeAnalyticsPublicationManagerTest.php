@@ -19,13 +19,23 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-it('issues the certificate, publishes the Caddy site, then converges DNS last', function (): void {
+it('waits for Plausible, issues the certificate, publishes the Caddy site, then converges DNS last', function (): void {
     $events = [];
     $manager = analytics_publication_manager($events);
 
     $manager->converge(analytics_publication_node());
 
-    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge']);
+    expect($events)->toBe(['ssh:health', 'certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge']);
+});
+
+it('publishes nothing when Plausible does not become healthy', function (): void {
+    $events = [];
+    $manager = analytics_publication_manager($events, failHealth: true);
+
+    expect(fn () => $manager->converge(analytics_publication_node()))
+        ->toThrow(fn (NodeRoleOperationException $exception) => expect($exception->underlyingErrorCode)->toBe('analytics.plausible_unhealthy'));
+
+    expect($events)->toBe(['ssh:health']);
 });
 
 it('throws when the certificate SSH push fails', function (): void {
@@ -35,7 +45,7 @@ it('throws when the certificate SSH push fails', function (): void {
     expect(fn () => $manager->converge(analytics_publication_node()))
         ->toThrow(NodeRoleOperationException::class);
 
-    expect($events)->toBe(['certificate:issue', 'ssh:certificate']);
+    expect($events)->toBe(['ssh:health', 'certificate:issue', 'ssh:certificate']);
 });
 
 it('throws when the Caddy SSH push fails', function (): void {
@@ -45,7 +55,7 @@ it('throws when the Caddy SSH push fails', function (): void {
     expect(fn () => $manager->converge(analytics_publication_node()))
         ->toThrow(NodeRoleOperationException::class);
 
-    expect($events)->toBe(['certificate:issue', 'ssh:certificate', 'ssh:caddy']);
+    expect($events)->toBe(['ssh:health', 'certificate:issue', 'ssh:certificate', 'ssh:caddy']);
 });
 
 it('removes the Caddy site and certificate over SSH, then converges DNS without the node', function (): void {
@@ -80,6 +90,7 @@ function analytics_publication_manager(
     array &$events,
     bool $failCertificate = false,
     bool $failCaddy = false,
+    bool $failHealth = false,
 ): NativeAnalyticsPublicationManager {
     $certificateDirectory = sys_get_temp_dir().'/orbit-analytics-test-'.bin2hex(random_bytes(4));
     mkdir($certificateDirectory);
@@ -113,16 +124,23 @@ function analytics_publication_manager(
                 $this->events[] = $pendingNode instanceof Node ? 'dns:converge' : 'dns:converge-empty';
             }
         },
-        ssh: new class($events, $failCertificate, $failCaddy) implements SshExecutor
+        ssh: new class($events, $failCertificate, $failCaddy, $failHealth) implements SshExecutor
         {
             public function __construct(
                 private array &$events,
                 private bool $failCertificate,
                 private bool $failCaddy,
+                private bool $failHealth,
             ) {}
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
+                if (str_contains($command->input ?? '', '--max-time')) {
+                    $this->events[] = 'ssh:health';
+
+                    return new CommandResult($this->failHealth ? 1 : 0, '', '', 1, false);
+                }
+
                 if ($command->protectedInput !== null) {
                     $this->events[] = 'ssh:certificate';
 

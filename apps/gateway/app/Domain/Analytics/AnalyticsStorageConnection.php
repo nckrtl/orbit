@@ -93,7 +93,8 @@ final readonly class AnalyticsStorageConnection
         return $host;
     }
 
-    private static function publishedPort(#[SensitiveParameter] Process $process, int $containerPort): int
+    /** The host port the Process publishes for a container port, which is also what a firewall rule must admit. */
+    public static function publishedPort(#[SensitiveParameter] Process $process, int $containerPort): int
     {
         $ports = $process->runtime_config['ports'] ?? [];
 
