@@ -53,13 +53,23 @@ describe('GitHub App API', function (): void {
         $state = app(GitHubAppStore::class)->registration()?->state;
 
         $page = $this->get($url)->assertOk()->assertHeader('Cache-Control', 'no-store, private');
+        $html = $page->getContent();
+        preg_match('/name="manifest" value="([^"]+)"/', $html, $matches);
+        $manifest = json_decode(
+            html_entity_decode($matches[1] ?? '', ENT_QUOTES | ENT_HTML5),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
-        expect($page->getContent())
+        expect($html)
             ->toContain('action="https://github.com/organizations/acme/settings/apps/new?state='.$state.'"')
             ->toContain('&quot;redirect_url&quot;:&quot;https://gateway.orbit/api/v1/github/app/callback&quot;')
             ->toContain('&quot;public&quot;:true')
             ->toContain('&quot;default_permissions&quot;:{&quot;contents&quot;:&quot;read&quot;,&quot;metadata&quot;:&quot;read&quot;}')
             ->not->toContain('hook_attributes');
+        expect($manifest)
+            ->toBeArray()
+            ->not->toHaveKey('default_events');
 
         $this->get('/api/v1/github/app/register?state='.str_repeat('0', 64))
             ->assertUnprocessable()
@@ -82,6 +92,13 @@ describe('GitHub App API', function (): void {
 
         $this->get("/api/v1/github/app/callback?code=one-time-code&state={$state}")
             ->assertRedirect('https://github.com/apps/orbit-acme/installations/new');
+
+        Http::assertSent(static function (Request $request): bool {
+            return $request->url() === 'https://api.github.com/app-manifests/one-time-code/conversions'
+                && $request->method() === 'POST'
+                && $request->body() === ''
+                && $request->body() !== '[]';
+        });
 
         $store = app(GitHubAppStore::class);
 

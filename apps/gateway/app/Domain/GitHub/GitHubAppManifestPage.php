@@ -9,6 +9,7 @@ namespace App\Domain\GitHub;
  * from the browser of the person who will own the App. The manifest asks for read access to
  * repository contents and metadata, no webhook, and a public App that other accounts can install
  * ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)).
+ * An empty `default_events` list is omitted: GitHub's convert endpoint rejects `[]`.
  */
 final readonly class GitHubAppManifestPage
 {
@@ -27,7 +28,6 @@ final readonly class GitHubAppManifestPage
                 'contents' => 'read',
                 'metadata' => 'read',
             ],
-            'default_events' => [],
         ];
     }
 

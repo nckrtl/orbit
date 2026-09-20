@@ -21,10 +21,16 @@ final readonly class HttpGitHubApi implements GitHubApi
 
     private const float TIMEOUT = 10.0;
 
+    /**
+     * Laravel's `post($url)` JSON-encodes an omitted payload as `[]`. GitHub's
+     * convert schema rejects that array (`[] is not a null or object`).
+     */
     public function convertManifest(#[SensitiveParameter] string $code): GitHubAppCredentials
     {
         $response = $this->send(
-            fn (): Response => $this->request()->post('/app-manifests/'.rawurlencode($code).'/conversions'),
+            fn (): Response => $this->request()
+                ->withBody('', 'application/json')
+                ->post('/app-manifests/'.rawurlencode($code).'/conversions'),
         );
 
         if (! $response->successful()) {
