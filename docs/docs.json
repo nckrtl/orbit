@@ -100,6 +100,7 @@
               "reference/wireguard-endpoints",
               "reference/private-dns",
               "reference/tools",
+              "reference/github-app",
               "reference/database-role",
               "reference/metrics",
               "reference/herdr-sessions",
@@ -154,6 +155,7 @@
               "cli/cluster",
               "cli/firewall",
               "cli/tool",
+              "cli/github",
               "cli/metrics",
               "cli/dns"
             ]

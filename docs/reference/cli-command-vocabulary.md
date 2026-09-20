@@ -56,6 +56,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `env` | `import`, `sync` | The CLI imports or synchronizes AppInstance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
+| `github` | `install` | The CLI registers the Gateway's [GitHub App](/reference/github-app) and installs it on a GitHub account. |
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
 | `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance, or scans its dependencies. |
 | `metrics` | `status` | The CLI reports Metrics role status. |

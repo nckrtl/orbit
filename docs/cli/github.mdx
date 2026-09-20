@@ -1,0 +1,99 @@
+---
+title: "github"
+description: "Register the Gateway's read-only GitHub App, install it on a GitHub account, show it, or remove it from the Gateway."
+---
+
+The `github` family manages the Gateway's own GitHub App. Orbit uses the App to read private `github.com` repositories. The [GitHub App reference](/reference/github-app) explains registration, installations, and how reads use short-lived tokens.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`github:app:install`](#orbit-githubappinstall) | Register the App when the Gateway has none, then install it on a GitHub account or organization. |
+| [`github:app:show`](#orbit-githubappshow) | Show the App and the accounts that installed it. |
+| [`github:app:destroy`](#orbit-githubappdestroy) | Delete the App's stored credentials from the Gateway. |
+
+Every command accepts `--json`.
+
+## orbit github:app:install
+
+Open GitHub in a browser to register the App, install it, or both.
+
+```bash
+orbit github:app:install [--name=NAME] [--owner=ORGANIZATION]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | prompt, `orbit` | Proposed App name for a first registration. GitHub asks for another name in the browser when the name is taken. |
+| `--owner=ORGANIZATION` | your personal account | GitHub organization that owns the App registration. It applies to a first registration only. |
+
+```bash
+orbit github:app:install
+orbit github:app:install --name=orbit-acme --owner=acme
+```
+
+The CLI prints each URL and opens it in a browser when it can. The browser must reach the Gateway's private HTTPS address, because GitHub redirects to it after registration. On a machine without a browser, open the printed URL on a machine that is on the Orbit VPN.
+
+On a Gateway without an App, the command first registers the App. You confirm once on GitHub. The command then opens the App's install page, where you choose the account or organization and its repositories. The command waits until the Gateway sees the new installation and reports the account.
+
+On a Gateway that has an App, the command opens the install page only. Run it once for each account or organization.
+
+With `--json` or `-n`, the command prints the URL, does not wait, and reports a `status` of `pending`.
+
+| Status | Meaning |
+| --- | --- |
+| `installed` | The Gateway sees the new installation. The result names the account. |
+| `pending` | The URL was printed, and the command did not wait. |
+
+| Error code | Meaning |
+| --- | --- |
+| `github.registration_invalid` | The redirect does not match a registration that this Gateway started, or the one-time code has expired. |
+| `github.registration_failed` | GitHub refused to exchange the one-time code. |
+| `github.installation_pending` | The command stopped waiting before the Gateway saw a new installation. |
+| `github.unavailable` | The Gateway could not reach `api.github.com`. |
+
+## orbit github:app:show
+
+Show the App name, slug, App ID, owner, GitHub URL, and one row for each installation.
+
+```bash
+orbit github:app:show
+```
+
+| Installation field | Meaning |
+| --- | --- |
+| `account` | GitHub account or organization that installed the App. |
+| `type` | `user` or `organization`. |
+| `repositories` | `all` or `selected`. |
+| `suspended` | Whether the account suspended the installation. |
+
+The Gateway lists installations on GitHub for each call, so the result reflects changes made on GitHub. The result never contains the private key.
+
+| Error code | Meaning |
+| --- | --- |
+| `github.app_missing` | The Gateway has no GitHub App. |
+| `github.unavailable` | The Gateway could not reach `api.github.com`, or GitHub refused the App credential. |
+
+## orbit github:app:destroy
+
+Delete the App ID, slug, and private key from the Gateway. Orbit then reads every repository without a credential.
+
+```bash
+orbit github:app:destroy [--yes]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm without a prompt. Required for noninteractive and JSON calls. |
+
+The command prints the GitHub page where you delete the App registration. GitHub offers no API for that step.
+
+| Error code | Meaning |
+| --- | --- |
+| `github.app_missing` | The Gateway has no GitHub App. |
+
+## Related
+
+- [`app`](/cli/app) creates an App from a repository. The Gateway reads the repository to resolve its default branch.
+- [`instance`](/cli/instance) clones and deploys App source on a Node.
