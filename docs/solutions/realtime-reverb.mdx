@@ -35,14 +35,21 @@ The repository, ref, install path, and port all have config defaults (`ORBIT_WEB
 
 ### Moving the role to another node
 
-Add the role to the new node, then remove it from the old one:
+Relocate the singleton assignment in one request:
 
 ```bash
-orbit node:role:add <new-node> websocket --converge
-orbit node:role:remove <old-node> websocket --converge
+orbit node:role:relocate <new-node> websocket --force
 ```
 
-Adding the role converges the checkout, the systemd unit, the certificate, the Caddy site, and repoints the `reverb.orbit` DNS record to the new node in the same step. The Gateway keeps the one generated set of Reverb credentials across the move, so no client reconfiguration is needed.
+Relocate copies the generated Reverb identity onto the target when that Node does not already have one, converges the checkout, the systemd unit, the certificate, and the Caddy site, and repoints `reverb.orbit` to the new Node. It retracts the source publication and runtime. It does not overwrite credentials the target already has.
+
+When the target already holds `websocket` and leftovers remain on another Node, name that source:
+
+```bash
+orbit node:role:relocate <new-node> websocket --from <old-node> --force
+```
+
+Remove-then-add is not the supported path. The role is a singleton, so add refuses while the old assignment exists, and remove-first drops the generated identity.
 
 ## Limits
 

@@ -7,7 +7,7 @@ description: "Move the Laravel/FPM control plane to another Node while vpn and p
 
 ## Problem
 
-The Gateway Laravel app and the WireGuard/DNS server start on the same Node. Later you may want the control plane on a new VPS while `vpn` and private DNS stay where they are.
+The Gateway Laravel app and the WireGuard/DNS server start on the same Node. Later you may want the control plane on a new VPS while `vpn` and private DNS stay where they are. `websocket` and `metrics` use the same `node:role:relocate` command; [ADR 0095](/decisions/0095-relocate-relocatable-singleton-roles) owns those roles.
 
 ## Cause
 
