@@ -6579,6 +6579,541 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/analytics": {
+      "delete": {
+        "operationId": "instance-analytics-disable",
+        "summary": "Remove App instance tracking hosts",
+        "tags": [
+          "App instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric App instance ID."
+          }
+        ],
+        "description": "Remove the analytics tracking hosts of an App instance.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "instance_id": {
+                          "type": "integer"
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "True while the App instance publishes at least one tracking host."
+                        },
+                        "domain": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "dashboard_url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The private Plausible dashboard, or null while no Node has an active analytics role."
+                        },
+                        "hosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "host": {
+                                "type": "string"
+                              },
+                              "route_id": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "public_publication": {
+                                "type": "string"
+                              },
+                              "failed_step": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "error_code": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "script_url": {
+                                "type": "string"
+                              },
+                              "event_url": {
+                                "type": "string"
+                              },
+                              "dns": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "description": "The record to create, or null while the App instance has no domain.",
+                                "properties": {
+                                  "type": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "snippet": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The script tag for the App, using the first host."
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/instances/12/analytics\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Analytics\\DisableInstanceAnalyticsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DisableInstanceAnalyticsRequest(instanceId: 4))->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "instance-analytics-show",
+        "summary": "Show App instance analytics",
+        "tags": [
+          "App instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric App instance ID."
+          }
+        ],
+        "description": "Show the analytics tracking hosts of an App instance.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "instance_id": {
+                          "type": "integer"
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "True while the App instance publishes at least one tracking host."
+                        },
+                        "domain": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "dashboard_url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The private Plausible dashboard, or null while no Node has an active analytics role."
+                        },
+                        "hosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "host": {
+                                "type": "string"
+                              },
+                              "route_id": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "public_publication": {
+                                "type": "string"
+                              },
+                              "failed_step": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "error_code": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "script_url": {
+                                "type": "string"
+                              },
+                              "event_url": {
+                                "type": "string"
+                              },
+                              "dns": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "description": "The record to create, or null while the App instance has no domain.",
+                                "properties": {
+                                  "type": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "snippet": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The script tag for the App, using the first host."
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/instances/12/analytics\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Analytics\\ShowInstanceAnalyticsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowInstanceAnalyticsRequest(instanceId: 4))->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "instance-analytics-enable",
+        "summary": "Publish App instance tracking hosts",
+        "tags": [
+          "App instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric App instance ID."
+          }
+        ],
+        "description": "Publish the analytics tracking hosts of an App instance.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "hosts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 253
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "instance_id": {
+                          "type": "integer"
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "True while the App instance publishes at least one tracking host."
+                        },
+                        "domain": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "dashboard_url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The private Plausible dashboard, or null while no Node has an active analytics role."
+                        },
+                        "hosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "host": {
+                                "type": "string"
+                              },
+                              "route_id": {
+                                "type": "integer"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "public_publication": {
+                                "type": "string"
+                              },
+                              "failed_step": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "error_code": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "script_url": {
+                                "type": "string"
+                              },
+                              "event_url": {
+                                "type": "string"
+                              },
+                              "dns": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "description": "The record to create, or null while the App instance has no domain.",
+                                "properties": {
+                                  "type": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "snippet": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The script tag for the App, using the first host."
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/analytics\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"hosts\": [\"example\"]}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Analytics\\EnableInstanceAnalyticsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new EnableInstanceAnalyticsRequest(instanceId: 4))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/database-connections/{database_connection}": {
       "delete": {
         "operationId": "instance-database-remove",
@@ -16078,6 +16613,12 @@
           "upstream": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "analytics_instance_id": {
+            "type": [
+              "integer",
               "null"
             ]
           }

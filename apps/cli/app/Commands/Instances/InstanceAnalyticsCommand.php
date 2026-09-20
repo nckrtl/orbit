@@ -42,10 +42,14 @@ abstract class InstanceAnalyticsCommand extends GatewayCommand
         ));
 
         // Whole lines, not table cells: a host name is long, and a wrapped DNS record is hard to copy.
-        $this->writeHumanMessage('Create these DNS records:');
+        $records = array_filter($response->hosts, static fn (array $host): bool => $host['dns'] !== null);
 
-        foreach ($response->hosts as $host) {
-            $this->writeHumanMessage("  {$host['dns']['type']} {$host['dns']['name']} -> {$host['dns']['value']}");
+        if ($records !== []) {
+            $this->writeHumanMessage('Create these DNS records:');
+
+            foreach ($records as $host) {
+                $this->writeHumanMessage("  {$host['dns']['type']} {$host['dns']['name']} -> {$host['dns']['value']}");
+            }
         }
 
         if ($response->snippet !== null) {

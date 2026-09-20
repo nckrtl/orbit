@@ -13,7 +13,7 @@ use SensitiveParameter;
  */
 final readonly class InstanceAnalyticsResponse
 {
-    /** @param list<array{host: string, route_id: int, status: string, public_publication: string, failed_step: ?string, error_code: ?string, script_url: string, event_url: string, dns: array{type: string, name: string, value: string}}> $hosts */
+    /** @param list<array{host: string, route_id: int, status: string, public_publication: string, failed_step: ?string, error_code: ?string, script_url: string, event_url: string, dns: ?array{type: string, name: string, value: string}}> $hosts */
     public function __construct(
         public int $instanceId,
         public bool $enabled,
@@ -60,10 +60,12 @@ final readonly class InstanceAnalyticsResponse
                 || ! self::nullableString($host, 'error_code')
                 || ! is_string($host['script_url'] ?? null)
                 || ! is_string($host['event_url'] ?? null)
-                || ! is_array($dns)
-                || ! is_string($dns['type'] ?? null)
-                || ! is_string($dns['name'] ?? null)
-                || ! is_string($dns['value'] ?? null)
+                || ($dns !== null && (
+                    ! is_array($dns)
+                    || ! is_string($dns['type'] ?? null)
+                    || ! is_string($dns['name'] ?? null)
+                    || ! is_string($dns['value'] ?? null)
+                ))
             ) {
                 throw self::invalid($requestId);
             }
@@ -77,7 +79,8 @@ final readonly class InstanceAnalyticsResponse
                 'error_code' => $host['error_code'] ?? null,
                 'script_url' => $host['script_url'],
                 'event_url' => $host['event_url'],
-                'dns' => ['type' => $dns['type'], 'name' => $dns['name'], 'value' => $dns['value']],
+                // Null while the App instance has no domain to point the host at.
+                'dns' => $dns === null ? null : ['type' => $dns['type'], 'name' => $dns['name'], 'value' => $dns['value']],
             ];
         }
 

@@ -2139,6 +2139,91 @@
       }
     },
     {
+      "name": "instance-analytics-disable",
+      "title": "Remove App instance tracking hosts",
+      "description": "Remove the analytics tracking hosts of an App instance.",
+      "method": "DELETE",
+      "path": "/api/v1/instances/{instance}/analytics",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-analytics-enable",
+      "title": "Publish App instance tracking hosts",
+      "description": "Publish the analytics tracking hosts of an App instance.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/analytics",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 253
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-analytics-show",
+      "title": "Show App instance analytics",
+      "description": "Show the analytics tracking hosts of an App instance.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/analytics",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-clone",
       "title": "Clone an App instance",
       "description": "Clone a candidate into a prepared production App instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",

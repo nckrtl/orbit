@@ -15,6 +15,7 @@ use App\Console\GatewayBoostInstallCommand;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
+use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AppDevCaddyManager;
@@ -150,6 +151,7 @@ use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsRoleSettingsRepository;
 use App\Infrastructure\Analytics\NativeAnalyticsSecretManager;
+use App\Infrastructure\Analytics\NativeAnalyticsTrackingRouteProjector;
 use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -425,6 +427,7 @@ final class AppServiceProvider extends ServiceProvider
         AnalyticsSecretManager::class => NativeAnalyticsSecretManager::class,
         PlausibleRuntimeLifecycle::class => NativePlausibleRuntimeLifecycle::class,
         AnalyticsPublicationManager::class => NativeAnalyticsPublicationManager::class,
+        AnalyticsTrackingRouteProjector::class => NativeAnalyticsTrackingRouteProjector::class,
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,

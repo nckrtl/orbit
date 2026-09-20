@@ -24,10 +24,10 @@ final readonly class ClearRouteTargetAction
 
     public function execute(Route $route): Route
     {
-        if ($route->isCustomProxy()) {
+        if (! $route->isApp()) {
             throw new ResourceOperationException(
                 errorCode: 'route.kind_unsupported',
-                message: 'A custom proxy Route cannot own App instance targets.',
+                message: 'Only an App Route can own App instance targets.',
                 status: 409,
             );
         }

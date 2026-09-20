@@ -94,7 +94,8 @@ export type AnalyticsHost = {
     error_code: string | null;
     script_url: string;
     event_url: string;
-    dns: { type: string; name: string; value: string };
+    /** Null while the instance has no domain to point the host at. */
+    dns: { type: string; name: string; value: string } | null;
 };
 /** An App instance's analytics: its tracking hosts, and what the operator does next. */
 export type InstanceAnalytics = {

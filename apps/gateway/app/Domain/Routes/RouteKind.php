@@ -8,4 +8,5 @@ enum RouteKind: string
 {
     case App = 'app';
     case CustomProxy = 'custom_proxy';
+    case AnalyticsTracking = 'analytics_tracking';
 }

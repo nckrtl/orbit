@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\HerdrSessionsController;
+use App\Http\Controllers\Api\InstanceAnalyticsController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeMetricsController;
@@ -235,6 +236,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
         Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
         Route::post('instances/{instance}/dependencies/update', [AppInstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
+        Route::get('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'show'])->whereNumber('instance')->name('instance:analytics:show');
+        Route::post('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'enable'])->whereNumber('instance')->name('instance:analytics:enable');
+        Route::delete('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'disable'])->whereNumber('instance')->name('instance:analytics:disable');
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
         Route::patch('instances/{instance}', [AppInstancesController::class, 'update'])->name('instance:update');

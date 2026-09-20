@@ -83,6 +83,18 @@ describe('the instance analytics requests', function (): void {
         expect($response->enabled)->toBeFalse()->and($response->hosts)->toBe([])->and($response->snippet)->toBeNull();
     });
 
+    it('accepts a host without a DNS record, for an App instance that has no domain', function (): void {
+        $data = instance_analytics_gateway_data();
+        $data['hosts'][0]['dns'] = null;
+        $mockClient = new MockClient([
+            ShowInstanceAnalyticsRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => node_role_request_id()]]),
+        ]);
+
+        $response = node_role_gateway_connector($mockClient)->send(new ShowInstanceAnalyticsRequest(12))->dto();
+
+        expect($response->hosts[0]['dns'])->toBeNull();
+    });
+
     it('refuses an answer with a malformed host', function (array $broken): void {
         $data = instance_analytics_gateway_data();
         $data['hosts'][0] = [...$data['hosts'][0], ...$broken];
@@ -94,7 +106,7 @@ describe('the instance analytics requests', function (): void {
             ->toThrow(GatewayApiException::class, 'invalid instance analytics data');
     })->with([
         'route id as text' => [['route_id' => '91']],
-        'no DNS record' => [['dns' => null]],
+        'DNS record that is not an object' => [['dns' => 'CNAME analytics.example.com']],
         'DNS without a value' => [['dns' => ['type' => 'CNAME', 'name' => 'analytics.shop.example.com']]],
     ]);
 });

@@ -83,6 +83,17 @@ final readonly class RouteRemovalGuard
             );
         }
 
+        if (
+            $role === RoleName::Analytics
+            && Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->exists()
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'analytics.tracking_hosts_exist',
+                message: 'The analytics role cannot be removed while an App instance has a tracking host.',
+                status: 409,
+            );
+        }
+
         if ($role === RoleName::Ingress && new PublicRouteEligibility()->ingressDependsOnPublicRoutes($node)) {
             throw new NodeRoleValidationException(
                 message: "Role [ingress] cannot be removed while public Routes depend on node [{$node->name}].",

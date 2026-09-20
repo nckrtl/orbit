@@ -42,7 +42,10 @@ const analyticsReport = (analytics: InstanceAnalytics): string =>
     [
         ...analytics.hosts.map(
             (host) =>
-                `${host.host}  ${host.status}${host.error_code === null ? "" : ` (${host.error_code})`}\n  DNS  ${host.dns.type} ${host.dns.name} -> ${host.dns.value}`,
+                `${host.host}  ${host.status}${host.error_code === null ? "" : ` (${host.error_code})`}` +
+                (host.dns === null
+                    ? ""
+                    : `\n  DNS  ${host.dns.type} ${host.dns.name} -> ${host.dns.value}`),
         ),
         "",
         "Add this tag to the App, and create the site in Plausible yourself:",

@@ -74,6 +74,10 @@ final readonly class AppDevCaddyConfigRenderer
                 CADDY;
         }
 
+        if ($site->isAnalyticsTracking()) {
+            return $this->analyticsTrackingHandler($site);
+        }
+
         if ($site->isLocalHttpProxy()) {
             return <<<CADDY
                 reverse_proxy {$site->localHttpUpstream} {
@@ -155,6 +159,33 @@ final readonly class AppDevCaddyConfigRenderer
         $wake = $this->hibernationWake($site);
 
         return $wake === null ? $handlers : $wake.PHP_EOL.$handlers;
+    }
+
+    /**
+     * Plausible counts a visitor by the forwarded client address. A public listener already sees the
+     * visitor; a Router behind a separate Ingress trusts that Ingress alone to name the visitor.
+     */
+    private function analyticsTrackingHandler(AppDevSite $site): string
+    {
+        $upstream = "reverse_proxy http://{$site->analyticsUpstream}";
+        $proxy = $site->analyticsTrustedProxies === []
+            ? ["    {$upstream}"]
+            : [
+                "    {$upstream} {",
+                '        trusted_proxies '.implode(' ', $site->analyticsTrustedProxies),
+                '    }',
+            ];
+
+        // The site template indents the first line only, so the following lines carry the site indentation.
+        return implode(PHP_EOL.'    ', [
+            'handle /js/* {',
+            ...$proxy,
+            '}',
+            'handle /api/event {',
+            ...$proxy,
+            '}',
+            'respond 404',
+        ]);
     }
 
     private function hibernationWake(AppDevSite $site): ?string

@@ -39,6 +39,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Route;
+use App\Models\RouteAnalyticsTracking;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -385,6 +386,14 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             throw new ResourceOperationException(
                 errorCode: 'instance.clone_in_progress',
                 message: "AppInstance [{$appInstance->name}] is the candidate for an incomplete clone.",
+                status: 409,
+            );
+        }
+
+        if (RouteAnalyticsTracking::query()->where('app_instance_id', $appInstance->id)->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'analytics.tracking_hosts_exist',
+                message: "AppInstance [{$appInstance->name}] still publishes a tracking host. Disable its analytics first.",
                 status: 409,
             );
         }

@@ -30,6 +30,9 @@ final readonly class AppDevSite
         public ?int $vitePort = null,
         public ?string $localHttpUpstream = null,
         public ?int $agentationPort = null,
+        public ?string $analyticsUpstream = null,
+        /** @var list<string> */
+        public array $analyticsTrustedProxies = [],
     ) {}
 
     public function poolName(): string
@@ -59,9 +62,16 @@ final readonly class AppDevSite
         return $this->localHttpUpstream !== null && $this->localHttpUpstream !== '';
     }
 
+    /** A tracking host: only Plausible's script and event paths reach the analytics role. */
+    public function isAnalyticsTracking(): bool
+    {
+        return $this->analyticsUpstream !== null && $this->analyticsUpstream !== '';
+    }
+
     public function isProxy(): bool
     {
-        return $this->upstreamAddress !== null
+        return $this->isAnalyticsTracking()
+            || $this->upstreamAddress !== null
             || $this->upstreamAddresses !== []
             || $this->localUnixUpstream !== null
             || $this->isLocalHttpProxy();

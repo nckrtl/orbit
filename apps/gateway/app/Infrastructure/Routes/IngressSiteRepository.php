@@ -50,6 +50,15 @@ final readonly class IngressSiteRepository
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
         $target = $route->targets->first()?->appInstance;
 
+        // A tracking host has no workload: the Router itself answers, so the Router is the last hop to verify.
+        if ($route->isAnalyticsTracking() && $router instanceof Node) {
+            return new PublicRoutePrivateOverride(
+                domain: $route->domain,
+                routerAddress: $this->privateAddress($router),
+                workloadAddress: $this->privateAddress($router),
+            );
+        }
+
         if (! $router instanceof Node || ! $target instanceof AppInstance) {
             throw new RuntimeConvergenceException(
                 step: 'route-address',
