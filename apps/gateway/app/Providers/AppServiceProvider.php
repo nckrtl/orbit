@@ -15,6 +15,8 @@ use App\Console\GatewayBoostInstallCommand;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
+use App\Domain\Analytics\AnalyticsStatsDriver;
+use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AgentationSiteProjection;
@@ -151,8 +153,10 @@ use App\Infrastructure\Activity\ActivityPropertiesObserver;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsRoleSettingsRepository;
 use App\Infrastructure\Analytics\NativeAnalyticsSecretManager;
+use App\Infrastructure\Analytics\NativeAnalyticsStatsKeyStore;
 use App\Infrastructure\Analytics\NativeAnalyticsTrackingRouteProjector;
 use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
+use App\Infrastructure\Analytics\PlausibleCommunityEditionStatsDriver;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
@@ -428,6 +432,8 @@ final class AppServiceProvider extends ServiceProvider
         PlausibleRuntimeLifecycle::class => NativePlausibleRuntimeLifecycle::class,
         AnalyticsPublicationManager::class => NativeAnalyticsPublicationManager::class,
         AnalyticsTrackingRouteProjector::class => NativeAnalyticsTrackingRouteProjector::class,
+        AnalyticsStatsDriver::class => PlausibleCommunityEditionStatsDriver::class,
+        AnalyticsStatsKeyStore::class => NativeAnalyticsStatsKeyStore::class,
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,

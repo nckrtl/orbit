@@ -61,6 +61,7 @@ import { type Column, Pane } from "../ui/Pane";
 import { Properties, type Property } from "../ui/Properties";
 import { Status } from "../ui/Status";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
+import { AnalyticsPanel } from "./AnalyticsPanel";
 import { QueuePanel } from "./QueuePanel";
 import { RecordLayout } from "./RecordLayout";
 
@@ -401,7 +402,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
-        // A column, not a grid: the queue panel is only there for an instance with Horizon, and the log takes what is left either way.
+        // A column, not a grid: analytics and queue panels are only there when available, and the log takes what is left either way.
         <div className={`flex h-full flex-col ${GAPS}`}>
             {/* The deployment history sits beside the properties, and only once there is one. */}
             <div
@@ -473,6 +474,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     target={(row) => ({ kind: "schedules", row })}
                 />
             </div>
+            <AnalyticsPanel instance={instance} />
             <QueuePanel instance={instance} />
             <LogPane
                 title="Application log"

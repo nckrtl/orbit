@@ -1,17 +1,18 @@
 ---
 title: "analytics"
-description: "Pin the Plausible Community Edition version that the analytics role runs."
+description: "Pin the Plausible Community Edition version that the analytics role runs, and store the Stats API key the Gateway uses to read visits."
 ---
 
-The `analytics` role runs Plausible Community Edition for the fleet as one Docker Process named `plausible`. The `analytics` family changes the version that Process runs. [`node:role:add`](/cli/node#orbit-noderoleadd) assigns the role and [`node:role:remove`](/cli/node#orbit-noderoleremove) removes it.
+The `analytics` role runs Plausible Community Edition for the fleet as one Docker Process named `plausible`. The `analytics` family changes the version that Process runs and stores the Stats API key the Gateway uses to read visits. [`node:role:add`](/cli/node#orbit-noderoleadd) assigns the role and [`node:role:remove`](/cli/node#orbit-noderoleremove) removes it.
 
-The [Analytics role](/reference/analytics) reference owns the storage Processes, the private dashboard, and what removal keeps.
+The [Analytics role](/reference/analytics) reference owns the storage Processes, the private dashboard, and what removal keeps. [App instance analytics stats](/reference/instance-analytics-stats) owns the read that uses the stored key.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
 | [`analytics:update`](#orbit-analyticsupdate) | Pin another Plausible version and replace the `plausible` Process. |
+| [`analytics:credentials`](#orbit-analyticscredentials) | Show whether a Stats API key is stored, store one, or clear it. |
 
 The command accepts `--json`. It requires exactly one active Gateway, and the Gateway authorizes the caller against that Gateway Node.
 
@@ -44,7 +45,40 @@ Human output names the Node, the version, and the previous version. JSON returns
 | `validation.failed` | The Gateway refused the version. |
 | `analytics.role_missing` | No Node has an active analytics role. |
 
+## orbit analytics:credentials
+
+Show whether the Gateway has a Plausible Stats API key, store one, or clear it.
+
+```bash
+orbit analytics:credentials [--set] [--api-key=KEY] [--unset] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--set` | Store a key. In a terminal the command asks for it when `--api-key` is absent. |
+| `--api-key` | The key to store. Use it with `--set`. |
+| `--unset` | Clear the stored key. |
+
+```bash
+orbit analytics:credentials
+orbit analytics:credentials --set
+orbit analytics:credentials --set --api-key=plausible-read-only-key
+orbit analytics:credentials --unset --json
+```
+
+The command never prints the key. Human output says whether a key is stored and names the driver `plausible_ce`. JSON returns `configured`, `driver`, and the request ID.
+
+Create the key in Plausible at `https://analytics.orbit`, then store it here. The Gateway sends it only to the fleet Plausible Stats API. `--set` and `--unset` together are refused.
+
+| Error code | Meaning |
+| --- | --- |
+| `analytics.credentials_conflict` | `--set` and `--unset` were both given. |
+| `analytics.api_key_invalid` | The key is missing or empty. The CLI refuses it before any request. |
+
+The Gateway stores the key even while no analytics role is assigned. The next stats read uses it.
+
 ## Related
 
 - [`node`](/cli/node) assigns and removes the analytics role.
 - [`process`](/cli/process) reads the logs of the `plausible` Process and restarts it.
+- [`instance:analytics`](/cli/instance) publishes a tracking host.

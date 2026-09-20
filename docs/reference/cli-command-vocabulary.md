@@ -74,6 +74,7 @@ Three commands keep a noun as their last segment.
 
 | Command | Result |
 | --- | --- |
+| `analytics:credentials` | The CLI shows whether a Plausible Stats API key is stored, stores one, or clears it. It never prints the key. |
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one synchronous Node metrics snapshot. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |

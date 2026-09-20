@@ -5,7 +5,7 @@ description: "How the analytics role runs Plausible Community Edition, where it 
 
 # Analytics role
 
-This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. 
+This page tells an operator how Orbit runs Plausible Community Edition for the fleet, how an App instance sends it visits, and how the Gateway reads those visits for the Orbit web page. [ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role) owns the role and its storage, [ADR 0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host, and [ADR 0102](/decisions/0102-read-app-instance-analytics-through-a-fleet-driver) owns the stats driver and the App instance panel. 
 
 ## Prepare the database Processes
 
@@ -35,7 +35,7 @@ Assignment names the two Processes by ID and refuses when one is missing, is not
 | Run Plausible | The `plausible` Process at the pinned version, published on the Node's WireGuard address. It creates and migrates its PostgreSQL database each time it starts. |
 | Publish the dashboard | Only after Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens.
+The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an App instance page, create a Stats API key in that Plausible account and store it with `orbit analytics:credentials --set`. The Gateway keeps the key as a protected setting and never returns it. `orbit analytics:credentials` reports only whether a key is stored. [App instance analytics stats](/reference/instance-analytics-stats) owns the read.
 
 ## Update and remove the role
 
@@ -67,6 +67,8 @@ The host answers two paths and nothing else.
 The Router serves the host and reaches Plausible over WireGuard; the Ingress forwards the host to the Router as it does for every public Route. A tracking Route has no target and no upstream of its own, and the generic `route:*` commands refuse to create or change one.
 
 `orbit instance:analytics:show INSTANCE` returns each host with its Route, its script URL, its event URL, and the DNS record to create. The Gateway knows no public address, so the record is a `CNAME` from the tracking host to the App instance's own domain, which already resolves to your Ingress. The answer also carries the script tag for the App. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the App yourself.
+
+The Orbit web App instance page shows live visitors, visitors for the past day, 7 days, and 30 days, and the top ten pages when the analytics role is active and this App instance has a tracking host. The site is the App instance's own domain, the same `data-domain` as the script tag. If the Gateway cannot read the Stats API, the panel says so and shows no counts. See [App instance analytics stats](/reference/instance-analytics-stats).
 
 Removing the analytics role refuses with `analytics.tracking_hosts_exist` while an App instance still has a tracking host.
 

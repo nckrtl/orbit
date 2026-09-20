@@ -79,6 +79,7 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                             `/api/v1/instances/${instance.id}/analytics`,
                         ),
                     );
+                    queryClient.removeQueries({ queryKey: ["instance-analytics-stats", instance.id] });
 
                     return `Analytics tracking disabled for [${target}].`;
                 },
@@ -100,6 +101,9 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                               {},
                           );
                           queryClient.setQueryData(key, enabled);
+                          queryClient.removeQueries({
+                              queryKey: ["instance-analytics-stats", instance.id],
+                          });
 
                           return { ok: true, output: analyticsReport(enabled) };
                       } catch (error) {

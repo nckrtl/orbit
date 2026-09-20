@@ -146,6 +146,10 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
         .element(pane("Properties"))
         .toHaveTextContent("Analyticsanalytics.dev.charlie-shop.test");
     await expect.element(pane("Properties")).toHaveTextContent("Dashboardanalytics.orbit");
+    await expect.element(pane("Analytics")).toHaveTextContent("Live visitors");
+    await expect.element(pane("Analytics")).toHaveTextContent("2");
+    await expect.element(pane("Top pages")).toHaveTextContent("/");
+    await expect.element(pane("Top pages")).toHaveTextContent("120");
 
     // Enabled now, so the menu offers the opposite, and asks before it stops the tracking.
     await page.getByText("actions ▾").click();
@@ -160,6 +164,23 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
         .element(footer())
         .toHaveTextContent("Analytics tracking disabled for [charlie-shop/dev].");
     await expect.element(pane("Properties")).not.toHaveTextContent("Analytics");
+    await expect.element(pane("Analytics")).not.toBeInTheDocument();
+});
+
+it("shows a warn analytics panel when stats cannot be read, not zeros", async () => {
+    await openApp("/instances/2");
+    await expect.element(pane("Application log")).toBeVisible();
+    await expect.element(pane("Analytics")).not.toBeInTheDocument();
+
+    await page.getByText("actions ▾").click();
+    await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
+    await userEvent.keyboard("{Escape}");
+
+    const analytics = pane("Analytics");
+    await expect.element(analytics).toHaveAttribute("data-state", "warn");
+    await expect.element(analytics).toHaveTextContent("No Plausible Stats API key is stored");
+    await expect.element(analytics).not.toHaveTextContent("Live visitors");
+    await expect.element(pane("Top pages")).not.toBeInTheDocument();
 });
 
 it("asks before a destructive action and sends nothing until it is confirmed", async () => {

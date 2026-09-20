@@ -117,6 +117,8 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "App",
+                "App instance",
                 "Database",
                 "Gateway",
                 "Node",
@@ -508,6 +510,7 @@
             "components": [],
             "concepts": [
                 "Agentation endpoint",
+                "Analytics driver",
                 "App",
                 "App instance",
                 "Cluster",
@@ -2744,6 +2747,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0102-read-app-instance-analytics-through-a-fleet-driver.md",
+            "title": "ADR 0102: Read App instance analytics through a fleet driver",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Analytics driver",
+                "App",
+                "App instance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0088",
+                "0096",
+                "0097",
+                "0102"
+            ]
+        },
+        {
             "path": "docs/decisions/0103-absorb-commander-tasks-as-a-gateway-extension.md",
             "title": "ADR 0103: Absorb Commander tasks as a Gateway extension",
             "kind": "decision",
@@ -2892,10 +2919,13 @@
                 "0093",
                 "0094",
                 "0095",
+                "0096",
+                "0097",
                 "0098",
                 "0099",
                 "0100",
                 "0101",
+                "0102",
                 "0103"
             ]
         },
@@ -3039,7 +3069,8 @@
             ],
             "governing_adrs": [
                 "0096",
-                "0097"
+                "0097",
+                "0102"
             ]
         },
         {
@@ -3516,6 +3547,23 @@
                 "0040",
                 "0049",
                 "0056"
+            ]
+        },
+        {
+            "path": "docs/reference/instance-analytics-stats.md",
+            "title": "App instance analytics stats",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Analytics driver",
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0102"
             ]
         },
         {
