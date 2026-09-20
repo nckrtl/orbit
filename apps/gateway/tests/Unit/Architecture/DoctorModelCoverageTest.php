@@ -24,8 +24,6 @@ use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
 use App\Models\HerdrObservationNonce;
-use App\Models\TaskGroup;
-use App\Models\Task;
 use App\Models\HerdrSession;
 use App\Models\JwksKey;
 use App\Models\Node;
@@ -40,6 +38,8 @@ use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
+use App\Models\Task;
+use App\Models\TaskGroup;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
