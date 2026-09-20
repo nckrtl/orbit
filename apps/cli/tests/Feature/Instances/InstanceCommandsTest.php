@@ -784,7 +784,7 @@ it('rejects invalid parent IDs before creating an AppInstance', function (
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'invalid app' => ['0', '2', 'App ID must be a positive integer.'],
+    'invalid app' => ['0', '2', 'Project ID must be a positive integer.'],
     'invalid node' => ['3', '-1', 'Node ID must be a positive integer.'],
 ]);
 

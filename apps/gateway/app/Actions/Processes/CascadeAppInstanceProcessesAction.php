@@ -16,7 +16,7 @@ final readonly class CascadeAppInstanceProcessesAction
     public function execute(int $appInstanceId): void
     {
         Process::query()
-            ->where('owner_type', AppInstance::class)
+            ->whereIn('owner_type', AppInstance::morphTypes())
             ->where('owner_id', $appInstanceId)
             ->orderBy('id')
             ->get()

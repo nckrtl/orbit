@@ -14,7 +14,7 @@ Proposed. Amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-id
 
 ## Context
 
-Operators and agents say "app" for a Laravel application, a desktop binary, and Orbit's repository record. The Gateway already publishes Instances at `/api/v1/instances` and `instance:*`. The remaining App surface (`/api/v1/apps`, `app:*`, `app-*` MCP tools, OpenAPI `App`) still names the repository record. A hard cutover of that surface would brick Ops MCP and older CLI binaries while some Gateways still serve only `/apps`.
+Operators and agents say "app" for a Laravel application, a desktop binary, and Orbit's repository record. The Gateway already publishes Instances at `/api/v1/instances` and `instance:*`. The remaining App surface (`/api/v1/apps`, `app:*`, `app-*` MCP tools, OpenAPI `App`) still names the repository record. A hard cutover of that surface would brick Ops MCP and older CLI binaries while a Gateway that has not upgraded still serves only `/apps`.
 
 The default Instance identity is already `default` and already tracks the repository record's `default_branch` ([ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity)). This record does not change that identity. It names the owner a Project.
 
@@ -31,7 +31,7 @@ GitHub App, `app-dev`, `app-prod`, `APP_ENV`, `APP_DEBUG`, and the monorepo dire
 - Instance JSON uses `project_id` and `project` as the canonical nested owner. During the compatibility window the payload also includes `app_id` and `app` with the same values. Create and update input accepts either `project_id` or `app_id`.
 - Process and Schedule definition paths exist under both `/api/v1/projects/{project}/…` and `/api/v1/apps/{app}/…`. `--project` is the canonical CLI option; `--app` remains accepted as the same identifier.
 - Error codes that already use the `app.` and `instance.` prefixes stay. New Project-type errors use `project.`.
-- A later cleanup PR may drop the `/apps` routes, `app-*` MCP tools, and compatibility JSON keys after Ops verifies the fleet. That cleanup is not this decision.
+- A follow-up cleanup PR may drop the `/apps` routes, `app-*` MCP tools, and compatibility JSON keys after Ops verifies the fleet. That cleanup is not this decision.
 
 ## Rejected alternatives
 

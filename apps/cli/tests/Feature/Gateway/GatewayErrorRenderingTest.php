@@ -766,7 +766,7 @@ it('renders local validation failures through the exact json boundary', function
         'instance:create',
         ['project' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
-        'App ID must be a positive integer.',
+        'Project ID must be a positive integer.',
     ],
     'node role list id' => [
         'node:role:list',

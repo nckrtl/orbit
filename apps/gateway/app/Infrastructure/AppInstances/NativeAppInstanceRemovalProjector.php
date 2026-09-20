@@ -99,7 +99,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         }
 
         if (
-            $member->placedOnAppDev()
+            $member->environment === 'development'
             && ($removedTarget
             || $this->certificates->appInstanceCertificateExists($appInstance))
         ) {

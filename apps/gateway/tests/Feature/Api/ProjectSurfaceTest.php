@@ -232,7 +232,7 @@ it('exposes project_id beside app_id on Instance payloads', function (): void {
         ->assertJsonPath('data.project.type', 'laravel-app');
 });
 
-it('creates an Instance from project_id on the same owner as app_id', function (): void {
+it('accepts project_id as the Instance owner and refuses a mismatched app_id', function (): void {
     $project = OrbitApp::query()->create([
         'name' => 'shop',
         'slug' => 'shop',
@@ -241,6 +241,14 @@ it('creates an Instance from project_id on the same owner as app_id', function (
         'default_branch' => 'main',
         'root' => 'public',
     ]);
+    $other = OrbitApp::query()->create([
+        'name' => 'other',
+        'slug' => 'other',
+        'type' => ProjectType::LaravelPackage,
+        'repository_url' => 'https://github.com/acme/other.git',
+        'default_branch' => 'main',
+        'root' => 'src',
+    ]);
     $node = Node::query()->create([
         'name' => 'dev',
         'status' => LifecycleStatus::Active,
@@ -248,18 +256,22 @@ it('creates an Instance from project_id on the same owner as app_id', function (
         'public_ssh_host' => '192.0.2.84',
         'wireguard_ip' => '10.44.0.84',
     ]);
-    $node->roles()->create([
-        'role' => RoleName::AppDev,
-        'status' => LifecycleStatus::Active,
-    ]);
 
-    $created = $this->postJson('/api/v1/instances', [
-        'project_id' => $project->id,
+    $this->postJson('/api/v1/instances', [
         'node_id' => $node->id,
         'name' => 'preview',
-    ])->assertCreated();
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.project_id.0', 'Supply project_id or app_id.');
 
-    expect($created->json('data.app_id'))->toBe($project->id)
-        ->and($created->json('data.project_id'))->toBe($project->id)
-        ->and($created->json('data.project.slug'))->toBe('shop');
+    $this->postJson('/api/v1/instances', [
+        'project_id' => $project->id,
+        'app_id' => $other->id,
+        'node_id' => $node->id,
+        'name' => 'preview',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.project_id.0', 'project_id and app_id must name the same Project.');
 });

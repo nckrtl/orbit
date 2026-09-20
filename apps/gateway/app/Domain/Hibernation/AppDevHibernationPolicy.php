@@ -22,7 +22,7 @@ final readonly class AppDevHibernationPolicy
 
     public function appliesToProcess(Process $process): bool
     {
-        if ($process->owner_type !== AppInstance::class) {
+        if (! AppInstance::isMorphType($process->owner_type)) {
             return false;
         }
 

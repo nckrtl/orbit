@@ -14,9 +14,9 @@ Proposed. Amends [ADR 0028](/decisions/0028-require-one-route-per-active-appinst
 
 ## Context
 
-Every active Instance currently needs exactly one Route ([ADR 0028](/decisions/0028-require-one-route-per-active-appinstance)). That matches a Laravel application that serves HTTP. It does not match the Orbit monorepo or a Laravel package, which should not publish a hostname or keep an idle FPM master.
+Every active Instance needs exactly one Route ([ADR 0028](/decisions/0028-require-one-route-per-active-appinstance)). That matches a Laravel application that serves HTTP. It does not match the Orbit monorepo or a Laravel package, which must not publish a hostname or keep an idle FPM master.
 
-Type belongs on the Project. Instances of one repository share the same routing and serving contract. A later desktop or Vite type is added only when it needs different behavior.
+Type belongs on the Project. Instances of one repository share the same routing and serving contract. A desktop or Vite type is added only when that type needs different behavior.
 
 Existing Projects have no type. The upgrade must assign a value to every row. Existing Routes, environment values, releases, analytics, and TaskGroup morphs stay.
 
@@ -27,7 +27,7 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 - `project:update` may change `type`. A change to `laravel-app` is refused while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes.
 - Routing is derived from type, not from an Instance flag.
 - `laravel-app` is the only web-serving type in this decision. An active `laravel-app` Instance must have exactly one Route. Orbit creates that Route during provisioning and cloning onto app-prod, using the current preview-hostname rule for clones.
-- `monorepo` and `laravel-package` Instances get no Route by default. An operator may attach a Route later only with an explicit domain and a supported serving target (a web root Orbit can publish). Those types may stay active without a Route.
+- `monorepo` and `laravel-package` Instances get no Route by default. An operator may attach a Route only with an explicit domain and a supported serving target (a web root Orbit can publish). Those types may stay active without a Route.
 - Every PHP Instance on an app-prod Node still receives a dedicated Unix user ([ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) and [ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role)).
 - Orbit starts a dedicated FPM master only when that Instance serves PHP. `laravel-app` serves PHP. `laravel-package` does not start idle FPM. A `monorepo` Instance starts FPM only after an explicit supported serving target is attached.
 - The upgrade classifies existing Projects with no nulls:
@@ -48,7 +48,7 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 - Active package and monorepo Instances can exist without a Route. SQLite triggers and API guards must allow that.
 - Existing package Routes remain until an operator removes them.
 - A misclassified Project can keep serving until Ops sets the intended type.
-- Tasks that place a non-visitable Orbit checkout already skip Routes ([ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)). This record does not enable the `tasks` extension.
+- Tasks that place an Orbit checkout that is not visitable already skip Routes ([ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)). This record does not enable the `tasks` extension.
 
 ## Affects
 

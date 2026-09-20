@@ -16,7 +16,7 @@ Proposed. Amends [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-u
 
 The Gateway stores `app_instances.environment` as `development` or `production` and uses that column for isolation, release layout, candidate-only creation, hibernation, and transfer. Operators also store Laravel `APP_ENV` in the Instance environment. Those two facts drift. Changing `APP_ENV` must not move an Instance between checkout and release layouts or change its Unix user.
 
-Candidate-only creation already keys off the destination Node's `app-prod` role in the create path. Clone still writes `environment = production`. Transfer still refuses a "production instance". The public Instance payload still exposes `environment` as if it were Laravel mode.
+The create path already keys candidate-only creation to the destination Node's `app-prod` role. Clone still writes `environment = production`. Transfer still refuses a "production instance". The public Instance payload still exposes `environment` as if it were Laravel mode.
 
 Nick confirmed that existing app-prod placements must also receive `APP_ENV=production` and `APP_DEBUG=false` during this upgrade.
 
@@ -37,7 +37,7 @@ Nick confirmed that existing app-prod placements must also receive `APP_ENV=prod
 
 ## Rejected alternatives
 
-- Treat stored `APP_ENV` as the isolation switch: rejected because an operator could disable release layout or Unix-user isolation by editing an environment value.
+- Treat stored `APP_ENV` as the isolation switch: rejected because an operator who edits that environment value would disable release layout or Unix-user isolation.
 - Drop candidate-only creation and allow direct app-prod create: rejected because [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) still owns that contract; only its key changes from "production instance" to app-prod Node role.
 - Leave existing app-prod `APP_ENV` and `APP_DEBUG` untouched: rejected because Nick confirmed those placements must be normalized in this upgrade.
 - Infer Laravel mode from the Gateway placement column forever: rejected because application mode belongs in the application's environment.

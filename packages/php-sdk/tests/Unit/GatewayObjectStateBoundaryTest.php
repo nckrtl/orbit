@@ -174,6 +174,7 @@ describe('gateway object-state boundary', function (): void {
         $expectedBody = [
             'name' => 'Orbit',
             'slug' => 'orbit',
+            'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'root' => 'public',
             'defaults' => $defaults,

@@ -161,6 +161,19 @@ final class AppInstance extends Model
         'status',
     ];
 
+    public const string MorphAlias = 'instance';
+
+    /** @return list<string> */
+    public static function morphTypes(): array
+    {
+        return [self::MorphAlias, self::class];
+    }
+
+    public static function isMorphType(mixed $type): bool
+    {
+        return is_string($type) && in_array($type, self::morphTypes(), true);
+    }
+
     /** @return BelongsTo<App, $this> */
     public function app(): BelongsTo
     {
@@ -351,12 +364,13 @@ final class AppInstance extends Model
     private function hasActiveRole(RoleName $role): bool
     {
         $this->loadMissing('node.roles');
+        $node = $this->getRelation('node');
 
-        if ($this->node === null) {
+        if (! $node instanceof Node) {
             return false;
         }
 
-        return $this->node->roles->contains(
+        return $node->roles->contains(
             static fn (mixed $assigned): bool => $assigned->role === $role
                 && $assigned->status === LifecycleStatus::Active,
         );

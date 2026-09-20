@@ -55,7 +55,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         $appInstance = $this->capture($appInstanceId);
 
         Process::query()
-            ->where('owner_type', AppInstance::class)
+            ->whereIn('owner_type', AppInstance::morphTypes())
             ->where('owner_id', $appInstanceId)
             ->whereNotNull('source_definition_id')
             ->orderBy('id')
@@ -63,7 +63,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
             ->each(fn (Process $process) => $this->installProcess($process));
 
         Schedule::query()
-            ->where('target_type', AppInstance::class)
+            ->whereIn('target_type', AppInstance::morphTypes())
             ->where('target_id', $appInstanceId)
             ->whereNotNull('source_definition_id')
             ->orderBy('id')
@@ -143,9 +143,21 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         $data = $this->processData($appInstance, $definition);
         $attributes = $this->processSpecifications->attributes($data, $target);
 
+        if (Process::query()
+            ->whereIn('owner_type', AppInstance::morphTypes())
+            ->where('owner_id', $appInstance->id)
+            ->where('name', $definition->name)
+            ->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'process.name_taken',
+                message: "Process [{$definition->name}] already exists and cannot be adopted as a definition copy.",
+                status: 409,
+            );
+        }
+
         try {
             Process::query()->create([
-                'owner_type' => AppInstance::class,
+                'owner_type' => AppInstance::MorphAlias,
                 'owner_id' => $appInstance->id,
                 'source_definition_id' => $definition->id,
                 'name' => $definition->name,
@@ -170,9 +182,21 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
     ): void {
         $specification = $definition->spec;
 
+        if (Schedule::query()
+            ->whereIn('target_type', AppInstance::morphTypes())
+            ->where('target_id', $appInstance->id)
+            ->where('name', $definition->name)
+            ->exists()) {
+            throw new ResourceOperationException(
+                errorCode: ScheduleErrorCode::RetryConflict->value,
+                message: "Schedule [{$definition->name}] already exists and cannot be adopted as a definition copy.",
+                status: 409,
+            );
+        }
+
         try {
             Schedule::query()->create([
-                'target_type' => AppInstance::class,
+                'target_type' => AppInstance::MorphAlias,
                 'target_id' => $appInstance->id,
                 'source_definition_id' => $definition->id,
                 'host_node_id' => $appInstance->node_id,

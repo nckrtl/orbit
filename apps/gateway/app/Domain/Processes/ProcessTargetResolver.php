@@ -140,11 +140,11 @@ final readonly class ProcessTargetResolver
 
     private function owner(#[SensitiveParameter] Process $process): AppInstance|Node
     {
-        return match ($process->owner_type) {
-            AppInstance::class => AppInstance::query()
+        return match (true) {
+            AppInstance::isMorphType($process->owner_type) => AppInstance::query()
                 ->with('node')
                 ->findOrFail($process->owner_id),
-            Node::class => Node::query()->findOrFail($process->owner_id),
+            $process->owner_type === Node::class => Node::query()->findOrFail($process->owner_id),
             default => throw new ResourceOperationException(
                 errorCode: 'process.target_unsupported',
                 message: 'The Process owner is not a supported AppInstance or Node.',

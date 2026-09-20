@@ -278,7 +278,7 @@ it('resolves an App by canonical repository identity and returns bounded source 
 
     $activity = Activity::query()->where('command', 'instance:register')->sole();
     expect($activity->subject_type)
-        ->toBe(AppInstance::class)
+        ->toBe('instance')
         ->and($activity->target_node_id)
         ->toBe($this->node->id)
         ->and($activity->properties?->get('source_layout'))

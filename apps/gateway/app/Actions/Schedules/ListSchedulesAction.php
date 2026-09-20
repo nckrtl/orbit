@@ -31,7 +31,7 @@ final readonly class ListSchedulesAction
                     })
                     ->orWhere(static function ($query) use ($accessibleNodeIds): void {
                         $query
-                            ->where('target_type', AppInstance::class)
+                            ->whereIn('target_type', AppInstance::morphTypes())
                             ->whereIn(
                                 'target_id',
                                 AppInstance::query()

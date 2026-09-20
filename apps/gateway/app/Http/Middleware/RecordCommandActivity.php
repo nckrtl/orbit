@@ -374,7 +374,7 @@ final readonly class RecordCommandActivity
                 ...($activity->properties?->toArray() ?? []),
                 'schedule' => [
                     'id' => $schedule->id,
-                    'target_type' => $schedule->target_type === AppInstance::class
+                    'target_type' => AppInstance::isMorphType($schedule->target_type)
                         ? ScheduleTargetType::AppInstance->value
                         : ScheduleTargetType::Node->value,
                     'target_id' => $schedule->target_id,
@@ -416,7 +416,7 @@ final readonly class RecordCommandActivity
         }
 
         return Schedule::query()
-            ->where('target_type', $type->modelClass())
+            ->whereIn('target_type', $type->storedTypes())
             ->where('target_id', $targetId)
             ->where('name', $name)
             ->first();
@@ -944,7 +944,7 @@ final readonly class RecordCommandActivity
         if ($target !== null) {
             $updates = [...$updates, ...$target];
 
-            if (($target['subject_type'] ?? null) === AppInstance::class) {
+            if (AppInstance::isMorphType($target['subject_type'] ?? null)) {
                 $updates = $this->withAppInstanceSourceLayout($activity, $request, $updates, $target);
             }
         }
