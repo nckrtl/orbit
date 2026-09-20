@@ -166,7 +166,7 @@ final readonly class EnableInstanceAnalyticsAction
         // own Node, exactly like the instance domain it follows.
         if (
             $route->publication !== RoutePublication::Public
-            || (new PublicRouteEligibility()->publicEdgeIsLive($route) && $route->replacement_step === null)
+            || new PublicRouteEligibility()->publicEdgeIsLive($route)
         ) {
             return;
         }

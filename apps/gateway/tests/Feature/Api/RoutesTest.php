@@ -18,6 +18,7 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -858,6 +859,8 @@ it('reserves a replacement Route for a combined domain and publication change', 
 
 it('composes one public Caddy site when Ingress shares a Node and uses LAN without WireGuard fallback', function (): void {
     [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
+    $route->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
+    $route->refresh();
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevCaddyConfigRenderer;
 

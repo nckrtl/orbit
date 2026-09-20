@@ -300,11 +300,10 @@ function analytics_projection_node(
 
 function analytics_projection_publish(Route $route): void
 {
-    $route->update(['status' => RouteStatus::Active]);
     $route->update([
+        'status' => RouteStatus::Active,
         'replacement_step' => RouteReplacementStep::PublicActivated,
     ]);
-    $route->update(['replacement_step' => null]);
 }
 
 final class AnalyticsProjectionSshExecutor implements SshExecutor

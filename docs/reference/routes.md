@@ -22,7 +22,7 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Domain source | Always `generated` or `explicit`. This value never changes, and Orbit does not infer it from the domain. |
 | Replacement | Optional `replaces_route_id`, `replaced_by_route_id`, and `replacement_step` that expose a reserved, activating, retiring, or failed replacement pair. |
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
-| Publication | The only publication field: `private` or `public`. The Route keeps this value even when it has no target. Public-edge readiness is `status`, `failed_step`, and Doctor, not a second publication field. |
+| Publication | The only publication field: `private` or `public`. The Route keeps this value even when it has no target. Public-edge readiness is `status`, `replacement_step`, `failed_step`, and Doctor, not a second publication field. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | An App Route accepts a single App instance target or an ordered production target set. A custom proxy Route stores a loopback upstream or a Node Process. |
@@ -290,7 +290,9 @@ Related-node checks use only caller-authorized selected nodes. An unavailable Ro
 
 A public Route terminates HTTPS on the Cluster Ingress, forwards privately through the Cluster Router, and reaches the app-prod workload without exposing placement or workload listeners. Role ownership follows [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement). Only Ingress may be the public boundary; [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) records that rule.
 
-The Gateway publishes the public edge only when the Route is Cluster-scoped, the Cluster is active, and that Cluster has exactly one active Ingress and one active Router. A Node-scoped Route, an inactive Cluster, or a Cluster that lacks an active Ingress or Router keeps `publication=public` and creates no public listener, Let's Encrypt site, firewall rule, or partial activation. Those cases report readiness on `status`, `failed_step`, and Doctor.
+The Gateway publishes the public edge only when the Route is Cluster-scoped, the Cluster is active, and that Cluster has exactly one active Ingress and one active Router. A Node-scoped Route, an inactive Cluster, or a Cluster that lacks an active Ingress or Router keeps `publication=public` and creates no public listener, Let's Encrypt site, firewall rule, or partial activation. Those cases report readiness on `status`, `replacement_step`, `failed_step`, and Doctor.
+
+A public edge is live when `publication` is `public`, the Route is `active` or `activating`, the Cluster is eligible, and `replacement_step` ranks at `public-activated` or after. A finished public Route keeps that completed step. A public Route with an empty replacement step has not finished public activation and has no live Ingress listener.
 
 The Ingress artifact names the public domain and the Router upstream. It does not name an App instance, workload Node, or backend pool. Router Caddy keeps backend selection. Workload Caddy stays private.
 

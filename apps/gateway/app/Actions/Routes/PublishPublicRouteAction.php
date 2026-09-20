@@ -104,7 +104,11 @@ final readonly class PublishPublicRouteAction
         } catch (Throwable $exception) {
             $this->recordFailure($route, $failureStep, $this->errorCode($exception));
 
-            if ($this->eligibility->publicActivationRank($route->refresh()->replacement_step) < $this->eligibility->publicActivationRank(RouteReplacementStep::PublicActivated)) {
+            if (
+                $failureStep === RouteReplacementStep::PublicActivated->value
+                || $this->eligibility->publicActivationRank($route->refresh()->replacement_step)
+                    < $this->eligibility->publicActivationRank(RouteReplacementStep::PublicActivated)
+            ) {
                 $this->edge->rollbackPublicEdge($route);
             }
 
@@ -112,7 +116,7 @@ final readonly class PublishPublicRouteAction
         }
 
         $route->update([
-            'replacement_step' => null,
+            'replacement_step' => RouteReplacementStep::IngressFirewall,
             'failed_step' => null,
             'error_code' => null,
         ]);

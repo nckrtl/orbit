@@ -50,7 +50,8 @@ final readonly class PublicRouteEligibility
 
     /**
      * A public edge is live when publication is public, the Route is authoritative, the Cluster
-     * can serve Ingress, and activation has reached the public handler or has finished.
+     * can serve Ingress, and activation has reached the public handler. A null replacement step
+     * means public activation has not finished.
      */
     public function publicEdgeIsLive(Route $route): bool
     {
@@ -67,8 +68,7 @@ final readonly class PublicRouteEligibility
 
     public function publicActivationReached(?RouteReplacementStep $step): bool
     {
-        return $step === null
-            || $this->publicActivationRank($step) >= $this->publicActivationRank(RouteReplacementStep::PublicActivated);
+        return $this->publicActivationRank($step) >= $this->publicActivationRank(RouteReplacementStep::PublicActivated);
     }
 
     public function activeIngress(Cluster $cluster): ?Node

@@ -1212,7 +1212,10 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
         }
 
         if ($route->publication === RoutePublication::Public) {
-            $route->update(['publication' => RoutePublication::Private]);
+            $route->update([
+                'status' => RouteStatus::Retiring,
+                'publication' => RoutePublication::Private,
+            ]);
             $this->calls[] = "remove-public-edge:{$member->app_instance_id}";
         }
 

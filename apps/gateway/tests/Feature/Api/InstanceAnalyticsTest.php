@@ -14,6 +14,7 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -133,8 +134,7 @@ describe('instance:analytics:enable', function (): void {
             ->and($route->cluster_id)->toBe($this->cluster->id)
             ->and($route->publication)->toBe(RoutePublication::Public)
             ->and($route->status)->toBe(RouteStatus::Active)
-            ->and($route->status)->toBe(RouteStatus::Active)
-            ->and($route->replacement_step)->toBeNull()
+            ->and($route->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
             ->and($route->targets()->count())->toBe(0)
             ->and(RouteAnalyticsTracking::query()->sole()->getAttributes())
             ->toMatchArray(['route_id' => $route->id, 'app_instance_id' => $this->instance->id])
@@ -292,7 +292,7 @@ describe('instance:analytics:enable', function (): void {
             ->assertOk()
             ->assertJsonPath('data.hosts.0.route_id', $route->id)
             ->assertJsonPath('data.hosts.0.publication', 'public');
-        expect($route->refresh()->replacement_step)->toBeNull()
+        expect($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
             ->and($this->projector->routeIds)->toBe([$route->id]);
     });
 
