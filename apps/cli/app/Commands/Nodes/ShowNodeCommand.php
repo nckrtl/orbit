@@ -62,6 +62,7 @@ final class ShowNodeCommand extends NodeCommand
             'DNS server override' => $node->dnsServerOverride,
             'TLD' => NodeOutput::tld($node->tld),
             'Platform' => $platform,
+            'OS' => $node->osVersion,
             'Apps path' => $node->settings?->apps?->path,
             'Access to' => NodeOutput::accessList($node->access->canAccess ?? []),
             'Accessible by' => NodeOutput::accessList($node->access->accessibleBy ?? []),

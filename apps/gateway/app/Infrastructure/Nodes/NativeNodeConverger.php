@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\OsReleaseVersion;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
@@ -223,7 +224,21 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        return new NodeObservation($observed);
+        return new NodeObservation($observed, $this->observeOsVersion($connection));
+    }
+
+    private function observeOsVersion(SshConnection $connection): ?string
+    {
+        $release = $this->ssh->execute(
+            $connection,
+            new RemoteCommand(['cat', '--', '/etc/os-release'], maxOutputBytes: 8192),
+        );
+
+        if (! $release->succeeded()) {
+            return null;
+        }
+
+        return OsReleaseVersion::fromContents($release->stdout);
     }
 
     private function finishWireGuard(

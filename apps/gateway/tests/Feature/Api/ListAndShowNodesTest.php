@@ -48,6 +48,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             'status' => LifecycleStatus::Failed,
             'platform' => 'ubuntu',
             'architecture' => 'arm64',
+            'os_version' => 'Ubuntu 26.04.1 LTS',
             'tld' => 'zulu.orbit',
             'public_ssh_host' => '203.0.113.20',
             'public_ssh_port' => 2202,
@@ -67,6 +68,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'ubuntu',
             'architecture' => 'x86_64',
+            'os_version' => 'Ubuntu 26.04.1 LTS',
             'tld' => 'alpha.orbit',
             'public_ssh_host' => '203.0.113.10',
             'public_ssh_port' => 22,
@@ -113,6 +115,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             ->assertJsonPath('data.1.roles', ['vpn'])
             ->assertJsonPath('data.0.platform', 'ubuntu')
             ->assertJsonPath('data.0.architecture', 'x86_64')
+            ->assertJsonPath('data.0.os_version', 'Ubuntu 26.04.1 LTS')
             ->assertJsonPath('data.0.tld', 'alpha.orbit')
             ->assertJsonPath('data.0.public_ssh_host', '203.0.113.10')
             ->assertJsonPath('data.0.public_ssh_port', 22)
@@ -131,6 +134,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
                     'status',
                     'platform',
                     'architecture',
+                    'os_version',
                     'tld',
                     'public_ssh_host',
                     'public_ssh_port',
@@ -157,6 +161,7 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'ubuntu',
             'architecture' => 'x86_64',
+            'os_version' => 'Ubuntu 26.04.1 LTS',
             'tld' => 'alpha.orbit',
             'public_ssh_host' => '203.0.113.10',
             'public_ssh_port' => 22,
@@ -181,6 +186,7 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             ->assertJsonPath('data.id', $node->id)
             ->assertJsonPath('data.name', 'alpha')
             ->assertJsonPath('data.roles', ['gateway'])
+            ->assertJsonPath('data.os_version', 'Ubuntu 26.04.1 LTS')
             ->assertJsonPath('data.tld', 'alpha.orbit')
             ->assertJsonPath('data.wireguard_public_key', 'wg-alpha-public')
             ->assertJsonPath('data.wireguard_endpoint_override', 'private.example.com:51820')

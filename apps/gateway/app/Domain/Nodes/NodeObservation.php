@@ -11,5 +11,6 @@ final readonly class NodeObservation
 {
     public function __construct(
         public string $architecture,
+        public ?string $osVersion = null,
     ) {}
 }

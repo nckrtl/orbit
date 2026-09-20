@@ -10,6 +10,7 @@
 │  Status │ active
 │  Roles │ app-dev, database
 │  Platform │ linux
+│  OS │ Ubuntu 26.04.1 LTS
 │  Architecture │ x86_64
 │  TLD │ test
 │  WireGuard IP │ 10.44.0.2

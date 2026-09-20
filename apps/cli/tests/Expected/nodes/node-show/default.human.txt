@@ -33,6 +33,8 @@ Loading Node...
 │
 ├  Platform                      linux (x86_64)
 │
+├  OS                            Ubuntu 26.04.1 LTS
+│
 ├  Apps path                     —
 │
 ├  Access to                     —

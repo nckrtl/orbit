@@ -2423,6 +2423,7 @@ export interface components {
             status?: string;
             platform?: string | null;
             architecture?: string | null;
+            os_version?: string | null;
             tld?: string | null;
             public_ssh_host?: string;
             public_ssh_port?: number;

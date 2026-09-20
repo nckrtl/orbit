@@ -2018,6 +2018,71 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($node->status)->toBe(LifecycleStatus::Active)->and($node->architecture)->toBe('x86_64');
     });
 
+    it('records the operating system observed during bootstrap', function (): void {
+        app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64', 'Ubuntu 26.04.1 LTS'));
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'linux-node',
+            publicSshHost: '192.0.2.60',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($node->os_version)
+            ->toBe('Ubuntu 26.04.1 LTS')
+            ->and(Node::query()->where('name', 'linux-node')->sole()->os_version)
+            ->toBe('Ubuntu 26.04.1 LTS');
+    });
+
+    it('updates a recorded operating system when converge observes a new value', function (): void {
+        $existing = Node::query()->create([
+            'name' => 'linux-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'os_version' => 'Ubuntu 26.04 LTS',
+            'public_ssh_host' => '192.0.2.60',
+            'wireguard_ip' => '10.44.0.60',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64', 'Ubuntu 26.04.1 LTS'));
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'linux-node',
+            publicSshHost: '192.0.2.60',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($node->id)
+            ->toBe($existing->id)
+            ->and($node->os_version)
+            ->toBe('Ubuntu 26.04.1 LTS');
+    });
+
+    it('keeps a recorded operating system when the probe cannot read one', function (): void {
+        Node::query()->create([
+            'name' => 'linux-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'os_version' => 'Ubuntu 26.04.1 LTS',
+            'public_ssh_host' => '192.0.2.60',
+            'wireguard_ip' => '10.44.0.60',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app()->instance(NodeConverger::class, provision_node_observing_converger('x86_64'));
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'linux-node',
+            publicSshHost: '192.0.2.60',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($node->os_version)
+            ->toBe('Ubuntu 26.04.1 LTS');
+    });
+
     it('refuses an explicit architecture that differs from the observed one before roles converge', function (): void {
         $roleEvents = [];
         app()->instance(RoleBaselineConverger::class, new class($roleEvents) implements RoleBaselineConverger
@@ -2517,12 +2582,13 @@ function provision_node_dns_reconciler(): FakeClusterRouterDnsSelectionReconcile
     return $dns;
 }
 
-function provision_node_observing_converger(string $architecture): NodeConverger
+function provision_node_observing_converger(string $architecture, ?string $osVersion = null): NodeConverger
 {
-    return new class($architecture) implements NodeConverger
+    return new class($architecture, $osVersion) implements NodeConverger
     {
         public function __construct(
             private readonly string $architecture,
+            private readonly ?string $osVersion,
         ) {}
 
         public function converge(
@@ -2531,7 +2597,7 @@ function provision_node_observing_converger(string $architecture): NodeConverger
             ?string $expectedSshHostFingerprint = null,
             bool $rolelessOperator = false,
         ): NodeObservation {
-            return new NodeObservation($this->architecture);
+            return new NodeObservation($this->architecture, $this->osVersion);
         }
     };
 }

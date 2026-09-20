@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property LifecycleStatus $status
  * @property string $platform
  * @property string|null $architecture
+ * @property string|null $os_version
  * @property string $public_ssh_host
  * @property int $public_ssh_port
  * @property string $user
@@ -58,6 +59,7 @@ final class Node extends Model
         'status',
         'platform',
         'architecture',
+        'os_version',
         'tld',
         'public_ssh_host',
         'public_ssh_port',

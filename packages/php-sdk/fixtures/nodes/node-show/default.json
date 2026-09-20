@@ -11,6 +11,7 @@
             "status": "active",
             "platform": "linux",
             "architecture": "x86_64",
+            "os_version": "Ubuntu 26.04.1 LTS",
             "tld": "app-dev.orbit",
             "public_ssh_host": "94.237.40.75",
             "public_ssh_port": 22,

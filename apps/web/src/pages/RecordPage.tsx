@@ -264,6 +264,7 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                         { name: "Status", value: node.status, warn: !nodeHealthy(node) },
                         { name: "Roles", value: node.roles },
                         { name: "Platform", value: node.platform },
+                        { name: "OS", value: node.os_version },
                         { name: "Architecture", value: node.architecture },
                         { name: "TLD", value: node.tld },
                         { name: "WireGuard IP", value: node.wireguard_ip },

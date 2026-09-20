@@ -337,6 +337,7 @@ final readonly class ProvisionNodeAction
                     $data->expectedSshHostFingerprint,
                     function (NodeObservation $observation) use ($node, $managedUser, $data): void {
                         $this->recordArchitecture($node, $data, $observation);
+                        $this->recordOsVersion($node, $observation);
                         $node->user = $managedUser;
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
                         $this->convergeRoles($node, $data->roles);
@@ -351,6 +352,7 @@ final readonly class ProvisionNodeAction
                     $rolelessOperator,
                 );
                 $this->recordArchitecture($node, $data, $observation);
+                $this->recordOsVersion($node, $observation);
                 $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
                 $this->convergeRoles($node, $data->roles);
@@ -870,6 +872,20 @@ final readonly class ProvisionNodeAction
         }
 
         $node->update(['architecture' => $observation->architecture]);
+    }
+
+    /**
+     * Record a newly observed operating system when the probe produced one.
+     *
+     * A missing or untrusted probe leaves the previous value, including empty.
+     */
+    private function recordOsVersion(Node $node, NodeObservation $observation): void
+    {
+        if ($observation->osVersion === null || $node->os_version === $observation->osVersion) {
+            return;
+        }
+
+        $node->update(['os_version' => $observation->osVersion]);
     }
 
     private function hasAppDevRole(Node $node, ProvisionNodeData $data): bool

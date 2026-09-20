@@ -23,6 +23,7 @@ final class NodeData extends Data
         public string $status,
         public ?string $platform,
         public ?string $architecture,
+        public ?string $osVersion,
         public ?string $tld,
         public string $publicSshHost,
         public int $publicSshPort,
@@ -45,6 +46,8 @@ final class NodeData extends Data
         $platform = $node->getAttribute('platform');
         /** @var ?string $architecture */
         $architecture = $node->getAttribute('architecture');
+        /** @var ?string $osVersion */
+        $osVersion = $node->getAttribute('os_version');
         /** @var ?string $tld */
         $tld = $node->getAttribute('tld');
         /** @var ?string $wireguardIp */
@@ -71,6 +74,7 @@ final class NodeData extends Data
             status: $node->status->value,
             platform: $platform,
             architecture: $architecture,
+            osVersion: $osVersion,
             tld: $tld,
             publicSshHost: $node->public_ssh_host,
             publicSshPort: $node->public_ssh_port,

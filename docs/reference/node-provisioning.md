@@ -1,11 +1,11 @@
 ---
 title: "Node provisioning"
-description: "Which Linux user the Gateway connects as when node:add bootstraps a Node, how it records the machine architecture, and how node:remove hands the machine back."
+description: "Which Linux user the Gateway connects as when node:add bootstraps a Node, how it records the machine architecture and operating system, and how node:remove hands the machine back."
 ---
 
 # Node provisioning
 
-Use `orbit node:add <name> [host]` to set up a Node or change its top-level domain (TLD), roles, or settings. The Gateway sets up SSH access and records the machine architecture. Use `orbit node:remove <node>` to remove the Node from Orbit and restore public SSH access.
+Use `orbit node:add <name> [host]` to set up a Node or change its top-level domain (TLD), roles, or settings. The Gateway sets up SSH access and records the machine architecture and operating system. Use `orbit node:remove <node>` to remove the Node from Orbit and restore public SSH access.
 
 Human CLI output shows one indeterminate progress operation during each Gateway request, including provisioning and removal. Its indicator continues while the request blocks; the CLI does not receive or infer completion of the internal steps below. The result and request ID follow the settled progress display. JSON remains a single response without progress frames.
 
@@ -46,6 +46,14 @@ An explicit architecture for a new Node must match the observed value. A mismatc
 | `--architecture` | Optional machine architecture; the API and SDK field is `architecture`. A new Node records the observed value, which an explicit value must equal. An existing Node keeps its record. |
 
 The Gateway console command `orbit:node-provision` accepts the same option with the same default.
+
+## Operating system
+
+After it records architecture, the Gateway reads `/etc/os-release` as the managed user and stores a human-readable version such as `Ubuntu 26.04.1 LTS`. It prefers `PRETTY_NAME`, then `NAME` plus `VERSION` or `VERSION_ID`. Each successful read updates the Node record so a later converge reflects an upgrade.
+
+A missing, unreadable, or untrusted file does not fail converge. The Gateway leaves a previous `os_version` in place when the new read has no usable value, and it leaves the field empty when it has never observed one. The API, CLI `node:show`, and the web Node detail page expose the stored value; an empty value renders as an em dash.
+
+This observation is a Node host fact, like architecture. It is not Tool inventory.
 
 ## Failure codes
 

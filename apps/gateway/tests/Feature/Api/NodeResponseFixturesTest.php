@@ -40,7 +40,7 @@ describe('node response fixtures', function (): void {
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
             ): NodeObservation {
-                return new NodeObservation('x86_64');
+                return new NodeObservation('x86_64', 'Ubuntu 26.04.1 LTS');
             }
         });
 
@@ -49,6 +49,7 @@ describe('node response fixtures', function (): void {
             'status' => LifecycleStatus::Active,
             'platform' => 'linux',
             'architecture' => 'x86_64',
+            'os_version' => 'Ubuntu 26.04.1 LTS',
             'public_ssh_host' => '192.0.2.2',
             'user' => 'orbit',
             'wireguard_ip' => '10.44.0.1',
@@ -67,6 +68,7 @@ describe('node response fixtures', function (): void {
             'cluster_id' => $cluster->id,
             'platform' => 'linux',
             'architecture' => 'x86_64',
+            'os_version' => 'Ubuntu 26.04.1 LTS',
             'tld' => 'app-dev.orbit',
             'public_ssh_host' => '94.237.40.75',
             'public_ssh_port' => 22,

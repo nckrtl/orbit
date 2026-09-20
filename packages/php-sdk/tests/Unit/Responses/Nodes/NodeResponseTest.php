@@ -41,6 +41,8 @@ it('preserves the original positional constructor contract', function (): void {
         ->toBeNull()
         ->and($response->architecture)
         ->toBeNull()
+        ->and($response->osVersion)
+        ->toBeNull()
         ->and($response->tld)
         ->toBeNull()
         ->and($response->wireguardPublicKey)
@@ -216,6 +218,17 @@ it('keeps real access in node collections while stripping nested request ids', f
         ]);
 });
 
+it('preserves a recorded operating system from gateway data', function (): void {
+    $response = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'os_version' => 'Ubuntu 26.04.1 LTS',
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($response->osVersion)
+        ->toBe('Ubuntu 26.04.1 LTS')
+        ->and($response->toArray()['os_version'])
+        ->toBe('Ubuntu 26.04.1 LTS');
+});
+
 it('uses only canonical node network fields', function (): void {
     $response = NodeResponse::fromGatewayData(node_response_gateway_data([
         'wireguard_address' => '10.44.0.99',
@@ -260,6 +273,7 @@ function node_response_public_data(): array
         'status' => 'active',
         'platform' => null,
         'architecture' => null,
+        'os_version' => null,
         'tld' => null,
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,

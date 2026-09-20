@@ -16147,6 +16147,12 @@
               "null"
             ]
           },
+          "os_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "tld": {
             "type": [
               "string",
