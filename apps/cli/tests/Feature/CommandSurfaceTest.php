@@ -305,7 +305,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(134);
+    expect($orbitCommands)->toHaveCount(140);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -320,6 +320,12 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
             'herdr:session:restart',
             'herdr:session:show',
             'internal:database-local',
+            'proxycli:disable',
+            'proxycli:enable',
+            'proxycli:list',
+            'proxycli:show',
+            'proxycli:status',
+            'proxycli:update',
         ]);
 });
 
@@ -792,6 +798,18 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'proxycli:disable' => [[], ['json' => false]],
+        'proxycli:enable' => [[], [
+            'node' => null,
+            'cache-connection' => null,
+            'cliproxy-url' => null,
+            'cliproxy-management-key-file' => null,
+            'json' => false,
+        ]],
+        'proxycli:list' => [[], ['json' => false]],
+        'proxycli:show' => [['provider'], ['json' => false]],
+        'proxycli:status' => [[], ['json' => false]],
+        'proxycli:update' => [['account'], ['disabled' => false, 'enabled' => false, 'json' => false]],
         'profile' => [['url'], ['instance' => null, 'path' => null, 'as-first-user' => false, 'user' => null, 'json' => false]],
         'realtime:show' => [[], ['json' => false]],
         'realtime:tail' => [[], ['types' => null, 'json' => false]],

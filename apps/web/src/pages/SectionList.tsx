@@ -29,6 +29,7 @@ import { type Column, Pane } from "../ui/Pane";
 import { Status } from "../ui/Status";
 import { processListColumns, scheduleListColumns } from "./columns";
 import { NodesList } from "./NodesList";
+import { QuotaList } from "./Quota";
 
 type ListKind = Exclude<Kind, "deployments">;
 
@@ -104,7 +105,15 @@ const WARN: { [K in ListKind]: (row: never) => boolean } = {
 export function SectionList() {
     const { section } = useParams({ from: "/$section" });
 
-    return section === "nodes" ? <NodesList /> : <RecordList />;
+    if (section === "nodes") {
+        return <NodesList />;
+    }
+
+    if (section === "quota") {
+        return <QuotaList />;
+    }
+
+    return <RecordList />;
 }
 
 function RecordList() {

@@ -106,6 +106,7 @@
               "reference/metrics",
               "reference/service-metrics",
               "reference/analytics",
+              "reference/proxycli",
               "reference/herdr-sessions",
               "reference/tasks",
               "reference/local-resolver-overrides",
@@ -137,7 +138,8 @@
               "solutions/migrate-unmanaged-executor-hostname",
               "solutions/sqlite-wal-default",
               "solutions/realtime-reverb",
-              "solutions/relocate-gateway-role"
+              "solutions/relocate-gateway-role",
+              "solutions/cutover-proxycli"
             ]
           }
         ]
@@ -187,6 +189,7 @@
               "cli/top",
               "cli/extension",
               "cli/herdr",
+              "cli/proxycli",
               "cli/workspace"
             ]
           }
@@ -465,6 +468,18 @@
             ]
           },
           {
+            "group": "proxycli",
+            "openapi": "/openapi.json",
+            "pages": [
+              "DELETE /api/v1/proxycli",
+              "GET /api/v1/proxycli",
+              "POST /api/v1/proxycli",
+              "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/providers",
+              "GET /api/v1/proxycli/providers/{provider}"
+            ]
+          },
+          {
             "group": "Realtime",
             "openapi": "/openapi.json",
             "pages": [
@@ -597,7 +612,8 @@
               "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
               "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress",
               "decisions/0102-read-app-instance-analytics-through-a-fleet-driver",
-              "decisions/0103-absorb-commander-tasks-as-a-gateway-extension"
+              "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
+              "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension"
             ]
           }
         ]

@@ -82,7 +82,7 @@ describe('local profile and extension output channels', function (): void {
         'force without consent' => [['gateway:remove', 'primary', '--force'], ['code' => 'input.confirmation_required'], 1],
         'enable' => [['extension:enable', 'herdr'], ['extension' => 'herdr', 'enabled' => true], 0],
         'disable' => [['extension:disable', 'herdr'], ['extension' => 'herdr', 'enabled' => false], 0],
-        'list' => [['extension:list'], ['extensions' => [['extension' => 'herdr', 'enabled' => false]]], 0],
+        'list' => [['extension:list'], ['extensions' => [['extension' => 'herdr', 'enabled' => false], ['extension' => 'proxycli', 'enabled' => false]]], 0],
         'status transport error' => [['gateway:status'], ['code' => 'gateway.unreachable'], 1],
         'missing profile argument' => [['gateway:use'], ['code' => 'input.invalid'], 1],
         'missing removal argument' => [['gateway:remove', '--yes'], ['code' => 'input.invalid'], 1],
