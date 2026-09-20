@@ -21,11 +21,11 @@ A Route today serves one upstream for every path. The only path-scoped handling 
 ## Decision
 
 - Add `RouteKind::AnalyticsTracking`. A Route of this kind belongs to one App instance, is always public, and has no operator-chosen upstream: the Gateway derives it from the active analytics role.
-- `instance:analytics enable` creates one Route per host. The default host is `analytics.<instance domain>`, so the App instance must have a public domain first; `--host` names other hosts, up to ten. `instance:analytics disable` removes the Routes, and `instance:analytics show` returns the hosts with the script URL, the event URL, and the DNS records the operator must create.
+- `instance:analytics:enable` creates one Route per host. The default host is `analytics.<instance domain>`, so the App instance must have a public domain first; `--host` names other hosts, up to ten. `instance:analytics:disable` removes the Routes, and `instance:analytics:show` returns the hosts with the script URL, the event URL, and the DNS records the operator must create.
 - The Router site for the host proxies exactly `/js/*` and `/api/event` to the analytics container over WireGuard and answers every other path with 404, so the dashboard and the Plausible API never become public through it.
 - The host follows the public Route rules unchanged: the same eligibility, the same Ingress site and certificate handling, and the same firewall rules.
 - Enabling refuses while no analytics role is active. Removing the analytics role refuses while a tracking host exists, unless the removal also removes them.
-- `instance:analytics verify` runs on the operator's machine, as `profile` does: it resolves the host in public DNS and probes `https://<host>/js/script.js` for 200 and `https://<host>/` for 404. The Gateway calls no DNS provider.
+- `instance:analytics:verify` runs on the operator's machine, as `profile` does: it resolves the host in public DNS and probes `https://<host>/js/script.js` for 200 and `https://<host>/` for 404. The Gateway calls no DNS provider.
 
 ## Rejected alternatives
 

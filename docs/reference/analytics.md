@@ -5,7 +5,7 @@ description: "How the analytics role runs Plausible Community Edition, where it 
 
 # Analytics role
 
-This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. This page describes planned behavior: neither decision is implemented yet.
+This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. 
 
 ## Prepare the database Processes
 
@@ -45,7 +45,7 @@ The first person to open `https://analytics.orbit` registers the Plausible owner
 
 ## Publish a tracking host
 
-`orbit instance:analytics enable INSTANCE` publishes `analytics.<instance domain>` as a public Route that belongs to the App instance. The App instance needs a public domain first, and the cluster needs an active Router and Ingress, as every public Route does. `--host=HOST` names another host, and you can repeat it up to ten times.
+`orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>` as a public Route that belongs to the App instance. The App instance needs a public domain first, and the cluster needs an active Router and Ingress, as every public Route does. `--host=HOST` names another host, and you can repeat it up to ten times. The command sets the exact host set, so a host you leave out is removed.
 
 The host answers two paths and nothing else.
 
@@ -55,8 +55,12 @@ The host answers two paths and nothing else.
 | `/api/event` | The Plausible event endpoint. |
 | Every other path | 404, so the dashboard never becomes public. |
 
-`orbit instance:analytics show INSTANCE` returns each host with its script URL, its event URL, and the DNS record to create. `orbit instance:analytics disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the App yourself.
+The Router serves the host and reaches Plausible over WireGuard; the Ingress forwards the host to the Router as it does for every public Route. A tracking Route has no target and no upstream of its own, and the generic `route:*` commands refuse to create or change one.
+
+`orbit instance:analytics:show INSTANCE` returns each host with its Route, its script URL, its event URL, and the DNS record to create. The Gateway knows no public address, so the record is a `CNAME` from the tracking host to the App instance's own domain, which already resolves to your Ingress. The answer also carries the script tag for the App. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the App yourself.
+
+Removing the analytics role refuses with `analytics.tracking_hosts_exist` while an App instance still has a tracking host.
 
 ## Verify a tracking host
 
-`orbit instance:analytics verify INSTANCE` runs on your machine and never through the Gateway, as `orbit profile` does. For each host it resolves the name in public DNS, expects 200 from `https://HOST/js/script.js`, and expects 404 from `https://HOST/`.
+`orbit instance:analytics:verify INSTANCE` is planned and not implemented yet. It runs on your machine and never through the Gateway, as `orbit profile` does. For each host it resolves the name in public DNS, expects 200 from `https://HOST/js/script.js`, and expects 404 from `https://HOST/`.
