@@ -1,11 +1,11 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension stores TaskGroup features, ordered Task subtasks, and MCP create, list, and show."
+description: "How the Gateway tasks extension stores TaskGroup features, provisions a shared App instance, and starts T3 reviewer and implementer threads."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension stores a Commander-style feature group, its ordered subtasks, and the MCP tools that create and read them. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the architectural choices.
+This page tells an operator how the optional Gateway `tasks` extension stores a Commander-style feature group, provisions its shared App instance, and starts T3 agents for the ordered subtasks. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the architectural choices.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 
@@ -71,27 +71,32 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 A group without an App instance counts toward the App ceiling only. The Node ceiling applies once `taskable` points at an App instance on that Node.
 
-A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared App instance. AgentSpawner would start the reviewer and the first implementer. This slice ships no-op implementations. The group stays `reserved` until a provisioner implementation assigns an instance, and thread ids stay empty.
+A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared App instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses the spawn, the group stays `reserved` or `running` without thread ids.
 
 ## Shared App instance
 
-One fresh App instance belongs to the group. Every subtask reuses it.
+One fresh App instance belongs to the group. Every subtask reuses it. The instance name and feature branch are `task-{group id}`.
 
 | Intent | When | Result |
 | --- | --- | --- |
-| `visitable: false` | Orbit monorepo feature work | Isolated checkout or worktree. No public URL or inspect Route |
-| `visitable: true` | A real App | Usual subdomain so an operator can inspect |
+| `visitable: false` | Orbit monorepo feature work (`app.slug` is `orbit`) | Isolated checkout on the feature branch. No Route and no public URL. The instance stays `source_resolved` |
+| `visitable: true` | A real App | Usual development provisioner and inspect subdomain. The instance becomes `active` |
 
-InstanceProvisioning receives that intent. A following feature PR must honor `visitable` when it creates the App instance. On pull-request merge or instance remove, cleanup includes Routes.
+The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active AppInstance still requires exactly one Route. A following feature PR removes the instance and any visitable Routes after merge.
 
-Agents run on the T3 server of the Node that owns that App instance. Each subtask gets a fresh implementer. The group keeps one reviewer thread. The reviewer writes sign-off commits before the next subtask and opens the pull request at the end. After the pull request exists, a following feature PR notifies Coder, then CLEAN, then DevOps merge and verify, and stores tokens, line diff, and duration on settle.
+## T3 agents
+
+Agents run on the T3 server of the Node that owns that App instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server.
+
+Each subtask gets a fresh implementer (`codex-luna-lite`, low effort). The group keeps one reviewer thread (`claude-opus`, high effort). When a subtask settles, the scheduler marks it `reviewing` and sends "please review" to the reviewer thread. After the reviewer signs off, the Gateway commits in the shared checkout when git can create a commit, completes that subtask, and starts the next implementer. After the last subtask, the group moves to `settling`.
 
 ## Out of this slice
 
-This page describes the first slice only. The items below stay unimplemented here.
+This page describes the provision and spawn slice. The items below stay unimplemented here.
 
-- Real T3 spawn and the wire protocol
-- Non-visitable App instance create
+- Coder settle webhook and token, line diff, and duration fill
+- Pull-request open and the final reviewer rollup
+- Instance and Route removal on merge
 - Commander data migration and retiring Commander
 - A web UI for tasks
 - Per-App model overrides

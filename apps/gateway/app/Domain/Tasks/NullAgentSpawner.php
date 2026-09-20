@@ -18,4 +18,11 @@ final readonly class NullAgentSpawner implements AgentSpawner
     {
         return null;
     }
+
+    public function requestReview(Task $task): void {}
+
+    public function signOff(Task $task): ?string
+    {
+        return null;
+    }
 }

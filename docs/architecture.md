@@ -57,7 +57,7 @@ A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server 
 
 ## Tasks
 
-The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared App instance. Agents create groups through MCP after the extension is enabled. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the boundary.
+The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared App instance. After MCP create, the Gateway claims the group, provisions that instance on an `app-dev` Node, and starts T3 reviewer and implementer threads on the instance-owning Node. Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the boundary.
 
 ## Database connections
 
