@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
+use App\Models\NodeRole;
 
 it('covers exact package and service matrices', function (): void {
     $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
@@ -96,6 +98,28 @@ it('returns typed exact firewall rules', function (): void {
         ->toBeInstanceOf(UfwManagedRule::class)
         ->and($rules[0]->shape->comment)
         ->toBe('orbit:public-ssh-recovery');
+});
+
+it('omits public SSH recovery from the desired baseline after an active role closes it', function (): void {
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
+    $node->setRelation('roles', collect([
+        new NodeRole(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]),
+    ]));
+
+    expect(array_map(
+        static fn (UfwManagedRule $rule): string => $rule->shape->comment,
+        new NodeFirewallRuleCatalog()->desiredBaseline($node),
+    ))->toBe(['orbit:wireguard-members']);
+});
+
+it('keeps public SSH recovery in the desired baseline when no role is active', function (): void {
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
+    $node->setRelation('roles', collect());
+
+    expect(array_map(
+        static fn (UfwManagedRule $rule): string => $rule->shape->comment,
+        new NodeFirewallRuleCatalog()->desiredBaseline($node),
+    ))->toBe(['orbit:public-ssh-recovery', 'orbit:wireguard-members']);
 });
 
 it('keeps app-production workload ports private', function (): void {

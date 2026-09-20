@@ -7,6 +7,29 @@ use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 
+it('lists live IPv4 rules including uncommented ones and skips IPv6 duplicates', function (): void {
+    $output = <<<'OUTPUT'
+        Status: active
+
+             To                         Action      From
+             --                         ------      ----
+        [ 1] 22/tcp                     ALLOW IN    Anywhere                   # orbit:public-ssh-recovery
+        [ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # orbit:public-ssh-recovery
+        [ 3] 443/tcp                    ALLOW IN    Anywhere
+        OUTPUT;
+
+    $shapes = new UfwStatusParser()->liveShapes($output);
+
+    expect($shapes)
+        ->toHaveCount(2)
+        ->and($shapes[0]->comment)
+        ->toBe('orbit:public-ssh-recovery')
+        ->and($shapes[1]->comment)
+        ->toBe('')
+        ->and($shapes[1]->port)
+        ->toBe('443');
+});
+
 it('returns only rules with the exact managed comment', function (): void {
     $output = <<<'OUTPUT'
         Status: active

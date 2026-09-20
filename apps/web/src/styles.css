@@ -230,6 +230,10 @@ body {
     color: var(--yellow);
 }
 
+.row[data-danger] {
+    color: var(--red);
+}
+
 .row[data-selected] {
     font-weight: 700;
 }
@@ -243,6 +247,10 @@ body {
     background: var(--yellow);
 }
 
+.row[data-selected][data-focused][data-danger] {
+    background: var(--red);
+}
+
 /* A row that opens something answers the pointer with a lighter cut of the selected row's highlight. */
 .row[data-link] {
     cursor: pointer;
@@ -254,6 +262,10 @@ body {
 
 .row[data-link][data-warn]:hover:not([data-selected][data-focused]) {
     background: color-mix(in srgb, var(--yellow) 14%, transparent);
+}
+
+.row[data-link][data-danger]:hover:not([data-selected][data-focused]) {
+    background: color-mix(in srgb, var(--red) 14%, transparent);
 }
 
 .link {

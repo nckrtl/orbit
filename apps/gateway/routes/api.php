@@ -143,6 +143,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('nodes/{node}/managed-firewall-rules', [FirewallRulesController::class, 'managed'])
             ->whereNumber('node')
             ->name('firewall:managed:list');
+        Route::get('nodes/{node}/live-firewall-rules', [FirewallRulesController::class, 'live'])
+            ->whereNumber('node')
+            ->name('firewall:live:list');
         Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
             ->name('node:metrics');
         Route::get('activities', [ActivitiesController::class, 'index'])

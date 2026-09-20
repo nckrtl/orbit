@@ -10230,6 +10230,196 @@
         ]
       }
     },
+    "/api/v1/nodes/{node}/live-firewall-rules": {
+      "get": {
+        "operationId": "firewall-live-list",
+        "summary": "List live UFW rules",
+        "tags": [
+          "Firewall"
+        ],
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Node ID."
+          }
+        ],
+        "description": "Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "backend_status",
+                        "live",
+                        "missing"
+                      ],
+                      "properties": {
+                        "backend_status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "inactive",
+                            "absent",
+                            "unreachable"
+                          ],
+                          "description": "Whether UFW answered on the Node. `unreachable` means the Gateway could not read `ufw status numbered`."
+                        },
+                        "live": {
+                          "type": "array",
+                          "description": "IPv4 UFW rules currently on the Node, in status order.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "description": "Operator rule name, `orbit:` comment, or `unmanaged` when UFW has no comment."
+                              },
+                              "comment": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "destination": {
+                                "type": "string"
+                              },
+                              "port": {
+                                "type": "string"
+                              },
+                              "protocol": {
+                                "type": "string"
+                              },
+                              "interface": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "family": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "match": {
+                                "type": "string",
+                                "enum": [
+                                  "exact",
+                                  "drift",
+                                  "unmanaged"
+                                ],
+                                "description": "`exact` matches a desired managed or operator rule. `drift` has a known comment with a different shape. `unmanaged` is not an Orbit managed or operator rule."
+                              }
+                            }
+                          }
+                        },
+                        "missing": {
+                          "type": "array",
+                          "description": "Desired managed or operator rules that are absent from live UFW.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "comment": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "destination": {
+                                "type": "string"
+                              },
+                              "port": {
+                                "type": "string"
+                              },
+                              "protocol": {
+                                "type": "string"
+                              },
+                              "interface": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "family": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "match": {
+                                "type": "string",
+                                "enum": [
+                                  "missing"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/nodes/7/live-firewall-rules\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/nodes/{node}/managed-firewall-rules": {
       "get": {
         "operationId": "firewall-managed-list",
@@ -10249,6 +10439,7 @@
             "description": "Numeric Node ID."
           }
         ],
+        "description": "Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -10259,7 +10450,7 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "description": "The rules Orbit intends on the Node. No request adds, changes, or removes one.",
+                      "description": "The rules Orbit intends on the Node after role converge. Public SSH recovery is omitted once an active role has closed it. No request adds, changes, or removes one.",
                       "items": {
                         "type": "object",
                         "properties": {
@@ -10272,7 +10463,7 @@
                               "string",
                               "null"
                             ],
-                            "description": "The role that needs the rule, or null for a rule every managed Node has."
+                            "description": "The role that needs the rule, or null for a baseline rule the Node still intends."
                           },
                           "action": {
                             "type": "string"

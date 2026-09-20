@@ -1688,9 +1688,35 @@
       }
     },
     {
+      "name": "firewall-live-list",
+      "title": "List live UFW rules",
+      "description": "Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}/live-firewall-rules",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
       "name": "firewall-managed-list",
       "title": "List Orbit's own firewall rules",
-      "description": "List Orbit's own firewall rules",
+      "description": "Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.",
       "method": "GET",
       "path": "/api/v1/nodes/{node}/managed-firewall-rules",
       "path_inputs": [
