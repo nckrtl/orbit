@@ -94,13 +94,10 @@ describe('GitHub App API', function (): void {
             ->assertRedirect('https://github.com/apps/orbit-acme/installations/new');
 
         Http::assertSent(static function (Request $request): bool {
-            $payload = $request->data();
-
             return $request->url() === 'https://api.github.com/app-manifests/one-time-code/conversions'
                 && $request->method() === 'POST'
-                && $request->body() !== '[]'
-                && is_array($payload)
-                && ! array_key_exists('default_events', $payload);
+                && $request->body() === ''
+                && $request->body() !== '[]';
         });
 
         $store = app(GitHubAppStore::class);
