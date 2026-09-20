@@ -39,8 +39,11 @@ describe('analytics:credentials', function (): void {
         MockClient::global([ShowAnalyticsCredentialsRequest::class => ($this->answer)(false)]);
 
         $this->artisan('analytics:credentials', ['--json' => true])
-            ->expectsOutputToContain('"configured":false')
-            ->expectsOutputToContain('"driver":"plausible_ce"')
+            ->expectsOutput(json_encode([
+                'configured' => false,
+                'driver' => 'plausible_ce',
+                'request_id' => $this->requestId,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ->assertExitCode(0);
     });
 
@@ -49,7 +52,11 @@ describe('analytics:credentials', function (): void {
         $mockClient = MockClient::global([SetAnalyticsCredentialsRequest::class => ($this->answer)(true)]);
 
         $this->artisan('analytics:credentials', ['--set' => true, '--api-key' => $secret, '--json' => true])
-            ->expectsOutputToContain('"configured":true')
+            ->expectsOutput(json_encode([
+                'configured' => true,
+                'driver' => 'plausible_ce',
+                'request_id' => $this->requestId,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ->doesntExpectOutputToContain($secret)
             ->assertExitCode(0);
 
@@ -70,7 +77,11 @@ describe('analytics:credentials', function (): void {
         MockClient::global([UnsetAnalyticsCredentialsRequest::class => ($this->answer)(false)]);
 
         $this->artisan('analytics:credentials', ['--unset' => true, '--json' => true])
-            ->expectsOutputToContain('"configured":false')
+            ->expectsOutput(json_encode([
+                'configured' => false,
+                'driver' => 'plausible_ce',
+                'request_id' => $this->requestId,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ->assertExitCode(0);
     });
 

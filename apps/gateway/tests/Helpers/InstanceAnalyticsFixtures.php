@@ -15,7 +15,6 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
-use Closure;
 
 function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cluster, RoleName $role): Node
 {

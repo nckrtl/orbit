@@ -7,7 +7,6 @@ namespace App\Http\Requests\Analytics;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
-use SensitiveParameter;
 use UnexpectedValueException;
 
 final class SetAnalyticsCredentialsRequest extends FormRequest
@@ -30,7 +29,6 @@ final class SetAnalyticsCredentialsRequest extends FormRequest
         }
     }
 
-    #[SensitiveParameter]
     public function apiKey(): string
     {
         return (string) $this->validated('api_key');

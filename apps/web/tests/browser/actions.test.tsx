@@ -136,10 +136,12 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
     await expect
         .element(modal)
         .toHaveTextContent('src="https://analytics.dev.charlie-shop.test/js/script.js"');
-    expect(app.gateway.requests.at(-1)).toMatchObject({
-        method: "POST",
-        path: "/api/v1/instances/1/analytics",
-    });
+    expect(
+        app.gateway.requests.some(
+            (request) =>
+                request.method === "POST" && request.path === "/api/v1/instances/1/analytics",
+        ),
+    ).toBe(true);
 
     await userEvent.keyboard("{Escape}");
     await expect

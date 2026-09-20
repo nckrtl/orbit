@@ -68,7 +68,6 @@ final readonly class PlausibleCommunityEditionStatsDriver implements AnalyticsSt
             'metrics' => 'visitors',
         ];
 
-        /** @var array<string, Response> $responses */
         $responses = Http::pool(fn (Pool $pool): array => [
             $this->request($pool, 'live', $base, $key)
                 ->get('/api/v1/stats/realtime/visitors', $query),

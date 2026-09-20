@@ -43,10 +43,4 @@ final class SetAnalyticsCredentialsRequest extends GatewayRequest implements Has
     {
         return ['api_key' => $this->apiKey];
     }
-
-    /** @return array{type: class-string} */
-    public function __debugInfo(): array
-    {
-        return ['type' => self::class];
-    }
 }

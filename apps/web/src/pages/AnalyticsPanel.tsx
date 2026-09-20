@@ -7,7 +7,7 @@ import { Properties } from "../ui/Properties";
 
 const pageColumns: Column<AnalyticsPage>[] = [
     { header: "Page", width: 70, value: (page) => page.path },
-    { header: "Visitors", width: 12, fit: true, value: (page) => page.visitors },
+    { header: "Visitors", width: 12, fit: true, value: (page) => String(page.visitors) },
 ];
 
 /**

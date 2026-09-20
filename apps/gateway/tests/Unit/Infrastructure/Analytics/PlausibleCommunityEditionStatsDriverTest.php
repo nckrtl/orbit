@@ -8,8 +8,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Analytics\PlausibleCommunityEditionStatsDriver;
 use App\Models\Node;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
-use SensitiveParameter;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
@@ -66,7 +69,7 @@ function plausible_stats_ok(): array
     ];
 
     return [
-        'http://10.44.0.40:8000/api/v1/stats/realtime/visitors*' => Http::response(3),
+        'http://10.44.0.40:8000/api/v1/stats/realtime/visitors*' => Http::response('3'),
         'http://10.44.0.40:8000/api/v1/stats/aggregate*period=day*' => Http::response($aggregate(18)),
         'http://10.44.0.40:8000/api/v1/stats/aggregate*period=7d*' => Http::response($aggregate(91)),
         'http://10.44.0.40:8000/api/v1/stats/aggregate*period=30d*' => Http::response($aggregate(340)),
