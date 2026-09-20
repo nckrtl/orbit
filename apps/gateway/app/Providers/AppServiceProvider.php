@@ -250,6 +250,7 @@ use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
+use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
@@ -371,6 +372,7 @@ final class AppServiceProvider extends ServiceProvider
         MetricsExporterRuntime::class => MetricsExporterSshExecutor::class,
         ServiceMetricsLifecycle::class => NativeServiceMetricsLifecycle::class,
         ServiceMetricsRuntime::class => NativeServiceMetricsRuntime::class,
+        ServiceMetricsProjection::class => ServiceMetricsProjection::class,
         MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
         MetricsCadvisorRuntime::class => MetricsCadvisorSshExecutor::class,
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
