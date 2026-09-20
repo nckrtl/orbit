@@ -24,6 +24,8 @@ export type Column<T> = {
     width: number;
     /** Size the column to its widest cell, and leave the shares to the others. */
     fit?: boolean;
+    /** Right-align the header and cells; the last column is always right-aligned. */
+    align?: "right";
     value: (row: T) => string;
     /** What the cell draws, when that is more than its text. */
     cell?: (row: T) => React.ReactNode;
@@ -57,7 +59,7 @@ type PaneProps<T> = {
 /**
  * A framed, sortable, scrollable table. Arrow keys hover it, Enter focuses it, and a focused pane
  * moves its selection; a click or Enter opens a row, and a right click
- * lists its actions. The last column is right-aligned.
+ * lists its actions. A column with `align: "right"` and the last column are right-aligned.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function Pane<T extends Record<string, any>>({
@@ -180,7 +182,7 @@ export function Pane<T extends Record<string, any>>({
                             <span
                                 key={header.id}
                                 role="columnheader"
-                                className={`cursor-pointer hover:text-fg ${index === columns.length - 1 ? "text-right" : ""}`}
+                                className={`cursor-pointer hover:text-fg ${columns[index]?.align === "right" || index === columns.length - 1 ? "text-right" : ""}`}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={header.column.getToggleSortingHandler()}
                             >
@@ -230,7 +232,7 @@ export function Pane<T extends Record<string, any>>({
                                     <span
                                         key={cell}
                                         role="cell"
-                                        className={`min-w-0 ${cell === columns.length - 1 ? "text-right" : ""}`}
+                                        className={`min-w-0 ${column.align === "right" || cell === columns.length - 1 ? "text-right" : ""}`}
                                     >
                                         {column.cell?.(row.original) ?? column.value(row.original)}
                                     </span>

@@ -3,20 +3,23 @@ import type { Instance, Process, Schedule } from "../api/types";
 import {
     instanceName,
     instanceNodeName,
+    processCpu,
+    processMemory,
     processNodeName,
     processOwner,
-    processUsage,
 } from "../fleet/fleet";
 import type { Column } from "../ui/Pane";
 
-const usageSort = (process: Process): number => process.cpu ?? -1;
+const cpuSort = (process: Process): number => process.cpu ?? -1;
+const memorySort = (process: Process): number => process.memory_bytes ?? -1;
 
 // The column sets more than one page draws. Widths are the shares `orbit top` gives them.
 
 export const processColumns: Column<Process>[] = [
     { header: "Name", width: 46, value: (p) => p.name },
     { header: "Status", width: 28, value: (p) => p.runtime_status },
-    { header: "CPU/MEM", width: 22, value: processUsage, sort: usageSort },
+    { header: "CPU", width: 11, value: processCpu, sort: cpuSort, align: "right" },
+    { header: "MEM", width: 11, value: processMemory, sort: memorySort, align: "right" },
 ];
 
 export const processListColumns = (fleet: Fleet): Column<Process>[] => [
@@ -25,14 +28,16 @@ export const processListColumns = (fleet: Fleet): Column<Process>[] => [
     { header: "Node", width: 14, value: (p) => processNodeName(fleet, p) },
     { header: "Runtime", width: 12, value: (p) => p.runtime },
     { header: "Status", width: 14, value: (p) => p.runtime_status },
-    { header: "CPU/MEM", width: 14, value: processUsage, sort: usageSort },
+    { header: "CPU", width: 7, value: processCpu, sort: cpuSort, align: "right" },
+    { header: "MEM", width: 7, value: processMemory, sort: memorySort, align: "right" },
 ];
 
 export const processDashboardColumns = (fleet: Fleet): Column<Process>[] => [
     { header: "Name", width: 24, value: (p) => p.name },
     { header: "Where", width: 30, value: (p) => processOwner(fleet, p) },
     { header: "Status", width: 22, value: (p) => p.runtime_status },
-    { header: "CPU/MEM", width: 20, value: processUsage, sort: usageSort },
+    { header: "CPU", width: 10, value: processCpu, sort: cpuSort, align: "right" },
+    { header: "MEM", width: 10, value: processMemory, sort: memorySort, align: "right" },
 ];
 
 export const scheduleColumns = (fleet: Fleet, where: "none" | "instance"): Column<Schedule>[] => [

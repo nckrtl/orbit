@@ -6,10 +6,11 @@ import {
     attentionRows,
     counts,
     listRows,
+    processCpu,
     processHealthy,
+    processMemory,
     processOwner,
     processRuntimeIsActive,
-    processUsage,
     recordTitle,
     scheduleHealthy,
 } from "./fleet";
@@ -125,12 +126,14 @@ describe("the fixture fleet", () => {
         expect(names("app-prod")).toEqual([]);
     });
 
-    it("names a process owner and formats its usage", () => {
+    it("names a process owner and formats its CPU and memory", () => {
         const [horizon, vite, , valkey] = fleet.processes;
         expect(processOwner(fleet, horizon!)).toBe("charlie-shop/dev");
         expect(processOwner(fleet, valkey!)).toBe("node beast");
-        expect(processUsage(horizon!)).toBe("20%/1.2G");
-        expect(processUsage(vite!)).toBe("—");
+        expect(processCpu(horizon!)).toBe("20%");
+        expect(processMemory(horizon!)).toBe("1.2G");
+        expect(processCpu(vite!)).toBe("—");
+        expect(processMemory(vite!)).toBe("—");
     });
 
     it("titles a record the way its page does", () => {

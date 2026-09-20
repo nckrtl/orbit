@@ -227,13 +227,16 @@ export function counts(fleet: Fleet): Record<Exclude<Kind, "deployments">, [numb
     };
 }
 
-/** A Process's live CPU and memory as one reading, such as `20%/1.2G`. */
-export function processUsage(process: Process): string {
-    if (typeof process.cpu !== "number" || typeof process.memory_bytes !== "number") {
-        return "—";
-    }
+/** A Process's live CPU share, such as `20%`. */
+export function processCpu(process: Process): string {
+    return typeof process.cpu === "number" ? `${(process.cpu * 100).toFixed(0)}%` : "—";
+}
 
-    return `${(process.cpu * 100).toFixed(0)}%/${(process.memory_bytes / 1024 ** 3).toFixed(1)}G`;
+/** A Process's live memory use, such as `1.2G`. */
+export function processMemory(process: Process): string {
+    return typeof process.memory_bytes === "number"
+        ? `${(process.memory_bytes / 1024 ** 3).toFixed(1)}G`
+        : "—";
 }
 
 export function recordTitle(kind: Kind, row: AnyRecord): string {

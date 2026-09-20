@@ -41,10 +41,11 @@ import {
     nodeHealthy,
     nodeName,
     processesFor,
+    processCpu,
     processHealthy,
+    processMemory,
     processNodeName,
     processOwner,
-    processUsage,
     scheduleHealthy,
     schedulesForApp,
     schedulesForInstance,
@@ -572,7 +573,8 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
                         value: process.runtime_status,
                         warn: !processHealthy(process),
                     },
-                    { name: "CPU/MEM", value: processUsage(process) },
+                    { name: "CPU", value: processCpu(process) },
+                    { name: "Memory", value: processMemory(process) },
                 ]}
             />
             <LogPane title="Log" lines={logs.data} loading={logs.isPending} />
