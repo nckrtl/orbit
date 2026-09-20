@@ -2479,6 +2479,34 @@
             ]
         },
         {
+            "path": "docs/decisions/0093-run-plausible-through-an-analytics-role.md",
+            "title": "ADR 0093: Run Plausible through an analytics role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0003",
+                "0069",
+                "0070",
+                "0087",
+                "0093",
+                "0094"
+            ]
+        },
+        {
             "path": "docs/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge.md",
             "title": "ADR 0093: Show live UFW and desired rules that match converge",
             "kind": "decision",
@@ -2513,6 +2541,36 @@
                 "0061",
                 "0090",
                 "0092",
+                "0094"
+            ]
+        },
+        {
+            "path": "docs/decisions/0094-publish-analytics-tracking-hosts-for-app-instances.md",
+            "title": "ADR 0094: Publish analytics tracking hosts for App instances",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0023",
+                "0067",
+                "0080",
+                "0082",
+                "0093",
                 "0094"
             ]
         },
@@ -2761,6 +2819,28 @@
                 "Route"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/analytics.md",
+            "title": "Analytics role",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0093",
+                "0094"
+            ]
         },
         {
             "path": "docs/reference/app-dev-runtime-hibernation.md",

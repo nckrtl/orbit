@@ -102,6 +102,7 @@
               "reference/tools",
               "reference/database-role",
               "reference/metrics",
+              "reference/analytics",
               "reference/herdr-sessions",
               "reference/local-resolver-overrides",
               "reference/cli-binaries",
@@ -541,6 +542,8 @@
               "decisions/0090-relocate-the-gateway-role-independently-of-vpn",
               "decisions/0091-rename-a-node-without-changing-wireguard-identity",
               "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
+              "decisions/0093-run-plausible-through-an-analytics-role",
+              "decisions/0094-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
               "decisions/0094-project-wireguard-hub-config-onto-the-vpn-node"
             ]
