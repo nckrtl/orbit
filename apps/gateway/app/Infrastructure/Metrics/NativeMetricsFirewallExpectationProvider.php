@@ -23,6 +23,7 @@ final readonly class NativeMetricsFirewallExpectationProvider implements Metrics
         private MetricsExporterProjection $exporters,
         private MetricsGatewayResolver $gateways,
         private NodeFirewallRuleCatalog $catalog,
+        private ?ServiceMetricsProjection $services = null,
     ) {}
 
     public function for(Node $node): array
@@ -59,6 +60,19 @@ final readonly class NativeMetricsFirewallExpectationProvider implements Metrics
                 MetricsFootprint::CadvisorFirewallComment,
                 'Metrics cAdvisor',
             );
+        }
+
+        $services = $this->services?->forNode($metricsNode, $node);
+        if ($services !== null) {
+            foreach (['caddy' => $services->caddy, 'fpm' => $services->fpm && $services->instances !== []] as $kind => $enabled) {
+                if (! $enabled) {
+                    continue;
+                }
+                foreach ([true, false] as $allow) {
+                    $rule = $this->catalog->metricsService($node, $metricsNode, $kind, $allow);
+                    $targets[] = $this->target($node, $rule, $rule->shape->comment, 'Metrics '.$kind.($allow ? ' scraper' : ' isolation'));
+                }
+            }
         }
 
         $gateway = $this->gateways->find();

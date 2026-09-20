@@ -9,7 +9,7 @@ use App\Infrastructure\Nodes\PhpFpmRuntimeIniRenderer;
 
 final readonly class ProductionPhpRuntimeConfigRenderer
 {
-    public function render(ProductionPhpRuntimeIdentity $identity): ProductionPhpRuntimeConfiguration
+    public function render(ProductionPhpRuntimeIdentity $identity, bool $metrics = false): ProductionPhpRuntimeConfiguration
     {
         $main = <<<FPM
             [global]
@@ -35,6 +35,10 @@ final readonly class ProductionPhpRuntimeConfigRenderer
             env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
 
             FPM;
+
+        if ($metrics) {
+            $pool .= "pm.status_path = /orbit-fpm-status\npm.status_listen = {$identity->socket}.status\n";
+        }
 
         $localDefaults = <<<FPM
             [{$identity->pool}]

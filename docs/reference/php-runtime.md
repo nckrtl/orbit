@@ -105,6 +105,10 @@ The Gateway reports success only after a later FastCGI observation shows that th
 
 Cache refresh never tries another App instance's socket and never reloads a service as a fallback. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime. Laravel's `php artisan optimize` caches remain application deployment work.
 
+## Proposed monitoring
+
+The [service metrics](/reference/service-metrics) extension observes each dedicated master's pool and OPcache without changing this deployment boundary. Runtime tuning remains separate from metrics enablement.
+
 ## Process management
 
 Both roles use `pm = ondemand` with `pm.process_idle_timeout = 10s` and `pm.max_requests = 500`. `pm.max_children` is 10 on an app-dev pool and 20 on an app-prod pool. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) records why both roles use `ondemand`.

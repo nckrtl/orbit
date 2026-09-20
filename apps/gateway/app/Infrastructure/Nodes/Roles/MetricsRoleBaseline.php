@@ -11,6 +11,7 @@ use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -25,6 +26,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         private MetricsGatewayResolver $gateways,
         private MetricsPublicationReport $report,
         private MetricsCadvisorLifecycle $cadvisors,
+        private ?ServiceMetricsLifecycle $services = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -39,7 +41,11 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
             $exporters = true;
             $this->cadvisors->converge($node, $assignment);
             $cadvisors = true;
-            $this->runtime->converge($node, $assignment);
+            if ($this->services !== null) {
+                $this->services->converge($node, fn () => $this->runtime->converge($node, $assignment));
+            } else {
+                $this->runtime->converge($node, $assignment);
+            }
             $runtime = true;
             $this->publication->converge($gateway, $node);
         } catch (\Throwable $exception) {
@@ -94,6 +100,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
             $this->publication->remove($gateway, $node);
             $this->exporters->remove($node, $assignment);
             $this->cadvisors->remove($node, $assignment);
+            $this->services?->remove($node);
             $this->runtime->remove($node, $assignment, $purgeData);
             $this->report->record(MetricsPublicationCleanup::Cleaned);
 
@@ -102,6 +109,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
 
         $this->exporters->remove($node, $assignment);
         $this->cadvisors->remove($node, $assignment);
+        $this->services?->remove($node);
         $this->runtime->remove($node, $assignment, $purgeData);
 
         try {

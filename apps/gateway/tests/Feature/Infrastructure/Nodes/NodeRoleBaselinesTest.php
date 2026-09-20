@@ -564,10 +564,10 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     );
 });
 
-it('keeps every Ingress lifecycle operation inside the database boundary', function (): void {
+it('refreshes service metrics for Ingress lifecycle operations without installing a host baseline', function (): void {
     $events = [];
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldNotReceive('reconcile');
+    $metricsFleet->shouldReceive('reconcile')->times(3);
     $dispatcher = new NativeRoleBaselineConverger(
         gateway_role_baseline($events),
         new VpnRoleBaseline(

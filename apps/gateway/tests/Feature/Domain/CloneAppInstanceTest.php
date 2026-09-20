@@ -30,6 +30,7 @@ use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -110,6 +111,7 @@ beforeEach(function (): void {
         new AppInstanceEnvironmentRenderer,
         $this->writer,
     );
+    $this->metrics = Mockery::spy(MetricsFleetReconciler::class);
     $this->action = new CloneAppInstanceAction(
         $this->inspector,
         $this->lock,
@@ -122,6 +124,7 @@ beforeEach(function (): void {
         $this->projection,
         $this->cloneProjection,
         $this->projectionOwner,
+        $this->metrics,
     );
     $this->data = new CloneAppInstanceData(
         nodeId: $this->targetNode->id,
@@ -134,6 +137,7 @@ beforeEach(function (): void {
 
 it('prepares an independent production target and activates its explicit private preview', function (): void {
     $result = $this->action->execute($this->candidate, $this->data);
+    $this->metrics->shouldHaveReceived('reconcile')->once();
     $target = $result['appInstance'];
     $route = $target->routes->sole();
 

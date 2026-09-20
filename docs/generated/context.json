@@ -2658,6 +2658,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0099-collect-role-specific-service-metrics.md",
+            "title": "ADR 0099: Collect role-specific service metrics",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0003",
+                "0045",
+                "0057",
+                "0099"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2782,7 +2806,8 @@
                 "0093",
                 "0094",
                 "0095",
-                "0098"
+                "0098",
+                "0099"
             ]
         },
         {
@@ -3516,6 +3541,7 @@
                 "Doctor",
                 "Firewall rule",
                 "Gateway",
+                "Ingress",
                 "Node",
                 "Process",
                 "Route"
@@ -3704,6 +3730,26 @@
                 "0048",
                 "0060",
                 "3600"
+            ]
+        },
+        {
+            "path": "docs/reference/service-metrics.md",
+            "title": "Service metrics",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Ingress",
+                "Node",
+                "Process",
+                "Route",
+                "Router",
+                "Web root"
+            ],
+            "governing_adrs": [
+                "0099"
             ]
         },
         {

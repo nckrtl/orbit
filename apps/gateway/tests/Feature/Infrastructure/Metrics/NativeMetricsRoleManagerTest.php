@@ -9,6 +9,7 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -138,6 +139,9 @@ it('refuses ineligible exporter enablement before preference or fleet work', fun
  */
 function metricsRoleManagerStubBaselines(): void
 {
+    $services = Mockery::mock(ServiceMetricsLifecycle::class);
+    $services->shouldReceive('remove')->zeroOrMoreTimes();
+    app()->instance(ServiceMetricsLifecycle::class, $services);
     app()->instance(
         MetricsRuntimeLifecycle::class,
         Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),

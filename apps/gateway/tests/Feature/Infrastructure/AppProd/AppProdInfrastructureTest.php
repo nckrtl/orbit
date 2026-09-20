@@ -519,7 +519,7 @@ it('removes only the app production Caddy fragment through an atomic preserved a
             'exec 9>>"$lock"',
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
-            'test ! -f "$current_fragments/app-prod.caddy"',
+            'test ! -f "$current_fragments/$owned_fragment"',
             'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'mv -fT -- "$rollback_link" "$live_caddyfile"',

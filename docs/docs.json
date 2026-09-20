@@ -103,6 +103,7 @@
               "reference/github-app",
               "reference/database-role",
               "reference/metrics",
+              "reference/service-metrics",
               "reference/analytics",
               "reference/herdr-sessions",
               "reference/local-resolver-overrides",
@@ -568,7 +569,8 @@
               "decisions/0095-relocate-relocatable-singleton-roles",
               "decisions/0096-run-plausible-through-an-analytics-role",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app"
+              "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
+              "decisions/0099-collect-role-specific-service-metrics"
             ]
           }
         ]

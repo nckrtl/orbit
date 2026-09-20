@@ -8,6 +8,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -28,6 +29,7 @@ final readonly class RemoveRouteAction
         private RouteReconciliationGuard $reconciliation,
         private RouteRemovalProjector $projection,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     public function execute(Route $route): Route
@@ -53,6 +55,8 @@ final readonly class RemoveRouteAction
             $result->id,
             ['id' => $result->id, 'domain' => $result->domain],
         );
+
+        $this->metrics?->reconcile();
 
         return $result;
     }

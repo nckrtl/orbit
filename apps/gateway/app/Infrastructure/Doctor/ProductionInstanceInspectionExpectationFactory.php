@@ -10,6 +10,7 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 
@@ -21,6 +22,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
         private AppDevSiteRepository $sites,
         private AppDevCaddyConfigRenderer $caddyRenderer,
         private ProductionPhpRuntimeConfigRenderer $runtimeRenderer,
+        private ?ServiceMetricsProjection $serviceMetrics = null,
     ) {}
 
     public function make(AppInstance $instance): ProductionInstanceInspectionExpectation
@@ -67,7 +69,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             associationMatches: $associationMatches,
             runtime: $runtime,
             runtimeConfiguration: $runtime instanceof ProductionPhpRuntimeIdentity
-                ? $this->runtimeRenderer->render($runtime)
+                ? $this->runtimeRenderer->render($runtime, $this->serviceMetrics?->enabled($instance->node) ?? false)
                 : null,
         );
     }

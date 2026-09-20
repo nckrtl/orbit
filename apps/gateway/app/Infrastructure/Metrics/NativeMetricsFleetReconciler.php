@@ -8,6 +8,7 @@ use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -21,6 +22,7 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
         private MetricsExporterLifecycle $exporters,
         private MetricsCadvisorLifecycle $cadvisors,
         private MetricsRuntimeLifecycle $runtime,
+        private ?ServiceMetricsLifecycle $services = null,
     ) {}
 
     public function reconcile(): void
@@ -35,7 +37,11 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
 
         $this->exporters->converge($node, $assignment);
         $this->cadvisors->converge($node, $assignment);
-        $this->runtime->converge($node, $assignment);
+        if ($this->services !== null) {
+            $this->services->converge($node, fn () => $this->runtime->converge($node, $assignment));
+        } else {
+            $this->runtime->converge($node, $assignment);
+        }
     }
 
     public function retire(Node $node): void
@@ -63,9 +69,18 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
             // Same reasoning as the exporter above: best effort on the way out.
         }
 
+        try {
+            $this->services?->removeNode($node, $metricsNode);
+        } catch (Throwable) {
+            // Remote cleanup is best effort for a node leaving the fleet.
+        }
         $this->exporters->converge($metricsNode, $assignment);
         $this->cadvisors->converge($metricsNode, $assignment);
-        $this->runtime->converge($metricsNode, $assignment);
+        if ($this->services !== null) {
+            $this->services->converge($metricsNode, fn () => $this->runtime->converge($metricsNode, $assignment));
+        } else {
+            $this->runtime->converge($metricsNode, $assignment);
+        }
     }
 
     private function activeAssignment(): ?NodeRole

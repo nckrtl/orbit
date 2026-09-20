@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RoutePublicPublication;
@@ -31,6 +32,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         private RemoteAppDevRouteFirewallManager $firewall,
         private ?ProductionPhpRuntimeManager $productionPhp = null,
         private ?PublicRouteEdgeProjector $publicEdge = null,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
@@ -124,6 +126,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         }
         $this->caddy->converge($appInstance->node);
         $this->certificates->removeAppInstance($appInstance);
+        $this->metrics?->reconcile();
     }
 
     private function productionPhp(): ProductionPhpRuntimeManager
@@ -160,6 +163,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     {
         $this->caddy->converge($appInstance->node);
         $this->certificates->removeAppInstance($appInstance);
+        $this->metrics?->reconcile();
         $router = $route->cluster?->routerAssignment?->node;
 
         if ($router instanceof Node && ! $router->is($appInstance->node)) {

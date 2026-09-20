@@ -16,15 +16,17 @@ final readonly class MetricsConfigurationRenderer
         private NodeResourcesDashboardRenderer $dashboard = new NodeResourcesDashboardRenderer,
     ) {}
 
-    /** @param list<array{name: string, address: string}> $targets */
-    public function render(array $targets, #[SensitiveParameter] string $password): MetricsConfigurationBundle
+    /** @param list<array{name: string, address: string}> $targets
+     * @param  list<ServiceMetricsNode>  $services
+     */
+    public function render(array $targets, #[SensitiveParameter] string $password, array $services = []): MetricsConfigurationBundle
     {
         if ($password === '') {
             throw new InvalidArgumentException('The Grafana admin password is unavailable.');
         }
 
         $prometheusFiles = [
-            '/etc/orbit/metrics/prometheus.yml' => $this->prometheus->render($targets),
+            '/etc/orbit/metrics/prometheus.yml' => $this->prometheus->render($targets, $services),
         ];
         // Grafana reads grafana.ini and its provisioning directory once, at
         // start, so only these files justify replacing the container. The
@@ -45,6 +47,9 @@ final readonly class MetricsConfigurationRenderer
                 array_map(static fn (array $target): string => $target['name'], $targets),
             ),
         ];
+        foreach (['caddy', 'fpm'] as $kind) {
+            $publicFiles['/etc/orbit/metrics/grafana/dashboards/orbit-'.$kind.'.json'] = new ServiceMetricsDashboardRenderer()->render($kind);
+        }
         $files = [];
 
         foreach ($publicFiles as $path => $contents) {
