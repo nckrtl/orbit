@@ -9,7 +9,7 @@ This page tells an operator how Orbit runs Plausible Community Edition for the f
 
 ## Prepare the database Processes
 
-The analytics role owns the Plausible container only. Its data lives in two Docker Processes that you create first on an active Node with the `database` role.
+The analytics role owns one Docker Process named `plausible` on its own Node, and you can read its logs and restart it like any other Process. Its data lives in two Docker Processes that you create first on an active Node with the `database` role.
 
 | Process | Image | Holds |
 | --- | --- | --- |
@@ -27,16 +27,16 @@ Assignment names the two Processes by ID and refuses when one is missing, is not
 | Step | Result |
 | --- | --- |
 | Connect storage | The two connection URLs, derived from the environment of the two Processes. |
-| Run Plausible | One container at the pinned version, published on the Node's WireGuard address. It creates and migrates its PostgreSQL database each time it starts. |
+| Run Plausible | The `plausible` Process at the pinned version, published on the Node's WireGuard address. It creates and migrates its PostgreSQL database each time it starts. |
 | Publish the dashboard | An Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
 The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens.
 
 ## Update and remove the role
 
-`orbit analytics:update --requested-version=VERSION` changes the pinned Plausible version and converges the container again.
+`orbit analytics:update --requested-version=VERSION` changes the pinned Plausible version and replaces the `plausible` Process.
 
-`orbit node:role:remove NODE analytics` stops and removes the container, the Caddy site, the certificate, and the DNS record. It never touches the two databases and never removes the PostgreSQL or ClickHouse Process; remove those Processes yourself to remove the data. Removal refuses while an App instance still has a tracking host.
+`orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, and the DNS record. It never touches the two databases and never removes the PostgreSQL or ClickHouse Process; remove those Processes yourself to remove the data. Removal refuses while an App instance still has a tracking host.
 
 ## Publish a tracking host
 
