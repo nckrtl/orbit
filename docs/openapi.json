@@ -11003,10 +11003,14 @@
                     "type": "boolean"
                   },
                   "postgres_process_id": {
-                    "type": "string"
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Conditionally required."
                   },
                   "clickhouse_process_id": {
-                    "type": "string"
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Conditionally required."
                   }
                 },
                 "required": [
@@ -11107,7 +11111,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/nodes/7/roles\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"role\": \"app-dev\", \"converge_existing\": true, \"postgres_process_id\": \"example\", \"clickhouse_process_id\": \"example\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/nodes/7/roles\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"role\": \"app-dev\", \"converge_existing\": true, \"postgres_process_id\": 1, \"clickhouse_process_id\": 1}'\n"
           },
           {
             "lang": "php",

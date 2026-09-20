@@ -3404,10 +3404,14 @@
             "type": "boolean"
           },
           "postgres_process_id": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Conditionally required."
           },
           "clickhouse_process_id": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Conditionally required."
           }
         },
         "additionalProperties": false,

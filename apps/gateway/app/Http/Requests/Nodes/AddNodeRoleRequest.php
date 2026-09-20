@@ -21,8 +21,9 @@ final class AddNodeRoleRequest extends FormRequest
         return [
             'role' => ['required', 'string', Rule::enum(RoleName::class)],
             'converge_existing' => ['sometimes', 'boolean', $this->strictBoolean(...)],
-            'postgres_process_id' => $this->analyticsProcessRules(),
-            'clickhouse_process_id' => $this->analyticsProcessRules(),
+            // Written out, not shared through a method, so the API reference reads the integer type.
+            'postgres_process_id' => ['required_if:role,analytics', 'prohibited_unless:role,analytics', 'integer', 'min:1', $this->strictPositiveInteger(...)],
+            'clickhouse_process_id' => ['required_if:role,analytics', 'prohibited_unless:role,analytics', 'integer', 'min:1', $this->strictPositiveInteger(...)],
         ];
     }
 
@@ -60,16 +61,6 @@ final class AddNodeRoleRequest extends FormRequest
             postgresProcessId: $this->integer('postgres_process_id'),
             clickhouseProcessId: $this->integer('clickhouse_process_id'),
         );
-    }
-
-    /** @return list<mixed> */
-    private function analyticsProcessRules(): array
-    {
-        return [
-            'required_if:role,'.RoleName::Analytics->value,
-            'prohibited_unless:role,'.RoleName::Analytics->value,
-            $this->strictPositiveInteger(...),
-        ];
     }
 
     private function strictPositiveInteger(string $attribute, mixed $value, Closure $fail): void
