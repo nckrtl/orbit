@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\DatabaseUsersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
+use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\HerdrSessionsController;
 use App\Http\Controllers\Api\MetricsController;
@@ -77,6 +78,20 @@ Route::prefix('v1')->group(function (): void {
     Route::middleware([
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,
+    ])->get('github/app/register', [GitHubAppController::class, 'register'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('github:app:register');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
+    ])->get('github/app/callback', [GitHubAppController::class, 'callback'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('github:app:callback');
+
+    Route::middleware([
+        RequireActiveWireGuardPeer::class,
+        RequireNodeAccess::class,
     ])->post('schedules/{schedule}/complete', [ScheduleCompletionsController::class, 'store'])
         ->whereUuid('schedule')
         ->withoutMiddleware(RecordCommandActivity::class)
@@ -96,6 +111,9 @@ Route::prefix('v1')->group(function (): void {
     ])->group(function (): void {
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
+        Route::post('github/app/install', [GitHubAppController::class, 'install'])->name('github:app:install');
+        Route::get('github/app', [GitHubAppController::class, 'show'])->name('github:app:show');
+        Route::delete('github/app', [GitHubAppController::class, 'destroy'])->name('github:app:destroy');
         Route::get('clusters', [ClustersController::class, 'index'])->name('cluster:list');
         Route::post('clusters', [ClustersController::class, 'store'])->name('cluster:create');
         Route::get('clusters/{cluster}', [ClustersController::class, 'show'])

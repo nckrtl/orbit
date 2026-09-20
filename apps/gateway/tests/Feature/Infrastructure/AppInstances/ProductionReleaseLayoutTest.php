@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\ComposerSourceClassifier;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -259,6 +260,7 @@ function orb216_release_layout_lifecycle(array $results): array
         new RemoteProductionAppInstanceSourceLifecycle(
             $executor,
             new ComposerSourceClassifier(new AppInstancePhpVersionCatalog),
+            app(RepositoryReadAccess::class),
         ),
         $ssh,
         $instance,

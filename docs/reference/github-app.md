@@ -30,17 +30,19 @@ On the install page, choose the account or organization and either all repositor
 
 ## How Orbit reads a repository
 
-Orbit reads an App repository when the Gateway resolves a default branch with `git ls-remote`, and when a Node clones or fetches source for production provisioning, a production deployment, a development checkout, or the WebSocket role.
+Orbit reads an App repository when the Gateway resolves a default branch with `git ls-remote`, and when a Node clones or fetches source. Node reads happen for production provisioning, a production deployment, a development checkout, a repository or default-branch change, a clone of an App instance, and the published-commit check before a development checkout is removed.
 
 For each of these reads of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token. The token reads that one repository and expires after one hour. The Gateway passes it to `git` in the environment of that one command. The token is never part of the origin URL, the command arguments, `.git/config`, or a file on the Node.
 
 | Repository | Orbit reads it |
 | --- | --- |
 | On `github.com`, covered by an installation | Over HTTPS with a token for that repository. An origin of the form `git@github.com:owner/name` is read through its HTTPS form. The stored origin stays as it is. |
-| On `github.com`, not covered | Without a credential. A public repository works. A private repository fails, and the error names the missing installation as a possible cause. |
+| On `github.com`, not covered | Without a credential. A public repository works, and a private repository fails. |
 | On another host | Without a credential. A private repository needs an SSH key that you place on the Node. |
 
-The Gateway needs outbound HTTPS access to `api.github.com` for every read of a covered repository.
+When the Gateway cannot resolve the default branch of a `github.com` repository, `app.default_branch_unavailable` names the missing installation as a possible cause.
+
+The Gateway needs outbound HTTPS access to `api.github.com` for every read of a covered repository. When GitHub does not answer, Orbit reads the repository without a credential, so a public repository still works.
 
 ## What the App does not cover
 

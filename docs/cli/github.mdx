@@ -39,7 +39,9 @@ On a Gateway without an App, the command first registers the App. You confirm on
 
 On a Gateway that has an App, the command opens the install page only. Run it once for each account or organization.
 
-With `--json` or `-n`, the command prints the URL, does not wait, and reports a `status` of `pending`.
+The install page needs a signed-in GitHub session. GitHub answers it with a 404 for a signed-out browser.
+
+The command waits up to ten minutes and asks the Gateway every three seconds. With `--json` or `-n`, it prints the URL, does not wait, and reports a `status` of `pending`.
 
 | Status | Meaning |
 | --- | --- |
@@ -48,6 +50,8 @@ With `--json` or `-n`, the command prints the URL, does not wait, and reports a 
 
 | Error code | Meaning |
 | --- | --- |
+| `github.name_invalid` | The App name is not a GitHub App name. |
+| `github.owner_invalid` | The owner is not a GitHub account name. |
 | `github.registration_invalid` | The redirect does not match a registration that this Gateway started, or the one-time code has expired. |
 | `github.registration_failed` | GitHub refused to exchange the one-time code. |
 | `github.installation_pending` | The command stopped waiting before the Gateway saw a new installation. |

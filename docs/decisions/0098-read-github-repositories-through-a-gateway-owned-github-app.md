@@ -16,7 +16,7 @@ This extends [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) and
 
 ## Context
 
-Orbit reads App repositories with plain `git`. The Gateway runs `git ls-remote` to resolve a default branch. Nodes run `git clone` as the managed unix user for production provisioning, production deploys, development checkouts, and the WebSocket role. None of these commands receives a credential, and `GitRepositoryOrigin` refuses an HTTPS origin that carries a user or password. A private repository works only after an operator places an SSH key on the Node by hand, and every new Node repeats that work.
+Orbit reads App repositories with plain `git`. The Gateway runs `git ls-remote` to resolve a default branch. Nodes run `git clone` and `git fetch` as the managed unix user for production provisioning, production deploys, development checkouts, App instance clones, and removal checks. None of these commands receives a credential, and `GitRepositoryOrigin` refuses an HTTPS origin that carries a user or password. A private repository works only after an operator places an SSH key on the Node by hand, and every new Node repeats that work.
 
 A personal access token would fix this, but it acts as the operator, lasts up to a year, and must be stored on each Node or rotated by hand. A GitHub App has its own identity, per-repository access, and tokens that expire after one hour. The Gateway already starts every repository read over SSH, so it can supply a credential at the moment of use.
 
@@ -32,7 +32,7 @@ Writes to GitHub, such as pull requests from agents, belong to the tools that ma
 - The operator installs the App on each GitHub account or organization whose repositories Orbit reads. `github:app:install` opens the install page. `install` is a family-specific action of `github:app` in the [CLI command vocabulary](/reference/cli-command-vocabulary), because it matches GitHub's own term. The Gateway learns installations by listing them with the App credential; it receives no webhooks.
 - For each `git ls-remote`, `git clone`, and `git fetch` that Orbit runs against a `github.com` repository covered by an installation, the Gateway creates an installation token limited to that repository and to `contents: read`. The token reaches `git` through the process environment of that one command. It never appears in the origin URL, command arguments, `.git/config`, or a file on the Node.
 - A covered repository with a `git@github.com:` origin is read through its HTTPS form. [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) already treats both forms as one repository. The stored origin does not change.
-- A repository without a covering installation, and a repository on another host, is read without a credential as before. A failed read of a `github.com` repository names the missing installation as a possible cause.
+- A repository without a covering installation, and a repository on another host, is read without a credential as before. When the Gateway cannot resolve the default branch of a `github.com` repository, the error names the missing installation as a possible cause. A read also runs without a credential when GitHub does not answer the token request.
 - Git commands that a person or agent runs by hand in a development checkout use that person's or tool's own credentials. Orbit installs no credential helper and does not authenticate the GitHub CLI.
 
 ## Rejected alternatives

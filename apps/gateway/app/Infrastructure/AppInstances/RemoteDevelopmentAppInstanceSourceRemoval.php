@@ -13,11 +13,13 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\App as OrbitApp;
@@ -54,6 +56,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $boundaries,
         private AppDevSourceOperationLock $lock,
+        private RepositoryReadAccess $access,
     ) {}
 
     public function inspect(
@@ -258,6 +261,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         $groupingDirectory = $this->boundaries
             ->appInstanceGroupingDirectory($appInstance, $context['root'])
             ->value;
+        $script = GitReadScript::for(
+            $this->access->for($inventory->origin),
+            self::releaseEmptyGroupingDirectoryFunction().self::removalScript(),
+        );
         $this->executeRefusable(
             $appInstance,
             new RemoteCommand(
@@ -276,7 +283,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $inventory->repositoryIdentity,
                     $force ? '1' : '0',
                 ],
-                input: self::releaseEmptyGroupingDirectoryFunction().self::removalScript(),
+                input: $script->input,
+                protectedInput: $script->protectedInput,
             ),
             step: 'app-instance-source-remove',
             force: $force,
@@ -394,6 +402,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
             [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
+            $script = GitReadScript::for(
+                $this->access->for($inventory->origin),
+                self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript(),
+            );
             $result = $this->ssh->execute(
                 $node,
                 new RemoteCommand(
@@ -419,7 +431,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                         (string) $member->source_commit,
                         $groupingDirectory,
                     ],
-                    input: self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript(),
+                    input: $script->input,
+                    protectedInput: $script->protectedInput,
                 ),
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.removal_incomplete',
@@ -937,11 +950,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
 
     private function isPublished(AppInstance $appInstance, string $origin, string $commit): bool
     {
+        $script = GitReadScript::for($this->access->for($origin), self::publicationScript());
         $result = $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $origin, $commit],
-                input: self::publicationScript(),
+                input: $script->input,
+                protectedInput: $script->protectedInput,
             ),
             step: 'app-instance-source-removal-publication',
             errorCode: 'instance.remove_refused',
@@ -1569,7 +1584,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 trap 'rm -rf -- "$scratch"' EXIT
                 git init --bare --quiet "$scratch/repository.git"
                 git --git-dir="$scratch/repository.git" remote add origin "$origin"
-                git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
+                git_read git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
                     '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
                 published=0
                 if git --git-dir="$scratch/repository.git" cat-file -e "$source_commit^{commit}" 2>/dev/null; then
@@ -1751,7 +1766,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             trap 'rm -rf -- "$scratch"' EXIT
             git init --bare --quiet "$scratch/repository.git"
             git --git-dir="$scratch/repository.git" remote add origin "$origin"
-            git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
+            git_read git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
                 '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
             published=0
             if git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null; then
@@ -1900,7 +1915,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 trap 'rm -rf -- "$scratch"' EXIT
                 git init --bare --quiet "$scratch/repository.git"
                 git --git-dir="$scratch/repository.git" remote add origin "$origin"
-                git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
+                git_read git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
                     '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
                 published=0
                 if git --git-dir="$scratch/repository.git" cat-file -e "$expected_commit^{commit}" 2>/dev/null; then

@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 127 concrete public Gateway API operations:
+The SDK models exactly 130 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -18,6 +18,7 @@ The SDK models exactly 127 concrete public Gateway API operations:
 - Herdr: session list, add, adopt, show, restart, remove, and observation-grant.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
+- GitHub App: install, show, and destroy.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.

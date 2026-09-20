@@ -6,15 +6,19 @@ namespace App\Infrastructure\Apps;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Apps\AppUpdateSourceMutator;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
+use SensitiveParameter;
 
 final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMutator
 {
     public function __construct(
         private AppDevSshExecutor $ssh,
+        private RepositoryReadAccess $access,
     ) {}
 
     public function preflightRepository(array $checkouts, string $currentUrl, string $proposedUrl): void
@@ -33,10 +37,11 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                     origin=$(git -C "$path" remote get-url origin)
                     test "$origin" = "$current"
                     git -C "$path" rev-parse --verify --quiet HEAD >/dev/null
-                    git -C "$path" ls-remote --heads -- "$proposed" >/dev/null
+                    git_read git -C "$path" ls-remote --heads -- "$proposed" >/dev/null
                     BASH,
                 'app-update-repository-preflight',
                 'app.repository_preflight_failed',
+                readRepository: $proposedUrl,
             );
         }
     }
@@ -121,11 +126,12 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                 branch=$2
                 test -d "$path"
                 git -C "$path" rev-parse --is-inside-work-tree >/dev/null
-                git -C "$path" fetch --prune -- origin
+                git_read git -C "$path" fetch --prune -- origin
                 git -C "$path" show-ref --verify --quiet "refs/remotes/origin/$branch"
                 BASH,
             'app-update-default-branch-preflight',
             'app.source_switch_failed',
+            readRepository: $instance->loadMissing('app')->app->repository_url,
         );
     }
 
@@ -181,13 +187,20 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         string $script,
         string $step,
         string $errorCode,
+        #[SensitiveParameter]
+        ?string $readRepository = null,
     ): void {
+        $readScript = $readRepository === null
+            ? null
+            : GitReadScript::for($this->access->for($readRepository), $script);
+
         try {
             $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
                     arguments: ['bash', '-seu', '--', ...$arguments],
-                    input: $script,
+                    input: $readScript === null ? $script : $readScript->input,
+                    protectedInput: $readScript?->protectedInput,
                 ),
                 step: $step,
                 errorCode: $errorCode,

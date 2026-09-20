@@ -81,6 +81,7 @@ use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\GitHub\GitHubApi;
 use App\Domain\Herdr\HerdrObserverPublisher;
 use App\Domain\Herdr\HerdrSessionInspector;
 use App\Domain\Herdr\ObservationGrantSigner;
@@ -209,6 +210,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Herdr\ComposedHerdrObserverPublisher;
 use App\Infrastructure\Herdr\HerdrObserverSitePublisher;
 use App\Infrastructure\Herdr\NativeHerdrSessionInspector;
@@ -392,6 +394,7 @@ final class AppServiceProvider extends ServiceProvider
         ObservationGrantSigner::class => OpenSslObservationGrantSigner::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
+        GitHubApi::class => HttpGitHubApi::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,

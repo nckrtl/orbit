@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use Closure;
+use SensitiveParameter;
 
 final readonly class ProcessInvocation
 {
@@ -12,6 +13,7 @@ final readonly class ProcessInvocation
      * @param  non-empty-list<string>  $arguments
      * @param  (Closure(ProcessOutput): void)|null  $output
      * @param  (Closure(): bool)|null  $cancelled
+     * @param  array<string, string>  $environment  Added to the inherited environment.
      */
     public function __construct(
         public array $arguments,
@@ -22,5 +24,7 @@ final readonly class ProcessInvocation
         public ?Closure $output = null,
         public ?Closure $cancelled = null,
         public float $terminateGraceSeconds = 0.1,
+        #[SensitiveParameter]
+        public array $environment = [],
     ) {}
 }

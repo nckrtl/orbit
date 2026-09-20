@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
@@ -291,7 +292,7 @@ it('returns 422 without persistence when the remote default branch is malformed 
     };
     app()->instance(
         RepositoryDefaultBranchResolver::class,
-        new NativeRepositoryDefaultBranchResolver($processes),
+        new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class)),
     );
 
     $this
