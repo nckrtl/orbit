@@ -12,7 +12,7 @@ The CLI uses one pair for each kind of change.
 | --- | --- |
 | `create` and `destroy` | The Gateway brings the resource into existence and tears it down. |
 | `add` and `remove` | The command attaches or detaches things that exist independently. |
-| `install` and `remove` | The command installs or removes a [Tool](/reference/tools). |
+| `install` and `remove` | The command installs or removes a [Tool](/reference/tools). `github:app:install` also uses `install`, because GitHub calls it that. |
 | `enable` and `disable` | The command flips a toggle. |
 | `set` and `unset` | The command writes or clears a single-valued slot. |
 | `update` | The command applies a partial change. |
@@ -56,7 +56,6 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `env` | `import`, `sync` | The CLI imports or synchronizes AppInstance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
-| `github` | `install` | The CLI registers the Gateway's [GitHub App](/reference/github-app) and installs it on a GitHub account. |
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
 | `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance, or scans its dependencies. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
