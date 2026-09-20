@@ -59,10 +59,13 @@ final readonly class EnableInstanceAnalyticsAction
             );
         }
 
-        $public = $this->publicRoute($instance);
-        $clusterId = (int) $public->cluster_id;
-        $this->state->assertRouter($clusterId);
-        $hosts = $hosts === [] ? [AnalyticsTrackingHosts::defaultFor($public->domain)] : $hosts;
+        $owner = $this->instanceRoute($instance);
+
+        if ($owner->cluster_id !== null) {
+            $this->state->assertRouter((int) $owner->cluster_id);
+        }
+
+        $hosts = $hosts === [] ? [AnalyticsTrackingHosts::defaultFor($owner->domain)] : $hosts;
         $current = $this->show->trackingRoutes($instance)->keyBy('domain');
 
         foreach ($hosts as $host) {
@@ -72,7 +75,7 @@ final readonly class EnableInstanceAnalyticsAction
         }
 
         foreach ($hosts as $host) {
-            $route = $current->get($host) ?? $this->create($instance, $clusterId, $host);
+            $route = $current->get($host) ?? $this->create($instance, $owner, $host);
             $this->converge($route);
         }
 
@@ -83,19 +86,20 @@ final readonly class EnableInstanceAnalyticsAction
         return $this->show->execute($instance);
     }
 
-    /** The tracking host follows the instance's own public Route, so it takes that Route's cluster. */
-    private function publicRoute(AppInstance $instance): Route
+    /**
+     * A tracking host is served wherever the App instance's own domain is served, so it mirrors that
+     * Route: a cluster-scoped public Route reaches the internet through the Ingress and the Router,
+     * and a node-scoped private Route is served by the instance's own Node behind whatever edge
+     * already fronts it.
+     */
+    private function instanceRoute(AppInstance $instance): Route
     {
         $route = $instance->unsetRelation('routes')->authoritativeRoute();
 
-        if (
-            ! $route instanceof Route
-            || $route->publication !== RoutePublication::Public
-            || $route->cluster_id === null
-        ) {
+        if (! $route instanceof Route || $route->domain === '') {
             throw new ResourceOperationException(
-                errorCode: 'analytics.public_domain_required',
-                message: 'A tracking host needs an App instance with a public domain.',
+                errorCode: 'analytics.domain_required',
+                message: 'A tracking host needs an App instance that already serves a domain.',
                 status: 422,
             );
         }
@@ -103,20 +107,20 @@ final readonly class EnableInstanceAnalyticsAction
         return $route;
     }
 
-    private function create(AppInstance $instance, int $clusterId, string $host): Route
+    private function create(AppInstance $instance, Route $owner, string $host): Route
     {
         try {
             /** @var Route $route */
-            $route = DB::transaction(static function () use ($instance, $clusterId, $host): Route {
+            $route = DB::transaction(static function () use ($instance, $owner, $host): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::AnalyticsTracking,
                     'app_id' => null,
-                    'node_id' => null,
-                    'cluster_id' => $clusterId,
+                    'node_id' => $owner->node_id,
+                    'cluster_id' => $owner->cluster_id,
                     'generation_basis_node_id' => null,
                     'domain' => $host,
                     'provenance' => RouteProvenance::Explicit,
-                    'publication' => RoutePublication::Public,
+                    'publication' => $owner->publication,
                     'status' => RouteStatus::Pending,
                     'failed_step' => null,
                     'error_code' => null,
@@ -158,7 +162,12 @@ final readonly class EnableInstanceAnalyticsAction
             }
         }
 
-        if ($route->public_publication === RoutePublicPublication::Active && $route->replacement_step === null) {
+        // Only a cluster-scoped Route reaches the public edge; a node-scoped one is served by its
+        // own Node, exactly like the instance domain it follows.
+        if (
+            $route->publication !== RoutePublication::Public
+            || ($route->public_publication === RoutePublicPublication::Active && $route->replacement_step === null)
+        ) {
             return;
         }
 

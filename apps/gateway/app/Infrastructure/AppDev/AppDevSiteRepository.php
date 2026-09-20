@@ -569,7 +569,8 @@ final readonly class AppDevSiteRepository
     {
         $served = in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
             || ($pendingRoute instanceof Route && $route->is($pendingRoute));
-        $router = $this->routerFor($route, $routerOverrides);
+        // A cluster-scoped host is served by the cluster's Router; a node-scoped one by its own Node.
+        $router = $route->cluster_id === null ? $route->node : $this->routerFor($route, $routerOverrides);
         $upstream = AnalyticsTrackingUpstream::current();
 
         if (

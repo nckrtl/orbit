@@ -45,7 +45,16 @@ The first person to open `https://analytics.orbit` registers the Plausible owner
 
 ## Publish a tracking host
 
-`orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>` as a public Route that belongs to the App instance. The App instance needs a public domain first, and the cluster needs an active Router and Ingress, as every public Route does. `--host=HOST` names another host, and you can repeat it up to ten times. The command sets the exact host set, so a host you leave out is removed.
+`orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>` as a Route that belongs to the App instance. The App instance must already serve a domain. `--host=HOST` names another host, and you can repeat it up to ten times. The command sets the exact host set, so a host you leave out is removed.
+
+A tracking host is served wherever the App instance's own domain is served, because its Route mirrors that Route's scope and publication.
+
+| The App instance's Route | The tracking host |
+| --- | --- |
+| Cluster-scoped and public | Public too: the Ingress forwards it to the Router, as for every public Route. |
+| Node-scoped or private | The same: the App instance's own Node serves it, behind whatever edge already fronts that Node. |
+
+When something other than Orbit terminates the public TLS, point the tracking host at the same edge as the App instance's domain, and let that edge reach the Node the same way.
 
 The host answers two paths and nothing else.
 

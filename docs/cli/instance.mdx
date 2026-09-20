@@ -477,14 +477,14 @@ orbit instance:analytics:enable 12
 orbit instance:analytics:enable 12 --host=stats.example.com --host=analytics.shop.example.com
 ```
 
-The command sets the exact host set: the Gateway publishes each named host that is missing and removes each tracking host of the App instance that you did not name. Naming the hosts that already exist changes nothing. Each host is a public Route that answers only `/js/*` and `/api/event`; the [Analytics role](/reference/analytics#publish-a-tracking-host) page owns that contract.
+The command sets the exact host set: the Gateway publishes each named host that is missing and removes each tracking host of the App instance that you did not name. Naming the hosts that already exist changes nothing. Each host is a Route that answers only `/js/*` and `/api/event`, served wherever the App instance's own domain is served; the [Analytics role](/reference/analytics#publish-a-tracking-host) page owns that contract.
 
 Human output lists each host with its Route and status, the DNS record to create for it, and the script tag to add to the App. JSON returns `instance_id`, `enabled`, `domain`, `dashboard_url`, `hosts`, and `snippet`. You still create the site in Plausible yourself.
 
 | Error code | Meaning |
 | --- | --- |
 | `analytics.role_missing` | No Node has an active analytics role. |
-| `analytics.public_domain_required` | The App instance has no public domain yet. |
+| `analytics.domain_required` | The App instance does not serve a domain yet. |
 | `analytics.host_taken` | Another Route already uses a named host. |
 | `validation.failed` | A host is not a lowercase DNS name, is reserved, is repeated, or more than ten hosts were named. |
 

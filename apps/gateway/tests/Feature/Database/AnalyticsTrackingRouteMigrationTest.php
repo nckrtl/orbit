@@ -69,15 +69,38 @@ describe('analytics tracking Route persistence contract', function (): void {
             ->and($route->targets)->toBeEmpty();
     });
 
+    it('stores a Node-scoped private tracking Route, the shape behind an edge Orbit does not own', function (): void {
+        $route = Route::query()->create([
+            ...analytics_tracking_route_row($this->cluster),
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'publication' => RoutePublication::Private,
+        ]);
+        $route->analyticsTracking()->create(['app_instance_id' => $this->instance->id]);
+
+        expect($route->refresh()->publication)->toBe(RoutePublication::Private)
+            ->and($route->node_id)->toBe($this->node->id)
+            ->and($route->cluster_id)->toBeNull();
+    });
+
+    it('stores a cluster-scoped private tracking Route, the shape beside a private cluster domain', function (): void {
+        $route = Route::query()->create([
+            ...analytics_tracking_route_row($this->cluster),
+            'publication' => RoutePublication::Private,
+        ]);
+
+        expect($route->refresh()->publication)->toBe(RoutePublication::Private)
+            ->and($route->cluster_id)->toBe($this->cluster->id);
+    });
+
     it('rejects a tracking Route outside its contract', function (array $override): void {
         expect(fn () => Route::query()->create([...analytics_tracking_route_row($this->cluster), ...$override]))
             ->toThrow(QueryException::class, 'Invalid Route persistence contract.');
 
         expect(Route::query()->count())->toBe(0);
     })->with([
-        'a Node scope' => fn (): array => ['node_id' => $this->node->id],
-        'a Node scope without a cluster' => fn (): array => ['node_id' => $this->node->id, 'cluster_id' => null],
-        'private publication' => [['publication' => RoutePublication::Private]],
+        'both a Node and a cluster' => fn (): array => ['node_id' => $this->node->id],
+        'a public Node scope' => fn (): array => ['node_id' => $this->node->id, 'cluster_id' => null],
         'generated provenance' => fn (): array => [
             'provenance' => RouteProvenance::Generated,
             'generation_basis_node_id' => $this->node->id,
@@ -85,14 +108,13 @@ describe('analytics tracking Route persistence contract', function (): void {
         'an App owner' => fn (): array => ['app_id' => $this->instance->app_id],
     ]);
 
-    it('rejects a tracking Route that turns private, moves to a Node, or changes kind', function (array $update): void {
+    it('rejects a tracking Route that turns public on a Node or changes kind', function (array $update): void {
         $route = Route::query()->create(analytics_tracking_route_row($this->cluster));
 
         expect(fn () => DB::table('routes')->where('id', $route->id)->update($update))
             ->toThrow(QueryException::class, 'Invalid Route persistence contract.');
     })->with([
-        'private publication' => [['publication' => 'private']],
-        'a Node scope' => fn (): array => ['node_id' => $this->node->id, 'cluster_id' => null],
+        'a public Node scope' => fn (): array => ['node_id' => $this->node->id, 'cluster_id' => null],
         'another kind' => fn (): array => ['kind' => 'app', 'app_id' => $this->instance->app_id],
     ]);
 

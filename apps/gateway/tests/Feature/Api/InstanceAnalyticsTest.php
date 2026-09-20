@@ -302,22 +302,42 @@ describe('instance:analytics:enable', function (): void {
             ->and(RouteAnalyticsTracking::query()->count())->toBe(0);
     });
 
-    it('refuses an App instance without a public domain', function (Closure $instance): void {
+    it('mirrors a private App Route, so the host is served beside the domain it follows', function (): void {
+        $target = instance_analytics_extra_instance('private');
+        $owner = instance_analytics_app_route($target, 'private.example.com', RoutePublication::Private);
+
+        $this->postJson("/api/v1/instances/{$target->id}/analytics")
+            ->assertOk()
+            ->assertJsonPath('data.enabled', true)
+            ->assertJsonPath('data.hosts.0.host', 'analytics.private.example.com')
+            ->assertJsonPath('data.hosts.0.public_publication', 'inactive');
+
+        $tracking = Route::query()
+            ->where('kind', RouteKind::AnalyticsTracking->value)
+            ->where('domain', 'analytics.private.example.com')
+            ->sole();
+
+        // The same scope and publication as the Route it follows, so the same edge serves both.
+        expect($tracking->publication)->toBe(RoutePublication::Private)
+            ->and($tracking->node_id)->toBe($owner->node_id)
+            ->and($tracking->cluster_id)->toBe($owner->cluster_id)
+            ->and($tracking->status)->toBe(RouteStatus::Active)
+            ->and($tracking->public_publication)->toBe(RoutePublicPublication::Inactive)
+            ->and($this->projector->routeIds)->toContain($tracking->id)
+            // A private host never reaches the public edge, so it publishes nothing there.
+            ->and($this->edge->calls)->toBe([]);
+    });
+
+    it('refuses an App instance that serves no domain', function (Closure $instance): void {
         $target = $instance();
 
         $this->postJson("/api/v1/instances/{$target->id}/analytics", ['hosts' => ['stats.shop.example.com']])
             ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'analytics.public_domain_required');
+            ->assertJsonPath('error.code', 'analytics.domain_required');
         expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(0)
             ->and($this->projector->routeIds)->toBe([]);
     })->with([
         'no Route' => [fn (): AppInstance => instance_analytics_extra_instance('bare')],
-        'a private Route' => [function (): AppInstance {
-            $private = instance_analytics_extra_instance('private');
-            instance_analytics_app_route($private, 'private.example.com', RoutePublication::Private);
-
-            return $private;
-        }],
         'a Route that is not authoritative' => [function (): AppInstance {
             $pending = instance_analytics_extra_instance('pending');
             instance_analytics_app_route($pending, 'pending.example.com', RoutePublication::Public, activate: false);

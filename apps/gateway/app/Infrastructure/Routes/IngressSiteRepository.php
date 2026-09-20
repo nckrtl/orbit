@@ -93,9 +93,12 @@ final readonly class IngressSiteRepository
 
     public function routerNode(Route $route): Node
     {
-        $route->loadMissing('cluster.routerAssignment.node');
+        $route->loadMissing('cluster.routerAssignment.node', 'node');
         $cluster = $route->cluster;
-        $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
+        // A node-scoped Route names the Node that serves it; a cluster-scoped one uses its Router.
+        $router = $cluster === null
+            ? $route->node
+            : $this->eligibility->activeRouter($cluster);
 
         if (! $router instanceof Node) {
             throw new RuntimeConvergenceException(

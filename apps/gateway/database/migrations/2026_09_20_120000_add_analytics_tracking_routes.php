@@ -61,11 +61,9 @@ return new class extends Migration
                     NEW.kind = 'analytics_tracking'
                     AND (
                         NEW.app_id IS NOT NULL
-                        OR NEW.node_id IS NOT NULL
-                        OR NEW.cluster_id IS NULL
                         OR NEW.provenance <> 'explicit'
-                        OR NEW.publication <> 'public'
                         OR NEW.generation_basis_node_id IS NOT NULL
+                        OR (NEW.node_id IS NOT NULL AND NEW.publication <> 'private')
                     )
                 )
                 OR (NEW.node_id IS NULL) = (NEW.cluster_id IS NULL)
@@ -112,9 +110,7 @@ return new class extends Migration
                     NEW.kind = 'analytics_tracking'
                     AND (
                         NEW.app_id IS NOT NULL
-                        OR NEW.node_id IS NOT NULL
-                        OR NEW.cluster_id IS NULL
-                        OR NEW.publication <> 'public'
+                        OR (NEW.node_id IS NOT NULL AND NEW.publication <> 'private')
                     )
                 )
                 OR (NEW.provenance = 'generated' AND NEW.generation_basis_node_id IS NULL)

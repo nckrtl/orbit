@@ -6,7 +6,7 @@ description: "Proposed. An App instance publishes analytics.<its domain> as a de
 
 # ADR 0097: Publish analytics tracking hosts for App instances
 
-An App instance can publish a public tracking host, by default `analytics.<instance domain>`, that proxies only Plausible's script and event paths to the analytics role. It is a dedicated Route kind, not a general way to proxy chosen paths of a Route.
+An App instance can publish a tracking host, by default `analytics.<instance domain>`, that proxies only Plausible's script and event paths to the analytics role. It is a dedicated Route kind, not a general way to proxy chosen paths of a Route, and it is served wherever the App instance's own domain is served.
 
 ## Status
 
@@ -20,14 +20,17 @@ A Route today serves one upstream for every path. The only path-scoped handling 
 
 ## Decision
 
-- Add `RouteKind::AnalyticsTracking`. A Route of this kind belongs to one App instance, is always public, and has no operator-chosen upstream: the Gateway derives it from the active analytics role.
+- Add `RouteKind::AnalyticsTracking`. A Route of this kind belongs to one App instance and has no operator-chosen upstream: the Gateway derives it from the active analytics role.
+- A tracking Route mirrors the scope and the publication of the App instance's own authoritative Route. A cluster-scoped public Route reaches the internet through the Ingress and the Router; a node-scoped private Route is served by the App instance's own Node, behind whatever edge already fronts it. The App instance must already serve a domain, and `analytics.domain_required` refuses one that does not.
 - `instance:analytics:enable` creates one Route per host. The default host is `analytics.<instance domain>`, so the App instance must have a public domain first; `--host` names other hosts, up to ten. `instance:analytics:disable` removes the Routes, and `instance:analytics:show` returns the hosts with the script URL, the event URL, and the DNS records the operator must create.
 - The Router site for the host proxies exactly `/js/*` and `/api/event` to the analytics container over WireGuard and answers every other path with 404, so the dashboard and the Plausible API never become public through it.
-- The host follows the public Route rules unchanged: the same eligibility, the same Ingress site and certificate handling, and the same firewall rules.
+- A public tracking host follows the public Route rules unchanged: the same eligibility, the same Ingress site and certificate handling, and the same firewall rules. A private one is converged like the App instance's own private Route and never touches the public edge.
 - Enabling refuses while no analytics role is active. Removing the analytics role refuses while a tracking host exists, unless the removal also removes them.
 - `instance:analytics:verify` runs on the operator's machine, as `profile` does: it resolves the host in public DNS and probes `https://<host>/js/script.js` for 200 and `https://<host>/` for 404. The Gateway calls no DNS provider.
 
 ## Rejected alternatives
+
+- Make every tracking host a public, cluster-scoped Route: rejected because an Orbit fleet does not have to own its public edge. Where a CDN or another proxy fronts the App instance, its own Route is node-scoped and private, and a public tracking Route would demand an Ingress and a cluster that the fleet does not otherwise need, and would change how the App instance itself is served.
 
 - General path-scoped proxying on any Route: rejected because nothing else needs it today, it would reopen the custom proxy upstream rules of ADR 0080, and a fixed pair of paths is a much smaller surface to verify and to keep private.
 - Serve the script and event paths from the App's own domain under a reserved prefix: rejected because it would put fleet infrastructure inside every App site, on a path that collides with any App that defines the same path, and it would tie tracking to the App instance's runtime being awake.
