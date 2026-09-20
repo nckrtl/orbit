@@ -424,7 +424,7 @@ describe('project:update', function (): void {
 
         $this
             ->artisan('project:update', [
-                'app' => '3',
+                'project' => '3',
                 '--repository' => 'https://github.com/nckrtl/orbit.git',
                 '--default-branch' => 'stable',
                 '--json' => true,
@@ -453,7 +453,7 @@ describe('project:update', function (): void {
 
         $this
             ->artisan('project:update', [
-                'app' => '3',
+                'project' => '3',
                 '--slug' => 'orbit',
             ])
             ->expectsOutput('Project [orbit] updated.')

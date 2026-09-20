@@ -621,7 +621,7 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'instance name' => [
         'instance:create',
-        ['app' => '1', 'node' => '1', 'name' => ''],
+        ['project' => '1', 'node' => '1', 'name' => ''],
         'instance.name_required',
         'Instance name is required.',
     ],
@@ -764,7 +764,7 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'multiple instance values fail at the first error' => [
         'instance:create',
-        ['app' => 'validation-secret', 'node' => '0', 'name' => ''],
+        ['project' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
         'App ID must be a positive integer.',
     ],
@@ -997,7 +997,7 @@ function gateway_validation_failure(?array $details): MockResponse
 
 function gateway_failed_create_diagnostic(string $output): string
 {
-    $prefix = "Creating App...\n\n┌  Create App\n│\n├  ● Creating App\n│\n└  Operation failed.\n\n";
+    $prefix = "Creating Project...\n\n┌  Create Project\n│\n├  ● Creating Project\n│\n└  Operation failed.\n\n";
 
     expect($output)->toStartWith($prefix)
         ->not->toContain('Created App', "\e[");

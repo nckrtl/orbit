@@ -146,7 +146,7 @@ it('records one App Schedule definition through structured flags', function (): 
     expect($mock->getLastRequest())
         ->toBeInstanceOf(CreateScheduleDefinitionRequest::class)
         ->and($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/apps/7/schedule-definitions')
+        ->toBe('https://10.44.0.1/api/v1/projects/7/schedule-definitions')
         ->and((string) $mock->getLastPendingRequest()?->body())
         ->toBe('{"name":"hourly-report","environments":["production"],"spec":{"command":"php artisan report:send","calendar":"hourly","timeout_seconds":3600}}');
 });
@@ -177,13 +177,13 @@ it('lists shows updates and destroys App Schedule definitions by name', function
         'schedule:list',
         ['--app' => '7'],
         ListScheduleDefinitionsRequest::class,
-        '/api/v1/apps/7/schedule-definitions',
+        '/api/v1/projects/7/schedule-definitions',
     ],
     'show' => [
         'schedule:show',
         ['schedule' => 'hourly-report', '--app' => '7'],
         ShowScheduleDefinitionRequest::class,
-        '/api/v1/apps/7/schedule-definitions/hourly-report',
+        '/api/v1/projects/7/schedule-definitions/hourly-report',
     ],
     'update' => [
         'schedule:update',
@@ -195,13 +195,13 @@ it('lists shows updates and destroys App Schedule definitions by name', function
             '--command' => 'php artisan report:send',
         ],
         UpdateScheduleDefinitionRequest::class,
-        '/api/v1/apps/7/schedule-definitions/hourly-report',
+        '/api/v1/projects/7/schedule-definitions/hourly-report',
     ],
     'destroy' => [
         'schedule:destroy',
         ['schedule' => 'hourly-report', '--app' => '7', '--yes' => true],
         DestroyScheduleDefinitionRequest::class,
-        '/api/v1/apps/7/schedule-definitions/hourly-report',
+        '/api/v1/projects/7/schedule-definitions/hourly-report',
     ],
 ]);
 
@@ -408,7 +408,7 @@ it('applies explicit selector validation before HTTP in every output and interac
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with(function (): array {
     $cases = [
-        'neither selector' => [[], 'schedule.target_required', 'Exactly one of --app, --node, or --instance is required.'],
+        'neither selector' => [[], 'schedule.target_required', 'Exactly one of --project, --app, --node, or --instance is required.'],
         'both selectors' => [[
             '--node' => '3',
             '--instance' => '7',
@@ -424,7 +424,7 @@ it('applies explicit selector validation before HTTP in every output and interac
         ], 'schedule.option_invalid', 'The --for option requires --project or --app.'],
         'app without for' => [[
             '--app' => '7',
-        ], 'schedule.option_invalid', 'The --for option is required with --app.'],
+        ], 'schedule.option_invalid', 'The --for option is required with --project or --app.'],
         'malformed Node ID' => [[
             '--node' => 'edge',
         ], 'schedule.node_id_invalid', 'Node ID must be a positive integer.'],
@@ -524,7 +524,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--app' => '7',
         ]),
         'schedule.option_invalid',
-        'The --for option is required with --app.',
+        'The --for option is required with --project or --app.',
     ],
     'create invalid app without for' => [
         'schedule:create',
@@ -543,7 +543,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--command' => 'x',
         ],
         'schedule.option_invalid',
-        'The --for option is required with --app.',
+        'The --for option is required with --project or --app.',
     ],
 ]);
 

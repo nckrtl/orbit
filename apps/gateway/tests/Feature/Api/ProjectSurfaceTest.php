@@ -231,3 +231,35 @@ it('exposes project_id beside app_id on Instance payloads', function (): void {
         ->assertJsonPath('data.project.slug', 'shop')
         ->assertJsonPath('data.project.type', 'laravel-app');
 });
+
+it('creates an Instance from project_id on the same owner as app_id', function (): void {
+    $project = OrbitApp::query()->create([
+        'name' => 'shop',
+        'slug' => 'shop',
+        'type' => ProjectType::LaravelApp,
+        'repository_url' => 'https://github.com/acme/shop.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'dev',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.84',
+        'wireguard_ip' => '10.44.0.84',
+    ]);
+    $node->roles()->create([
+        'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $created = $this->postJson('/api/v1/instances', [
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'preview',
+    ])->assertCreated();
+
+    expect($created->json('data.app_id'))->toBe($project->id)
+        ->and($created->json('data.project_id'))->toBe($project->id)
+        ->and($created->json('data.project.slug'))->toBe('shop');
+});

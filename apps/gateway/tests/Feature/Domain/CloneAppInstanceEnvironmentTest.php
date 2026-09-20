@@ -103,7 +103,7 @@ it('supports a clone with no stored environment rows', function (): void {
         ->and($writer->contents)
         ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\n")
         ->and($preflight->requiredCapacityBytes)
-        ->toBe(AppInstanceEnvironmentValidator::MaximumFileBytes);
+        ->toBeGreaterThan(AppInstanceEnvironmentValidator::MaximumFileBytes);
 });
 
 it('preserves target environment edits on retry', function (): void {

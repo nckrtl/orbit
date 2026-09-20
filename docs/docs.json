@@ -313,7 +313,28 @@
             ]
           },
           {
-            "group": "App instances",
+            "group": "Projects",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/projects",
+              "POST /api/v1/projects",
+              "DELETE /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}",
+              "PATCH /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}/process-definitions",
+              "POST /api/v1/projects/{app}/process-definitions",
+              "DELETE /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "PUT /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/projects/{app}/schedule-definitions",
+              "POST /api/v1/projects/{app}/schedule-definitions",
+              "DELETE /api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+              "GET /api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+              "PUT /api/v1/projects/{app}/schedule-definitions/{schedule_definition}"
+            ]
+          },
+          {
+            "group": "Instances",
             "openapi": "/openapi.json",
             "pages": [
               "GET /api/v1/deployments/{deployment}",

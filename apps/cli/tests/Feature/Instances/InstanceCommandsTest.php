@@ -332,7 +332,7 @@ describe('instance:create', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'dev',
                 '--json' => true,
@@ -357,7 +357,7 @@ describe('instance:create', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'dev',
                 '--root' => 'site/public',
@@ -379,7 +379,7 @@ describe('instance:create', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'dev',
                 '--domain' => 'Odd_Value',
@@ -399,7 +399,7 @@ describe('instance:create', function (): void {
         $tester = new CommandTester(app(Kernel::class)->all()['instance:create']);
 
         expect($tester->execute([
-            'app' => '3',
+            'project' => '3',
             'node' => '2',
             'name' => 'dev',
             '--hostname' => 'Odd_Value',
@@ -422,7 +422,7 @@ describe('instance:create', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'default',
                 '--branch' => 'release',
@@ -444,7 +444,7 @@ describe('instance:create', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'default',
                 '--recover-source-profile' => true,
@@ -460,7 +460,7 @@ describe('instance:create', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'default',
             ])
@@ -472,7 +472,7 @@ describe('instance:create', function (): void {
     it('reports the created AppInstance for humans', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 
-        expect(Artisan::call('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
+        expect(Artisan::call('instance:create', ['project' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
             'App instance: dev',
             'Source layout checkout',
@@ -496,7 +496,7 @@ describe('instance:create', function (): void {
         ];
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201, $payload)]);
 
-        expect(Artisan::call('instance:create', ['app' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
+        expect(Artisan::call('instance:create', ['project' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
             'Production user orbit-app-3',
             'Production home /home/orbit-app-3',
@@ -778,7 +778,7 @@ it('rejects invalid parent IDs before creating an AppInstance', function (
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('instance:create', ['app' => $appId, 'node' => $nodeId, 'name' => 'dev'])
+        ->artisan('instance:create', ['project' => $appId, 'node' => $nodeId, 'name' => 'dev'])
         ->expectsOutputToContain($message)
         ->assertExitCode(1);
 

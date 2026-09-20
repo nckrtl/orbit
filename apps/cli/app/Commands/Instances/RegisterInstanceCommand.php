@@ -27,7 +27,8 @@ final class RegisterInstanceCommand extends GatewayCommand
     protected $signature = 'instance:register
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
         {--include-worktrees : Adopt the checkout and every linked worktree}
-        {--app= : Existing numeric App ID}
+        {--project= : Existing numeric Project ID}
+        {--app= : Existing numeric Project ID (compatibility)}
         {--app-name= : Confirmed App display name}
         {--app-slug= : Confirmed App slug}
         {--default-branch= : Confirmed App default branch}
@@ -138,13 +139,22 @@ final class RegisterInstanceCommand extends GatewayCommand
      */
     private function confirmedValues(GitRegistrationFacts $facts): ?array
     {
-        $appId = $this->stringOption('app');
+        $project = $this->stringOption('project');
+        $app = $this->stringOption('app');
+
+        if ($project !== null && $app !== null) {
+            $this->renderGatewayFailure('app.id_invalid', 'Use only one of --project or --app.');
+
+            return null;
+        }
+
+        $appId = $project ?? $app;
         $appIdValue = $appId === null ? null : filter_var($appId, FILTER_VALIDATE_INT, ['options' => [
             'min_range' => 1,
         ]]);
 
         if ($appId !== null && ! is_int($appIdValue)) {
-            $this->renderGatewayFailure('app.id_invalid', 'App ID must be a positive integer.');
+            $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
 
             return null;
         }
