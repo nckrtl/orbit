@@ -24,6 +24,8 @@ use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
 use App\Models\HerdrObservationNonce;
+use App\Models\TaskGroup;
+use App\Models\Task;
 use App\Models\HerdrSession;
 use App\Models\JwksKey;
 use App\Models\Node;
@@ -84,6 +86,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppUpdate::class,
         DatabaseUser::class,
         HerdrObservationNonce::class,
+        Task::class,
+        TaskGroup::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {
