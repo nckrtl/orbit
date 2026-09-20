@@ -9,6 +9,7 @@ use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -27,6 +28,7 @@ final readonly class UpdateRouteAction
         private PublishPublicRouteAction $publishPublic,
         private RouteReconciliationGuard $reconciliation,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     public function execute(Route $route, UpdateRouteData $data): Route
@@ -58,6 +60,8 @@ final readonly class UpdateRouteAction
             $result->id,
             RouteData::fromModel($result)->toArray(),
         );
+
+        $this->metrics?->reconcile();
 
         return $result;
     }

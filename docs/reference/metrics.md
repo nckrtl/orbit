@@ -7,6 +7,8 @@ description: "What the metrics role runs, how to enable, inspect, and disable it
 
 The `metrics` role runs Prometheus and Grafana on one Node and collects metrics from selected managed Nodes. Use it to view machine health at `https://metrics.orbit`. [ADR 0003](/decisions/0003-singleton-metrics-role) defines placement, [ADR 0055](/decisions/0055-restrict-grafana-access-to-authorized-gateway-peers) defines access, and [ADR 0057](/decisions/0057-limit-metrics-exporters-to-managed-nodes) defines eligible exporters.
 
+[Service metrics](/reference/service-metrics) proposes native Caddy monitoring on selected ingress nodes and Cbox FPM Exporter on selected app-prod nodes. That extension is not implemented yet; the current exporters are described below.
+
 The containers are `orbit-metrics-prometheus` and `orbit-metrics-grafana`. Each selected Node runs `prometheus-node-exporter` and `orbit-cadvisor`. Both containers use host networking. Prometheus listens locally at `127.0.0.1:9090`, without a firewall rule. Grafana listens on WireGuard port 3000. Two Orbit UFW rules allow the Gateway and block other peers before general member rules apply. Container logs use `json-file`, limited to three files of 10 MB each.
 
 ## Placement and recovery

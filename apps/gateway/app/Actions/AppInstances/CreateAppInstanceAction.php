@@ -16,6 +16,7 @@ use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -47,6 +48,7 @@ final readonly class CreateAppInstanceAction
         private DevelopmentAppInstanceProvisioner $provisioner,
         private ProductionAppInstanceProvisioner $productionProvisioner,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -136,6 +138,9 @@ final readonly class CreateAppInstanceAction
      */
     private function announceCreated(array $result): array
     {
+        if ($result['appInstance']->environment === 'production') {
+            $this->metrics?->reconcile();
+        }
         if ($result['created']) {
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
                 RecordEventType::InstanceCreated,

@@ -20,12 +20,13 @@ final readonly class NativeMetricsContainerRuntime implements MetricsRuntimeLife
         private MetricsConfigurationRenderer $configurations,
         private MetricsCredentialManager $credentials,
         private MetricsExporterLifecycle $exporters,
+        private ?ServiceMetricsProjection $services = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
         $password = $this->credentials->passwordForConvergence($node);
-        $configuration = $this->configurations->render($this->exporters->targets($node), $password);
+        $configuration = $this->configurations->render($this->exporters->targets($node), $password, $this->services?->forFleet($node) ?? []);
         $specs = $this->specs(
             $node,
             $assignment,

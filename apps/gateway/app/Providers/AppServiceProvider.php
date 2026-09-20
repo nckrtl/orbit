@@ -108,6 +108,7 @@ use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
+use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeConverger;
@@ -245,6 +246,9 @@ use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
+use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
+use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
+use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
@@ -363,6 +367,8 @@ final class AppServiceProvider extends ServiceProvider
         MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
         MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
         MetricsExporterRuntime::class => MetricsExporterSshExecutor::class,
+        ServiceMetricsLifecycle::class => NativeServiceMetricsLifecycle::class,
+        ServiceMetricsRuntime::class => NativeServiceMetricsRuntime::class,
         MetricsCadvisorLifecycle::class => NativeMetricsCadvisorLifecycle::class,
         MetricsCadvisorRuntime::class => MetricsCadvisorSshExecutor::class,
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,

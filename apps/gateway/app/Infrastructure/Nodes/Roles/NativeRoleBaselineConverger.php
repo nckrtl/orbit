@@ -47,6 +47,8 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     private function convergeOwned(Node $node, NodeRole $assignment): void
     {
         if ($assignment->role === RoleName::Ingress) {
+            $this->metricsFleet->reconcile();
+
             return;
         }
 
@@ -75,6 +77,8 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     private function removeOwned(Node $node, NodeRole $assignment, bool $purgeData): void
     {
         if ($assignment->role === RoleName::Ingress) {
+            $this->metricsFleet->reconcile();
+
             return;
         }
 
@@ -102,6 +106,8 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     private function removeUnreachableOwned(Node $node, NodeRole $assignment): void
     {
         if ($assignment->role === RoleName::Ingress) {
+            $this->metricsFleet->reconcile();
+
             return;
         }
 

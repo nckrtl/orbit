@@ -19,6 +19,7 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RoutePlacement;
@@ -49,6 +50,7 @@ final readonly class CloneAppInstanceAction
         private ProductionRouteProjector $projection,
         private ProductionCloneRouteProjector $cloneProjection,
         private DevelopmentProjectionOperationLock $projectionOwner,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -58,6 +60,8 @@ final readonly class CloneAppInstanceAction
         $existing = $this->existingTarget($candidate, $data);
 
         if ($existing instanceof AppInstance && $existing->clone_completed_at !== null) {
+            $this->metrics?->reconcile();
+
             return [
                 'appInstance' => $existing->load('routes.targets'),
                 'created' => false,
@@ -97,6 +101,8 @@ final readonly class CloneAppInstanceAction
 
             throw $exception;
         }
+
+        $this->metrics?->reconcile();
 
         return ['appInstance' => $result, 'created' => $created];
     }

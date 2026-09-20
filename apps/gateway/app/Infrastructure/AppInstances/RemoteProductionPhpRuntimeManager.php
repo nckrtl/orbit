@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\SharedOrbitDirectory;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -23,6 +24,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         private RemotePhpPackageManager $packages = new RemotePhpPackageManager,
         private int $cacheDeadlineSeconds = 30,
         private SharedOrbitDirectory $sharedOrbitDirectory = new SharedOrbitDirectory,
+        private ?ServiceMetricsProjection $serviceMetrics = null,
     ) {}
 
     public function converge(AppInstance $appInstance): void
@@ -33,13 +35,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
     private function convergeWithTuning(AppInstance $appInstance, ?string $initialLocalTuning): void
     {
         $identity = ProductionPhpRuntimeIdentity::from($appInstance);
-        $configuration = $this->renderer->render($identity);
+        $configuration = $this->renderer->render($identity, $this->serviceMetrics?->enabled($appInstance->node) ?? false);
         /** @var Collection<int, string> $versions */
         $versions = collect([$identity->version]);
         $this->packages->installPackagesOnlyForAppProd(
-            $appInstance->node->loadMissing('roles'),
-            $versions,
-            $this->ssh,
+            $appInstance->node->loadMissing('roles'), $versions, $this->ssh,
         );
 
         $this->ssh->execute(
@@ -723,7 +723,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             fi
             local_before=$(sha256sum -- "$local_tuning" | awk '{print $1}')
 
-            awk -v expected_pool="[$pool]" '
+            monitoring=0
+            if printf '%s' "$pool_configuration" | base64 --decode | grep -q '^pm.status_path = /orbit-fpm-status$'; then
+                monitoring=1
+            fi
+            awk -v expected_pool="[$pool]" -v monitoring="$monitoring" '
                 /^[[:space:]]*($|;|#)/ { next }
                 /^[[:space:]]*\[/ {
                     line=$0
@@ -735,6 +739,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     line=tolower($0)
                     sub(/^[[:space:]]+/, "", line)
                     if (line ~ /^include[[:space:]]*=/) exit 1
+                    if (monitoring == 1 && line ~ /^pm[.]status_(path|listen)[[:space:]]*=/) exit 1
                     if (line ~ /^(pid|user|group|listen|listen[.]owner|listen[.]group|listen[.]mode|chdir|env\[home\]|env\[user\])[[:space:]]*=/) exit 1
                 }
             ' "$local_tuning"

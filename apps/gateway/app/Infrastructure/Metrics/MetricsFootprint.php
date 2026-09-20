@@ -40,6 +40,8 @@ final readonly class MetricsFootprint
         '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml',
         '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml',
         '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json',
+        '/etc/orbit/metrics/grafana/dashboards/orbit-caddy.json',
+        '/etc/orbit/metrics/grafana/dashboards/orbit-fpm.json',
         '/etc/orbit/metrics/grafana/admin-password',
     ];
 

@@ -15,6 +15,8 @@ final readonly class AppProdCaddyPublisher
         private string $caddyServiceName = 'caddy',
         private string $lockPath = '/run/lock/orbit/caddy.lock',
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
+        private string $ownedFragment = 'app-prod.caddy',
+        private string $ownershipMarker = '',
     ) {}
 
     public function serviceOrderingCommand(): RemoteCommand
@@ -27,6 +29,9 @@ final readonly class AppProdCaddyPublisher
 
     public function command(string $configuration, string $version): RemoteCommand
     {
+        if (! preg_match('/\A[a-z0-9.-]+[.]caddy\z/D', $this->ownedFragment)) {
+            throw new \InvalidArgumentException('Invalid Caddy fragment name.');
+        }
         $encoded = base64_encode($configuration);
 
         return new RemoteCommand(
@@ -81,6 +86,10 @@ final readonly class AppProdCaddyPublisher
                 test -f "\$source_main"
                 cp -a -- "\$source_main" "\$previous_main"
                 current_fragments=\$(dirname "\$source_main")/fragments
+                if [ -n '{$this->ownershipMarker}' ] && [ -e "\$current_fragments/{$this->ownedFragment}" ]; then
+                    test ! -L "\$current_fragments/{$this->ownedFragment}"
+                    head -n 1 -- "\$current_fragments/{$this->ownedFragment}" | grep -Fqx -- '{$this->ownershipMarker}'
+                fi
                 previous_target=
                 if [ -L "\$live_caddyfile" ]; then
                     previous_target=\$(readlink "\$live_caddyfile")
@@ -91,7 +100,7 @@ final readonly class AppProdCaddyPublisher
                     "\$versions"/*/Caddyfile)
                         for fragment in "\$current_fragments"/*.caddy; do
                             fragment_name=\$(basename "\$fragment")
-                            if [ ! -e "\$fragment" ] || [ "\$fragment_name" = app-prod.caddy ]; then
+                            if [ ! -e "\$fragment" ] || [ "\$fragment_name" = {$this->ownedFragment} ]; then
                                 continue
                             fi
                             destination="\$candidate/fragments/\$fragment_name"
@@ -117,13 +126,13 @@ final readonly class AppProdCaddyPublisher
                         ;;
                 esac
 
-                printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/app-prod.caddy"
+                printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/{$this->ownedFragment}"
                 printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
 
-                if [ -f "\$current_fragments/app-prod.caddy" ] && cmp -s -- "\$candidate/fragments/app-prod.caddy" "\$current_fragments/app-prod.caddy"; then
+                if [ -f "\$current_fragments/{$this->ownedFragment}" ] && cmp -s -- "\$candidate/fragments/{$this->ownedFragment}" "\$current_fragments/{$this->ownedFragment}"; then
                     exit 0
                 fi
 
@@ -161,7 +170,8 @@ final readonly class AppProdCaddyPublisher
                 $this->liveCaddyfilePath,
                 $this->caddyServiceName,
                 $this->lockPath,
-                'app-prod.caddy',
+                $this->ownedFragment,
+                $this->ownershipMarker,
             ],
             input: <<<'BASH'
                 version=$1
@@ -193,9 +203,13 @@ final readonly class AppProdCaddyPublisher
                 fi
                 flock -w 30 9
                 source_main=$(readlink -f "$live_caddyfile")
-                test -f "$source_main"
+                test -f "$source_main" || exit 0
                 current_fragments=$(dirname "$source_main")/fragments
-                test ! -f "$current_fragments/app-prod.caddy" && exit 0
+                test ! -f "$current_fragments/$owned_fragment" && exit 0
+                if [ -n "${7:-}" ]; then
+                    test ! -L "$current_fragments/$owned_fragment"
+                    head -n 1 -- "$current_fragments/$owned_fragment" | grep -Fqx -- "$7"
+                fi
                 candidate="$versions/$version.candidate"
                 published="$versions/$version"
                 candidate_link="$(dirname "$live_caddyfile")/.Caddyfile.orbit-$version"

@@ -16,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
+use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -323,6 +324,24 @@ final readonly class NodeFirewallRuleCatalog
             $this->metricsExporterAddress($metricsNode),
             $this->metricsExporterAddress($node),
             MetricsFootprint::CadvisorPort,
+        );
+    }
+
+    public function metricsService(Node $node, Node $metricsNode, string $kind, bool $allow): UfwManagedRule
+    {
+        $port = match ($kind) {
+            'caddy' => ServiceMetricsConfigRenderer::CaddyPort,
+            'fpm' => ServiceMetricsConfigRenderer::FpmPort,
+            default => throw new \InvalidArgumentException('Unknown service metrics kind.'),
+        };
+        $action = $allow ? 'allow' : 'deny';
+        $source = $allow ? $this->metricsExporterAddress($metricsNode) : 'any';
+        $destination = $this->metricsExporterAddress($node);
+        $comment = 'orbit:metrics-service-'.$kind.'-'.$action;
+
+        return new UfwManagedRule(
+            new UfwRuleShape($comment, $action, 'in', $source, $destination, $port, 'tcp', 'orbit', null, 'v4'),
+            ['sudo', 'ufw', $action, 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', $destination, 'port', $port, 'comment', $comment],
         );
     }
 

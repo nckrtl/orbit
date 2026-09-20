@@ -31,6 +31,7 @@ use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
+use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
@@ -47,6 +48,11 @@ use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
 
 beforeEach(function (): void {
+    $services = Mockery::mock(ServiceMetricsRuntime::class);
+    $services->shouldReceive('snapshot')->andReturn('{}');
+    $services->shouldReceive('converge');
+    $services->shouldReceive('restore');
+    app()->instance(ServiceMetricsRuntime::class, $services);
     $this->dns = new RemoveNodeFakeDnsManager;
     $this->peers = new RemoveNodeFakePeerProjection;
     $this->metricsAccess = new RemoveNodeFakeMetricsAccessRevoker;
