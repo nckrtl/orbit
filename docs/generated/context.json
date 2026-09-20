@@ -83,7 +83,9 @@
                 "Node",
                 "Process",
                 "Route",
-                "Router"
+                "Router",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0004",
@@ -92,7 +94,8 @@
                 "0083",
                 "0090",
                 "0091",
-                "0095"
+                "0095",
+                "0103"
             ]
         },
         {
@@ -526,6 +529,8 @@
                 "Router",
                 "Runtime hibernation",
                 "Schedule",
+                "Task",
+                "Task group",
                 "Tool",
                 "Tool Manager",
                 "Web root"
@@ -548,7 +553,9 @@
             "components": [
                 "apps/cli"
             ],
-            "concepts": [],
+            "concepts": [
+                "Task"
+            ],
             "governing_adrs": []
         },
         {
@@ -572,7 +579,9 @@
             "title": "ADR 0002: Keep proof resources task-owned and production separate",
             "kind": "decision",
             "components": [],
-            "concepts": [],
+            "concepts": [
+                "Task"
+            ],
             "governing_adrs": [
                 "0002",
                 "0006"
@@ -640,7 +649,8 @@
                 "apps/e2e"
             ],
             "concepts": [
-                "Proof topology"
+                "Proof topology",
+                "Task"
             ],
             "governing_adrs": [
                 "0002",
@@ -2094,7 +2104,8 @@
             ],
             "concepts": [
                 "App",
-                "Node"
+                "Node",
+                "Task"
             ],
             "governing_adrs": [
                 "0002",
@@ -2274,7 +2285,8 @@
                 "Database",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Task"
             ],
             "governing_adrs": [
                 "0083"
@@ -2425,7 +2437,8 @@
                 "Gateway",
                 "Node",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": [
                 "0046",
@@ -2731,6 +2744,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0103-absorb-commander-tasks-as-a-gateway-extension.md",
+            "title": "ADR 0103: Absorb Commander tasks as a Gateway extension",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0036",
+                "0086",
+                "0103"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2759,6 +2795,7 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
@@ -2858,7 +2895,8 @@
                 "0098",
                 "0099",
                 "0100",
-                "0101"
+                "0101",
+                "0103"
             ]
         },
         {
@@ -3224,7 +3262,8 @@
                 "App",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Task"
             ],
             "governing_adrs": [
                 "0071"
@@ -3417,6 +3456,7 @@
                 "Herdr session",
                 "Node",
                 "Process",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
@@ -3440,6 +3480,7 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": [
@@ -3490,7 +3531,8 @@
                 "Process",
                 "Route",
                 "Runtime hibernation",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": [
                 "0089"
@@ -3804,6 +3846,24 @@
             ],
             "governing_adrs": [
                 "0099"
+            ]
+        },
+        {
+            "path": "docs/reference/tasks.md",
+            "title": "Tasks",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Gateway",
+                "Node",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0103"
             ]
         },
         {

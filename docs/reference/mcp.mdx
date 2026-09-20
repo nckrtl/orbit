@@ -40,6 +40,8 @@ A successful call returns the API's JSON document as text, usually `{"data": ...
 
 Four operations are machine callbacks and have no tool: the realtime channel signature, the Grafana access check, the App instance wake page, and the schedule completion report.
 
+The `tasks-*` tools belong to the enable-gated [tasks](/reference/tasks) extension. `tasks-create` and `tasks-add` require Gateway access. Create, add, list, and show return `tasks.disabled` until an authorized caller enables the extension.
+
 ## Connect a client
 
 Claude Code, from a Node or a WireGuard peer that trusts the Orbit CA:

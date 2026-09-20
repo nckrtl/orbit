@@ -32,11 +32,11 @@
 ╰─
 
 ╭─ Processes
-│  Name │ Where │ Status │ CPU/MEM
-│› horizon │ charlie-shop/dev │ active │ 20%/1.2G
-│  vite │ charlie-shop/dev │ inactive │ — !
-│  queue │ charlie-shop/staging │ inactive │ —
-│  valkey │ node beast │ running │ 1%/0.1G
+│  Name │ Where │ Status │ CPU │ MEM
+│› horizon │ charlie-shop/dev │ active │ 20% │ 1.2G
+│  vite │ charlie-shop/dev │ inactive │ — │ — !
+│  queue │ charlie-shop/staging │ inactive │ — │ —
+│  valkey │ node beast │ running │ 1% │ 0.1G
 ╰─
 
 ╭─ Schedules

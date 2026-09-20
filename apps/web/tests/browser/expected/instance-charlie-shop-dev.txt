@@ -24,9 +24,9 @@
 ╰─
 
 ╭─ Processes
-│  Name │ Status │ CPU/MEM
-│› horizon │ active │ 20%/1.2G
-│  vite │ inactive │ — !
+│  Name │ Status │ CPU │ MEM
+│› horizon │ active │ 20% │ 1.2G
+│  vite │ inactive │ — │ — !
 ╰─
 
 ╭─ Schedules

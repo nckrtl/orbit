@@ -45,6 +45,8 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
+use App\Http\Controllers\Api\TaskGroupsController;
+use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
@@ -445,5 +447,16 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('metrics/exporters/{node}', [MetricsController::class, 'disableExporter'])
             ->whereNumber('node')
             ->name('metrics:exporter:disable');
+        Route::post('tasks/enable', [TasksController::class, 'enable'])->name('tasks:enable');
+        Route::post('tasks/disable', [TasksController::class, 'disable'])->name('tasks:disable');
+        Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
+        Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
+        Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');
+        Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
+            ->whereNumber('group')
+            ->name('tasks:show');
+        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'addTask'])
+            ->whereNumber('group')
+            ->name('tasks:add');
     });
 });

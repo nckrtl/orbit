@@ -26,6 +26,8 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Process** — A systemd service or Docker container that Orbit manages for an App instance or Node. See [App processes and schedules](/reference/app-processes-and-schedules).
 - **Runtime hibernation** — Pausing idle development processes and removing rebuildable dependencies after longer idle periods. An HTTP request restores dependencies and wakes configured processes. Keep-alive workers stay running. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
 - **Herdr session** — A named headless Herdr server on a Node. View its panes through a private, read-only connection with temporary access. See [Herdr sessions](/reference/herdr-sessions).
+- **Task group** — One parent feature stored by the Gateway `tasks` extension. See [Tasks](/reference/tasks).
+- **Task** — An ordered subtask of a Task group. See [Tasks](/reference/tasks).
 - **Schedule** — A recurring command for a Node or App instance. A systemd timer runs it on the host Node. See [Schedules](/reference/schedules).
 - **Tool** — A package that Orbit manages on a Node through a specific package manager. See [Tools](/reference/tools).
 - **Tool Manager** — Orbit's adapter for a package manager on a Node. Orbit prepares it on demand, independently of Node roles. See [Tools](/reference/tools).

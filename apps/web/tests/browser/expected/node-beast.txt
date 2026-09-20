@@ -38,8 +38,8 @@
 ╰─
 
 ╭─ Node processes
-│  Name │ Status │ CPU/MEM
-│› valkey │ running │ 1%/0.1G
+│  Name │ Status │ CPU │ MEM
+│› valkey │ running │ 1% │ 0.1G
 ╰─
 
 ╭─ Firewall
