@@ -2479,34 +2479,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0093-run-plausible-through-an-analytics-role.md",
-            "title": "ADR 0093: Run Plausible through an analytics role",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "App",
-                "App instance",
-                "Database",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Process"
-            ],
-            "governing_adrs": [
-                "0003",
-                "0069",
-                "0070",
-                "0087",
-                "0093",
-                "0094"
-            ]
-        },
-        {
             "path": "docs/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge.md",
             "title": "ADR 0093: Show live UFW and desired rules that match converge",
             "kind": "decision",
@@ -2545,8 +2517,36 @@
             ]
         },
         {
-            "path": "docs/decisions/0094-publish-analytics-tracking-hosts-for-app-instances.md",
-            "title": "ADR 0094: Publish analytics tracking hosts for App instances",
+            "path": "docs/decisions/0095-run-plausible-through-an-analytics-role.md",
+            "title": "ADR 0095: Run Plausible through an analytics role",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0003",
+                "0069",
+                "0070",
+                "0087",
+                "0095",
+                "0096"
+            ]
+        },
+        {
+            "path": "docs/decisions/0096-publish-analytics-tracking-hosts-for-app-instances.md",
+            "title": "ADR 0096: Publish analytics tracking hosts for App instances",
             "kind": "decision",
             "components": [
                 "apps/cli",
@@ -2570,8 +2570,8 @@
                 "0067",
                 "0080",
                 "0082",
-                "0093",
-                "0094"
+                "0095",
+                "0096"
             ]
         },
         {
@@ -2838,8 +2838,8 @@
                 "Router"
             ],
             "governing_adrs": [
-                "0093",
-                "0094"
+                "0095",
+                "0096"
             ]
         },
         {

@@ -5,7 +5,7 @@ description: "How the analytics role runs Plausible Community Edition, where it 
 
 # Analytics role
 
-This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0093](/decisions/0093-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0094](/decisions/0094-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. This page describes planned behavior: neither decision is implemented yet.
+This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0095](/decisions/0095-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0096](/decisions/0096-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. This page describes planned behavior: neither decision is implemented yet.
 
 ## Prepare the database Processes
 
@@ -16,18 +16,18 @@ The analytics role owns the Plausible container only. Its data lives in two Dock
 | PostgreSQL | `postgres:16-alpine` | Plausible accounts and site settings. |
 | ClickHouse | `clickhouse/clickhouse-server:24.12-alpine` | Every tracked event. |
 
-Both Processes publish their port on the Node's WireGuard address only. ClickHouse assumes a large server by default, so give its Process the low-resource configuration that Plausible documents when the Node is small. Plan about 2 GB of memory for the three services together, and disk that grows with traffic.
+Both Processes publish their port on the Node's WireGuard address only. Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user itself. Give analytics a PostgreSQL Process of its own, because Plausible connects as that Process's own user. ClickHouse assumes a large server by default, so give its Process the low-resource configuration that Plausible documents when the Node is small. Plan about 2 GB of memory for the three services together, and disk that grows with traffic.
 
 ## Assign the role
 
 `orbit node:role:add NODE analytics --postgres-process=ID --clickhouse-process=ID` assigns the role. The role is a singleton, it conflicts with `gateway`, and it combines with `database`, so one services Node can hold both.
 
-Assignment names the two Processes by ID and refuses when one is missing, is not a Docker Process on an active database Node, or is not the supported engine. The Gateway then creates its own database and a generated user in each server, runs the Plausible container on the role's Node, and publishes `https://analytics.orbit`.
+Assignment names the two Processes by ID and refuses when one is missing, is not a Docker Process on an active database Node, or is not the supported engine. The Gateway then runs the Plausible container on the role's Node and publishes `https://analytics.orbit`.
 
 | Step | Result |
 | --- | --- |
-| Provision storage | A `plausible` database and user in PostgreSQL, and an events database and user in ClickHouse. |
-| Run Plausible | One container at the pinned version, published on the Node's WireGuard address. |
+| Connect storage | The two connection URLs, derived from the environment of the two Processes. |
+| Run Plausible | One container at the pinned version, published on the Node's WireGuard address. It creates and migrates its PostgreSQL database each time it starts. |
 | Publish the dashboard | An Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
 The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens.
@@ -36,7 +36,7 @@ The first person to open `https://analytics.orbit` registers the Plausible owner
 
 `orbit analytics:update --requested-version=VERSION` changes the pinned Plausible version and converges the container again.
 
-`orbit node:role:remove NODE analytics` stops and removes the container, the Caddy site, the certificate, and the DNS record. It keeps the two databases unless you pass `--purge-data`, which drops the databases and users that the role created. It never removes the PostgreSQL or ClickHouse Process. Removal refuses while an App instance still has a tracking host.
+`orbit node:role:remove NODE analytics` stops and removes the container, the Caddy site, the certificate, and the DNS record. It never touches the two databases and never removes the PostgreSQL or ClickHouse Process; remove those Processes yourself to remove the data. Removal refuses while an App instance still has a tracking host.
 
 ## Publish a tracking host
 
