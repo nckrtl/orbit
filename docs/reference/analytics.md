@@ -34,7 +34,7 @@ The first person to open `https://analytics.orbit` registers the Plausible owner
 
 ## Update and remove the role
 
-`orbit analytics:update --requested-version=VERSION` changes the pinned Plausible version and replaces the `plausible` Process.
+`orbit analytics:update VERSION` changes the pinned Plausible version and replaces the `plausible` Process.
 
 `orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, and the DNS record. It never touches the two databases and never removes the PostgreSQL or ClickHouse Process; remove those Processes yourself to remove the data. Removal refuses while an App instance still has a tracking host.
 

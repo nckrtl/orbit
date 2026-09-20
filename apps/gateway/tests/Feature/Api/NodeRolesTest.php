@@ -465,6 +465,74 @@ describe('analytics role assignment', function (): void {
     });
 });
 
+describe('analytics:update', function (): void {
+    beforeEach(function (): void {
+        $this->caller->accessibleNodes()->attach($this->node);
+        $this->assign = function (): void {
+            $storage = analytics_storage_processes();
+            $this->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])->assertCreated();
+        };
+    });
+
+    it('pins another Plausible version and converges the role again', function (): void {
+        ($this->assign)();
+
+        $this->postJson('/api/v1/analytics/update', ['version' => '3.3.0'])
+            ->assertOk()
+            ->assertJsonPath('data', [
+                'node_id' => $this->node->id,
+                'node_name' => $this->node->name,
+                'version' => '3.3.0',
+                'previous_version' => '3.2.1',
+            ]);
+
+        expect(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.3.0')
+            ->and($this->roleLifecycle->converged)->toBe(['analytics', 'analytics']);
+    });
+
+    it('does not converge again for the version that already runs', function (): void {
+        ($this->assign)();
+
+        $this->postJson('/api/v1/analytics/update', ['version' => '3.2.1'])->assertOk();
+
+        expect($this->roleLifecycle->converged)->toBe(['analytics']);
+    });
+
+    it('puts the earlier version back when the new one does not converge', function (): void {
+        ($this->assign)();
+        $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+            'analytics-runtime',
+            'node_role.convergence_failed',
+            'process.start_failed',
+            'The plausible Process did not start.',
+        );
+
+        $this->postJson('/api/v1/analytics/update', ['version' => '9.9.9'])->assertStatus(502);
+
+        expect(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.2.1');
+    });
+
+    it('refuses while no Node has the analytics role', function (): void {
+        $this->postJson('/api/v1/analytics/update', ['version' => '3.3.0'])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'analytics.role_missing');
+    });
+
+    it('accepts three numbers and nothing else as a version', function (mixed $version): void {
+        ($this->assign)();
+
+        $this->postJson('/api/v1/analytics/update', ['version' => $version])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed');
+
+        expect($this->roleLifecycle->converged)->toBe(['analytics']);
+    })->with(['v3.3.0', 'latest', '3.3', '3.3.0-rc1', '3.3.0; rm -rf /', '', null]);
+});
+
 it('assigns lists and retries one Ingress through the existing exact lifecycle contract', function (): void {
     $cluster = Cluster::query()->create(['name' => 'ingress-api']);
     $this->node->update(['cluster_id' => $cluster->id]);

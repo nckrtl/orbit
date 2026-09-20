@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
 use App\Http\Controllers\Api\AppInstanceDependenciesController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
@@ -411,6 +412,7 @@ Route::prefix('v1')->group(function (): void {
             ->name('tool:remove');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
         Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
+        Route::post('analytics/update', [AnalyticsController::class, 'update'])->name('analytics:update');
         Route::get('metrics/status', [MetricsController::class, 'status'])->name('metrics:status');
         Route::get('metrics/credentials', [MetricsController::class, 'credentials'])->name('metrics:credentials');
         Route::post('metrics/credentials/reset', [MetricsController::class, 'reset'])->name(

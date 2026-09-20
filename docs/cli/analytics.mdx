@@ -1,0 +1,50 @@
+---
+title: "analytics"
+description: "Pin the Plausible Community Edition version that the analytics role runs."
+---
+
+The `analytics` role runs Plausible Community Edition for the fleet as one Docker Process named `plausible`. The `analytics` family changes the version that Process runs. [`node:role:add`](/cli/node#orbit-noderoleadd) assigns the role and [`node:role:remove`](/cli/node#orbit-noderoleremove) removes it.
+
+The [Analytics role](/reference/analytics) reference owns the storage Processes, the private dashboard, and what removal keeps.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`analytics:update`](#orbit-analyticsupdate) | Pin another Plausible version and replace the `plausible` Process. |
+
+The command accepts `--json`. It requires exactly one active Gateway, and the Gateway authorizes the caller against that Gateway Node.
+
+## orbit analytics:update
+
+Pin another Plausible Community Edition version for the analytics role.
+
+```bash
+orbit analytics:update [version] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `version` | when the command cannot prompt | The version as three numbers, for example `3.2.1`. The Gateway runs the image tag `v` plus that version. |
+
+```bash
+orbit analytics:update 3.2.1
+orbit analytics:update 3.2.1 --json
+```
+
+In a terminal the command asks for the version you left out. With `--json` or `--no-interaction` it refuses a missing version.
+
+The Gateway stores the version and converges the role again, which replaces the `plausible` Process. Plausible keeps no data in its container, and it migrates its PostgreSQL database each time it starts, so the replaced Process continues with the same data. When the new version does not converge, the Gateway stores the earlier version again and returns the error. Naming the version that already runs changes nothing.
+
+Human output names the Node, the version, and the previous version. JSON returns `node_id`, `node_name`, `version`, `previous_version`, and the request ID.
+
+| Error code | Meaning |
+| --- | --- |
+| `analytics.version_invalid` | The version is missing or is not three numbers. The CLI refuses it before any request. |
+| `validation.failed` | The Gateway refused the version. |
+| `analytics.role_missing` | No Node has an active analytics role. |
+
+## Related
+
+- [`node`](/cli/node) assigns and removes the analytics role.
+- [`process`](/cli/process) reads the logs of the `plausible` Process and restarts it.

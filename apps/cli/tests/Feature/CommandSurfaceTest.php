@@ -62,6 +62,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
     expect($visibleCommands)->toBe([
         'activity:list',
         'activity:show',
+        'analytics:update',
         'app:create',
         'app:destroy',
         'app:list',
@@ -297,7 +298,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(126);
+    expect($orbitCommands)->toHaveCount(127);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -490,6 +491,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
     $expected = [
         'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
         'activity:show' => [['activity'], ['json' => false]],
+        'analytics:update' => [['version'], ['json' => false]],
         'app:list' => [[], ['json' => false]],
         'app:create' => [
             ['slug', 'repository'],
@@ -863,6 +865,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'profile' => ['url'],
             'tool:install' => ['package'],
             'metrics:enable' => ['node'],
+            'analytics:update' => ['version'],
             'route:create' => ['app', 'domain'],
             default => [],
         };
@@ -928,6 +931,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
     $cases = [
         'activity:list' => [[], ...$profileMissing],
         'activity:show' => [['activity' => '1'], ...$profileMissing],
+        'analytics:update' => [['version' => '3.2.1'], ...$profileMissing],
         'app:list' => [[], ...$profileMissing],
         'app:create' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
         'app:destroy' => [['app' => '1'], ...$profileMissing],

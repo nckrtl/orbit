@@ -108,6 +108,19 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/analytics.mdx",
+            "title": "analytics",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/app.mdx",
             "title": "app",
             "kind": "product",

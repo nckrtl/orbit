@@ -156,6 +156,7 @@
               "cli/firewall",
               "cli/tool",
               "cli/metrics",
+              "cli/analytics",
               "cli/dns"
             ]
           },
@@ -273,6 +274,13 @@
               "DELETE /api/v1/metrics/exporters/{node}",
               "PUT /api/v1/metrics/exporters/{node}",
               "GET /api/v1/metrics/status"
+            ]
+          },
+          {
+            "group": "Analytics",
+            "openapi": "/openapi.json",
+            "pages": [
+              "POST /api/v1/analytics/update"
             ]
           },
           {

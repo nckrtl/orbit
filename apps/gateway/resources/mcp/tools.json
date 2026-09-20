@@ -55,6 +55,30 @@
       }
     },
     {
+      "name": "analytics-update",
+      "title": "Pin the Plausible version",
+      "description": "Pin another Plausible version for the analytics role.",
+      "method": "POST",
+      "path": "/api/v1/analytics/update",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "description": "Display this application version"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "version"
+        ]
+      }
+    },
+    {
       "name": "app-create",
       "title": "Create an App",
       "description": "Create an app.",
