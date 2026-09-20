@@ -263,6 +263,18 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/github.mdx",
+            "title": "github",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/herdr.mdx",
             "title": "herdr",
             "kind": "product",
@@ -2617,6 +2629,35 @@
             ]
         },
         {
+            "path": "docs/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app.md",
+            "title": "ADR 0098: Read GitHub repositories through a Gateway-owned GitHub App",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0003",
+                "0004",
+                "0026",
+                "0031",
+                "0098"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2740,7 +2781,8 @@
                 "0092",
                 "0093",
                 "0094",
-                "0095"
+                "0095",
+                "0098"
             ]
         },
         {
@@ -3268,6 +3310,24 @@
                 "Gateway"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/github-app.md",
+            "title": "GitHub App",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "App instance",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0098"
+            ]
         },
         {
             "path": "docs/reference/herdr-sessions.md",

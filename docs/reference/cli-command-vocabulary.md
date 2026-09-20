@@ -12,7 +12,7 @@ The CLI uses one pair for each kind of change.
 | --- | --- |
 | `create` and `destroy` | The Gateway brings the resource into existence and tears it down. |
 | `add` and `remove` | The command attaches or detaches things that exist independently. |
-| `install` and `remove` | The command installs or removes a [Tool](/reference/tools). |
+| `install` and `remove` | The command installs or removes a [Tool](/reference/tools). `github:app:install` also uses `install`, because GitHub calls it that. |
 | `enable` and `disable` | The command flips a toggle. |
 | `set` and `unset` | The command writes or clears a single-valued slot. |
 | `update` | The command applies a partial change. |

@@ -10,7 +10,9 @@ use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionReleaseLayout;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 
@@ -19,6 +21,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
     public function __construct(
         private AppProdSshExecutor $ssh,
         private ComposerSourceClassifier $classifier,
+        private RepositoryReadAccess $access,
     ) {}
 
     public function prepareUser(AppInstance $appInstance): void
@@ -67,20 +70,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
-        $this->ssh->execute(
-            $appInstance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $appInstance->app->repository_url,
-                    $user,
-                    $home,
-                    (string) $appInstance->id,
-                    $allowExisting ? '1' : '0',
-                ],
-                input: <<<'BASH'
+        $script = GitReadScript::for($this->access->for($appInstance->app->repository_url), <<<'BASH'
                     set -o pipefail
                     repository=$1
                     user=$2
@@ -150,7 +140,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     if sudo test -e "$state_directory" || sudo test -L "$state_directory"; then exit 1; fi
                     sudo -u "$user" -H install -d -m 0700 -- "$releases"
                     sudo -u "$user" -H install -m 0600 /dev/null "$environment"
-                    sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$release"
+                    git_read sudo $git_read_sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$release"
                     sudo install -d -o root -g root -m 0700 -- "$state_root" "$state_directory"
                     sudo test ! -L "$state_root"
                     test "$(sudo stat -c %U:%G -- "$state_root")" = root:root
@@ -174,7 +164,22 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     sudo mv -- "$layout_temporary" "$layout_marker"
                     layout_temporary=
                     trap - EXIT
-                    BASH,
+                    BASH);
+        $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $appInstance->app->repository_url,
+                    $user,
+                    $home,
+                    (string) $appInstance->id,
+                    $allowExisting ? '1' : '0',
+                ],
+                input: $script->input,
+                protectedInput: $script->protectedInput,
             ),
             step: 'production-source-prepare',
             errorCode: 'instance.clone_failed',
@@ -193,21 +198,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
         }
 
-        $result = $this->ssh->execute(
-            $appInstance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $appInstance->app->repository_url,
-                    $user,
-                    $home,
-                    $branch,
-                    (string) $appInstance->id,
-                    $appInstance->clone_candidate_id === null ? '0' : '1',
-                ],
-                input: <<<'BASH'
+        $script = GitReadScript::for($this->access->for($appInstance->app->repository_url), <<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -226,7 +217,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     sudo -u "$user" -H test ! -e "$home/current"
                     sudo -u "$user" -H test ! -L "$home/current"
                     source_ref="refs/remotes/origin/$branch"
-                    sudo -u "$user" -H git -C "$release" fetch --prune -- origin
+                    git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
                     sudo -u "$user" -H git -C "$release" checkout --quiet -B "$branch" "$source_ref"
                     sudo -u "$user" -H git -C "$release" branch --quiet --set-upstream-to="origin/$branch" "$branch"
@@ -247,7 +238,23 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$branch" "$commit"
-                    BASH,
+                    BASH);
+        $result = $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $appInstance->app->repository_url,
+                    $user,
+                    $home,
+                    $branch,
+                    (string) $appInstance->id,
+                    $appInstance->clone_candidate_id === null ? '0' : '1',
+                ],
+                input: $script->input,
+                protectedInput: $script->protectedInput,
             ),
             step: 'production-source-resolve',
             errorCode: 'instance.branch_resolution_failed',

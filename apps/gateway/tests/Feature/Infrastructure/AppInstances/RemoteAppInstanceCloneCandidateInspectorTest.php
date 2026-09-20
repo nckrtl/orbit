@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
@@ -340,6 +341,7 @@ function orb198_clone_candidate_inspector(
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
+        app(RepositoryReadAccess::class),
     );
 }
 

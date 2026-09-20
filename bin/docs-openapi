@@ -208,6 +208,7 @@ TAGS = [
     ('firewall', 'Firewall', 'Named UFW rules on one Node.'),
     ('tool', 'Tools', 'Packages that Orbit installs on a Node through a Tool Manager.'),
     ('metrics', 'Metrics', 'The Prometheus and Grafana role and its exporters.'),
+    ('github', 'GitHub App', "The Gateway's own read-only GitHub App and the accounts that installed it."),
     ('analytics', 'Analytics', 'The Plausible version the analytics role runs.'),
     ('app', 'Apps', 'Application records with one repository each.'),
     ('instance', 'App instances', 'Development checkouts and production releases of an App on one Node.'),
@@ -224,7 +225,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance'}
+INTERNAL = {'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -247,6 +248,8 @@ SUMMARIES = {
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
     'firewall:list': 'List firewall rules', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
     'tool:manager:list': 'List Tool Managers', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
+    'github:app:install': 'Start a GitHub App registration or installation', 'github:app:show': 'Show the GitHub App', 'github:app:destroy': 'Remove the stored GitHub App',
+    'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
     'metrics:enable': 'Enable Metrics', 'metrics:disable': 'Disable Metrics', 'metrics:status': 'Show Metrics status', 'metrics:credentials': 'Show Metrics credentials', 'metrics:credentials:reset': 'Reset Metrics credentials',
     'metrics:exporter:enable': 'Enable an exporter', 'metrics:exporter:disable': 'Disable an exporter', 'metrics:grafana:authorize': 'Authorize Grafana access', 'metrics:node:list': 'List Node metrics',
     'app:list': 'List Apps', 'app:show': 'Show an App', 'app:create': 'Create an App', 'app:destroy': 'Remove an App',

@@ -105,6 +105,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:status',
         'gateway:trust',
         'gateway:use',
+        'github:app:destroy',
+        'github:app:install',
+        'github:app:show',
         'instance:clone',
         'instance:create',
         'instance:database:add',
@@ -298,7 +301,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(127);
+    expect($orbitCommands)->toHaveCount(130);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -584,6 +587,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'gateway:status' => [[], ['json' => false]],
         'gateway:trust' => [[], ['accept-ca-change' => false, 'json' => false]],
         'gateway:use' => [['name'], ['json' => false]],
+        'github:app:destroy' => [[], ['yes' => false, 'json' => false]],
+        'github:app:install' => [[], ['name' => null, 'owner' => null, 'json' => false]],
+        'github:app:show' => [[], ['json' => false]],
         'herdr:observe' => [
             ['session'],
             [
@@ -1016,6 +1022,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'gateway.profile_not_found',
             'message' => 'Gateway profile does not exist.',
         ],
+        'github:app:destroy' => [['--yes' => true], ...$profileMissing],
+        'github:app:install' => [[], ...$profileMissing],
+        'github:app:show' => [[], ...$profileMissing],
         'instance:clone' => [
             ['candidate' => '1', 'node' => '2', 'name' => 'web', '--preview-name' => 'web'],
             ...$profileMissing,

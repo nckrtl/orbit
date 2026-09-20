@@ -8,12 +8,14 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 
@@ -23,16 +25,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         private AppDevSshExecutor $ssh,
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
+        private RepositoryReadAccess $access,
     ) {}
 
     public function prepare(AppInstance $appInstance, bool $allowExisting): void
     {
         $context = $this->context($appInstance);
-        $this->ssh->execute(
-            $appInstance->node,
-            new RemoteCommand(
-                arguments: [...$this->arguments($appInstance, $context), $allowExisting ? '1' : '0'],
-                input: self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository']), self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -51,9 +50,15 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                         exit 0
                     fi
 
-                    git clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"
                     inspect_prepared_repository
-                    BASH,
+                    BASH);
+        $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: [...$this->arguments($appInstance, $context), $allowExisting ? '1' : '0'],
+                input: $script->input,
+                protectedInput: $script->protectedInput,
             ),
             step: 'app-instance-source-prepare',
             errorCode: 'instance.clone_failed',
@@ -88,16 +93,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
     {
         $context = $this->context($appInstance);
         $defaultBranch = $this->defaultBranch($appInstance);
-        $result = $this->ssh->execute(
-            $appInstance->node,
-            new RemoteCommand(
-                arguments: [
-                    ...$this->arguments($appInstance, $context),
-                    $appInstance->name,
-                    $defaultBranch,
-                    $appInstance->branch_override ?? '',
-                ],
-                input: self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository']), self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -110,7 +106,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    git -C "$checkout" fetch --prune -- origin
+                    git_read git -C "$checkout" fetch --prune -- origin
 
                     if [ -n "$branch_override" ]; then
                         branch=$branch_override
@@ -132,7 +128,18 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
-                    BASH,
+                    BASH);
+        $result = $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: [
+                    ...$this->arguments($appInstance, $context),
+                    $appInstance->name,
+                    $defaultBranch,
+                    $appInstance->branch_override ?? '',
+                ],
+                input: $script->input,
+                protectedInput: $script->protectedInput,
             ),
             step: 'app-instance-source-resolve',
             errorCode: 'instance.branch_resolution_failed',

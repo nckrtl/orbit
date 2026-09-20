@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\ComposerSourceClassifier;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Infrastructure\AppInstances\RemoteProductionAppInstanceSourceLifecycle;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
@@ -401,6 +402,7 @@ function production_source_lifecycle(array $results, ?string $branch = null): ar
         new RemoteProductionAppInstanceSourceLifecycle(
             $executor,
             new ComposerSourceClassifier(new AppInstancePhpVersionCatalog),
+            app(RepositoryReadAccess::class),
         ),
         $ssh,
         $instance,

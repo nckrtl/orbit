@@ -10,6 +10,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -100,12 +101,14 @@ beforeEach(function (): void {
         $ssh,
         $accounts,
         $this->boundary,
+        app(RepositoryReadAccess::class),
     );
     $this->removal = new RemoteDevelopmentAppInstanceSourceRemoval(
         $ssh,
         $accounts,
         $this->boundary,
         $this->sourceLock,
+        app(RepositoryReadAccess::class),
     );
 
     $this->node = Node::query()->create([
@@ -1618,6 +1621,7 @@ it('holds the per-Node source lock for every recorded adapter call', function ()
         $this->accounts,
         $this->boundary,
         $lock,
+        app(RepositoryReadAccess::class),
     );
     $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'locked');
     $member = orb180_record_source($removal, $instance, true);

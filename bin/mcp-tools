@@ -20,13 +20,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OPENAPI = ROOT / 'docs/openapi.json'
 OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
 
-# Machine callbacks, not operator actions: Pusher channel signatures, Caddy forward-auth, the wake page a
-# browser receives, and the completion report a Node's schedule timer posts.
+# Machine callbacks and browser pages, not operator actions: Pusher channel signatures, Caddy forward-auth,
+# the wake page a browser receives, the completion report a Node's schedule timer posts, and the two pages
+# that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
     'realtime-auth',
     'metrics-grafana-authorize',
     'runtime-activation-app-instance',
     'schedule-complete',
+    'github-app-register',
+    'github-app-callback',
 }
 
 METHODS = ('get', 'post', 'put', 'patch', 'delete')

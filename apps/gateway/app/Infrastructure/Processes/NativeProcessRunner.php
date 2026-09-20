@@ -40,6 +40,10 @@ final readonly class NativeProcessRunner implements ProcessRunner
             $process->setTimeout($timeout);
             $process->setInput($protectedInput?->stream() ?? $invocation->input);
 
+            if ($invocation->environment !== []) {
+                $process->setEnv($invocation->environment);
+            }
+
             $stdout = '';
             $stderr = '';
             $truncated = false;

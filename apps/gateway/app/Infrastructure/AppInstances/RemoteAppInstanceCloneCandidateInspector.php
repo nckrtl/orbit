@@ -7,9 +7,11 @@ namespace App\Infrastructure\AppInstances;
 use App\Domain\AppInstances\AppInstanceCloneCandidateInspector;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\CloneCandidateSource;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -25,6 +27,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private RepositoryReadAccess $access,
     ) {}
 
     public function inspect(AppInstance $candidate, string $targetBranch): CloneCandidateSource
@@ -41,30 +44,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
         $sshUser = $node->user;
 
-        try {
-            $result = $this->ssh->execute(
-                new SshConnection(
-                    host: (string) $node->wireguard_ip,
-                    user: $sshUser,
-                    port: 22,
-                    identityFile: $this->keys->privateKeyPath(),
-                    knownHostsFile: $this->knownHosts->path(),
-                    commandTimeout: 120.0,
-                ),
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $candidate->environment,
-                        $basePath,
-                        $executionUser,
-                        $candidate->app->repository_url,
-                        $configuredBranch,
-                        $targetBranch,
-                        $expectedSource,
-                    ],
-                    input: <<<'BASH'
+        $script = GitReadScript::for($this->access->for($candidate->app->repository_url), <<<'BASH'
                         environment=$1
                         base=$2
                         runtime_user=$3
@@ -137,7 +117,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
                         trap cleanup EXIT
                         run_as_runtime git init --quiet --bare "$scratch/repository.git" \
                             || refuse instance.clone_candidate_repository_unavailable
-                        run_as_runtime git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --prune \
+                        git_read sudo -n $git_read_sudo -u "$runtime_user" -H -- git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --prune \
                             "$repository" '+refs/heads/*:refs/remotes/origin/*' \
                             || refuse instance.clone_candidate_repository_unavailable
                         run_as_runtime git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null \
@@ -147,7 +127,32 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
                             || refuse instance.clone_target_branch_missing
 
                         printf 'OK\t%s\t%s\n' "$source_real" "$commit"
-                        BASH,
+                        BASH);
+        try {
+            $result = $this->ssh->execute(
+                new SshConnection(
+                    host: (string) $node->wireguard_ip,
+                    user: $sshUser,
+                    port: 22,
+                    identityFile: $this->keys->privateKeyPath(),
+                    knownHostsFile: $this->knownHosts->path(),
+                    commandTimeout: 120.0,
+                ),
+                new RemoteCommand(
+                    arguments: [
+                        'bash',
+                        '-seu',
+                        '--',
+                        $candidate->environment,
+                        $basePath,
+                        $executionUser,
+                        $candidate->app->repository_url,
+                        $configuredBranch,
+                        $targetBranch,
+                        $expectedSource,
+                    ],
+                    input: $script->input,
+                    protectedInput: $script->protectedInput,
                 ),
             );
         } catch (Throwable $exception) {
