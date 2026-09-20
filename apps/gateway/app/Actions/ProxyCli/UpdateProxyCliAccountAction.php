@@ -50,10 +50,10 @@ final readonly class UpdateProxyCliAccountAction
         $this->client->setDisabled($url, $key, $account, $disabled);
         $updated = $this->compiler->withDisabled($accounts, $account, $disabled);
         $snapshot = $this->snapshots->write($updated, date(DATE_ATOM));
-        $match = array_values(array_filter(
+        $match = array_first(array_filter(
             $snapshot->accounts,
             static fn ($row): bool => $row->id === $account,
-        ))[0] ?? null;
+        )) ?? null;
 
         return $match?->toArray() ?? ['id' => $account, 'disabled' => $disabled];
     }

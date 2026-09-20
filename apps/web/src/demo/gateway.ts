@@ -201,14 +201,21 @@ export function createDemoGateway() {
             [
                 "GET",
                 /^\/api\/v1\/proxycli\/providers$/,
-                () => (proxycliEnabled ? ok(quotaProviders()) : failure(409, "proxycli.disabled", "The proxycli extension is disabled.")),
+                () =>
+                    proxycliEnabled
+                        ? ok(quotaProviders())
+                        : failure(409, "proxycli.disabled", "The proxycli extension is disabled."),
             ],
             [
                 "GET",
                 /^\/api\/v1\/proxycli\/providers\/([^/]+)$/,
                 ([provider = ""]) => {
                     if (!proxycliEnabled) {
-                        return failure(409, "proxycli.disabled", "The proxycli extension is disabled.");
+                        return failure(
+                            409,
+                            "proxycli.disabled",
+                            "The proxycli extension is disabled.",
+                        );
                     }
 
                     const pool = quotaProviders().find((row) => row.provider === provider);
@@ -221,10 +228,16 @@ export function createDemoGateway() {
                 /^\/api\/v1\/proxycli\/accounts\/([^/]+)$/,
                 ([account = ""], body) => {
                     if (!proxycliEnabled) {
-                        return failure(409, "proxycli.disabled", "The proxycli extension is disabled.");
+                        return failure(
+                            409,
+                            "proxycli.disabled",
+                            "The proxycli extension is disabled.",
+                        );
                     }
 
-                    const row = quotaAccounts.find((candidate) => candidate.id === decodeURIComponent(account));
+                    const row = quotaAccounts.find(
+                        (candidate) => candidate.id === decodeURIComponent(account),
+                    );
 
                     if (row === undefined) {
                         return notFound("Account");

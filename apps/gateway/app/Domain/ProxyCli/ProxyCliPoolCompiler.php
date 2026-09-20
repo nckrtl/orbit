@@ -28,7 +28,7 @@ final readonly class ProxyCliPoolCompiler
             $providers[] = new ProxyCliProviderPool(
                 $provider,
                 $this->poolWindows($members),
-                array_values($members),
+                $members,
             );
         }
 
@@ -43,7 +43,7 @@ final readonly class ProxyCliPoolCompiler
      */
     public function withDisabled(array $accounts, string $accountId, bool $disabled): array
     {
-        return array_values(array_map(
+        return array_map(
             static function (ProxyCliAccount $account) use ($accountId, $disabled): ProxyCliAccount {
                 if ($account->id !== $accountId) {
                     return $account;
@@ -60,7 +60,7 @@ final readonly class ProxyCliPoolCompiler
                 );
             },
             $accounts,
-        ));
+        );
     }
 
     /**

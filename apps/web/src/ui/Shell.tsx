@@ -132,7 +132,12 @@ export function Shell() {
             </div>
             <footer className="flex gap-[2ch] whitespace-nowrap px-[1ch] text-dim">
                 <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">
-                    {footerHint(section, second === undefined, pathname === "/nodes/create", nav.length)}
+                    {footerHint(
+                        section,
+                        second === undefined,
+                        pathname === "/nodes/create",
+                        nav.length,
+                    )}
                     {message !== "" && <span className="selectable text-fg"> │ {message}</span>}
                 </span>
                 <span className="flex items-center gap-[1ch]">

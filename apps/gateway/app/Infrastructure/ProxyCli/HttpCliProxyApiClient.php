@@ -24,7 +24,7 @@ final readonly class HttpCliProxyApiClient implements ProxyCliManagementClient
         $payload = $response->json();
         $files = is_array($payload['files'] ?? null) ? $payload['files'] : (is_array($payload) ? $payload : []);
 
-        return array_values(array_filter($files, static fn (mixed $file): bool => is_array($file)));
+        return array_values(array_filter($files, is_array(...)));
     }
 
     /**

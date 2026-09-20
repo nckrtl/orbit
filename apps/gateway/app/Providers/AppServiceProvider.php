@@ -452,8 +452,6 @@ final class AppServiceProvider extends ServiceProvider
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
         ProxyCliManagementClient::class => HttpCliProxyApiClient::class,
-        ProxyCliRuntimeLifecycle::class => NativeProxyCliRuntimeLifecycle::class,
-        ProxyCliPublicationManager::class => NativeProxyCliPublicationManager::class,
     ];
 
     public function register(): void
@@ -479,6 +477,9 @@ final class AppServiceProvider extends ServiceProvider
             $this->app->singleton(RecordingProxyCliPublicationManager::class);
             $this->app->singleton(ProxyCliRuntimeLifecycle::class, static fn ($app): ProxyCliRuntimeLifecycle => $app->make(RecordingProxyCliRuntimeLifecycle::class));
             $this->app->singleton(ProxyCliPublicationManager::class, static fn ($app): ProxyCliPublicationManager => $app->make(RecordingProxyCliPublicationManager::class));
+        } else {
+            $this->app->bind(ProxyCliRuntimeLifecycle::class, NativeProxyCliRuntimeLifecycle::class);
+            $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
         }
 
         $this->app->bind(

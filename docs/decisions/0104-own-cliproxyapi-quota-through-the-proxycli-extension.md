@@ -6,7 +6,7 @@ description: "Proposed. Orbit owns CLIProxyAPI quota collection as the optional 
 
 # ADR 0104: Own CLIProxyAPI quota through the proxycli extension
 
-Orbit treats CLIProxyAPI quota collection as a Gateway-owned optional extension named `proxycli`. Enable deploys one collector Process and publishes `https://proxycli.orbit`. Disable stops that Process, withdraws the hostname, and hides the web quota UI. Shared Valkey on a `database` role Node is the only cache; there is no `valkey` or `redis` RoleRegistry role.
+Orbit treats CLIProxyAPI quota collection as an optional extension named `proxycli` that the Gateway owns. Enable deploys one collector Process and publishes `https://proxycli.orbit`. Disable stops that Process, withdraws the hostname, and hides the web quota UI. Shared Valkey on a `database` role Node is the only cache; there is no `valkey` or `redis` RoleRegistry role.
 
 ## Status
 
@@ -26,7 +26,7 @@ Quota collection is optional fleet infrastructure, not a Node capability, and no
 
 ## Decision
 
-- Add `proxycli` as a Gateway-owned fleet extension. Local CLI `extension:enable proxycli` reveals the `proxycli:*` family. `proxycli:enable` deploys the fleet feature. `proxycli:disable` and `extension:disable proxycli` stop the collector, withdraw publication, and hide the web UI.
+- Add `proxycli` as a fleet extension that the Gateway owns. Local CLI `extension:enable proxycli` reveals the `proxycli:*` family. `proxycli:enable` deploys the fleet feature. `proxycli:disable` and `extension:disable proxycli` stop the collector, withdraw publication, and hide the web UI.
 - Enable requires an active Linux Node, a CLIProxyAPI Management API URL and key, and a registered Redis Database connection that points at the shared Valkey. If that connection names a fleet Node, the Node must hold an active `database` role. Enable fails closed when the connection is missing, is not Redis, or the named Node lacks `database`.
 - Enable creates one Node-targeted systemd Process named `proxycli` on the chosen Node. The Process binds loopback, runs the Orbit-written collector, and is the only upstream poller. It writes raw account snapshots, compiled pools, per-target backoff, and a distributed lock into the shared Valkey. Disable stops and removes that Process.
 - The Gateway reserves `proxycli.orbit`. It issues an Orbit CA leaf, renders a Caddy site on the Process Node that reverse-proxies HTTPS to the loopback collector, and publishes an exact private DNS `host-record` for the serving Node. A Route cannot own the name. CodexBar reads `https://proxycli.orbit/v1/quota-stats` with a Gateway-generated read token. Account control uses a separate control token. The CLIProxyAPI management key never leaves the Gateway or the collector Process.
@@ -36,8 +36,8 @@ Quota collection is optional fleet infrastructure, not a Node capability, and no
 ## Rejected alternatives
 
 - A `proxycli` or `valkey` RoleRegistry role: rejected because Valkey is a database server and already belongs on a `database` Node as a Docker Process. A new role would split cache placement and conflict with the closed role set.
-- Reuse the local-only CLI extension model from Herdr: rejected because enable must deploy a Process and a hostname, and disable must stop them for every operator, not only hide commands on one machine.
-- A custom proxy Route without a reserved name: rejected because an operator could take or destroy `proxycli.orbit` independently of the extension lifecycle.
+- Reuse the Herdr model, where the CLI only reveals commands on one machine: rejected because enable must deploy a Process and a hostname, and disable must stop them for every operator, not only hide commands on one machine.
+- A custom proxy Route without a reserved name: rejected because an operator who creates a Route for that name takes or destroys `proxycli.orbit` independently of the extension lifecycle.
 - Gateway-side polling in addition to the Node Process: rejected because a second loop would hit CLIProxyAPI on every UI refresh and break the single-collector cutover.
 - Showing missing windows as zero or labeling them Primary and Secondary: rejected because management.html#/quota names windows by duration and omits a window the provider did not return.
 
@@ -50,7 +50,7 @@ Quota collection is optional fleet infrastructure, not a Node capability, and no
 
 ## Affects
 
-- Components: apps/cli, apps/gateway, apps/web, packages/php-sdk, apps/docs
+- Components: apps/cli, apps/gateway, packages/php-sdk, apps/docs
 - ADRs: extends [ADR 0069](/decisions/0069-allow-node-process-targets), [ADR 0070](/decisions/0070-keep-the-database-role-as-a-docker-baseline), and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes)
 - Detail: [proxycli](/reference/proxycli)
 - Verify: Gateway enable, fail-closed placement, pool compiler, toggle-from-cache, publication, and CLI extension tests; `composer docs-lint`

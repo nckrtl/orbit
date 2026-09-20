@@ -9,17 +9,21 @@ This page tells an operator how to replace hand-rolled `proxy-quota-*` Processes
 
 ## Before you start
 
+Complete these four checks so enable has a cache, a Management API, and a place to copy history.
+
 1. Place Valkey as a Node-targeted Docker Process on a Node with the `database` role.
 2. Register that server as a Redis Database connection.
 3. Confirm CLIProxyAPI still answers its Management API on the Node that will run the collector.
-4. Point CodexBar and any other readers at the current cache only long enough to copy the snapshot if you want history. The new collector writes the same Valkey key space `orbit:proxycli:*`.
+4. Copy any current snapshot you want to keep. The new collector writes the same Valkey key space `orbit:proxycli:*`.
 
 ## Cut over
+
+Stop the old poller first, then enable the extension so only one collector remains.
 
 1. Copy any existing snapshot keys you want to keep into `orbit:proxycli:raw` and `orbit:proxycli:snapshot` on the shared Valkey.
 2. Stop the old scheduler and every `proxy-quota-*` Process. Do not start them again.
 3. Remove or stop the unmanaged `proxy-cli-usage.test` Caddy site so it cannot poll.
-4. Enable the extension and the fleet feature:
+4. Enable the extension and the fleet feature.
 
 ```bash
 orbit extension:enable proxycli
@@ -31,6 +35,8 @@ orbit proxycli:enable --node=<cliproxy-node> --cache-connection=valkey --cliprox
 7. Refresh the Orbit Quota page twice. The collector lock must prevent a second upstream fetch.
 
 ## Prove one collector
+
+Use these checks after enable. Each one must show a single collector and no extra upstream quota fetches.
 
 | Check | Expected result |
 | --- | --- |

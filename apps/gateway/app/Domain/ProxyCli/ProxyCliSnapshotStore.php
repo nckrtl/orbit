@@ -102,7 +102,7 @@ final readonly class ProxyCliSnapshotStore
     /**
      * @param  array<array-key, mixed>  $data
      */
-    private function hydrateSnapshot(array $data): ?ProxyCliSnapshot
+    private function hydrateSnapshot(array $data): ProxyCliSnapshot
     {
         $accounts = [];
 

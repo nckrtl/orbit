@@ -47,6 +47,8 @@ Enable is idempotent. A second enable on the same Node and cache connection conv
 
 ## What enable deploys
 
+Enable places these four pieces on the chosen Node and in Gateway settings. The collector Process is the only one that talks to CLIProxyAPI.
+
 | Piece | Owner | Bind |
 | --- | --- | --- |
 | Node Process `proxycli` | The chosen Node | `127.0.0.1:8787` |
@@ -56,9 +58,11 @@ Enable is idempotent. A second enable on the same Node and cache connection conv
 
 `proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it.
 
-The Process runs the Orbit collector: it takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch that another in-flight poll already covers.
+The Process runs the Orbit collector: it takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch when another poll already holds the lock.
 
 ## Disable
+
+Disable the fleet feature when you want collection and the Quota UI to stop. The local CLI extension can stay enabled if you still need the commands later.
 
 ```bash
 orbit proxycli:disable
@@ -76,6 +80,8 @@ CodexBar uses the LLM Proxy quota-stats contract at `https://proxycli.orbit/v1/q
 `orbit proxycli:status` reports whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written. `orbit proxycli:list` and `orbit proxycli:show` read the same snapshot. `orbit proxycli:update` toggles one account.
 
 ## Errors
+
+These codes appear on enable, disable, reads, and the CLI family. Placement failures stay 422. A disabled fleet feature stays 409.
 
 | Code | When |
 | --- | --- |

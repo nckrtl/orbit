@@ -2,11 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { api } from "../api/client";
-import {
-    proxycliProviderQuery,
-    proxycliProvidersQuery,
-    proxycliStatusQuery,
-} from "../api/queries";
+import { proxycliProviderQuery, proxycliProvidersQuery, proxycliStatusQuery } from "../api/queries";
 import { queryClient } from "../api/queryClient";
 import type { QuotaAccount, QuotaProvider, QuotaWindow } from "../api/types";
 import { Frame, Note } from "../ui/Frame";
@@ -29,9 +25,13 @@ function windowReset(window: QuotaWindow): string | null {
 }
 
 async function toggleAccount(account: QuotaAccount): Promise<void> {
-    await api<QuotaAccount>("PATCH", `/api/v1/proxycli/accounts/${encodeURIComponent(account.id)}`, {
-        disabled: !account.disabled,
-    });
+    await api<QuotaAccount>(
+        "PATCH",
+        `/api/v1/proxycli/accounts/${encodeURIComponent(account.id)}`,
+        {
+            disabled: !account.disabled,
+        },
+    );
     await queryClient.invalidateQueries({ queryKey: ["proxycli-providers"] });
 }
 
@@ -57,7 +57,9 @@ export function QuotaList() {
     if (status.data?.enabled !== true) {
         return (
             <Frame title="Quota" state="warn">
-                <Note>proxycli is disabled. Enable the fleet feature to collect CLIProxyAPI quota.</Note>
+                <Note>
+                    proxycli is disabled. Enable the fleet feature to collect CLIProxyAPI quota.
+                </Note>
             </Frame>
         );
     }
@@ -141,7 +143,9 @@ export function QuotaProviderPage() {
     if (provider.data === undefined) {
         return (
             <Frame title={id}>
-                <Note>{provider.isPending ? "Loading…" : `No provider ${id} in the snapshot.`}</Note>
+                <Note>
+                    {provider.isPending ? "Loading…" : `No provider ${id} in the snapshot.`}
+                </Note>
             </Frame>
         );
     }

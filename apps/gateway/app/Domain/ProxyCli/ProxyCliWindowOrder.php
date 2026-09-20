@@ -21,7 +21,7 @@ final readonly class ProxyCliWindowOrder
             return $rank !== 0 ? $rank : strcmp($left->label, $right->label);
         });
 
-        return array_values($sorted);
+        return $sorted;
     }
 
     public function durationLabel(int $seconds): string

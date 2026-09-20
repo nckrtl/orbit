@@ -468,6 +468,18 @@
             ]
           },
           {
+            "group": "proxycli",
+            "openapi": "/openapi.json",
+            "pages": [
+              "DELETE /api/v1/proxycli",
+              "GET /api/v1/proxycli",
+              "POST /api/v1/proxycli",
+              "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/providers",
+              "GET /api/v1/proxycli/providers/{provider}"
+            ]
+          },
+          {
             "group": "Realtime",
             "openapi": "/openapi.json",
             "pages": [

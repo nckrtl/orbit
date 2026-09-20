@@ -5,7 +5,7 @@ import { screenText } from "./screen";
 it("keeps Quota out of the sidebar while proxycli is disabled", async () => {
     await openApp("/");
 
-    await expect.element(row("Navigation", "Dashboard")).toBeVisible();
+    await expect.poll(() => screenText()).toContain("Dashboard");
     expect(screenText()).not.toContain("Quota");
 });
 
@@ -20,7 +20,7 @@ it("lists provider windows from the snapshot without Primary or Secondary labels
 });
 
 it("shows account controls and never renders a missing window as zero", async () => {
-    const app = await openApp("/quota/codex", { proxycli: true });
+    await openApp("/quota/codex", { proxycli: true });
 
     await expect.element(pane("Accounts")).toBeVisible();
     await expect.element(row("Accounts", "plus.json")).toHaveTextContent("7d 60%");

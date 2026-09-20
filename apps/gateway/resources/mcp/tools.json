@@ -4148,6 +4148,146 @@
       }
     },
     {
+      "name": "proxycli-disable",
+      "title": "Disable proxycli",
+      "description": "Stops the collector Process, withdraws proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
+      "method": "DELETE",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-enable",
+      "title": "Enable proxycli",
+      "description": "Deploys one collector Process and publishes https://proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.",
+      "method": "POST",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cache_connection": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Redis Database connection slug for shared Valkey"
+          },
+          "cliproxy_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "CLIProxyAPI Management API origin"
+          },
+          "cliproxy_management_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "cache_connection",
+          "cliproxy_url",
+          "cliproxy_management_key"
+        ]
+      }
+    },
+    {
+      "name": "proxycli-list",
+      "title": "List proxycli providers",
+      "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/providers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-show",
+      "title": "Show a proxycli provider",
+      "description": "Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/providers/{provider}",
+      "path_inputs": [
+        "provider"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider"
+        ]
+      }
+    },
+    {
+      "name": "proxycli-status",
+      "title": "Show proxycli status",
+      "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
+      "method": "GET",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-update",
+      "title": "Update a proxycli account",
+      "description": "Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.",
+      "method": "PATCH",
+      "path": "/api/v1/proxycli/accounts/{account}",
+      "path_inputs": [
+        "account"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "Disable the account"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "account",
+          "disabled"
+        ]
+      }
+    },
+    {
       "name": "realtime-show",
       "title": "Show the Reverb connection",
       "description": "Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.",

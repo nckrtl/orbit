@@ -72,7 +72,7 @@ final readonly class ProxyCliPlacement
             || $node->status !== LifecycleStatus::Active
             || ! is_string($node->wireguard_ip)
             || $node->wireguard_ip === ''
-            || ($node->platform !== null && $node->platform !== 'linux')
+            || $node->platform !== 'linux'
         ) {
             throw new ResourceOperationException(
                 'proxycli.node_invalid',
