@@ -14,8 +14,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
-use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -84,9 +82,6 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $edge->prepareIngressCertificate($route);
         $edge->stageIngressCaddy($route);
         $edge->verifyPublicEdge($route);
-        if (in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)) {
-            $route->update(['public_publication' => RoutePublicPublication::Active]);
-        }
         $edge->activatePublicHandler($route);
         $edge->prepareIngressFirewall($route);
     }

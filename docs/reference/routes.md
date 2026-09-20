@@ -22,8 +22,7 @@ The Gateway stores each Route's settings and tracks setup of its certificates, w
 | Domain source | Always `generated` or `explicit`. This value never changes, and Orbit does not infer it from the domain. |
 | Replacement | Optional `replaces_route_id`, `replaced_by_route_id`, and `replacement_step` that expose a reserved, activating, retiring, or failed replacement pair. |
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
-| Publication intent | The requested publication state, retained even when the Route has no target. |
-| Public publication | `inactive` until a public Route has a verified Ingress edge, then `active`. A public Route can keep intent while public publication stays inactive. |
+| Publication | The only publication field: `private` or `public`. The Route keeps this value even when it has no target. Public-edge readiness is `status`, `failed_step`, and Doctor, not a second publication field. |
 | Status | `pending`, `active`, `activating`, `retiring`, or `failed`. Failure details identify the step to retry. |
 | Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
 | Configured target | An App Route accepts a single App instance target or an ordered production target set. A custom proxy Route stores a loopback upstream or a Node Process. |
@@ -291,11 +290,11 @@ Related-node checks use only caller-authorized selected nodes. An unavailable Ro
 
 A public Route terminates HTTPS on the Cluster Ingress, forwards privately through the Cluster Router, and reaches the app-prod workload without exposing placement or workload listeners. Role ownership follows [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement). Only Ingress may be the public boundary; [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) records that rule.
 
-The Gateway activates public publication only when the Route is Cluster-scoped, the Cluster is active, and that Cluster has exactly one active Ingress and one active Router. A Node-scoped Route, an inactive Cluster, or a Cluster that lacks an active Ingress or Router keeps publication intent and reports public publication as inactive. Those cases create no public certificate, listener, firewall rule, or partial activation.
+The Gateway publishes the public edge only when the Route is Cluster-scoped, the Cluster is active, and that Cluster has exactly one active Ingress and one active Router. A Node-scoped Route, an inactive Cluster, or a Cluster that lacks an active Ingress or Router keeps `publication=public` and creates no public listener, Let's Encrypt site, firewall rule, or partial activation. Those cases report readiness on `status`, `failed_step`, and Doctor.
 
 The Ingress artifact names the public domain and the Router upstream. It does not name an App instance, workload Node, or backend pool. Router Caddy keeps backend selection. Workload Caddy stays private.
 
-Public TLS terminates on the Ingress Node with an Orbit certificate-authority certificate for the Route domain. Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address and uses WireGuard only when no LAN address is set. A configured but unreachable LAN path fails and does not fall back to WireGuard. Ingress preserves the original `Host` value, HTTPS scheme, and client address.
+Public TLS terminates on the Ingress Node with Let's Encrypt when the public edge is healthy. Ingress Caddy uses automatic HTTPS for that hostname and does not pin an Orbit CA leaf. Converge must not replace a working public Let's Encrypt certificate with Orbit CA. Ingress forwards Orbit-CA HTTPS to the Router over the configured LAN address and uses WireGuard only when no LAN address is set. A configured but unreachable LAN path fails and does not fall back to WireGuard. Ingress preserves the original `Host` value, HTTPS scheme, and client address. [ADR 0101](/decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress) records this decision.
 
 When Ingress shares a Node with the Router, with app-prod, or with both, one composed Caddy service serves the public Route. The composed site does not proxy to its own public listener.
 
@@ -307,11 +306,11 @@ Creating or showing a public Route adds no Node public-IP field and calls no DNS
 
 A stale application HTTP error does not block a valid public edge. The trusted response remains observable and the App instance remains active.
 
-### Activate public publication
+### Publish the public edge
 
-A publication-only update on the same domain keeps the Route ID. The Gateway prepares the Ingress certificate, stages the Ingress Caddy site outside the live import, and verifies the private hops before it marks public publication active and installs the handler. Firewall rules open after at least one public Route is active. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open.
+A publication-only update on the same domain keeps the Route ID. The Gateway stages the Ingress Caddy site outside the live import, verifies the private hops, then installs the handler so Caddy can obtain Let's Encrypt for the public hostname. Firewall rules open after at least one public Route is live. The candidate handler stays unreachable until those checks succeed, including when another Route already keeps Ingress ports open. A Let's Encrypt failure stays on `failed_step` and Doctor; converge does not fall back to Orbit CA.
 
-A combined domain and publication change reserves a replacement Route with public publication intent. The current Route stays authoritative until cutover. Environment synchronization and private infrastructure complete before public exposure. Cutover makes the replacement authoritative in one database transition. Successful cleanup deletes the preview Route and releases its domain.
+A combined domain and publication change reserves a replacement Route with `publication=public`. The current Route stays authoritative until cutover. Environment synchronization and private infrastructure complete before public exposure. Cutover makes the replacement authoritative in one database transition. Successful cleanup deletes the preview Route and releases its domain.
 
 The PHP software development kit (SDK) and `route:update` CLI send the combined domain and publication request and return the replacement Route identity. They do not bypass Cluster Ingress.
 

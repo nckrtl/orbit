@@ -121,7 +121,9 @@ it('binds a public Ingress proxy without an https prefix and preserves forwarded
         ->toContain('header_up X-Forwarded-For {remote_host}')
         ->toContain('header_up X-Forwarded-Host shop.example.test')
         ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
-        ->not->toContain('https://shop.example.test {');
+        ->not->toContain('https://shop.example.test {')
+        ->not->toContain('cert.pem')
+        ->not->toContain('key.pem');
 });
 
 it('measures a development site without waking it or counting the request as activity', function (): void {
@@ -423,7 +425,6 @@ describe('analytics tracking site', function (): void {
         expect($configuration)->toBe(<<<'CADDY'
             analytics.shop.example.com {
                 bind 0.0.0.0
-                tls /etc/caddy/orbit-certificates/route-91-ingress/current/cert.pem /etc/caddy/orbit-certificates/route-91-ingress/current/key.pem
                 handle /js/* {
                     reverse_proxy http://10.44.0.40:8000
                 }

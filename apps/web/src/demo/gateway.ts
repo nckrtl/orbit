@@ -237,7 +237,7 @@ export function createDemoGateway() {
                                           host,
                                           route_id: 900 + Number(id),
                                           status: "active",
-                                          public_publication: "active",
+                                          publication: "public",
                                           failed_step: null,
                                           error_code: null,
                                           script_url: `https://${host}/js/script.js`,

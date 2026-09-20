@@ -126,19 +126,19 @@ it('normalizes malformed Route error codes to null', function (mixed $errorCode)
     'oversized' => str_repeat('a', times: 129),
 ]);
 
-it('preserves a combined domain and publication update and maps public publication', function (): void {
+it('preserves a combined domain and publication update', function (): void {
     $update = new UpdateRouteRequest(11, domain: 'final.example.test', publication: 'public');
     $response = RouteResponse::fromGatewayData(
-        [...route_data(), 'publication' => 'public', 'public_publication' => 'active', 'domain' => 'final.example.test'],
+        [...route_data(), 'publication' => 'public', 'domain' => 'final.example.test'],
         route_request_id(),
     );
 
     expect($update->body()->all())
         ->toBe(['domain' => 'final.example.test', 'publication' => 'public'])
-        ->and($response->publicPublication)
-        ->toBe('active')
-        ->and($response->toArray()['public_publication'])
-        ->toBe('active')
+        ->and($response->publication)
+        ->toBe('public')
+        ->and($response->toArray())
+        ->not->toHaveKey('public_publication')
         ->and($response->domain)
         ->toBe('final.example.test');
 });
@@ -235,7 +235,6 @@ function route_data(): array
         'domain' => 'app.test',
         'provenance' => 'explicit',
         'publication' => 'private',
-        'public_publication' => 'inactive',
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,

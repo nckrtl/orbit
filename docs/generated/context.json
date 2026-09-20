@@ -2705,6 +2705,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress.md",
+            "title": "ADR 0101: Keep one Route publication field and terminate public Ingress with Let's Encrypt",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0097",
+                "0101"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2831,7 +2857,8 @@
                 "0095",
                 "0098",
                 "0099",
-                "0100"
+                "0100",
+                "0101"
             ]
         },
         {
@@ -3733,7 +3760,8 @@
                 "0065",
                 "0067",
                 "0080",
-                "0082"
+                "0082",
+                "0101"
             ]
         },
         {

@@ -48,6 +48,29 @@ final readonly class PublicRouteEligibility
         return null;
     }
 
+    /**
+     * A public edge is live when publication is public, the Route is authoritative, the Cluster
+     * can serve Ingress, and activation has reached the public handler or has finished.
+     */
+    public function publicEdgeIsLive(Route $route): bool
+    {
+        if (! in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)) {
+            return false;
+        }
+
+        if (! $this->canActivate($route)) {
+            return false;
+        }
+
+        return $this->publicActivationReached($route->replacement_step);
+    }
+
+    public function publicActivationReached(?RouteReplacementStep $step): bool
+    {
+        return $step === null
+            || $this->publicActivationRank($step) >= $this->publicActivationRank(RouteReplacementStep::PublicActivated);
+    }
+
     public function activeIngress(Cluster $cluster): ?Node
     {
         $assignment = NodeRole::query()
@@ -94,14 +117,28 @@ final readonly class PublicRouteEligibility
     public function clusterHasActivePublicRoute(int $clusterId, ?int $exceptRouteId = null): bool
     {
         return Route::query()
+            ->with(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
             ->where('cluster_id', $clusterId)
             ->where('publication', RoutePublication::Public)
-            ->where('public_publication', RoutePublicPublication::Active)
             ->whereIn('status', [RouteStatus::Active, RouteStatus::Activating])
             ->when(
                 $exceptRouteId !== null,
                 static fn ($query) => $query->whereKeyNot($exceptRouteId),
             )
-            ->exists();
+            ->get()
+            ->contains(fn (Route $route): bool => $this->publicEdgeIsLive($route));
+    }
+
+    public function publicActivationRank(?RouteReplacementStep $step): int
+    {
+        return match ($step) {
+            RouteReplacementStep::IngressCertificate => 1,
+            RouteReplacementStep::IngressCaddy => 2,
+            RouteReplacementStep::PublicEdgeVerified => 3,
+            RouteReplacementStep::PublicActivated => 4,
+            RouteReplacementStep::IngressFirewall => 5,
+            RouteReplacementStep::Cleanup => 6,
+            default => 0,
+        };
     }
 }

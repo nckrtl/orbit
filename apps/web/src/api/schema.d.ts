@@ -2406,7 +2406,6 @@ export interface components {
             domain?: string;
             provenance?: string;
             publication?: string;
-            public_publication?: string;
             status?: string;
             failed_step?: string | null;
             error_code?: string | null;
@@ -6211,7 +6210,11 @@ export interface operations {
                                 host?: string;
                                 route_id?: number;
                                 status?: string;
-                                public_publication?: string;
+                                /**
+                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @enum {string}
+                                 */
+                                publication?: "private" | "public";
                                 failed_step?: string | null;
                                 error_code?: string | null;
                                 script_url?: string;
@@ -6286,7 +6289,11 @@ export interface operations {
                                 host?: string;
                                 route_id?: number;
                                 status?: string;
-                                public_publication?: string;
+                                /**
+                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @enum {string}
+                                 */
+                                publication?: "private" | "public";
                                 failed_step?: string | null;
                                 error_code?: string | null;
                                 script_url?: string;
@@ -6373,7 +6380,11 @@ export interface operations {
                                 host?: string;
                                 route_id?: number;
                                 status?: string;
-                                public_publication?: string;
+                                /**
+                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @enum {string}
+                                 */
+                                publication?: "private" | "public";
                                 failed_step?: string | null;
                                 error_code?: string | null;
                                 script_url?: string;

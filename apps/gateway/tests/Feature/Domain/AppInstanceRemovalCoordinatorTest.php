@@ -27,7 +27,6 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
@@ -793,15 +792,14 @@ it('closes a public Route handler before deleting its identity and leaves unrela
     $survivor = orb181_coordinator_instance('production');
     $survivor->routes->sole()->update([
         'publication' => RoutePublication::Public,
-        'public_publication' => RoutePublicPublication::Active,
     ]);
 
     $this->orb181Coordinator->execute($removed, true);
 
     expect(Route::query()->find($removed->routes->sole()->id))
         ->toBeNull()
-        ->and($survivor->routes->sole()->refresh()->public_publication)
-        ->toBe(RoutePublicPublication::Active)
+        ->and($survivor->routes->sole()->refresh()->publication)
+        ->toBe(RoutePublication::Public)
         ->and($this->orb181Projector->calls)
         ->toContain('remove-public-edge:'.$removed->id)
         ->and(AppInstance::query()->whereKey($removed->id)->exists())
@@ -1214,7 +1212,7 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
         }
 
         if ($route->publication === RoutePublication::Public) {
-            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+            $route->update(['publication' => RoutePublication::Private]);
             $this->calls[] = "remove-public-edge:{$member->app_instance_id}";
         }
 

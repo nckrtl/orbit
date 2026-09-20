@@ -9,8 +9,8 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteAssociationGuard;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
@@ -128,7 +128,7 @@ final readonly class RemoveRouteAction
 
     private function assertStandaloneRemovalAllowed(Route $route): void
     {
-        if ($route->public_publication === RoutePublicPublication::Active) {
+        if (new PublicRouteEligibility()->publicEdgeIsLive($route)) {
             $this->reconciliation->refuse();
         }
 

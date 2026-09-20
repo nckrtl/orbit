@@ -13,10 +13,10 @@ use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -166,7 +166,7 @@ final readonly class EnableInstanceAnalyticsAction
         // own Node, exactly like the instance domain it follows.
         if (
             $route->publication !== RoutePublication::Public
-            || ($route->public_publication === RoutePublicPublication::Active && $route->replacement_step === null)
+            || (new PublicRouteEligibility()->publicEdgeIsLive($route) && $route->replacement_step === null)
         ) {
             return;
         }

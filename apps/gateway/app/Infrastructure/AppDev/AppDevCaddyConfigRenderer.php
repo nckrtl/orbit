@@ -32,12 +32,14 @@ final readonly class AppDevCaddyConfigRenderer
                     $internal = $this->localUnixSite($site);
 
                     $scheme = $site->publicListener ? '' : 'https://';
+                    $tls = $site->publicListener
+                        ? ''
+                        : "tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem\n                            ";
 
                     $siteBlock = <<<CADDY
                         {$scheme}{$site->domain} {
                             bind 0.0.0.0
-                            tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
-                            {$handler}
+                            {$tls}{$handler}
                         }
                         CADDY;
 

@@ -49,7 +49,6 @@ final readonly class ServiceMetricsProjection
         }
         $hosts = $caddy ? Route::query()
             ->where('publication', 'public')->where('status', 'active')
-            ->where('public_publication', 'active')
             ->whereHas('cluster.ingressAssignment', static fn ($query) => $query->where('node_id', $node->id))
             ->orderBy('domain')->pluck('domain')->all() : [];
 

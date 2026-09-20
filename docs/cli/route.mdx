@@ -109,7 +109,7 @@ orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT]
 orbit route:update 9 --domain=shop.example.com
 ```
 
-A domain change reserves a replacement Route while the current Route stays authoritative. The Gateway prepares certificates, Caddy sites, environment values, and private DNS before cutover. It then removes the old Route and its projections. The response returns the replacement Route ID. A publication-only update keeps the Route ID. See [Route changes](/reference/routes#change-an-existing-route) and [public publication](/reference/routes#activate-public-publication) for eligibility and recovery.
+A domain change reserves a replacement Route while the current Route stays authoritative. The Gateway prepares certificates, Caddy sites, environment values, and private DNS before cutover. It then removes the old Route and its projections. The response returns the replacement Route ID. A publication-only update keeps the Route ID. See [Route changes](/reference/routes#change-an-existing-route) and [publishing the public edge](/reference/routes#publish-the-public-edge) for eligibility and recovery.
 
 <Note>
 During a domain change, inspection shows both Route records, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A conflicting domain or publication request changes no recorded intent.

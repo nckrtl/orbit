@@ -19,7 +19,6 @@ use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -284,7 +283,6 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         $routes = Route::query()
             ->with(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
             ->where('publication', RoutePublication::Public)
-            ->where('public_publication', RoutePublicPublication::Active)
             ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $instance->id))
             ->orderBy('id')
             ->get();
@@ -292,6 +290,10 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         $issues = [];
 
         foreach ($routes as $route) {
+            if (! $this->eligibility->publicEdgeIsLive($route)) {
+                continue;
+            }
+
             $cluster = $route->cluster;
             $ingress = $cluster !== null ? $this->eligibility->activeIngress($cluster) : null;
             $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;

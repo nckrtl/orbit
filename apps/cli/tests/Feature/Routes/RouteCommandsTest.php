@@ -428,8 +428,8 @@ it('renders only the first invalid input as one JSON document', function (
     ],
 ]);
 
-it('transports a combined domain and publication update and renders public publication', function (): void {
-    $payload = [...route_payload(), 'publication' => 'public', 'public_publication' => 'active', 'domain' => 'final.example.test'];
+it('transports a combined domain and publication update and renders publication', function (): void {
+    $payload = [...route_payload(), 'publication' => 'public', 'domain' => 'final.example.test'];
     $mock = MockClient::global([
         UpdateRouteRequest::class => MockResponse::make([
             'data' => $payload,
@@ -454,8 +454,9 @@ it('transports a combined domain and publication update and renders public publi
     ]);
 
     expect(Artisan::call('route:show', ['route' => '11']))->toBe(0);
-    expect(Artisan::output())->toContain('Public publication')
-        ->toContain('active');
+    expect(Artisan::output())->toContain('Publication')
+        ->toContain('public')
+        ->not->toContain('Public publication');
 });
 
 it('lists, shows, updates, targets, clears, and removes through exact requests', function (): void {
@@ -555,7 +556,6 @@ function route_payload(): array
         'domain' => 'app.test',
         'provenance' => 'explicit',
         'publication' => 'private',
-        'public_publication' => 'inactive',
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,

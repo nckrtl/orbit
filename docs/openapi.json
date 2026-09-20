@@ -6644,8 +6644,13 @@
                               "status": {
                                 "type": "string"
                               },
-                              "public_publication": {
-                                "type": "string"
+                              "publication": {
+                                "type": "string",
+                                "enum": [
+                                  "private",
+                                  "public"
+                                ],
+                                "description": "Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
                               },
                               "failed_step": {
                                 "type": [
@@ -6815,8 +6820,13 @@
                               "status": {
                                 "type": "string"
                               },
-                              "public_publication": {
-                                "type": "string"
+                              "publication": {
+                                "type": "string",
+                                "enum": [
+                                  "private",
+                                  "public"
+                                ],
+                                "description": "Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
                               },
                               "failed_step": {
                                 "type": [
@@ -6996,8 +7006,13 @@
                               "status": {
                                 "type": "string"
                               },
-                              "public_publication": {
-                                "type": "string"
+                              "publication": {
+                                "type": "string",
+                                "enum": [
+                                  "private",
+                                  "public"
+                                ],
+                                "description": "Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
                               },
                               "failed_step": {
                                 "type": [
@@ -16544,9 +16559,6 @@
             "type": "string"
           },
           "publication": {
-            "type": "string"
-          },
-          "public_publication": {
             "type": "string"
           },
           "status": {

@@ -8,7 +8,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\PublicRoutePrivateOverride;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
@@ -39,7 +38,7 @@ final readonly class IngressSiteRepository
             routerUpstream: $this->routerUpstream($router, $ingress),
             ingressNodeId: $ingress->id,
             certificateScope: "route-{$route->id}-ingress",
-            activated: $route->public_publication === RoutePublicPublication::Active,
+            activated: $this->eligibility->publicEdgeIsLive($route),
         );
     }
 

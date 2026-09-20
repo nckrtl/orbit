@@ -13,7 +13,7 @@ use SensitiveParameter;
  */
 final readonly class InstanceAnalyticsResponse
 {
-    /** @param list<array{host: string, route_id: int, status: string, public_publication: string, failed_step: ?string, error_code: ?string, script_url: string, event_url: string, dns: ?array{type: string, name: string, value: string}}> $hosts */
+    /** @param list<array{host: string, route_id: int, status: string, publication: string, failed_step: ?string, error_code: ?string, script_url: string, event_url: string, dns: ?array{type: string, name: string, value: string}}> $hosts */
     public function __construct(
         public int $instanceId,
         public bool $enabled,
@@ -55,7 +55,7 @@ final readonly class InstanceAnalyticsResponse
                 || ! is_string($host['host'] ?? null)
                 || ! is_int($host['route_id'] ?? null)
                 || ! is_string($host['status'] ?? null)
-                || ! is_string($host['public_publication'] ?? null)
+                || ! is_string($host['publication'] ?? null)
                 || ! self::nullableString($host, 'failed_step')
                 || ! self::nullableString($host, 'error_code')
                 || ! is_string($host['script_url'] ?? null)
@@ -74,7 +74,7 @@ final readonly class InstanceAnalyticsResponse
                 'host' => $host['host'],
                 'route_id' => $host['route_id'],
                 'status' => $host['status'],
-                'public_publication' => $host['public_publication'],
+                'publication' => $host['publication'],
                 'failed_step' => $host['failed_step'] ?? null,
                 'error_code' => $host['error_code'] ?? null,
                 'script_url' => $host['script_url'],
