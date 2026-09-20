@@ -25,7 +25,9 @@ Today the `websocket` role has to go on the same node as the `gateway` role, bec
 
 ### What converge installs on the node
 
-Converge checks out a plain, unmodified Laravel app (`https://github.com/nckrtl/orbit-reverb.git` by default) at `/opt/orbit/websocket`, runs `composer install --no-dev`, and writes that app's own `.env` with a generated `APP_KEY` and the Reverb application credentials the Gateway generated for this role assignment. It installs and enables `orbit-websocket.service`, a systemd unit that runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
+Role prerequisites install `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml` first. `php-curl` and `php-xml` provide `ext-curl` and `ext-dom`, so `composer install` succeeds on a fresh Ubuntu 26.04 Node that does not already run the Gateway PHP stack. The same two packages are role prerequisites on `app-dev` and `app-prod` hosts.
+
+Converge then checks out a plain, unmodified Laravel app (`https://github.com/nckrtl/orbit-reverb.git` by default) at `/opt/orbit/websocket`, runs `composer install --no-dev`, and writes that app's own `.env` with a generated `APP_KEY` and the Reverb application credentials the Gateway generated for this role assignment. It installs and enables `orbit-websocket.service`, a systemd unit that runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
 
 Alongside the app itself, converge reserves `reverb.orbit` as a private hostname, issues it an Orbit CA leaf certificate, and renders a Caddy site on the role's node that terminates that certificate and reverse-proxies to the local Reverb process; `reverse_proxy` admits a WebSocket upgrade by default. Gateway private DNS answers `reverb.orbit` with the role's node WireGuard address, the same way it answers `gateway.orbit` and `metrics.orbit`.
 

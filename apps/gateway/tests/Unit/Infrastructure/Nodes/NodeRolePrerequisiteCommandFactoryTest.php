@@ -18,12 +18,14 @@ it('uses fixed package lists for every role', function (): void {
     $factory = new NodeRolePrerequisiteCommandFactory;
     $account = default_managed_user_account();
     expect(role_prerequisite_packages($factory->make(new Node, RoleName::AppDev, $account)))
-        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip']);
+        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip']);
 
     expect(role_prerequisite_packages($factory->make(new Node, RoleName::AppDev, $account)))
-        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
+        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip'])
         ->and(role_prerequisite_packages($factory->make(new Node, RoleName::AppProd, $account)))
-        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
+        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip'])
+        ->and(role_prerequisite_packages($factory->make(new Node, RoleName::WebSocket, $account)))
+        ->toBe(['caddy', 'composer', 'git', 'openssl', 'php-curl', 'php-xml'])
         ->and(role_prerequisite_packages($factory->make(new Node, RoleName::Vpn, $account)))
         ->toBe(['dnsmasq', 'openssl'])
         ->and(role_prerequisite_packages($factory->make(new Node, RoleName::Database, $account)))

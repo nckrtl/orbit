@@ -9,6 +9,12 @@ use App\Models\Node;
 
 final class NodeBootstrapPackageCatalog
 {
+    /** @var list<string> */
+    private const PHP_COMPOSER_HOST_PACKAGES = [
+        'php-curl',
+        'php-xml',
+    ];
+
     /** @return list<string> */
     public function forNode(Node $node): array
     {
@@ -31,11 +37,18 @@ final class NodeBootstrapPackageCatalog
                 'docker.io',
                 'git',
                 'openssl',
+                ...self::PHP_COMPOSER_HOST_PACKAGES,
                 'unzip',
             ],
             RoleName::Metrics => ['docker.io', 'openssl'],
             RoleName::Database => ['docker.io'],
-            RoleName::WebSocket => ['caddy', 'composer', 'git', 'openssl'],
+            RoleName::WebSocket => [
+                'caddy',
+                'composer',
+                'git',
+                'openssl',
+                ...self::PHP_COMPOSER_HOST_PACKAGES,
+            ],
         };
     }
 }
