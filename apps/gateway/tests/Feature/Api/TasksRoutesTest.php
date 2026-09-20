@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -10,6 +11,8 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
@@ -46,7 +49,7 @@ function enable_tasks(): void
     test()->postJson('/api/v1/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
 }
 
-it('exposes the seven tasks routes with stable methods', function (): void {
+it('exposes the eight tasks routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(static fn (Route $route): bool => str_starts_with((string) $route->getName(), 'tasks:'))
         ->mapWithKeys(static fn (Route $route): array => [
@@ -62,6 +65,7 @@ it('exposes the seven tasks routes with stable methods', function (): void {
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
         'tasks:add' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
     ]);
 });
 
@@ -71,6 +75,8 @@ it('declares Gateway access for enable disable status create and add', function 
         ->and(new ReflectionMethod(TaskGroupsController::class, 'store')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'addTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
+        ->toBe(ServingNode::Gateway)
+        ->and(new ReflectionMethod(TaskGroupsController::class, 'complete')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway);
 });
 
@@ -100,6 +106,21 @@ it('enables and disables the extension through empty JSON objects', function ():
         ->assertJsonPath('data.enabled', false);
 
     expect(app(TaskExtensionState::class)->enabled())->toBeFalse();
+});
+
+it('accepts notify_on_settle as the Commander alias for notify_coder', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('notify-alias');
+
+    $this->postJson('/api/v1/task-groups', [
+        'app_id' => $app->id,
+        'title' => 'Notify alias',
+        'brief' => 'Commander callers send notify_on_settle.',
+        'notify_on_settle' => true,
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.notify_coder', true);
 });
 
 it('returns 409 tasks.disabled for create list and show while the extension is off', function (): void {
@@ -280,4 +301,65 @@ it('lets a Node with a Gateway grant create a group', function (): void {
         ])
         ->assertCreated()
         ->assertJsonPath('data.title', 'Granted');
+});
+
+it('completes a settling group and removes its App instance', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('complete-api');
+    $node = Node::query()->create([
+        'name' => 'complete-api-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.86',
+        'wireguard_ip' => '10.44.0.86',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'task-30',
+        'checkout_path' => '/tmp/task-30',
+        'status' => 'source_resolved',
+    ]);
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Ready',
+        'brief' => 'PR is merged.',
+        'status' => TaskGroupStatus::Settling,
+        'pr_url' => 'https://github.com/nckrtl/orbit/pull/543',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $remover = new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    };
+    app()->instance(AppInstanceRemover::class, $remover);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/complete")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.taskable_id', null)
+        ->assertJsonPath('data.pr_url', 'https://github.com/nckrtl/orbit/pull/543');
+});
+
+it('returns 409 tasks.not_settling when complete runs before settle', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('too-early');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Running',
+        'brief' => 'Not ready.',
+        'status' => TaskGroupStatus::Running,
+    ]);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/complete")
+        ->assertStatus(409)
+        ->assertJsonPath('error.code', 'tasks.not_settling');
 });

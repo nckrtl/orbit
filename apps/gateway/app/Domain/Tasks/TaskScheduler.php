@@ -15,6 +15,9 @@ final readonly class TaskScheduler
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
         private AgentSpawner $spawner,
+        private TaskPullRequestOpener $pullRequests,
+        private TaskSettleMetricsCollector $metrics,
+        private CoderSettleNotifier $coder,
     ) {}
 
     public function claimNext(): ?TaskGroup
@@ -163,7 +166,45 @@ final readonly class TaskScheduler
             }
         }
 
+        if ($group->status === TaskGroupStatus::Settling) {
+            return $this->settle($group);
+        }
+
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
+    public function settle(TaskGroup $group): TaskGroup
+    {
+        $group->loadMissing(['app', 'tasks', 'taskable']);
+
+        if ($group->status !== TaskGroupStatus::Settling) {
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        }
+
+        $url = $group->pr_url;
+
+        if (! is_string($url) || $url === '') {
+            $opened = $this->pullRequests->open($group);
+
+            if (is_string($opened) && $opened !== '') {
+                $group->pr_url = $opened;
+            }
+        }
+
+        $metrics = $this->metrics->collect($group);
+        $group->tokens = $metrics->tokens;
+        $group->line_diff = $metrics->lineDiff;
+        $group->duration_ms = $metrics->durationMs;
+        $group->settled_at ??= now();
+        $group->save();
+
+        $settled = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+
+        if ($settled->notify_coder) {
+            $this->coder->notify($settled);
+        }
+
+        return $settled->fresh(['tasks', 'app', 'taskable']) ?? $settled;
     }
 
     private function spawnOpeningAgents(TaskGroup $group): void

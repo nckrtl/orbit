@@ -271,6 +271,7 @@ SUMMARIES = {
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:add': 'Add a Task',
+    'tasks:complete': 'Complete a Task group',
 }
 DESCRIPTIONS = {
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
@@ -291,12 +292,13 @@ DESCRIPTIONS = {
     'instance:deployment-layout:prepare': 'Converts an existing production App instance that serves code from its home into the release layout with `releases/` and `current`.',
     'database:user:create': 'Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.',
     'tasks:enable': 'Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.',
-    'tasks:disable': 'Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, and show return `tasks.disabled`.',
+    'tasks:disable': 'Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, and complete return `tasks.disabled`.',
     'tasks:status': 'Returns whether the Gateway tasks extension is enabled.',
-    'tasks:create': 'Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.',
+    'tasks:create': 'Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.',
     'tasks:add': 'Appends one Task to a Task group at the next position. Requires Gateway access. Returns `tasks.disabled` while the extension is off.',
     'tasks:list': 'Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.',
     'tasks:show': 'Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.',
+    'tasks:complete': 'Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
 }
 
 
@@ -1020,6 +1022,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if route['name'] in ('tasks:list', 'tasks:show'):
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`).')
+    if route['name'] == 'tasks:complete':
+        responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
     if route['name'] == 'node:metrics':

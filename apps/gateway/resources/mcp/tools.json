@@ -4565,9 +4565,35 @@
       }
     },
     {
+      "name": "tasks-complete",
+      "title": "Complete a Task group",
+      "description": "Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/complete",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
       "name": "tasks-create",
       "title": "Create a Task group",
-      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
+      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
       "method": "POST",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -4589,6 +4615,9 @@
             "maxLength": 8000
           },
           "notify_coder": {
+            "type": "boolean"
+          },
+          "notify_on_settle": {
             "type": "boolean"
           },
           "tasks": {
@@ -4624,7 +4653,7 @@
     {
       "name": "tasks-disable",
       "title": "Disable Tasks",
-      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, and show return `tasks.disabled`.",
+      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, and complete return `tasks.disabled`.",
       "method": "POST",
       "path": "/api/v1/tasks/disable",
       "path_inputs": [],
