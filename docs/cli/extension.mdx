@@ -22,6 +22,7 @@ Every command accepts `--json`. Enable and disable require an explicit extension
 | Extension | Commands it reveals |
 | --- | --- |
 | `herdr` | The [`herdr`](/cli/herdr) family: named Herdr sessions and observation grants. |
+| `proxycli` | The [`proxycli`](/cli/proxycli) family: fleet CLIProxyAPI quota collection. |
 
 ## orbit extension:list
 
@@ -74,10 +75,12 @@ orbit extension:disable herdr
 Disabling an already disabled extension succeeds. JSON returns `extension` and `enabled: false`. Unknown slugs and invalid configuration use the same errors as enable.
 
 <Note>
-Disabling an extension does not stop, remove, or change anything the extension created on a Node. A Herdr session keeps running after you disable the `herdr` extension; use `herdr:session:destroy` first if you want it gone.
+Disabling `herdr` does not stop, remove, or change anything the extension created on a Node. A Herdr session keeps running after you disable the `herdr` extension; use `herdr:session:destroy` first if you want it gone.
+
+Disabling `proxycli` also disables the fleet feature when the CLI can reach the Gateway: the collector Process stops, `proxycli.orbit` is withdrawn, and the web quota UI hides. Use `proxycli:disable` when you want that fleet stop without hiding the local commands.
 </Note>
 
 ## Related
 
-- [`herdr`](/cli/herdr) is the one extension family.
+- [`herdr`](/cli/herdr) and [`proxycli`](/cli/proxycli) are the extension families.
 - [Using the CLI](/cli/overview#select-a-gateway) describes `ORBIT_HOME` and the local configuration directory.

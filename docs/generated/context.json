@@ -18,7 +18,8 @@
                 "Route",
                 "Runtime hibernation",
                 "Schedule",
-                "Tool"
+                "Tool",
+                "proxycli"
             ],
             "governing_adrs": []
         },
@@ -82,7 +83,8 @@
                 "Route",
                 "Router",
                 "Task",
-                "Task group"
+                "Task group",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0004",
@@ -92,7 +94,8 @@
                 "0090",
                 "0091",
                 "0095",
-                "0103"
+                "0103",
+                "0104"
             ]
         },
         {
@@ -227,7 +230,9 @@
             "concepts": [
                 "Gateway",
                 "Herdr session",
-                "Node"
+                "Node",
+                "Process",
+                "proxycli"
             ],
             "governing_adrs": []
         },
@@ -360,7 +365,8 @@
                 "Route",
                 "Router",
                 "Schedule",
-                "Tool"
+                "Tool",
+                "proxycli"
             ],
             "governing_adrs": []
         },
@@ -412,6 +418,20 @@
                 "Route",
                 "Schedule",
                 "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/proxycli.mdx",
+            "title": "proxycli",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Database connection",
+                "Node",
+                "Process",
+                "proxycli"
             ],
             "governing_adrs": []
         },
@@ -542,7 +562,8 @@
                 "Task group",
                 "Tool",
                 "Tool Manager",
-                "Web root"
+                "Web root",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0004",
@@ -2758,6 +2779,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension.md",
+            "title": "ADR 0104: Own CLIProxyAPI quota through the proxycli extension",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0069",
+                "0070",
+                "0080",
+                "0104"
+            ]
+        },
+        {
             "path": "docs/decisions/0105-name-applications-as-project-and-instance.md",
             "title": "ADR 0105: Name applications as Project and Instance",
             "kind": "decision",
@@ -3330,7 +3377,8 @@
                 "Route",
                 "Router",
                 "Schedule",
-                "Tool"
+                "Tool",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0071"
@@ -3824,7 +3872,8 @@
                 "Gateway",
                 "Node",
                 "Route",
-                "Router"
+                "Router",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0061",
@@ -3848,6 +3897,25 @@
                 "0015",
                 "0049",
                 "0056"
+            ]
+        },
+        {
+            "path": "docs/reference/proxycli.md",
+            "title": "proxycli",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Database connection",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0104"
             ]
         },
         {
@@ -4021,6 +4089,23 @@
             "components": [],
             "concepts": [],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/cutover-proxycli.md",
+            "title": "Cut over proxy-quota collectors",
+            "kind": "solution",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Database connection",
+                "Gateway",
+                "Node",
+                "Process",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0104"
+            ]
         },
         {
             "path": "docs/solutions/doctor-incus-proof.md",

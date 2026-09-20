@@ -14,6 +14,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -57,6 +58,7 @@ final readonly class RemoveProcessAction
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
             if (! $removedByOwningRole) {
                 app(AnalyticsProcessOwnership::class)->assertRemovable($fresh);
+                app(ProxyCliProcessOwnership::class)->assertRemovable($fresh);
             }
 
             if (RouteCustomProxy::query()->where('process_id', $fresh->id)->exists()) {

@@ -52,6 +52,12 @@ use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
+use Orbit\Sdk\Requests\ProxyCli\DisableProxyCliRequest;
+use Orbit\Sdk\Requests\ProxyCli\EnableProxyCliRequest;
+use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
+use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
+use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliStatusRequest;
+use Orbit\Sdk\Requests\ProxyCli\UpdateProxyCliAccountRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
@@ -200,7 +206,15 @@ describe('repository guidance bootstrap', function (): void {
             ShowGitHubAppRequest::class,
             DestroyGitHubAppRequest::class,
         ];
-        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests);
+        $proxycliRequests = [
+            EnableProxyCliRequest::class,
+            DisableProxyCliRequest::class,
+            ShowProxyCliStatusRequest::class,
+            ListProxyCliProvidersRequest::class,
+            ShowProxyCliProviderRequest::class,
+            UpdateProxyCliAccountRequest::class,
+        ];
+        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -348,15 +362,23 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($gitHubRequests))
             ->toEqualCanonicalizing($gitHubRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\ProxyCli\\'),
+        )))
+            ->toHaveCount(count($proxycliRequests))
+            ->toEqualCanonicalizing($proxycliRequests);
     });
 
-    it('documents the 133-operation SDK surface including Database connection transport', function (): void {
+    it('documents the 139-operation SDK surface including proxycli transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 133 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 139 concrete public Gateway API operations:')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
+            ->toContain('- proxycli: enable, disable, status, provider list, provider show, and account update.')
             ->toContain(
                 '- Node: list, show, add, rename, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
@@ -417,6 +439,9 @@ describe('repository guidance bootstrap', function (): void {
             )
             ->toContain(
                 'Attach and detach send an AppInstance ID-or-domain selector, the connection slug, and an optional prefix.',
+            )
+            ->toContain(
+                'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -426,7 +451,8 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 133 public Gateway operations.',
+                'The SDK exposes exactly 139 public Gateway operations.',
+                'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',

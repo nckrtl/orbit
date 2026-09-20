@@ -1,0 +1,106 @@
+---
+title: "proxycli"
+description: "The optional Orbit extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at proxycli.orbit."
+---
+
+# proxycli
+
+This page tells an operator how the optional `proxycli` extension collects CLIProxyAPI account quota, stores one snapshot in shared Valkey, and exposes provider pools to the Orbit web app and CodexBar. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records the extension boundary. [Cut over proxy-quota collectors](/solutions/cutover-proxycli) owns the migration from hand-rolled Processes.
+
+## What the extension owns
+
+`proxycli` is a Gateway-owned fleet feature. Enabling the local CLI extension reveals the `proxycli:*` family. Enabling the fleet feature deploys one collector Process and publishes `https://proxycli.orbit`. Disabling the fleet feature stops that Process, withdraws the hostname, and hides the web quota UI.
+
+The collector is the only process that calls CLIProxyAPI for quota. The web app, the Gateway API, and CodexBar read the Valkey snapshot. A refresh does not start a second poll. An account toggle updates CLIProxyAPI account status and then recompiles pools from the cached snapshot.
+
+## Valkey placement
+
+RoleRegistry has no `valkey` or `redis` role. Shared cache lives on the [`database` role](/reference/database-role): a Node-targeted Docker Process running Valkey or Redis, registered as a [Redis Database connection](/reference/database-connections).
+
+Enable fails closed when any of these are true:
+
+| Condition | Error |
+| --- | --- |
+| The named Database connection does not exist | `proxycli.cache_missing` |
+| The connection driver is not `redis` | `proxycli.cache_invalid` |
+| The connection names a fleet Node that has no active `database` role | `proxycli.cache_unplaced` |
+
+An external Redis host that is not a fleet Node is accepted. A connection that names a Node must place that cache on a `database` Node so Doctor and backups stay with the other database Processes.
+
+Bind Valkey on the Node WireGuard address when the Gateway and the collector Process run on different Nodes. A loopback-only bind is enough only when the collector and the Gateway share that Node.
+
+## Enable
+
+Place Valkey, register it, then enable the local commands and the fleet feature:
+
+```bash
+orbit node:role:add db-1 database
+orbit process:create valkey --node=db-1 --runtime=docker --image=valkey/valkey:8 --command=valkey-server --volume=valkey-data:/data --publish=10.44.0.20:6379:6379
+orbit database:create valkey --driver=redis --node=db-1 --host=10.44.0.20 --port=6379
+orbit extension:enable proxycli
+orbit proxycli:enable --node=beast --cache-connection=valkey --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
+```
+
+`cliproxy-url` is the CLIProxyAPI Management API origin. The collector Process uses that URL from the chosen Node, so `http://127.0.0.1:8317` is correct when CLIProxyAPI already listens on that Node. The management key stays on the Gateway and in the Process environment. The API never returns it.
+
+Enable is idempotent. A second enable on the same Node and cache connection converges the Process and hostname again.
+
+## What enable deploys
+
+Enable places these four pieces on the chosen Node and in Gateway settings. The collector Process is the only one that talks to CLIProxyAPI.
+
+| Piece | Owner | Bind |
+| --- | --- | --- |
+| Node Process `proxycli` | The chosen Node | `127.0.0.1:8787` |
+| Orbit CA leaf and Caddy site | The chosen Node | HTTPS on the Node WireGuard address |
+| Private DNS `host-record` | VPN DNS | `proxycli.orbit` → the Node WireGuard address |
+| Read token and control token | Gateway settings | Server-side only |
+
+`proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it.
+
+The Process runs the Orbit collector: it takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch when another poll already holds the lock.
+
+## Disable
+
+Disable the fleet feature when you want collection and the Quota UI to stop. The local CLI extension can stay enabled if you still need the commands later.
+
+```bash
+orbit proxycli:disable
+orbit extension:disable proxycli
+```
+
+`proxycli:disable` stops and removes the Process, withdraws the Caddy site, certificate, and DNS record, and hides the web quota UI. `extension:disable proxycli` also calls that fleet disable when the CLI can reach the Gateway, then hides the local commands. Valkey data and the Redis connection stay until the operator removes them.
+
+## Clients
+
+The Orbit web app shows a Quota section while the fleet feature is enabled. The overview lists each provider pool. A provider page lists accounts, window remaining, reset times, and enable or disable controls. Window titles are duration labels in management.html#/quota order: the longer window first (`7d` then `5h`). A window the provider omitted is absent. The UI never renders a missing window as zero and never labels a window Primary or Secondary.
+
+CodexBar uses the LLM Proxy quota-stats contract at `https://proxycli.orbit/v1/quota-stats` with the read token as a bearer token. Account control at `https://proxycli.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
+
+`orbit proxycli:status` reports whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written. `orbit proxycli:list` and `orbit proxycli:show` read the same snapshot. `orbit proxycli:update` toggles one account.
+
+## Errors
+
+These codes appear on enable, disable, reads, and the CLI family. Placement failures stay 422. A disabled fleet feature stays 409.
+
+| Code | When |
+| --- | --- |
+| `proxycli.cache_missing` | Enable names no Redis Database connection. |
+| `proxycli.cache_invalid` | The named connection is not Redis. |
+| `proxycli.cache_unplaced` | The connection's Node has no active `database` role. |
+| `proxycli.disabled` | A read or toggle runs while the fleet feature is disabled. |
+| `proxycli.node_invalid` | The collector Node is missing, inactive, or has no WireGuard address. |
+| `proxycli.source_publication_failed` | Enable could not install the collector script on the Node. |
+| `proxycli.certificate_publication_failed` | Enable could not publish the Orbit CA leaf on the Node. |
+| `proxycli.caddy_publication_failed` | Enable could not install the `proxycli.orbit` Caddy site. |
+| `extension.disabled` | A `proxycli:*` CLI command runs before `extension:enable proxycli`. |
+| `extension.unknown` | The slug is not a known extension. |
+
+## Related
+
+- [`proxycli` commands](/cli/proxycli)
+- [`extension`](/cli/extension)
+- [Database role](/reference/database-role)
+- [Database connections](/reference/database-connections)
+- [Private DNS](/reference/private-dns)
+- [Cut over proxy-quota collectors](/solutions/cutover-proxycli)

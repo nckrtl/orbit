@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\ProxyCliController;
 use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
 use App\Http\Controllers\Api\ResolveDependencyInstanceController;
@@ -464,6 +465,16 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
             ->whereNumber('tool')
             ->name('tool:remove');
+        Route::post('proxycli', [ProxyCliController::class, 'store'])->name('proxycli:enable');
+        Route::delete('proxycli', [ProxyCliController::class, 'destroy'])->name('proxycli:disable');
+        Route::get('proxycli', [ProxyCliController::class, 'status'])->name('proxycli:status');
+        Route::get('proxycli/providers', [ProxyCliController::class, 'index'])->name('proxycli:list');
+        Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
+            ->where('provider', '[a-z][a-z0-9-]*')
+            ->name('proxycli:show');
+        Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
+            ->where('account', '[A-Za-z0-9._-]+')
+            ->name('proxycli:update');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
         Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::post('analytics/update', [AnalyticsController::class, 'update'])->name('analytics:update');

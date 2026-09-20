@@ -7,7 +7,7 @@ use App\Domain\Shared\ResourceOperationException;
 
 describe(ReservedPrivateHostname::class, function (): void {
     it('reserves the platform private hostnames', function (): void {
-        expect(ReservedPrivateHostname::NAMES)->toBe(['gateway.orbit', 'metrics.orbit', 'reverb.orbit', 'analytics.orbit']);
+        expect(ReservedPrivateHostname::NAMES)->toBe(['gateway.orbit', 'metrics.orbit', 'reverb.orbit', 'analytics.orbit', 'proxycli.orbit']);
     });
 
     it('refuses reserved private hostnames', function (string $domain): void {
@@ -23,6 +23,7 @@ describe(ReservedPrivateHostname::class, function (): void {
         'metrics' => ['metrics.orbit'],
         'reverb' => ['reverb.orbit'],
         'analytics' => ['analytics.orbit'],
+        'proxycli' => ['proxycli.orbit'],
     ]);
 
     it('allows other private hostnames', function (string $domain): void {

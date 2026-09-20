@@ -2,7 +2,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { queryClient } from "../api/queryClient";
 import type { App, Node, Process, Schedule } from "../api/types";
-import { FILTERED_SECTIONS, NAV, navFor, type Section, useGo } from "./go";
+import { FILTERED_SECTIONS, navFor, type Section, useGo, useNav } from "./go";
 import { chooseAction, openMenu } from "./menu";
 import { paneBeside, paneOrder, panes, selectionKey, type Target, ui } from "./store";
 
@@ -14,6 +14,7 @@ import { paneBeside, paneOrder, panes, selectionKey, type Target, ui } from "./s
 export function useKeyboard(pageTarget: () => Target | null): void {
     const router = useRouter();
     const go = useGo();
+    const nav = useNav();
 
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
@@ -160,14 +161,14 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                 return handled();
             }
 
-            if (/^[1-4]$/.test(event.key)) {
-                go.section(NAV[Number(event.key) - 1] as Section);
+            if (/^[1-9]$/.test(event.key) && Number(event.key) <= nav.length) {
+                go.section(nav[Number(event.key) - 1] as Section);
 
                 return handled();
             }
 
             if (state.hover === "nav") {
-                const index = NAV.indexOf(
+                const index = nav.indexOf(
                     navFor(section, second, {
                         processes: queryClient.getQueryData<Process[]>(["processes"]) ?? [],
                         schedules: queryClient.getQueryData<Schedule[]>(["schedules"]) ?? [],
@@ -176,10 +177,10 @@ export function useKeyboard(pageTarget: () => Target | null): void {
 
                 switch (event.key) {
                     case "ArrowDown":
-                        go.section(NAV[Math.min(NAV.length - 1, index + 1)] as Section);
+                        go.section(nav[Math.min(nav.length - 1, index + 1)] as Section);
                         return handled();
                     case "ArrowUp":
-                        go.section(NAV[Math.max(0, index - 1)] as Section);
+                        go.section(nav[Math.max(0, index - 1)] as Section);
                         return handled();
                     case "ArrowRight":
                     case "Enter":
@@ -222,5 +223,5 @@ export function useKeyboard(pageTarget: () => Target | null): void {
         window.addEventListener("keydown", onKey);
 
         return () => window.removeEventListener("keydown", onKey);
-    }, [router, go, pageTarget]);
+    }, [router, go, nav, pageTarget]);
 }

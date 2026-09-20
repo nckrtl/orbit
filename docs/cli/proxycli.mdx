@@ -1,0 +1,119 @@
+---
+title: "proxycli"
+description: "Enable the fleet CLIProxyAPI quota collector, read provider pools, and toggle accounts."
+---
+
+The family belongs to the `proxycli` extension. Its commands stay hidden and refuse to run with `extension.disabled` until you enable them on the operator machine:
+
+```bash
+orbit extension:enable proxycli
+```
+
+Fleet enable deploys the collector Process and `https://proxycli.orbit`. Local enable alone does not start collection. See [proxycli](/reference/proxycli).
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`proxycli:enable`](#orbit-proxyclienable) | Deploy the collector and publish `proxycli.orbit`. |
+| [`proxycli:disable`](#orbit-proxyclidisable) | Stop the collector and withdraw `proxycli.orbit`. |
+| [`proxycli:status`](#orbit-proxyclistatus) | Show whether the fleet feature is enabled. |
+| [`proxycli:list`](#orbit-proxyclilist) | List provider pools from the Valkey snapshot. |
+| [`proxycli:show`](#orbit-proxyclishow) | Show one provider and its accounts. |
+| [`proxycli:update`](#orbit-proxycliupdate) | Enable or disable one CLIProxyAPI account. |
+
+Every command accepts `--json`.
+
+## orbit proxycli:enable
+
+Deploy the collector Process on one Node and publish `https://proxycli.orbit`.
+
+```bash
+orbit proxycli:enable --node=<node> --cache-connection=<slug> --cliproxy-url=<url> --cliproxy-management-key-file=<path> [--json]
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `--node` | yes | Node ID or name that already hosts CLIProxyAPI. |
+| `--cache-connection` | yes | Redis Database connection slug for shared Valkey. |
+| `--cliproxy-url` | yes | CLIProxyAPI Management API origin, for example `http://127.0.0.1:8317`. |
+| `--cliproxy-management-key-file` | yes in every mode | File that contains only the management key. The CLI never accepts the key on the command line. |
+
+Enable fails closed when the cache connection is missing, is not Redis, or names a Node without the `database` role. JSON returns `enabled`, `hostname`, `node_id`, and `cache_connection`. The response never includes tokens or the management key.
+
+## orbit proxycli:disable
+
+Stop the collector, remove the Process, and withdraw `proxycli.orbit`.
+
+```bash
+orbit proxycli:disable [--json]
+```
+
+Disabling an already disabled feature succeeds. The Redis connection and Valkey data stay.
+
+## orbit proxycli:status
+
+Show the fleet feature state.
+
+```bash
+orbit proxycli:status [--json]
+```
+
+Human output is a detail record with enabled, hostname, Node, cache connection, and last snapshot time. JSON uses the same fields. `collected_at` is null until the collector writes a snapshot.
+
+## orbit proxycli:list
+
+List provider pools from the snapshot.
+
+```bash
+orbit proxycli:list [--json]
+```
+
+The command reads Valkey. It does not call CLIProxyAPI. A disabled feature fails with `proxycli.disabled`.
+
+## orbit proxycli:show
+
+Show one provider's pool and accounts.
+
+```bash
+orbit proxycli:show <provider> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `provider` | yes | Provider slug such as `codex` or `claude`. |
+
+Windows use duration titles in management.html#/quota order. A missing window is omitted.
+
+## orbit proxycli:update
+
+Enable or disable one CLIProxyAPI account, then recompile pools from the cached snapshot.
+
+```bash
+orbit proxycli:update <account> --disabled|--enabled [--json]
+```
+
+| Argument or option | Required | Meaning |
+| --- | --- | --- |
+| `account` | yes | Auth file name or `auth_index`. |
+| `--disabled` or `--enabled` | one required | The new account state. |
+
+The command updates CLIProxyAPI status and rewrites the snapshot from cache. It does not fetch quota.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.disabled` | The `proxycli` extension is disabled on this machine. |
+| `proxycli.disabled` | The fleet feature is disabled. |
+| `proxycli.cache_missing` | Enable names no Redis Database connection. |
+| `proxycli.cache_invalid` | The named connection is not Redis. |
+| `proxycli.cache_unplaced` | The connection's Node has no active `database` role. |
+| `proxycli.source_publication_failed` | Enable could not install the collector script on the Node. |
+| `proxycli.certificate_publication_failed` | Enable could not publish the Orbit CA leaf. |
+| `proxycli.caddy_publication_failed` | Enable could not install the `proxycli.orbit` Caddy site. |
+
+## Related
+
+- [proxycli](/reference/proxycli) owns placement, publication, and the cache contract.
+- [`extension`](/cli/extension) reveals or hides this family.

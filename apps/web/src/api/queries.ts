@@ -16,8 +16,10 @@ import type {
     ManagedFirewallRule,
     Node,
     Process,
+    ProxyCliStatus,
     QueueReport,
     QueueState,
+    QuotaProvider,
     Schedule,
 } from "./types";
 
@@ -173,6 +175,38 @@ export const liveFirewallQuery = (nodeId: number) =>
         queryKey: ["live-firewall", nodeId],
         queryFn: () => get<LiveFirewallSnapshot>(`/api/v1/nodes/${nodeId}/live-firewall-rules`),
         refetchInterval: 15_000,
+        retry: false,
+    });
+
+const disabledProxyCli = (): ProxyCliStatus => ({
+    enabled: false,
+    hostname: "proxycli.orbit",
+    node_id: null,
+    cache_connection: null,
+    collected_at: null,
+});
+
+/** Fleet proxycli status. A disabled or unreachable feature hides the Quota section. */
+export const proxycliStatusQuery = queryOptions({
+    queryKey: ["proxycli-status"],
+    queryFn: () => get<ProxyCliStatus>("/api/v1/proxycli").catch(() => disabledProxyCli()),
+    retry: false,
+});
+
+/** Provider pools from the Valkey snapshot. A refresh never starts an upstream poll. */
+export const proxycliProvidersQuery = queryOptions({
+    queryKey: ["proxycli-providers"],
+    queryFn: () => get<QuotaProvider[]>("/api/v1/proxycli/providers"),
+    refetchInterval: POLL_SECONDS * 1000,
+    retry: false,
+});
+
+export const proxycliProviderQuery = (provider: string) =>
+    queryOptions({
+        queryKey: ["proxycli-providers", provider],
+        queryFn: () =>
+            get<QuotaProvider>(`/api/v1/proxycli/providers/${encodeURIComponent(provider)}`),
+        refetchInterval: POLL_SECONDS * 1000,
         retry: false,
     });
 

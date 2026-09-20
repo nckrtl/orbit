@@ -46,17 +46,19 @@ it('hides and refuses Herdr commands until the extension is enabled', function (
 it('lists Herdr as an opt-in extension', function (): void {
     expect(app(LocalExtensionState::class)->enabled('herdr'))->toBeFalse();
     expect(Artisan::call('extension:list', ['--json' => true]))->toBe(0);
-    expect(trim(Artisan::output()))->toBe('{"extensions":[{"extension":"herdr","enabled":false}]}');
+    expect(trim(Artisan::output()))->toBe('{"extensions":[{"extension":"herdr","enabled":false},{"extension":"proxycli","enabled":false}]}');
 });
 
 it('renders extension states as a read-only table without prompting or ANSI', function (): void {
     expect(Artisan::call('extension:list'))->toBe(0);
-    expect(Artisan::output())->toContain('EXTENSION', 'STATE', 'herdr', 'disabled')
+    expect(Artisan::output())->toContain('EXTENSION', 'STATE', 'herdr', 'proxycli', 'disabled')
         ->not->toContain("\e[", 'Press / to search');
 
     app(LocalExtensionState::class)->enable('herdr');
-    expect(Artisan::call('extension:list'))->toBe(0);
-    expect(Artisan::output())->toContain('herdr', 'enabled')->not->toContain('disabled');
+    expect(Artisan::call('extension:list', ['--json' => true]))->toBe(0);
+    expect(trim(Artisan::output()))->toBe(
+        '{"extensions":[{"extension":"herdr","enabled":true},{"extension":"proxycli","enabled":false}]}',
+    );
 });
 
 it('reports idempotent local extension changes with their actual resulting state', function (string $verb, bool $enabled): void {

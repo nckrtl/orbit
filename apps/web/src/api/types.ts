@@ -97,6 +97,38 @@ export type AnalyticsHost = {
     /** Null while the instance has no domain to point the host at. */
     dns: { type: string; name: string; value: string } | null;
 };
+/** One CLIProxyAPI quota window. A missing window is omitted, never shown as zero. */
+export type QuotaWindow = {
+    label: string;
+    used_percent: number;
+    remaining_percent: number;
+    resets_at: string | null;
+};
+
+export type QuotaAccount = {
+    id: string;
+    provider: string;
+    label: string;
+    disabled: boolean;
+    status: string | null;
+    windows: QuotaWindow[];
+    error: string | null;
+};
+
+export type QuotaProvider = {
+    provider: string;
+    windows: QuotaWindow[];
+    accounts: QuotaAccount[];
+};
+
+export type ProxyCliStatus = {
+    enabled: boolean;
+    hostname: string;
+    node_id: number | null;
+    cache_connection: string | null;
+    collected_at: string | null;
+};
+
 /** An App instance's analytics: its tracking hosts, and what the operator does next. */
 export type InstanceAnalytics = {
     instance_id: number;

@@ -23,7 +23,8 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
 - **Database** — A Node role that installs and manages Docker for shared database processes. See [Database role](/reference/database-role).
-- **Database connection** — A registered MySQL, PostgreSQL, or SQLite credential record. See [Database connections](/reference/database-connections).
+- **Database connection** — A registered MySQL, PostgreSQL, SQLite, or Redis credential record. See [Database connections](/reference/database-connections).
+- **proxycli** — An optional fleet extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at `proxycli.orbit`. See [proxycli](/reference/proxycli).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
 - **Process** — A systemd service or Docker container that Orbit manages for an Instance or Node. See [App processes and schedules](/reference/app-processes-and-schedules).
 - **Runtime hibernation** — Pausing idle development processes and removing rebuildable dependencies after longer idle periods. An HTTP request restores dependencies and wakes configured processes. Keep-alive workers stay running. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).

@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Analytics\AnalyticsHostname;
+use App\Domain\ProxyCli\ProxyCliHostname;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WebSocket\WebSocketHostname;
 
 final class ReservedPrivateHostname
 {
     /** @var list<string> */
-    public const array NAMES = ['gateway.orbit', 'metrics.orbit', WebSocketHostname::Value, AnalyticsHostname::Value];
+    public const array NAMES = ['gateway.orbit', 'metrics.orbit', WebSocketHostname::Value, AnalyticsHostname::Value, ProxyCliHostname::Value];
 
     public static function assertAvailable(string $domain): void
     {

@@ -128,6 +128,12 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessUsageIndex;
+use App\Domain\ProxyCli\ProxyCliCache;
+use App\Domain\ProxyCli\ProxyCliManagementClient;
+use App\Domain\ProxyCli\ProxyCliPublicationManager;
+use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
+use App\Domain\ProxyCli\ProxyCliSnapshotStore;
+use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -276,6 +282,13 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\PrometheusProcessRuntimeStatusIndex;
 use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\ProxyCli\ArrayProxyCliCache;
+use App\Infrastructure\ProxyCli\HttpCliProxyApiClient;
+use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
+use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
+use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
+use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
+use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
@@ -311,6 +324,7 @@ use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
+use App\Models\DatabaseConnection;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\Console\InstallCommand;
@@ -439,10 +453,37 @@ final class AppServiceProvider extends ServiceProvider
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
+        ProxyCliManagementClient::class => HttpCliProxyApiClient::class,
     ];
 
     public function register(): void
     {
+        $this->app->singleton(ArrayProxyCliCache::class);
+        $this->app->singleton(ProxyCliCache::class, function ($app): ProxyCliCache {
+            if ($app->environment('testing')) {
+                return $app->make(ArrayProxyCliCache::class);
+            }
+
+            $slug = $app->make(ProxyCliState::class)->cacheConnection();
+            $connection = is_string($slug)
+                ? DatabaseConnection::query()->where('slug', $slug)->first()
+                : null;
+
+            return $connection instanceof DatabaseConnection
+                ? new ValkeyProxyCliCache($connection)
+                : $app->make(ArrayProxyCliCache::class);
+        });
+        $this->app->singleton(ProxyCliSnapshotStore::class);
+        if ($this->app->environment('testing')) {
+            $this->app->singleton(RecordingProxyCliRuntimeLifecycle::class);
+            $this->app->singleton(RecordingProxyCliPublicationManager::class);
+            $this->app->singleton(ProxyCliRuntimeLifecycle::class, static fn ($app): ProxyCliRuntimeLifecycle => $app->make(RecordingProxyCliRuntimeLifecycle::class));
+            $this->app->singleton(ProxyCliPublicationManager::class, static fn ($app): ProxyCliPublicationManager => $app->make(RecordingProxyCliPublicationManager::class));
+        } else {
+            $this->app->bind(ProxyCliRuntimeLifecycle::class, NativeProxyCliRuntimeLifecycle::class);
+            $this->app->bind(ProxyCliPublicationManager::class, NativeProxyCliPublicationManager::class);
+        }
+
         $this->app->bind(
             SweepIdleAppDevRuntimesAction::class,
             static fn ($app): SweepIdleAppDevRuntimesAction => new SweepIdleAppDevRuntimesAction(

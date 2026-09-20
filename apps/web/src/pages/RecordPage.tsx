@@ -63,6 +63,7 @@ import { Status } from "../ui/Status";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { AnalyticsPanel } from "./AnalyticsPanel";
 import { QueuePanel } from "./QueuePanel";
+import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
 
 const GAPS = "gap-x-[1ch] gap-y-[16px]";
@@ -639,6 +640,10 @@ export function RecordPage() {
         rows.find((row) => String(row.id) === id);
 
     const page = (() => {
+        if (section === "quota") {
+            return <QuotaProviderPage />;
+        }
+
         switch (section) {
             case "nodes": {
                 const node = find(fleet.nodes);

@@ -44,6 +44,7 @@ final readonly class CommandVocabulary
         'metrics' => ['status'],
         'node' => ['relocate', 'rename'],
         'process' => ['logs', 'restart', 'start', 'stop'],
+        'proxycli' => ['status'],
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
