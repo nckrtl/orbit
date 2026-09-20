@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 133 concrete public Gateway API operations:
+The SDK models exactly 139 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -20,6 +20,7 @@ The SDK models exactly 133 concrete public Gateway API operations:
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
+- proxycli: enable, disable, status, provider list, provider show, and account update.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -99,6 +100,11 @@ operations. Keep the public API typed and small.
   responses omit passwords and redact credential-shaped values. The Gateway
   owns validation, encryption, persistence, Process execution, stored-environment writes, and
   inspection execution.
+- Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI
+  URL, and management key on enable; a provider slug on show; and an account
+  identity plus disabled flag on update. Status, disable, and provider list are
+  bodyless. Item and collection responses omit tokens and the management key.
+  The Gateway owns Valkey placement, collection, publication, and pooling.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   schedule, tool, process, firewall, herdr, database_connection, and route.
   Keep Doctor verify-only and policy-free.

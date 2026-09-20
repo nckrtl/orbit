@@ -42,7 +42,7 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules) or an App Schedule definition |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
-`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
+`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, `metrics:exporter`, and `proxycli` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
 
 ## Family-specific actions
 
@@ -59,6 +59,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
 | `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance, or scans its dependencies. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
+| `proxycli` | `status` | The CLI reports the fleet CLIProxyAPI quota collector. |
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |

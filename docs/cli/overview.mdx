@@ -114,11 +114,12 @@ A successful command exits with `0`. A handled failure returns the command's doc
 
 ## Enable an extension
 
-Some command families are hidden until you enable them on the operator machine. Extension state is local and changes nothing on the Gateway.
+Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `herdr` family stays local. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
 
 ```bash
 orbit extension:list
 orbit extension:enable herdr
+orbit extension:enable proxycli
 ```
 
 The [extension family](/cli/extension) lists the available extensions.

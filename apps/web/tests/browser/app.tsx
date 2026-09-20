@@ -14,7 +14,7 @@ import "../../src/styles.css";
  * Mounts the whole app at a URL against a fresh demo Gateway. Each test gets its own fleet, its
  * own URL history, and an empty query cache, so no test sees what another one changed.
  */
-export async function openApp(path = "/") {
+export async function openApp(path = "/", options: { proxycli?: boolean } = {}) {
     document.getElementById("app")?.remove();
     queryClient.clear();
     ui.reset();
@@ -29,6 +29,10 @@ export async function openApp(path = "/") {
     ensureAnnotationRuntime();
 
     const gateway = installDemo();
+
+    if (options.proxycli === true) {
+        gateway.enableProxyCli();
+    }
 
     const container = document.createElement("div");
     container.id = "app";

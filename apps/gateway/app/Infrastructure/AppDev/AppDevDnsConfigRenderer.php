@@ -8,6 +8,8 @@ use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\AppDev\ClusterRouterDnsSelection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\ProxyCli\ProxyCliHostname;
+use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
 use App\Models\HerdrSession;
@@ -147,11 +149,38 @@ final readonly class AppDevDnsConfigRenderer
             $records->push('host-record='.AnalyticsHostname::Value.",{$analytics->wireguard_ip}");
         }
 
+        $proxycli = $this->proxycliNode();
+
+        if ($proxycli instanceof Node) {
+            $records->push('host-record='.ProxyCliHostname::Value.",{$proxycli->wireguard_ip}");
+        }
+
         foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
             $records->push($record);
         }
 
         return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
+    }
+
+    private function proxycliNode(): ?Node
+    {
+        $state = app(ProxyCliState::class);
+
+        if (! $state->enabled()) {
+            return null;
+        }
+
+        $nodeId = $state->nodeId();
+
+        if ($nodeId === null) {
+            return null;
+        }
+
+        $node = Node::query()->find($nodeId);
+
+        return $node instanceof Node && is_string($node->wireguard_ip) && $node->wireguard_ip !== ''
+            ? $node
+            : null;
     }
 
     /** The Node that holds a singleton role, counting a pending Node that is still provisioning it. */

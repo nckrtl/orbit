@@ -9,7 +9,7 @@ export class GatewayError extends Error {
     }
 }
 
-export type Method = "GET" | "POST" | "DELETE";
+export type Method = "GET" | "POST" | "PATCH" | "DELETE";
 
 /** What carries a request to a Gateway: `fetch` by default, the in-memory demo Gateway in demo mode and tests. */
 export type Transport = (
