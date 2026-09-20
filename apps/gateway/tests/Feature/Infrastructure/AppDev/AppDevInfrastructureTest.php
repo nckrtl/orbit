@@ -12,6 +12,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -235,6 +236,34 @@ it('renders isolated pools and private Caddy listeners for every active AppInsta
             ->toContain('0.0.0.0:443')
             ->not->toContain('127.0.0.1:443');
     }
+});
+
+it('stops rendering a Route once another Route has replaced it', function (): void {
+    [$node, $app] = app_dev_runtime_models();
+    $appInstance = app_dev_supported_app_instance($node, $app->id);
+    $retired = app_dev_supported_route($appInstance, 'before.app-dev.orbit');
+    $replacement = Route::query()->create([
+        'app_id' => $retired->app_id,
+        'node_id' => $retired->node_id,
+        'domain' => 'after.app-dev.orbit',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $retired->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $retired->update(['replaced_by_route_id' => $replacement->id]);
+    $replacement->targets()->create(['app_instance_id' => $appInstance->id, 'position' => 0]);
+    $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
+    $retired->update(['status' => RouteStatus::Retiring]);
+
+    $caddy = new AppDevCaddyConfigRenderer()->render(new AppDevSiteRepository()->forNode($node));
+
+    // The retired domain keeps answering off the replacement's certificate otherwise, which sends
+    // Caddy to automatic HTTPS for a private Orbit domain.
+    expect($caddy)
+        ->toContain('https://after.app-dev.orbit')
+        ->not->toContain('https://before.app-dev.orbit');
 });
 
 it('hydrates only AppInstance Route sites and never reads leftover Instance or Workspace rows', function (): void {

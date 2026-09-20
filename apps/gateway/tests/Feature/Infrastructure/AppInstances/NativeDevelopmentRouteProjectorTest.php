@@ -299,13 +299,15 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
     expect($sites->forNode($workload, additionalRoute: $replacement)->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test']);
 
+    // Cutover ends the old name. Both sites share one certificate scope, so serving the retired
+    // domain past this point means serving it off the replacement's leaf, which sends Caddy to
+    // automatic HTTPS for a private Orbit domain.
     $route->update(['status' => RouteStatus::Retiring, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
     $replacement->update(['status' => RouteStatus::Active, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
-    expect($sites->forNode($router)->pluck('domain')->sort()->values()->all())->toBe(['feature.acme.test', 'next.acme.test']);
-    expect(new AppDevDnsConfigRenderer($sites)->render())->toContain(
-        "host-record=feature.acme.test,{$router->wireguard_ip}",
-        "host-record=next.acme.test,{$router->wireguard_ip}",
-    );
+    expect($sites->forNode($router)->pluck('domain')->sort()->values()->all())->toBe(['next.acme.test']);
+    expect(new AppDevDnsConfigRenderer($sites)->render())
+        ->toContain("host-record=next.acme.test,{$router->wireguard_ip}")
+        ->not->toContain("host-record=feature.acme.test,{$router->wireguard_ip}");
 });
 
 it('preserves production release sites at the environment synchronization checkpoint', function (): void {

@@ -225,6 +225,12 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $this->dns->convergeHostnameChange($candidate);
     }
 
+    /**
+     * Cleanup runs after cutover, so `$route` is the Route the Node now serves. Both the live
+     * certificate and the staging scopes are named after it: a certificate issued for the retiring
+     * domain would leave the served host without a matching leaf, and Caddy would fall back to
+     * automatic HTTPS for a private Orbit domain.
+     */
     public function cleanup(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
