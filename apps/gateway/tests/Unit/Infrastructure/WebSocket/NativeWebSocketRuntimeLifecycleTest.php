@@ -34,7 +34,9 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
     $prerequisites = $commands[0];
     expect($prerequisites->arguments)->toContain('caddy')
         ->and($prerequisites->arguments)->toContain('composer')
-        ->and($prerequisites->arguments)->toContain('git');
+        ->and($prerequisites->arguments)->toContain('git')
+        ->and($prerequisites->arguments)->toContain('php-curl')
+        ->and($prerequisites->arguments)->toContain('php-xml');
 
     $runtime = $commands[1];
 

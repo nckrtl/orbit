@@ -98,13 +98,13 @@ it('inspects each role with exact package service and firewall requirements', fu
     ],
     'app development' => [
         RoleName::AppDev,
-        ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'],
+        ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip'],
         ['caddy', 'docker'],
         [],
     ],
     'app production' => [
         RoleName::AppProd,
-        ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'],
+        ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'php-curl', 'php-xml', 'unzip'],
         ['caddy', 'docker'],
         [],
     ],
