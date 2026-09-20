@@ -120,10 +120,10 @@ describe('Composer update supervisor', function (): void {
         try {
             composer_update_program_fixture(
                 $root,
-                'printf start > start-marker; sleep 5; printf later > later-marker',
+                'printf start > start-marker; sleep 30; printf later > later-marker',
             );
 
-            $result = composer_update_program_run($root, '1', null, 15.0);
+            $result = composer_update_program_run($root, '8', null, 25.0);
 
             expect($result->exitCode)->toBe(124);
             expect(is_file($root.'/start-marker'))->toBeTrue();

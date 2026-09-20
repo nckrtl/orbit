@@ -5,7 +5,7 @@ description: "How the analytics role runs Plausible Community Edition, where it 
 
 # Analytics role
 
-This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0095](/decisions/0095-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0096](/decisions/0096-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. This page describes planned behavior: neither decision is implemented yet.
+This page tells an operator how Orbit runs Plausible Community Edition for the fleet and how an App instance sends it visits. [ADR 0096](/decisions/0096-run-plausible-through-an-analytics-role) owns the role and its storage, and [ADR 0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host. This page describes planned behavior: neither decision is implemented yet.
 
 ## Prepare the database Processes
 

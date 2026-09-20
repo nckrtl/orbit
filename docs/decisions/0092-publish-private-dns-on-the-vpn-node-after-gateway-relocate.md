@@ -48,4 +48,4 @@ The new Gateway node also had an empty `can_access` list. Operators needed direc
 - Components: apps/gateway, apps/docs, apps/e2e
 - ADRs: amends [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn); leaves [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) unchanged
 - Detail: [Relocate the gateway role](/solutions/relocate-gateway-role), [Private DNS](/reference/private-dns), [Metrics](/reference/metrics), [`node`](/cli/node)
-- Verify: Gateway DnsmasqPrivateDnsManager targeting tests, MetricsRoleBaseline publication-failure tests, RelocateGatewayRoleAction and GatewayRoleBaseline access-grant tests, MCP `node-role-add` boolean schema
+- Verify: Gateway DnsmasqPrivateDnsManager targeting tests, MetricsRoleBaseline publication-failure tests, RelocateNodeRoleAction and GatewayRoleBaseline access-grant tests, MCP `node-role-add` boolean schema

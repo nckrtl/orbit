@@ -552,8 +552,9 @@
               "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
               "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
               "decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
-              "decisions/0095-run-plausible-through-an-analytics-role",
-              "decisions/0096-publish-analytics-tracking-hosts-for-app-instances"
+              "decisions/0095-relocate-relocatable-singleton-roles",
+              "decisions/0096-run-plausible-through-an-analytics-role",
+              "decisions/0097-publish-analytics-tracking-hosts-for-app-instances"
             ]
           }
         ]

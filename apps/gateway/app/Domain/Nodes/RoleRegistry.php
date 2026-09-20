@@ -31,6 +31,7 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: true,
+                relocatable: true,
                 conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database, RoleName::Analytics],
             ),
             RoleName::Vpn => new RoleDefinition(
@@ -38,6 +39,7 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: false,
+                relocatable: false,
                 conflicts: [RoleName::Database],
             ),
             RoleName::Router => new RoleDefinition(
@@ -45,12 +47,14 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: false,
+                relocatable: false,
             ),
             RoleName::Ingress => new RoleDefinition(
                 name: $role,
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: true,
+                relocatable: false,
                 conflicts: [RoleName::AppDev, RoleName::Database],
             ),
             RoleName::AppDev => new RoleDefinition(
@@ -58,6 +62,7 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: true,
                 mutable: true,
+                relocatable: false,
                 conflicts: [RoleName::Gateway, RoleName::AppProd],
             ),
             RoleName::AppProd => new RoleDefinition(
@@ -65,6 +70,7 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: true,
                 mutable: true,
+                relocatable: false,
                 conflicts: [RoleName::Gateway, RoleName::AppDev, RoleName::Database],
             ),
             RoleName::Metrics => new RoleDefinition(
@@ -72,12 +78,14 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: true,
+                relocatable: true,
             ),
             RoleName::Database => new RoleDefinition(
                 name: $role,
                 singleton: false,
                 assignableDuringProvisioning: true,
                 mutable: true,
+                relocatable: false,
                 conflicts: [
                     RoleName::Gateway,
                     RoleName::Vpn,
@@ -90,12 +98,15 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: true,
+                relocatable: true,
             ),
             RoleName::Analytics => new RoleDefinition(
                 name: $role,
                 singleton: true,
                 assignableDuringProvisioning: false,
                 mutable: true,
+                // Moving the role means moving its Process and its publication; remove and add it instead.
+                relocatable: false,
                 conflicts: [RoleName::Gateway],
             ),
         };

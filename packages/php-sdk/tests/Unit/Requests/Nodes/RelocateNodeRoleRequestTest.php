@@ -108,4 +108,33 @@ describe(RelocateNodeRoleRequest::class, function (): void {
                 ->toBe('0198e15d-16c4-7855-8eb2-182b53ad28ba');
         }
     });
+
+    it('includes optional from in the body when set', function (): void {
+        $mockClient = new MockClient([
+            RelocateNodeRoleRequest::class => MockResponse::make([
+                'data' => [
+                    ...node_role_added_gateway_data(),
+                    'node_name' => 'services',
+                    'role' => 'websocket',
+                    'assignment' => [
+                        'id' => 2,
+                        'role' => 'websocket',
+                        'status' => 'active',
+                        'failed_step' => null,
+                        'error_code' => null,
+                    ],
+                ],
+                'meta' => ['request_id' => node_role_request_id()],
+            ]),
+        ]);
+        $connector = node_role_gateway_connector($mockClient);
+        $request = new RelocateNodeRoleRequest(nodeId: 7, role: 'websocket', force: true, from: 3);
+
+        $connector->send($request)->dto();
+
+        expect($request->resolveEndpoint())
+            ->toBe('/api/v1/nodes/7/roles/websocket/relocate')
+            ->and($mockClient->getLastPendingRequest()?->body()->all())
+            ->toBe(['force' => true, 'from' => 3]);
+    });
 });

@@ -11296,7 +11296,7 @@
             "description": ""
           }
         ],
-        "description": "Move the singleton gateway role to another node.",
+        "description": "Move a relocatable singleton role to another node.",
         "requestBody": {
           "required": true,
           "content": {
@@ -11322,7 +11322,12 @@
                   },
                   "force": {
                     "type": "string",
-                    "description": "Confirm the gateway role transfer"
+                    "description": "Confirm the role transfer"
+                  },
+                  "from": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional source Node ID or name"
                   }
                 },
                 "required": [
@@ -11401,7 +11406,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/nodes/7/roles/database/relocate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"role\": \"app-dev\", \"force\": true}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/nodes/7/roles/database/relocate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"role\": \"app-dev\", \"force\": true, \"from\": 1}'\n"
           },
           {
             "lang": "php",

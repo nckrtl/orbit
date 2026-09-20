@@ -1,10 +1,10 @@
 ---
-title: "ADR 0095: Run Plausible through an analytics role"
-sidebarTitle: "0095 Run Plausible through an analytics role"
+title: "ADR 0096: Run Plausible through an analytics role"
+sidebarTitle: "0096 Run Plausible through an analytics role"
 description: "Proposed. Plausible Community Edition runs as a singleton analytics role that owns one container and keeps its data in PostgreSQL and ClickHouse Processes on a database Node."
 ---
 
-# ADR 0095: Run Plausible through an analytics role
+# ADR 0096: Run Plausible through an analytics role
 
 The Gateway runs Plausible Community Edition itself, as a new singleton `analytics` node role. The role owns the Plausible container and nothing else: its PostgreSQL and ClickHouse servers are ordinary Docker Processes on a Node with the `database` role, and Plausible connects to them with the credentials those Processes already carry.
 
@@ -28,7 +28,7 @@ The `database` role is a Docker baseline that owns no containers ([ADR 0070](/de
 - Plausible connects over WireGuard with the credentials each Process already carries in its environment: `POSTGRES_USER` and `POSTGRES_PASSWORD` for PostgreSQL, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB` for ClickHouse, whose container creates that database and user itself. Plausible creates and migrates its own PostgreSQL database each time it starts. Orbit therefore adds no PostgreSQL or ClickHouse provisioner. Removing the role never touches either database; the operator removes the Processes to remove the data.
 - The one generated secret is Plausible's `SECRET_KEY_BASE`. It is stored as a protected setting so that it survives a replaced Process, and it is reused each time the role converges. The two connection URLs are derived at converge time. All three reach the container through the Process environment, which the API hides and log reads redact, as they do for every Process.
 - The Gateway reserves `analytics.orbit` as a private hostname beside `gateway.orbit`, `metrics.orbit`, and `reverb.orbit`. It issues an Orbit CA leaf certificate and renders a Caddy site on the role's own Node that reverse-proxies to the local container, and private DNS answers the name with that Node's WireGuard address, as the websocket role does. Plausible has its own accounts, so the site adds no Gateway authorization in front of it.
-- `analytics:update` changes the pinned Plausible version and converges the container again. Orbit does not create Plausible sites, accounts, or API tokens, and it does not inject a tracking script into an App; [ADR 0096](/decisions/0096-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host.
+- `analytics:update` changes the pinned Plausible version and converges the container again. Orbit does not create Plausible sites, accounts, or API tokens, and it does not inject a tracking script into an App; [ADR 0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) owns the public tracking host.
 
 ## Rejected alternatives
 

@@ -59,7 +59,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
 | `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance, or scans its dependencies. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
-| `node` | `relocate`, `rename` | The CLI moves the singleton `gateway` role to another Node, or changes a Node's unique registry name. |
+| `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |

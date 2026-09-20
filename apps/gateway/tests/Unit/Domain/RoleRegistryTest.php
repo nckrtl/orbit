@@ -29,11 +29,15 @@ describe(RoleRegistry::class, function (): void {
             ->toBeTrue()
             ->and($registry->definition(RoleName::Gateway)->mutable)
             ->toBeTrue()
+            ->and($registry->definition(RoleName::Gateway)->relocatable)
+            ->toBeTrue()
             ->and($registry->definition(RoleName::Vpn)->singleton)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Vpn)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Vpn)->mutable)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Vpn)->relocatable)
             ->toBeFalse()
             ->and($registry->definition(RoleName::Router)->singleton)
             ->toBeFalse()
@@ -65,6 +69,8 @@ describe(RoleRegistry::class, function (): void {
             ->toBeTrue()
             ->and($registry->definition(RoleName::Metrics)->mutable)
             ->toBeTrue()
+            ->and($registry->definition(RoleName::Metrics)->relocatable)
+            ->toBeTrue()
             ->and($registry->definition(RoleName::Database)->singleton)
             ->toBeFalse()
             ->and($registry->definition(RoleName::Database)->assignableDuringProvisioning)
@@ -77,12 +83,16 @@ describe(RoleRegistry::class, function (): void {
             ->toBeTrue()
             ->and($registry->definition(RoleName::WebSocket)->mutable)
             ->toBeTrue()
+            ->and($registry->definition(RoleName::WebSocket)->relocatable)
+            ->toBeTrue()
             ->and($registry->definition(RoleName::Analytics)->singleton)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Analytics)->assignableDuringProvisioning)
             ->toBeFalse()
             ->and($registry->definition(RoleName::Analytics)->mutable)
-            ->toBeTrue();
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Analytics)->relocatable)
+            ->toBeFalse();
     });
 
     it('requires every role definition to declare its lifecycle policy explicitly', function (): void {
@@ -94,6 +104,8 @@ describe(RoleRegistry::class, function (): void {
         expect($parameters->get('assignableDuringProvisioning')?->isDefaultValueAvailable())
             ->toBeFalse()
             ->and($parameters->get('mutable')?->isDefaultValueAvailable())
+            ->toBeFalse()
+            ->and($parameters->get('relocatable')?->isDefaultValueAvailable())
             ->toBeFalse();
     });
 

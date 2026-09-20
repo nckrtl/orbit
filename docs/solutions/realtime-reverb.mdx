@@ -25,7 +25,9 @@ Today the `websocket` role has to go on the same node as the `gateway` role, bec
 
 ### What converge installs on the node
 
-Converge checks out a plain, unmodified Laravel app (`https://github.com/nckrtl/orbit-reverb.git` by default) at `/opt/orbit/websocket`, runs `composer install --no-dev`, and writes that app's own `.env` with a generated `APP_KEY` and the Reverb application credentials the Gateway generated for this role assignment. It installs and enables `orbit-websocket.service`, a systemd unit that runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
+Role prerequisites install `caddy`, `composer`, `git`, `openssl`, `php-curl`, and `php-xml` first. `php-curl` and `php-xml` provide `ext-curl` and `ext-dom`, so `composer install` succeeds on a fresh Ubuntu 26.04 Node that does not already run the Gateway PHP stack. The same two packages are role prerequisites on `app-dev` and `app-prod` hosts.
+
+Converge then checks out a plain, unmodified Laravel app (`https://github.com/nckrtl/orbit-reverb.git` by default) at `/opt/orbit/websocket`, runs `composer install --no-dev`, and writes that app's own `.env` with a generated `APP_KEY` and the Reverb application credentials the Gateway generated for this role assignment. It installs and enables `orbit-websocket.service`, a systemd unit that runs `php artisan reverb:start --host=127.0.0.1 --port=8790` with `Restart=always`.
 
 Alongside the app itself, converge reserves `reverb.orbit` as a private hostname, issues it an Orbit CA leaf certificate, and renders a Caddy site on the role's node that terminates that certificate and reverse-proxies to the local Reverb process; `reverse_proxy` admits a WebSocket upgrade by default. Gateway private DNS answers `reverb.orbit` with the role's node WireGuard address, the same way it answers `gateway.orbit` and `metrics.orbit`.
 
@@ -33,14 +35,21 @@ The repository, ref, install path, and port all have config defaults (`ORBIT_WEB
 
 ### Moving the role to another node
 
-Add the role to the new node, then remove it from the old one:
+Relocate the singleton assignment in one request:
 
 ```bash
-orbit node:role:add <new-node> websocket --converge
-orbit node:role:remove <old-node> websocket --converge
+orbit node:role:relocate <new-node> websocket --force
 ```
 
-Adding the role converges the checkout, the systemd unit, the certificate, the Caddy site, and repoints the `reverb.orbit` DNS record to the new node in the same step. The Gateway keeps the one generated set of Reverb credentials across the move, so no client reconfiguration is needed.
+Relocate copies the generated Reverb identity onto the target when that Node does not already have one, converges the checkout, the systemd unit, the certificate, and the Caddy site, and repoints `reverb.orbit` to the new Node. It retracts the source publication and runtime. It does not overwrite credentials the target already has.
+
+When the target already holds `websocket` and leftovers remain on another Node, name that source:
+
+```bash
+orbit node:role:relocate <new-node> websocket --from <old-node> --force
+```
+
+Remove-then-add is not the supported path. The role is a singleton, so add refuses while the old assignment exists, and remove-first drops the generated identity.
 
 ## Limits
 
