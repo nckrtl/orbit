@@ -33,6 +33,15 @@ return new class extends Migration
             DB::statement('DROP TRIGGER IF EXISTS '.$trigger->name);
         }
 
+        // Live main stored a finished public edge as public_publication=active and
+        // replacement_step=null. Write the finished public step before the twin field
+        // disappears so those Routes stay live.
+        DB::table('routes')
+            ->where('publication', 'public')
+            ->where('public_publication', 'active')
+            ->whereIn('status', ['active', 'activating'])
+            ->update(['replacement_step' => 'ingress-firewall']);
+
         Schema::table('routes', static function (Blueprint $table): void {
             $table->dropColumn('public_publication');
         });
