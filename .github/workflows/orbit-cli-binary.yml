@@ -40,6 +40,8 @@ jobs:
         run: composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 
       - name: Build Ubuntu x86_64 binary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bin/orbit-build-cli-binary linux x64 "${{ steps.version.outputs.value }}"
 
       - name: Upload Ubuntu x86_64 binary
@@ -72,6 +74,8 @@ jobs:
         run: composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 
       - name: Build macOS arm64 binary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bin/orbit-build-cli-binary mac arm "${{ steps.version.outputs.value }}"
 
       - name: Upload macOS arm64 binary
