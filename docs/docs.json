@@ -429,6 +429,7 @@
               "GET /api/v1/task-groups",
               "POST /api/v1/task-groups",
               "GET /api/v1/task-groups/{group}",
+              "POST /api/v1/task-groups/{group}/complete",
               "POST /api/v1/task-groups/{group}/tasks",
               "POST /api/v1/tasks/disable",
               "POST /api/v1/tasks/enable",

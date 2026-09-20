@@ -190,6 +190,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'schedule:show' => [ServingNode::AppOwning, ServingNode::ScheduleOwning],
         'schedule:update' => ServingNode::AppOwning,
         'tasks:add' => ServingNode::Gateway,
+        'tasks:complete' => ServingNode::Gateway,
         'tasks:create' => ServingNode::Gateway,
         'tasks:disable' => ServingNode::Gateway,
         'tasks:enable' => ServingNode::Gateway,

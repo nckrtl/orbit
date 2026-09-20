@@ -24,6 +24,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
             'notify_coder' => ['sometimes', 'boolean'],
+            'notify_on_settle' => ['sometimes', 'boolean'],
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
@@ -39,6 +40,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 'title',
                 'brief',
                 'notify_coder',
+                'notify_on_settle',
                 'tasks',
             ]);
         } catch (UnexpectedValueException $exception) {
@@ -65,7 +67,7 @@ final class CreateTaskGroupRequest extends FormRequest
             appId: (int) $this->validated('app_id'),
             title: (string) $this->validated('title'),
             brief: (string) $this->validated('brief'),
-            notifyCoder: $this->boolean('notify_coder'),
+            notifyCoder: $this->boolean('notify_coder') || $this->boolean('notify_on_settle'),
             tasks: $tasks,
         );
     }

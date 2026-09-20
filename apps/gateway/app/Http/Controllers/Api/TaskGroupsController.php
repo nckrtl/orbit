@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Tasks\AddTaskAction;
+use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
@@ -15,6 +16,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tasks\AddTaskRequest;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
+use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Models\TaskGroup;
 use Illuminate\Http\JsonResponse;
@@ -58,6 +60,15 @@ final class TaskGroupsController extends Controller
 
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function show(Request $request, TaskGroup $group, ShowTaskGroupAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => TaskGroupData::fromModel($action->execute($group))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function complete(EmptyTasksRequest $request, TaskGroup $group, CompleteTaskGroupAction $action): JsonResponse
     {
         return response()->json([
             'data' => TaskGroupData::fromModel($action->execute($group))->toArray(),

@@ -15700,7 +15700,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
+        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15721,6 +15721,9 @@
                     "maxLength": 8000
                   },
                   "notify_coder": {
+                    "type": "boolean"
+                  },
+                  "notify_on_settle": {
                     "type": "boolean"
                   },
                   "tasks": {
@@ -15923,6 +15926,110 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/complete": {
+      "post": {
+        "operationId": "tasks-complete",
+        "summary": "Complete a Task group",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          }
+        ],
+        "description": "Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskGroup"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/complete\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/tasks": {
       "post": {
         "operationId": "tasks-add",
@@ -16070,7 +16177,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, and show return `tasks.disabled`.",
+        "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, and complete return `tasks.disabled`.",
         "requestBody": {
           "required": false,
           "content": {

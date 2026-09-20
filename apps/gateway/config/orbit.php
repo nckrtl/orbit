@@ -39,6 +39,11 @@ return [
         'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
         'token' => env('ORBIT_T3_TOKEN'),
     ],
+    'tasks' => [
+        'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
+        'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
+        'github_token' => env('ORBIT_TASKS_GITHUB_TOKEN'),
+    ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
         'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),

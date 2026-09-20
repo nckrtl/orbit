@@ -12,13 +12,21 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
+use App\Domain\Tasks\NullCoderSettleNotifier;
+use App\Domain\Tasks\NullTaskPullRequestOpener;
+use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\T3Dispatcher;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSettleMetrics;
+use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\App as OrbitApp;
@@ -363,6 +371,9 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
+    app()->instance(TaskPullRequestOpener::class, new NullTaskPullRequestOpener);
+    app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(new NullTaskWorkspaceDiffReader));
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     $claimed = app(TaskScheduler::class)->claimNext();
     $first = $claimed?->tasks->first();
@@ -393,4 +404,84 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
             TaskStatus::Completed,
             TaskStatus::Completed,
         ]);
+});
+
+it('opens the pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {
+    $this->freezeTime();
+    $app = scheduler_app('settle-app');
+    $node = scheduler_node('settle-node', '10.44.0.95');
+    $instance = scheduler_instance($app, $node, 'settle');
+    $group = queued_group($app, 'Settle', $instance);
+    $group->notify_coder = true;
+    $group->save();
+    $first = $group->tasks->first();
+    $first?->update(['tokens' => 40]);
+    $opener = new class implements TaskPullRequestOpener
+    {
+        public function open(TaskGroup $group): ?string
+        {
+            return 'https://github.com/nckrtl/orbit/pull/543';
+        }
+    };
+    $metrics = new class implements TaskSettleMetricsCollector
+    {
+        public function collect(TaskGroup $group): TaskSettleMetrics
+        {
+            return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500);
+        }
+    };
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public ?TaskGroup $notified = null;
+
+        public function notify(TaskGroup $group): void
+        {
+            $this->notified = $group;
+        }
+    };
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, new class implements AgentSpawner
+    {
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            return 'reviewer-thread';
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            return 'implementer-'.$task->position;
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return 'sha';
+        }
+    });
+    app()->instance(TaskPullRequestOpener::class, $opener);
+    app()->instance(TaskSettleMetricsCollector::class, $metrics);
+    app()->instance(CoderSettleNotifier::class, $notifier);
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
+    $settled = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+
+    expect($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543')
+        ->and($settled->tokens)->toBe(40)
+        ->and($settled->line_diff)->toBe(12)
+        ->and($settled->duration_ms)->toBe(1500)
+        ->and($settled->settled_at)->not->toBeNull()
+        ->and($notifier->notified?->id)->toBe($settled->id)
+        ->and($notifier->notified?->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543');
 });
