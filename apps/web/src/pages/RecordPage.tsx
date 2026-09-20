@@ -7,6 +7,7 @@ import {
     deploymentLogQuery,
     deploymentsQuery,
     type Fleet,
+    instanceAnalyticsQuery,
     instanceLogsQuery,
     liveFirewallQuery,
     managedFirewallQuery,
@@ -21,6 +22,7 @@ import type {
     Deployment,
     FirewallRule,
     Instance,
+    InstanceAnalytics,
     LiveFirewallMatch,
     LiveFirewallRule,
     ManagedFirewallRule,
@@ -55,7 +57,7 @@ import { useGo } from "../ui/go";
 import { LogPane } from "../ui/LogPane";
 import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
-import { Properties } from "../ui/Properties";
+import { Properties, type Property } from "../ui/Properties";
 import { Status } from "../ui/Status";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { QueuePanel } from "./QueuePanel";
@@ -356,11 +358,41 @@ const deploymentColumns: Column<Deployment>[] = [
     { header: "Status", width: 14, value: (d) => d.status },
 ];
 
+/**
+ * The instance's tracking hosts, each a link to its script, and the private dashboard. An instance
+ * without tracking shows nothing: the menu offers to enable it when an analytics role exists.
+ */
+function analyticsProperties(analytics: InstanceAnalytics | undefined): Property[] {
+    if (analytics === undefined || !analytics.enabled) {
+        return [];
+    }
+
+    return [
+        ...analytics.hosts.map((host, index) => ({
+            name: index === 0 ? "Analytics" : "",
+            value:
+                host.public_publication === "active" ? host.host : `${host.host} · ${host.status}`,
+            warn: host.error_code !== null,
+            onOpen: host.error_code === null ? () => openInNewTab(host.script_url) : undefined,
+        })),
+        ...(analytics.dashboard_url === null
+            ? []
+            : [
+                  {
+                      name: "Dashboard",
+                      value: analytics.dashboard_url.replace(/^https?:\/\//, ""),
+                      onOpen: () => openInNewTab(analytics.dashboard_url as string),
+                  },
+              ]),
+    ];
+}
+
 function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
     const go = useGo();
     const deployments = useQuery(deploymentsQuery(instance.id));
     const logs = useQuery(instanceLogsQuery(instance.id));
     const hasDeployments = (deployments.data?.length ?? 0) > 0;
+    const analytics = useQuery(instanceAnalyticsQuery(instance.id)).data;
     const schedules = useMemo(() => scheduleColumns(fleet, "none"), [fleet]);
     const app = fleet.apps.find((candidate) => candidate.id === instance.app.id);
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
@@ -397,6 +429,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                             value: instance.status,
                             warn: !instanceHealthy(instance),
                         },
+                        ...analyticsProperties(analytics),
                         { name: "Checkout", value: instance.checkout_path },
                         { name: "Selected branch", value: instance.selected_branch },
                         { name: "Deploy steps", value: `${instance.deploy_steps.length} steps` },

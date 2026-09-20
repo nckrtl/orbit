@@ -10,6 +10,7 @@ import type {
     DeploymentEvent,
     FirewallRule,
     Instance,
+    InstanceAnalytics,
     LiveFirewallSnapshot,
     ManagedFirewallRule,
     Node,
@@ -171,6 +172,15 @@ export const liveFirewallQuery = (nodeId: number) =>
         queryKey: ["live-firewall", nodeId],
         queryFn: () => get<LiveFirewallSnapshot>(`/api/v1/nodes/${nodeId}/live-firewall-rules`),
         refetchInterval: 15_000,
+        retry: false,
+    });
+
+/** The tracking hosts an instance publishes for the analytics role. They change only on enable and disable. */
+export const instanceAnalyticsQuery = (id: number) =>
+    queryOptions({
+        queryKey: ["instance-analytics", id],
+        queryFn: () => get<InstanceAnalytics>(`/api/v1/instances/${id}/analytics`),
+        staleTime: 60_000,
         retry: false,
     });
 
