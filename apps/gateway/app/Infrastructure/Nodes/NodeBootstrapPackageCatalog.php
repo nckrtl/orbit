@@ -10,7 +10,7 @@ use App\Models\Node;
 final class NodeBootstrapPackageCatalog
 {
     /** @var list<string> */
-    private const PHP_COMPOSER_HOST_PACKAGES = [
+    private const array PHP_COMPOSER_HOST_PACKAGES = [
         'php-curl',
         'php-xml',
     ];
