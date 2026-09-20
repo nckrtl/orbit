@@ -23,7 +23,8 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--instance= : Positive AppInstance ID or exact development Route domain}
         {--preset= : Process preset: vp-dev, agentation-mcp, or antigravity-watch}
         {--node= : Node ID or registered name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
@@ -184,7 +185,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         if ($this->stringOption('for') !== null) {
             return $this->renderGatewayFailure(
                 'process.option_invalid',
-                'The --for option requires --app.',
+                'The --for option requires --project or --app.',
             );
         }
 
@@ -264,7 +265,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
-                'The --app option is required.',
+                'The --project or --app option is required.',
             );
         }
 

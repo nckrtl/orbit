@@ -59,6 +59,7 @@ function tui_test_state(
         id: 1,
         name: 'Charlie Shop',
         slug: 'charlie-shop',
+        type: 'laravel-app',
         repositoryUrl: 'https://example.test/charlie-shop.git',
         defaultBranch: 'main',
         root: null,

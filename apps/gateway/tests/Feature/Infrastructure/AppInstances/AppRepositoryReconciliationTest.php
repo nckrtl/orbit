@@ -23,6 +23,8 @@ beforeEach(function (): void {
 function orb101_repository_data(string $url): UpdateAppData
 {
     return new UpdateAppData(
+        typeProvided: false,
+        type: null,
         slugProvided: false,
         slug: null,
         repositoryUrlProvided: true,

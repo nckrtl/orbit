@@ -151,13 +151,13 @@ it('records database create destroy add and remove command names and AppInstance
 
     expect(Activity::query()->where('request_id', $add->json('meta.request_id'))->sole())
         ->command->toBe('instance:database:add')
-        ->subject_type->toBe(AppInstance::class)
+        ->subject_type->toBe('instance')
         ->subject_id->toBe($instance->id)
         ->target_node_id->toBe($instance->node_id);
 
     expect(Activity::query()->where('request_id', $remove->json('meta.request_id'))->sole())
         ->command->toBe('instance:database:remove')
-        ->subject_type->toBe(AppInstance::class)
+        ->subject_type->toBe('instance')
         ->subject_id->toBe($instance->id)
         ->target_node_id->toBe($instance->node_id);
 

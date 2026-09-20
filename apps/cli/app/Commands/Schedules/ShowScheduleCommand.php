@@ -21,7 +21,8 @@ final class ShowScheduleCommand extends ScheduleItemCommand
     #[\Override]
     protected $signature = 'schedule:show
         {schedule : Schedule UUID or definition name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

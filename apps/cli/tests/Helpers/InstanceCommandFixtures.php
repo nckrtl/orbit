@@ -52,6 +52,7 @@ function registration_payload(): array
             'id' => 3,
             'name' => 'acme',
             'slug' => 'acme',
+            'type' => 'laravel-app',
             'repository_url' => 'git@github.com:acme/acme.git',
             'default_branch' => 'main',
             'root' => 'public',

@@ -71,11 +71,11 @@ it('selects App production definitions instead of development or candidate overr
     $this->action->execute($this->target);
 
     $copy = Process::query()
-        ->where('owner_type', AppInstance::class)
+        ->whereIn('owner_type', AppInstance::morphTypes())
         ->where('owner_id', $this->target->id)
         ->sole();
     $schedule = Schedule::query()
-        ->where('target_type', AppInstance::class)
+        ->whereIn('target_type', AppInstance::morphTypes())
         ->where('target_id', $this->target->id)
         ->sole();
 
@@ -116,7 +116,7 @@ it('creates independent stopped copies for both Process backends and a disabled 
     $this->action->execute($this->target);
 
     $copies = Process::query()
-        ->where('owner_type', AppInstance::class)
+        ->whereIn('owner_type', AppInstance::morphTypes())
         ->where('owner_id', $this->target->id)
         ->orderBy('name')
         ->get()

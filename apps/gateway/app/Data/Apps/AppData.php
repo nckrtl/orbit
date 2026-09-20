@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Apps;
 
+use App\Domain\Projects\ProjectType;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\App as OrbitApp;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -20,6 +21,7 @@ final class AppData extends Data
         public int $id,
         public string $name,
         public string $slug,
+        public ProjectType $type,
         public string $repositoryUrl,
         public ?string $defaultBranch,
         public ?string $root,
@@ -32,6 +34,7 @@ final class AppData extends Data
             id: $app->id,
             name: $app->name,
             slug: $app->slug,
+            type: $app->type,
             repositoryUrl: $app->repository_url,
             defaultBranch: $app->default_branch,
             root: $app->root,

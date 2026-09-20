@@ -21,7 +21,8 @@ final class DestroyProcessCommand extends ProcessActionCommand
     #[\Override]
     protected $signature = 'process:destroy
         {process : Process ID or definition name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--yes : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 

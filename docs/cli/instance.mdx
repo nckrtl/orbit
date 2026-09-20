@@ -1,9 +1,9 @@
 ---
 title: "instance"
-description: "Create, register, clone, deploy, roll back, and remove App instances, and attach Database connections to them."
+description: "Create, register, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
 ---
 
-An App instance is one placement of an App on one Node. A development App instance owns a checkout or worktree on an app-dev Node. A production App instance owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Every active App instance has exactly one Route.
+An Instance is one placement of a Project on one Node. An Instance on an app-dev Node owns a checkout or worktree. An Instance on an app-prod Node owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Laravel mode comes from the Instance `APP_ENV` value, not from the Node role. Active `laravel-app` Instances have exactly one Route. `monorepo` and `laravel-package` Instances get no Route by default.
 
 The [Applications guide](/domains/applications) walks through creation and registration. The [production release layout](/reference/deployments), [App instance cloning](/reference/appinstance-cloning), [App instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) references own the contracts behind the commands on this page.
 
@@ -58,14 +58,14 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 Create a development App instance on a Node with the active `app-dev` role. New production placements require [`instance:clone`](#orbit-instanceclone); `instance:create` refuses them with `instance.candidate_required`.
 
 ```bash
-orbit instance:create <app> <node> <name> [options]
+orbit instance:create <project> <node> <name> [options]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `app` | yes | Numeric App ID. |
+| `project` | yes | Numeric Project ID. |
 | `node` | yes | Numeric Node ID. |
-| `name` | yes | App instance name. `default` is reserved for the App's default development source. |
+| `name` | yes | Instance name. `default` is reserved for the Project's default development source. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -535,7 +535,7 @@ Production, standalone, and same-Node transfers are refused.
 
 ## Related
 
-- [`app`](/cli/app) owns the repository and source defaults that an App instance inherits.
+- [`project`](/cli/project) owns the repository and source defaults that an Instance inherits.
 - [`route`](/cli/route) shows and changes the domain of an App instance.
 - [`env`](/cli/env) imports, updates, and synchronizes the stored environment that deployments render.
 - [`process`](/cli/process) and [`schedule`](/cli/schedule) run services and timers on an App instance.

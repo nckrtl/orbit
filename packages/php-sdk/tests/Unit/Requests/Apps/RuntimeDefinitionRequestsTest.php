@@ -58,8 +58,8 @@ describe('App runtime definition requests', function (): void {
                 'request_id' => runtime_definition_request_id(),
             ]);
     })->with([
-        'processes' => [ListProcessDefinitionsRequest::class, '/api/v1/apps/7/process-definitions'],
-        'Schedules' => [ListScheduleDefinitionsRequest::class, '/api/v1/apps/7/schedule-definitions'],
+        'processes' => [ListProcessDefinitionsRequest::class, '/api/v1/projects/7/process-definitions'],
+        'Schedules' => [ListScheduleDefinitionsRequest::class, '/api/v1/projects/7/schedule-definitions'],
     ]);
 
     it('submits exact JSON content for create and full update', function (
@@ -98,25 +98,25 @@ describe('App runtime definition requests', function (): void {
             CreateProcessDefinitionRequest::class,
             false,
             Method::POST,
-            '/api/v1/apps/7/process-definitions',
+            '/api/v1/projects/7/process-definitions',
         ],
         'update process' => [
             UpdateProcessDefinitionRequest::class,
             true,
             Method::PUT,
-            '/api/v1/apps/7/process-definitions/'.runtime_definition_name(),
+            '/api/v1/projects/7/process-definitions/'.runtime_definition_name(),
         ],
         'create Schedule' => [
             CreateScheduleDefinitionRequest::class,
             false,
             Method::POST,
-            '/api/v1/apps/7/schedule-definitions',
+            '/api/v1/projects/7/schedule-definitions',
         ],
         'update Schedule' => [
             UpdateScheduleDefinitionRequest::class,
             true,
             Method::PUT,
-            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_name(),
+            '/api/v1/projects/7/schedule-definitions/'.runtime_definition_name(),
         ],
     ]);
 
@@ -149,30 +149,30 @@ describe('App runtime definition requests', function (): void {
         'show process' => [
             ShowProcessDefinitionRequest::class,
             Method::GET,
-            '/api/v1/apps/7/process-definitions/'.runtime_definition_name(),
+            '/api/v1/projects/7/process-definitions/'.runtime_definition_name(),
         ],
         'destroy process' => [
             DestroyProcessDefinitionRequest::class,
             Method::DELETE,
-            '/api/v1/apps/7/process-definitions/'.runtime_definition_name(),
+            '/api/v1/projects/7/process-definitions/'.runtime_definition_name(),
         ],
         'show Schedule' => [
             ShowScheduleDefinitionRequest::class,
             Method::GET,
-            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_name(),
+            '/api/v1/projects/7/schedule-definitions/'.runtime_definition_name(),
         ],
         'destroy Schedule' => [
             DestroyScheduleDefinitionRequest::class,
             Method::DELETE,
-            '/api/v1/apps/7/schedule-definitions/'.runtime_definition_name(),
+            '/api/v1/projects/7/schedule-definitions/'.runtime_definition_name(),
         ],
     ]);
 
     it('encodes definition names exactly once as route segments', function (): void {
         expect(new ShowProcessDefinitionRequest(7, 'blue/green')->resolveEndpoint())
-            ->toBe('/api/v1/apps/7/process-definitions/blue%2Fgreen')
+            ->toBe('/api/v1/projects/7/process-definitions/blue%2Fgreen')
             ->and(new DestroyScheduleDefinitionRequest(7, 'blue%2Fgreen')->resolveEndpoint())
-            ->toBe('/api/v1/apps/7/schedule-definitions/blue%252Fgreen');
+            ->toBe('/api/v1/projects/7/schedule-definitions/blue%252Fgreen');
     });
 
     it('does not keep replaced definition request class names', function (): void {

@@ -28,7 +28,7 @@ final class UpdateProcessDefinitionRequest extends GatewayRequest implements Has
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/process-definitions/".rawurlencode($this->name);
+        return "/api/v1/projects/{$this->appId}/process-definitions/".rawurlencode($this->name);
     }
 
     protected function defaultHeaders(): array

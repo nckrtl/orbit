@@ -16,13 +16,12 @@ final readonly class AppDevHibernationPolicy
     {
         $instance->loadMissing('node.roles');
 
-        return $instance->environment === 'development'
-            && $this->hasActiveAppDevRole($instance->node);
+        return $this->hasActiveAppDevRole($instance->node);
     }
 
     public function appliesToProcess(Process $process): bool
     {
-        if ($process->owner_type !== AppInstance::class) {
+        if (! AppInstance::isMorphType($process->owner_type)) {
             return false;
         }
 

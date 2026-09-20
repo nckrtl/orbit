@@ -93,7 +93,7 @@ it('renders validation field details in the json envelope', function (): void {
         ],
     ];
 
-    $exitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
+    $exitCode = Artisan::call('project:create', [...gateway_validation_arguments(), '--json' => true]);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -119,7 +119,7 @@ it('prints each validation field message on its own line after the error message
         ]),
     ]);
 
-    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
+    $exitCode = Artisan::call('project:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -142,11 +142,11 @@ it('renders a validation failure without details as before in both modes', funct
     ];
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $jsonExitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonExitCode = Artisan::call('project:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $humanExitCode = Artisan::call('app:create', gateway_validation_arguments());
+    $humanExitCode = Artisan::call('project:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
     expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
@@ -176,7 +176,7 @@ it('keeps non-validation failure details out of human output', function (): void
         ),
     ]);
 
-    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
+    $exitCode = Artisan::call('project:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -203,11 +203,11 @@ it('never prints secret-looking validation details in either mode', function ():
     ];
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $jsonExitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
+    $jsonExitCode = Artisan::call('project:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
-    $humanExitCode = Artisan::call('app:create', gateway_validation_arguments());
+    $humanExitCode = Artisan::call('project:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
     expect($jsonExitCode)->toBe(SymfonyCommand::FAILURE);
@@ -253,7 +253,7 @@ it('bounds validation details to sanitized field messages', function (): void {
         ],
     ];
 
-    $exitCode = Artisan::call('app:create', [...gateway_validation_arguments(), '--json' => true]);
+    $exitCode = Artisan::call('project:create', [...gateway_validation_arguments(), '--json' => true]);
     $output = trim(Artisan::output());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -273,7 +273,7 @@ it('caps validation details at fifty field messages', function (): void {
 
     MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
 
-    $exitCode = Artisan::call('app:create', gateway_validation_arguments());
+    $exitCode = Artisan::call('project:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
     $lines = explode("\n", gateway_failed_create_diagnostic($output));
 
@@ -578,16 +578,16 @@ it('renders local validation failures through the exact json boundary', function
         'Activity ID must be a positive integer.',
     ],
     'string argument helper' => [
-        'app:create',
-        ['slug' => '', 'repository' => 'https://example.test/repository.git'],
+        'project:create',
+        ['slug' => '', 'type' => 'laravel-app', 'repository' => 'https://example.test/repository.git'],
         'app.slug_required',
-        'App slug is required.',
+        'Project slug is required.',
     ],
     'app slug' => [
-        'app:create',
-        ['slug' => "validation\nsecret", 'repository' => 'https://example.test/repository.git'],
+        'project:create',
+        ['slug' => "validation\nsecret", 'type' => 'laravel-app', 'repository' => 'https://example.test/repository.git'],
         'app.slug_invalid',
-        'App slug is invalid.',
+        'Project slug is invalid.',
     ],
     'firewall node ID' => [
         'firewall:allow',
@@ -621,7 +621,7 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'instance name' => [
         'instance:create',
-        ['app' => '1', 'node' => '1', 'name' => ''],
+        ['project' => '1', 'node' => '1', 'name' => ''],
         'instance.name_required',
         'Instance name is required.',
     ],
@@ -692,7 +692,7 @@ it('renders local validation failures through the exact json boundary', function
         'process:create',
         ['name' => 'worker', '--command' => ['/usr/bin/php']],
         'process.target_invalid',
-        'The --app, --instance, or --node option is required.',
+        'The --project, --app, --instance, or --node option is required.',
     ],
     'process target ID' => [
         'process:create',
@@ -764,9 +764,9 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'multiple instance values fail at the first error' => [
         'instance:create',
-        ['app' => 'validation-secret', 'node' => '0', 'name' => ''],
+        ['project' => 'validation-secret', 'node' => '0', 'name' => ''],
         'app.id_invalid',
-        'App ID must be a positive integer.',
+        'Project ID must be a positive integer.',
     ],
     'node role list id' => [
         'node:role:list',
@@ -849,13 +849,13 @@ it('renders console input failures through the exact json boundary', function (a
         ->toBe($expectedPayload);
 })->with([
     'app show missing required argument' => [
-        ['command' => 'app:show', '--json' => true],
-        'Not enough arguments (missing: "app").',
+        ['command' => 'project:show', '--json' => true],
+        'Not enough arguments (missing: "project").',
     ],
     'app remove unknown force option' => [
         [
-            'command' => 'app:destroy',
-            'app' => '1',
+            'command' => 'project:destroy',
+            'project' => '1',
             '--json' => true,
             '--force' => true,
         ],
@@ -883,8 +883,8 @@ it('renders console input failures through the exact json boundary', function (a
     ],
     'app show unknown option' => [
         [
-            'command' => 'app:show',
-            'app' => '1',
+            'command' => 'project:show',
+            'project' => '1',
             '--json' => true,
             '--unknown-option' => true,
         ],
@@ -971,6 +971,7 @@ function gateway_validation_arguments(): array
 {
     return [
         'slug' => 'Bad Slug',
+        'type' => 'laravel-app',
         'repository' => 'https://github.com/laravel/framework.git',
     ];
 }
@@ -996,7 +997,7 @@ function gateway_validation_failure(?array $details): MockResponse
 
 function gateway_failed_create_diagnostic(string $output): string
 {
-    $prefix = "Creating App...\n\n┌  Create App\n│\n├  ● Creating App\n│\n└  Operation failed.\n\n";
+    $prefix = "Creating Project...\n\n┌  Create Project\n│\n├  ● Creating Project\n│\n└  Operation failed.\n\n";
 
     expect($output)->toStartWith($prefix)
         ->not->toContain('Created App', "\e[");

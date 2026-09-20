@@ -25,6 +25,8 @@ function orb101_update_data(
     ?string $root = null,
 ): UpdateAppData {
     return new UpdateAppData(
+        typeProvided: false,
+        type: null,
         slugProvided: $slug !== null,
         slug: $slug,
         repositoryUrlProvided: $repositoryUrl !== null,

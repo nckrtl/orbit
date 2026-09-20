@@ -19,7 +19,7 @@ final class ListScheduleDefinitionsRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/schedule-definitions";
+        return "/api/v1/projects/{$this->appId}/schedule-definitions";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppRuntimeDefinitionsResponse

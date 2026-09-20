@@ -21,11 +21,28 @@ enum ProcessTargetType: string
         };
     }
 
+    public function storedType(): string
+    {
+        return match ($this) {
+            self::AppInstance => AppInstance::MorphAlias,
+            self::Node => Node::class,
+        };
+    }
+
+    /** @return list<string> */
+    public function storedTypes(): array
+    {
+        return match ($this) {
+            self::AppInstance => AppInstance::morphTypes(),
+            self::Node => [Node::class],
+        };
+    }
+
     public static function fromModelClass(string $modelClass): self
     {
-        return match ($modelClass) {
-            AppInstance::class => self::AppInstance,
-            Node::class => self::Node,
+        return match (true) {
+            AppInstance::isMorphType($modelClass) => self::AppInstance,
+            $modelClass === Node::class => self::Node,
             default => throw new \InvalidArgumentException('Unsupported process target model.'),
         };
     }

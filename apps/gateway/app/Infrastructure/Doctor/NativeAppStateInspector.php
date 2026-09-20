@@ -50,7 +50,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             ->orderBy('id')
             ->get();
         foreach ($appInstances as $appInstance) {
-            if ($appInstance->environment === 'production') {
+            if ($appInstance->placedOnAppProd()) {
                 $home = $appInstance->production_home;
                 $user = $appInstance->production_user;
                 if (! is_string($home) || $home === '' || ! is_string($user) || $user === '') {

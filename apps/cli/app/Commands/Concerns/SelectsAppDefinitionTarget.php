@@ -13,16 +13,34 @@ trait SelectsAppDefinitionTarget
         return is_string($value) && $value !== '';
     }
 
+    protected function providedProjectOption(): bool
+    {
+        return $this->providedOption('project') || $this->providedOption('app');
+    }
+
     protected function appIdOption(string $errorCode = 'app.id_invalid'): int|false|null
     {
-        if (! $this->providedOption('app')) {
+        $hasProject = $this->providedOption('project');
+        $hasApp = $this->providedOption('app');
+
+        if ($hasProject && $hasApp) {
+            $this->renderGatewayFailure($errorCode, 'Use only one of --project or --app.');
+
+            return false;
+        }
+
+        if (! $hasProject && ! $hasApp) {
             return null;
         }
 
-        $id = filter_var($this->option('app'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $id = filter_var(
+            $hasProject ? $this->option('project') : $this->option('app'),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 1]],
+        );
 
         if (! is_int($id)) {
-            $this->renderGatewayFailure($errorCode, 'App ID must be a positive integer.');
+            $this->renderGatewayFailure($errorCode, 'Project ID must be a positive integer.');
 
             return false;
         }
@@ -36,7 +54,7 @@ trait SelectsAppDefinitionTarget
         $value = $this->stringOption('for');
 
         if ($value === null) {
-            $this->renderGatewayFailure($errorCode, 'The --for option is required with --app.');
+            $this->renderGatewayFailure($errorCode, 'The --for option is required with --project or --app.');
 
             return false;
         }

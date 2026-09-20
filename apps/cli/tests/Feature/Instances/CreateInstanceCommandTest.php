@@ -38,7 +38,7 @@ describe('instance:create development contract', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '2',
                 'name' => 'dev',
                 '--json' => true,
@@ -67,7 +67,7 @@ describe('instance:create production refusal', function (): void {
         ]);
 
         $exitCode = Artisan::call('instance:create', [
-            'app' => '3',
+            'project' => '3',
             'node' => '4',
             'name' => 'production',
             '--json' => true,
@@ -90,7 +90,7 @@ describe('instance:create production refusal', function (): void {
 
         $this
             ->artisan('instance:create', [
-                'app' => '3',
+                'project' => '3',
                 'node' => '4',
                 'name' => 'production',
             ])

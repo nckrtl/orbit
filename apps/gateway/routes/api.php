@@ -205,11 +205,40 @@ Route::prefix('v1')->group(function (): void {
         )
             ->scopeBindings()
             ->name('firewall:remove');
+        Route::get('projects', [AppsController::class, 'index'])->name('project:list');
+        Route::get('projects/{app}', [AppsController::class, 'show'])->name('project:show');
+        Route::post('projects', [AppsController::class, 'store'])->name('project:create');
+        Route::patch('projects/{app}', [AppsController::class, 'update'])->name('project:update');
+        Route::delete('projects/{app}', [AppsController::class, 'destroy'])->name('project:destroy');
         Route::get('apps', [AppsController::class, 'index'])->name('app:list');
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
         Route::post('apps', [AppsController::class, 'store'])->name('app:create');
         Route::patch('apps/{app}', [AppsController::class, 'update'])->name('app:update');
         Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:destroy');
+        Route::prefix('projects/{app}/process-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
+                ->name('project:process-definition:list');
+            Route::post('/', [AppRuntimeDefinitionsController::class, 'processStore'])
+                ->name('project:process-definition:create');
+            Route::get('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processShow'])
+                ->name('project:process-definition:show');
+            Route::put('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processUpdate'])
+                ->name('project:process-definition:update');
+            Route::delete('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processDestroy'])
+                ->name('project:process-definition:destroy');
+        });
+        Route::prefix('projects/{app}/schedule-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [AppRuntimeDefinitionsController::class, 'scheduleIndex'])
+                ->name('project:schedule-definition:list');
+            Route::post('/', [AppRuntimeDefinitionsController::class, 'scheduleStore'])
+                ->name('project:schedule-definition:create');
+            Route::get('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleShow'])
+                ->name('project:schedule-definition:show');
+            Route::put('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleUpdate'])
+                ->name('project:schedule-definition:update');
+            Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
+                ->name('project:schedule-definition:destroy');
+        });
         Route::prefix('apps/{app}/process-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
                 ->name('process:list');

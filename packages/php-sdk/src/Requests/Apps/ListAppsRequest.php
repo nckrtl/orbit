@@ -17,7 +17,7 @@ final class ListAppsRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return '/api/v1/apps';
+        return '/api/v1/projects';
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppsResponse

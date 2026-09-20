@@ -20,4 +20,21 @@ enum ScheduleTargetType: string
             self::AppInstance => AppInstance::class,
         };
     }
+
+    public function storedType(): string
+    {
+        return match ($this) {
+            self::Node => Node::class,
+            self::AppInstance => AppInstance::MorphAlias,
+        };
+    }
+
+    /** @return list<string> */
+    public function storedTypes(): array
+    {
+        return match ($this) {
+            self::Node => [Node::class],
+            self::AppInstance => AppInstance::morphTypes(),
+        };
+    }
 }

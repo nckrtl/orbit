@@ -214,7 +214,7 @@ describe('State::load() concurrency', function (): void {
     it('batches the per-node firewall list on load, and the process lists only once loadProcesses runs, through $sendMany, in request order', function (): void {
         $nodeA = new NodeResponse(id: 1, name: 'beast', status: 'active', publicSshHost: '10.0.0.1', publicSshPort: 22, user: 'root', wireguardIp: '10.44.0.1', roles: [], requestId: 'r');
         $nodeB = new NodeResponse(id: 2, name: 'shark', status: 'active', publicSshHost: '10.0.0.2', publicSshPort: 22, user: 'root', wireguardIp: '10.44.0.2', roles: [], requestId: 'r');
-        $app = new AppResponse(id: 1, name: 'Charlie Shop', slug: 'charlie-shop', repositoryUrl: 'https://example.test/charlie-shop.git', defaultBranch: 'main', root: null, defaults: null, requestId: 'r');
+        $app = new AppResponse(id: 1, name: 'Charlie Shop', slug: 'charlie-shop', type: 'laravel-app', repositoryUrl: 'https://example.test/charlie-shop.git', defaultBranch: 'main', root: null, defaults: null, requestId: 'r');
         $instance = new AppInstanceResponse(
             id: 10, appId: 1, nodeId: 1, app: new AppIdentityResponse(1, 'Charlie Shop', 'charlie-shop'), node: new NodeIdentityResponse(1, 'beast'),
             name: 'dev', environment: 'production', sourceLayout: 'flat', checkoutPath: '/srv/charlie-shop', productionUser: null, productionHome: null,

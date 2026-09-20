@@ -1000,7 +1000,7 @@ it('rejects invalid local process input before making a gateway request', functi
             'name' => 'queue',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --app, --instance, or --node option is required.',
+        'The --project, --app, --instance, or --node option is required.',
     ],
     'combined selectors' => [
         'process:create',
@@ -1010,7 +1010,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--node' => '4',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'app with instance' => [
         'process:create',
@@ -1021,7 +1021,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'for without app' => [
         'process:create',
@@ -1031,7 +1031,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --for option requires --app.',
+        'The --for option requires --project or --app.',
     ],
     'app without for' => [
         'process:create',
@@ -1040,7 +1040,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--app' => '7',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --for option is required with --app.',
+        'The --for option is required with --project or --app.',
     ],
     'start with app' => [
         'process:create',
@@ -1094,7 +1094,7 @@ it('renders one exact json envelope for App-target process refusals', function (
         'process:update',
         ['name' => 'worker'],
         'process.target_invalid',
-        'The --app option is required.',
+        'The --project or --app option is required.',
     ],
     'create app with instance' => [
         'process:create',
@@ -1106,7 +1106,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.target_invalid',
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'create app with node' => [
         'process:create',
@@ -1118,7 +1118,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.target_invalid',
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'create for without app' => [
         'process:create',
@@ -1129,7 +1129,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.option_invalid',
-        'The --for option requires --app.',
+        'The --for option requires --project or --app.',
     ],
     'create app without for' => [
         'process:create',
@@ -1139,7 +1139,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.option_invalid',
-        'The --for option is required with --app.',
+        'The --for option is required with --project or --app.',
     ],
     'create invalid app without for' => [
         'process:create',
@@ -1149,13 +1149,13 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'app.id_invalid',
-        'App ID must be a positive integer.',
+        'Project ID must be a positive integer.',
     ],
     'update app without for' => [
         'process:update',
         ['name' => 'worker', '--app' => '7'],
         'process.option_invalid',
-        'The --for option is required with --app.',
+        'The --for option is required with --project or --app.',
     ],
 ]);
 
@@ -1218,7 +1218,7 @@ it('records one App process definition through structured flags', function (): v
     expect($mock->getLastRequest())
         ->toBeInstanceOf(CreateProcessDefinitionRequest::class)
         ->and($mock->getLastPendingRequest()?->getUrl())
-        ->toBe('https://10.44.0.1/api/v1/apps/7/process-definitions')
+        ->toBe('https://10.44.0.1/api/v1/projects/7/process-definitions')
         ->and((string) $mock->getLastPendingRequest()?->body())
         ->toBe('{"name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure","keep_alive":false}}');
 });
@@ -1270,13 +1270,13 @@ it('lists shows updates and destroys App process definitions by name', function 
         'process:list',
         ['--app' => '7'],
         ListProcessDefinitionsRequest::class,
-        '/api/v1/apps/7/process-definitions',
+        '/api/v1/projects/7/process-definitions',
     ],
     'show' => [
         'process:show',
         ['name' => 'queue', '--app' => '7'],
         ShowProcessDefinitionRequest::class,
-        '/api/v1/apps/7/process-definitions/queue',
+        '/api/v1/projects/7/process-definitions/queue',
     ],
     'update' => [
         'process:update',
@@ -1287,13 +1287,13 @@ it('lists shows updates and destroys App process definitions by name', function 
             '--command' => ['/usr/bin/php'],
         ],
         UpdateProcessDefinitionRequest::class,
-        '/api/v1/apps/7/process-definitions/queue',
+        '/api/v1/projects/7/process-definitions/queue',
     ],
     'destroy' => [
         'process:destroy',
         ['process' => 'queue', '--app' => '7', '--yes' => true],
         DestroyProcessDefinitionRequest::class,
-        '/api/v1/apps/7/process-definitions/queue',
+        '/api/v1/projects/7/process-definitions/queue',
     ],
 ]);
 

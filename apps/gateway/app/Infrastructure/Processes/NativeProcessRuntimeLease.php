@@ -104,9 +104,9 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
 
     private function key(#[SensitiveParameter] Process $process): string
     {
-        $nodeId = match ($process->owner_type) {
-            AppInstance::class => (int) (AppInstance::query()->whereKey($process->owner_id)->value('node_id') ?? 0),
-            Node::class => $process->owner_id,
+        $nodeId = match (true) {
+            AppInstance::isMorphType($process->owner_type) => (int) (AppInstance::query()->whereKey($process->owner_id)->value('node_id') ?? 0),
+            $process->owner_type === Node::class => $process->owner_id,
             default => 0,
         };
 

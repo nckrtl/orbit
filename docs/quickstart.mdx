@@ -218,12 +218,12 @@ Check each checkpoint before you continue to the next step.
     An App records one repository. An App instance is a checkout of that App on one Node, with its own hostname. This guide uses MDN's public learning repository because its static page needs no dependencies, application key, or database. The user's own application comes after this page. For a private repository, keep credentials out of the URL and set up Git access on the Gateway and the Node first.
 
     ```bash Gateway machine · orbit
-    orbit app:create hello https://github.com/mdn/learning-area.git \
+    orbit project:create hello laravel-app https://github.com/mdn/learning-area.git \
       --default-branch=main --root=html/introduction-to-html/getting-started
-    orbit instance:create <APP_ID> <NODE_ID> default
+    orbit instance:create <PROJECT_ID> <NODE_ID> default
     ```
 
-    `app:create` returns the App ID; use it with the Node ID from the previous step. Orbit clones the repository on the Node, publishes the Route, and prints the URL. The name `default` gives the App its `<app>.test` hostname; any other name gives `<name>.<app>.test`.
+    `project:create` returns the Project ID; use it with the Node ID from the previous step. Orbit clones the repository on the Node, publishes the Route, and prints the URL. The name `default` gives the Project its `<project>.test` hostname; any other name gives `<name>.<project>.test`.
 
     <Note>
     Active means Orbit prepared the source, runtime, and Route. For a real application, `composer install`, an application key, and a database are the next step. The [Applications guide](/domains/applications) explains that boundary.

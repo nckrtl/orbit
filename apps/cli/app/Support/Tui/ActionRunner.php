@@ -45,7 +45,7 @@ final readonly class ActionRunner
                 'ssh' => Action::leaves("orbit node:ssh {$row['name']}", 'No SDK request opens a shell; run this from a terminal.'),
             ],
             'apps' => [
-                'show' => Action::leaves("orbit app:show {$row['slug']}", 'Open the App record instead of running this from the menu.'),
+                'show' => Action::leaves("orbit project:show {$row['id']}", 'Open the Project record instead of running this from the menu.'),
             ],
             'instances' => [
                 'deploy' => Action::leaves("orbit instance:deploy {$row['app']['slug']}/{$row['name']}", 'A deploy streams for minutes; it is not run from inside the live screen.'),

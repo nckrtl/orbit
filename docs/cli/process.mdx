@@ -9,15 +9,15 @@ The [App process and Schedule definitions](/reference/app-processes-and-schedule
 
 ## Choose the owner
 
-`process:create` and `process:list` need exactly one selector. The CLI refuses two selectors together and refuses `--for` without `--app` before it sends a request.
+`process:create` and `process:list` need exactly one selector. The CLI refuses two selectors together and refuses `--for` without `--project` or `--app` before it sends a request.
 
 | Selector | Owner | Result |
 | --- | --- | --- |
-| `--instance=ID` | App instance | The Gateway derives the host Node and runtime user from the App instance. |
+| `--instance=ID` | Instance | The Gateway derives the host Node and runtime user from the Instance. |
 | `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed runtime user for shared infrastructure such as a Docker database. |
-| `--app=APP --for=ENV[,ENV]` | App definition | The Gateway records a reusable definition for `development`, `production`, or both. Production preparation copies it into a new App instance Process. |
+| `--project=ID --for=ENV[,ENV]` | Project definition | The Gateway records a reusable definition for `development`, `production`, or both. `--app` is accepted as the same identifier. Production preparation copies it into a new Instance Process. |
 
-`process:show`, `process:update`, and `process:destroy` with `--app` select a definition by name. `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--app` take the numeric Process ID from `process:list`.
+`process:show`, `process:update`, and `process:destroy` with `--project` or `--app` select a definition by name. `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without those options take the numeric Process ID from `process:list`.
 
 ## Commands
 

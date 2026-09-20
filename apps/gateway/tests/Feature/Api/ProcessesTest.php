@@ -85,7 +85,7 @@ it('adds and lists a systemd process through the minimal API contract', function
 
     $this->assertDatabaseHas('activity_log', [
         'command' => 'process:create',
-        'subject_type' => AppInstance::class,
+        'subject_type' => 'instance',
         'subject_id' => $this->instance->id,
         'target_node_id' => $this->node->id,
         'caller_node_id' => $this->node->id,
@@ -676,7 +676,7 @@ it('records a failed runtime action against its process and target node', functi
     $activity = Activity::query()->where('command', 'process:start')->sole();
 
     expect($activity->subject_type)
-        ->toBe(AppInstance::class)
+        ->toBe('instance')
         ->and($activity->subject_id)
         ->toBe($this->instance->id)
         ->and($activity->target_node_id)

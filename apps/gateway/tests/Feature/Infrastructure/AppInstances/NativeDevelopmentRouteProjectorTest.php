@@ -322,6 +322,9 @@ it('preserves production release sites at the environment synchronization checkp
         'status' => AppInstanceState::Active,
         'source_is_laravel' => true,
     ]);
+    $workload->roles()->where('role', RoleName::AppDev)->delete();
+    $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $appInstance->unsetRelation('node');
     $replacement = Route::query()->create([
         'app_id' => $route->app_id,
         'cluster_id' => $route->cluster_id,

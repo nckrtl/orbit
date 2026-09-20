@@ -37,7 +37,7 @@ final readonly class RestartProcessAction
 
     public function execute(#[SensitiveParameter] Process $process): Process
     {
-        if ($process->owner_type !== AppInstance::class) {
+        if (! AppInstance::isMorphType($process->owner_type)) {
             return $this->mutate($process);
         }
 
@@ -49,7 +49,7 @@ final readonly class RestartProcessAction
             fn (): Process => $this->mutate(
                 Process::query()
                     ->whereKey($processId)
-                    ->where('owner_type', AppInstance::class)
+                    ->whereIn('owner_type', AppInstance::morphTypes())
                     ->where('owner_id', $ownerId)
                     ->firstOrFail(),
             ),

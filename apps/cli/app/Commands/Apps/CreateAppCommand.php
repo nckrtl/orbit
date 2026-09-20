@@ -13,8 +13,9 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 final class CreateAppCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:create
-        {slug : Unique app slug}
+    protected $signature = 'project:create
+        {slug : Unique project slug}
+        {type : Project type (monorepo, laravel-app, or laravel-package)}
         {repository : Git repository URL}
         {--name= : Optional display name}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
@@ -22,13 +23,13 @@ final class CreateAppCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create an app.';
+    protected $description = 'Create a project.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $slug = $this->stringArgument('slug', 'App slug', 'app.slug_required');
+        $slug = $this->stringArgument('slug', 'Project slug', 'app.slug_required');
 
         if ($slug === null) {
             return self::FAILURE;
@@ -50,7 +51,7 @@ final class CreateAppCommand extends GatewayCommand
         if (strlen($slug) > 63 || preg_match('/[\x00-\x1F\x7F]/', $slug) === 1) {
             return $this->renderGatewayFailure(
                 'app.slug_invalid',
-                'App slug is invalid.',
+                'Project slug is invalid.',
             );
         }
 
@@ -63,7 +64,20 @@ final class CreateAppCommand extends GatewayCommand
         $root = $this->stringOption('root');
 
         if ($root === null) {
-            return $this->renderGatewayFailure('app.root_required', 'App root is required.');
+            return $this->renderGatewayFailure('app.root_required', 'Project root is required.');
+        }
+
+        $type = $this->stringArgument('type', 'Project type', 'project.type_required');
+
+        if ($type === null) {
+            return self::FAILURE;
+        }
+
+        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+            return $this->renderGatewayFailure(
+                'project.type_invalid',
+                'Project type must be monorepo, laravel-app, or laravel-package.',
+            );
         }
 
         $app = $this->sendWithProgress(
@@ -72,11 +86,12 @@ final class CreateAppCommand extends GatewayCommand
                 slug: $slug,
                 repositoryUrl: $repositoryUrl,
                 root: $root,
+                type: $type,
                 name: $this->stringOption('name'),
                 defaultBranch: $this->stringOption('default-branch'),
             ),
             AppResponse::class,
-            ['Create App', 'Creating App', 'Created App'],
+            ['Create Project', 'Creating Project', 'Created Project'],
         );
 
         if (! $app instanceof AppResponse) {
@@ -89,7 +104,7 @@ final class CreateAppCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->writeHumanMessage("App [{$app->slug}] created.");
+        $this->writeHumanMessage("Project [{$app->slug}] created.");
         $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;

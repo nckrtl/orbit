@@ -23,7 +23,8 @@ final class StoreAppInstanceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'app_id' => ['required', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
+            'app_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
+            'project_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
             'node_id' => ['required', 'integer', Rule::exists(new Node()->getTable(), 'id')],
             'name' => [
                 'required',
@@ -44,7 +45,7 @@ final class StoreAppInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'node_id', 'name', 'root', 'domain', 'branch', 'recover_source_profile'],
+                ['app_id', 'project_id', 'node_id', 'name', 'root', 'domain', 'branch', 'recover_source_profile'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -72,6 +73,8 @@ final class StoreAppInstanceRequest extends FormRequest
             if (is_string($branch) && ! GitBranchName::isValid($branch)) {
                 $validator->errors()->add('branch', 'The branch is not a valid Git branch name.');
             }
+
+            $this->validateProjectOwner($validator);
         }];
     }
 
@@ -81,7 +84,7 @@ final class StoreAppInstanceRequest extends FormRequest
         $validated = $this->validated();
 
         return new CreateAppInstanceData(
-            appId: (int) $validated['app_id'],
+            appId: $this->resolvedProjectId($validated),
             nodeId: (int) $validated['node_id'],
             name: (string) $validated['name'],
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
@@ -91,5 +94,25 @@ final class StoreAppInstanceRequest extends FormRequest
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
             recoverSourceProfile: (bool) ($validated['recover_source_profile'] ?? false),
         );
+    }
+
+    private function validateProjectOwner(Validator $validator): void
+    {
+        $appId = $this->input('app_id');
+        $projectId = $this->input('project_id');
+
+        if ($appId === null && $projectId === null) {
+            $validator->errors()->add('project_id', 'Supply project_id or app_id.');
+        }
+
+        if ($appId !== null && $projectId !== null && (int) $appId !== (int) $projectId) {
+            $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
+        }
+    }
+
+    /** @param array<string, mixed> $validated */
+    private function resolvedProjectId(array $validated): int
+    {
+        return (int) ($validated['project_id'] ?? $validated['app_id']);
     }
 }

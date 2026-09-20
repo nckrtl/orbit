@@ -10,7 +10,7 @@ final readonly class AppDefaultBranchInheritance
 {
     public function inheritsAppDefault(AppInstance $instance): bool
     {
-        return $instance->environment === 'development'
+        return $instance->placedOnAppDev()
             && $instance->name === 'default'
             && $instance->branch_override === null;
     }

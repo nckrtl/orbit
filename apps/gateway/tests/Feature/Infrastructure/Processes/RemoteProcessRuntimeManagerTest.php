@@ -1580,6 +1580,7 @@ it('derives the production removal target from persisted AppInstance identity', 
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    runtime_manager_place_on_app_prod($this->instance);
 
     $target = new ProcessTargetResolver()->forRemoval($process);
 
@@ -1600,6 +1601,7 @@ it('checks the selected production release with valid fixed argv before start', 
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    runtime_manager_place_on_app_prod($this->instance);
     $unit = "orbit-process-{$process->id}-queue.service";
     $path = "/etc/systemd/system/{$unit}";
     $this->ssh->responses = [
@@ -1630,6 +1632,7 @@ it('refuses production start when no current release is selected', function (): 
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    runtime_manager_place_on_app_prod($this->instance);
     $this->ssh->responses = [process_runtime_result(1)];
 
     expect(fn () => $this->manager->start($process))
@@ -1652,6 +1655,7 @@ it('refuses desired-running production convergence before runtime mutation when 
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    runtime_manager_place_on_app_prod($this->instance);
     $this->ssh->responses = [process_runtime_result(1)];
 
     expect(fn () => $this->manager->converge($process))
@@ -1796,6 +1800,19 @@ it('returns a stable status error for a failed Docker probe', function (): void 
 
     $this->fail('Expected a failed status probe to return a stable error.');
 });
+
+function runtime_manager_place_on_app_prod(AppInstance $instance): void
+{
+    $instance->loadMissing('node.roles');
+    $instance->node->roles()->where('role', 'app-dev')->delete();
+
+    if (! $instance->node->roles()->where('role', 'app-prod')->exists()) {
+        $instance->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
+    }
+
+    $instance->unsetRelation('node');
+    $instance->load('node.roles');
+}
 
 function runtime_manager_systemd_process(AppInstance $instance): Process
 {

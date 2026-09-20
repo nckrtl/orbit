@@ -323,7 +323,9 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\Console\InstallCommand;
 use Laravel\Boost\Install\GuidelineComposer;
@@ -747,6 +749,9 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
         Activity::observe($activityPropertiesObserver);
+        Relation::morphMap([
+            'instance' => AppInstance::class,
+        ]);
     }
 
     private static function resolveManagedUserHomeDirectory(string $user): string|false

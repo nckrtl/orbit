@@ -31,6 +31,11 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     public function reserve(AppInstance $appInstance, ?string $domain): void
     {
         app(VitePortAllocator::class)->assign($appInstance);
+
+        if (! $appInstance->requiresRoute()) {
+            return;
+        }
+
         $route = $this->routes->ensureForAppInstance($appInstance, $domain);
 
         if ($route->status === RouteStatus::Failed) {
@@ -43,6 +48,12 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         ?string $domain,
         bool $recoverSourceProfile = false,
     ): AppInstance {
+        if (! $appInstance->requiresRoute()) {
+            return $this->owner()->run(
+                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $recoverSourceProfile),
+            );
+        }
+
         $route = $this->routes->ensureForAppInstance($appInstance, $domain);
 
         return $this->owner()->run(
@@ -52,6 +63,30 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
                 $recoverSourceProfile,
             ),
         );
+    }
+
+    private function completeWithoutRoute(int $appInstanceId, bool $recoverSourceProfile): AppInstance
+    {
+        $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
+
+        if ($appInstance->status === AppInstanceState::Active) {
+            return $this->recoverActiveSourceProfile($appInstance, $recoverSourceProfile);
+        }
+
+        $profile = $this->configuration->inspect($appInstance);
+        $this->recordProfile($appInstance, $profile);
+
+        DB::transaction(static function () use ($appInstance): void {
+            $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
+            $lockedInstance->update([
+                'status' => AppInstanceState::Active,
+                'provisioning_step' => 'active',
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+        });
+
+        return $appInstance->refresh()->load('routes.targets');
     }
 
     private function completeOwned(

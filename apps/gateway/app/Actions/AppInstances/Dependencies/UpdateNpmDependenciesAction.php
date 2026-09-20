@@ -57,7 +57,7 @@ final readonly class UpdateNpmDependenciesAction
     /** @param  (Closure(): bool)|null  $cancelled */
     public function inspect(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
     {
-        if ($instance->environment === 'production') {
+        if ($instance->placedOnAppProd()) {
             return DependencyUpdateInspection::failed('dependencies.production_update_forbidden');
         }
 

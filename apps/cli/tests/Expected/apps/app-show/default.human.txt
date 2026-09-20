@@ -1,11 +1,13 @@
-Fetching App...
-Fetching App instances...
+Fetching Project...
+Fetching Instances...
 
-┌  App: acme
+┌  Project: acme
 │
 ├  ID               1
 │
 ├  Name             Acme
+│
+├  Type             laravel-app
 │
 ├  Repository       https://github.com/acme/site.git
 │

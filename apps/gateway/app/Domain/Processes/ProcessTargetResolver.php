@@ -140,11 +140,11 @@ final readonly class ProcessTargetResolver
 
     private function owner(#[SensitiveParameter] Process $process): AppInstance|Node
     {
-        return match ($process->owner_type) {
-            AppInstance::class => AppInstance::query()
+        return match (true) {
+            AppInstance::isMorphType($process->owner_type) => AppInstance::query()
                 ->with('node')
                 ->findOrFail($process->owner_id),
-            Node::class => Node::query()->findOrFail($process->owner_id),
+            $process->owner_type === Node::class => Node::query()->findOrFail($process->owner_id),
             default => throw new ResourceOperationException(
                 errorCode: 'process.target_unsupported',
                 message: 'The Process owner is not a supported AppInstance or Node.',
@@ -180,13 +180,13 @@ final readonly class ProcessTargetResolver
     {
         $this->ensureLinux($instance->node);
 
-        if ($instance->environment === 'development') {
+        if ($instance->placedOnAppDev()) {
             $workingDirectory = $instance->checkout_path;
             $environmentFile = "{$instance->checkout_path}/.env";
             $user = $instance->node->user;
             $certificateScope = "app-instance-{$instance->id}";
             $productionReleaseLayout = false;
-        } elseif ($instance->environment === 'production') {
+        } elseif ($instance->placedOnAppProd()) {
             $home = $instance->production_home;
             $user = $instance->production_user;
 

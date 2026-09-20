@@ -25,6 +25,7 @@ final class RegisterAppInstanceRequest extends FormRequest
             'source_path' => ['required', 'string', 'max:4096', 'regex:/\A\/[^\x00-\x1f]*\z/'],
             'include_worktrees' => ['sometimes', 'boolean'],
             'app_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
+            'project_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
             'app_name' => ['sometimes', 'string', 'max:255'],
             'app_slug' => ['sometimes', 'string', 'alpha_dash:ascii', 'max:63'],
             'default_branch' => ['sometimes', 'string', 'max:255'],
@@ -42,6 +43,7 @@ final class RegisterAppInstanceRequest extends FormRequest
                 'source_path',
                 'include_worktrees',
                 'app_id',
+                'project_id',
                 'app_name',
                 'app_slug',
                 'default_branch',
@@ -72,6 +74,12 @@ final class RegisterAppInstanceRequest extends FormRequest
             if (is_string($domain) && ! RouteDomain::isValid($domain)) {
                 $validator->errors()->add('domain', 'The Route domain is invalid.');
             }
+
+            $appId = $this->input('app_id');
+            $projectId = $this->input('project_id');
+            if ($appId !== null && $projectId !== null && (int) $appId !== (int) $projectId) {
+                $validator->errors()->add('project_id', 'project_id and app_id must name the same Project.');
+            }
         }];
     }
 
@@ -83,7 +91,9 @@ final class RegisterAppInstanceRequest extends FormRequest
         return new RegisterAppInstanceData(
             sourcePath: (string) $values['source_path'],
             includeWorktrees: ($values['include_worktrees'] ?? false) === true,
-            appId: is_int($values['app_id'] ?? null) ? $values['app_id'] : null,
+            appId: is_int($values['project_id'] ?? null)
+                ? $values['project_id']
+                : (is_int($values['app_id'] ?? null) ? $values['app_id'] : null),
             appName: is_string($values['app_name'] ?? null) ? $values['app_name'] : null,
             appSlug: is_string($values['app_slug'] ?? null) ? $values['app_slug'] : null,
             defaultBranch: is_string($values['default_branch'] ?? null) ? $values['default_branch'] : null,

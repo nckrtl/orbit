@@ -27,7 +27,7 @@ final class CreateProcessDefinitionRequest extends GatewayRequest implements Has
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/process-definitions";
+        return "/api/v1/projects/{$this->appId}/process-definitions";
     }
 
     protected function defaultHeaders(): array

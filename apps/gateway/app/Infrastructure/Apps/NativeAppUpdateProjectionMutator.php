@@ -292,7 +292,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
 
     private function projectRuntime(AppInstance $instance, Route $route): void
     {
-        if ($instance->environment === 'production') {
+        if ($instance->placedOnAppProd()) {
             $this->productionRuntime->converge($instance);
 
             return;

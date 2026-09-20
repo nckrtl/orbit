@@ -1,0 +1,114 @@
+---
+title: "project"
+description: "Create, inspect, and remove Project records. A Project owns one repository, a type, and the source defaults that Instances inherit."
+---
+
+A Project is Orbit's stable record for one application repository. It owns one repository identity, one type, one access URL, a default branch, and a relative web root. Instances, Routes, and process and Schedule definitions hang off the Project.
+
+The [Projects reference](/reference/apps) owns repository identity, type, default-branch resolution, and idempotent creation. The [Applications guide](/domains/applications) shows how a Project becomes a running Instance.
+
+Canonical HTTP is `/api/v1/projects`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records. This CLI family is `project:*`. Older binaries that still call `app:*` keep working against `/apps`.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`project:create`](#orbit-projectcreate) | Create a Project from a slug, a type, and a Git repository URL. |
+| [`project:list`](#orbit-projectlist) | List Projects. |
+| [`project:show`](#orbit-projectshow) | Show one Project with its stored type, repository, default branch, and root. |
+| [`project:update`](#orbit-projectupdate) | Change type or source defaults and reconcile affected Instances. |
+| [`project:destroy`](#orbit-projectdestroy) | Remove a Project. |
+
+Every command accepts `--json`.
+
+Human lists use an uppercase-header table. Project details use a detail tree. Requests show progress while waiting, and results retain the Gateway request ID. Inputs remain explicit in every mode.
+
+## orbit project:create
+
+Create a Project. The Gateway resolves the remote default branch once when `--default-branch` is omitted and stores the result.
+
+```bash
+orbit project:create <slug> <type> <repository> [options]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Unique Project slug. It names the checkout directory under the Node apps root. |
+| `type` | yes | `monorepo`, `laravel-app`, or `laravel-package`. Type decides routing and PHP-FPM capability. |
+| `repository` | yes | HTTPS or SSH Git repository URL. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--name=NAME` | the slug | Display name. |
+| `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
+| `--root=PATH` | `public` | Relative web root that Instances inherit. |
+
+```bash
+orbit project:create acme laravel-app https://github.com/acme/site.git
+orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
+orbit project:create support laravel-package git@github.com:acme/support.git --root=src
+```
+
+Creation is idempotent. Repeating the command with the same values returns the existing Project. A retry that changes any value fails with `app.identity_conflict`, and a second Project for the same repository fails with `app.repository_identity_conflict`.
+
+A repository access failure or an unavailable remote default returns `app.default_branch_unavailable` without repository diagnostics or credentials.
+
+Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+
+## orbit project:list
+
+List every Project with its slug, type, repository, default branch, and root.
+
+```bash
+orbit project:list [--json]
+```
+
+## orbit project:show
+
+Show one Project. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `app.source_defaults_incomplete` until they exist.
+
+```bash
+orbit project:show <project> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+
+## orbit project:update
+
+Change a Project's type or source defaults. Omitted fields stay unchanged. The Gateway reconciles affected development sources, inherited web roots, and generated domains before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
+
+```bash
+orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH]
+```
+
+The command accepts these options.
+
+| Option | Meaning |
+| --- | --- |
+| `--type=TYPE` | New Project type. A change to `laravel-app` is refused while an active Instance has no Route. |
+| `--slug=SLUG` | New Project slug. Generated development domains follow it; recorded paths stay unchanged. |
+| `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins. |
+| `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
+| `--root=PATH` | New relative web root for Instances without an override. |
+
+## orbit project:destroy
+
+Remove a Project. The Gateway refuses the request while the Project still owns a Route, so remove its Instances first. Removing a Project also deletes its process and Schedule definitions.
+
+```bash
+orbit project:destroy <project> [--yes] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `project` | yes | Numeric Project ID. |
+
+Removal asks for confirmation with No selected. Supply `--yes` for automation, including `--json`. The CLI resolves the Project before asking; declining, Ctrl-C or EOF returns `input.cancelled` without sending removal. A valid noninteractive call without `--yes` returns `input.confirmation_required`.
+
+## Related
+
+- [`instance`](/cli/instance) creates a checkout or production release of a Project on a Node.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) record Project-owned definitions with `--project`. `--app` remains accepted as the same identifier.
+- [`route`](/cli/route) creates explicit domains owned by a Project.

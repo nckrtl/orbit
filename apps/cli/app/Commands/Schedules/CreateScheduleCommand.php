@@ -26,7 +26,8 @@ final class CreateScheduleCommand extends ScheduleCommand
         {name : Schedule name}
         {--node= : Positive Node ID}
         {--instance= : Positive AppInstance ID}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
@@ -94,7 +95,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         if ($this->stringOption('for') !== null) {
             return $this->renderGatewayFailure(
                 'schedule.option_invalid',
-                'The --for option requires --app.',
+                'The --for option requires --project or --app.',
             );
         }
 
@@ -136,15 +137,24 @@ final class CreateScheduleCommand extends ScheduleCommand
     /** @return 'app'|'instance'|'node'|null */
     private function exclusiveScheduleTarget(): ?string
     {
-        $hasApp = $this->providedOption('app');
+        $hasProject = $this->providedProjectOption();
         $hasInstance = $this->providedOption('instance');
         $hasNode = $this->providedOption('node');
-        $count = (int) $hasApp + (int) $hasInstance + (int) $hasNode;
+        $count = (int) $hasProject + (int) $hasInstance + (int) $hasNode;
+
+        if ($this->providedOption('project') && $this->providedOption('app')) {
+            $this->renderGatewayFailure(
+                'schedule.target_conflict',
+                'Use only one of --project or --app.',
+            );
+
+            return null;
+        }
 
         if ($count > 1) {
             $this->renderGatewayFailure(
                 'schedule.target_conflict',
-                'Use only one of --app, --node, or --instance.',
+                'Use only one of --project, --app, --node, or --instance.',
             );
 
             return null;
@@ -153,14 +163,14 @@ final class CreateScheduleCommand extends ScheduleCommand
         if ($count === 0) {
             $this->renderGatewayFailure(
                 'schedule.target_required',
-                'Exactly one of --app, --node, or --instance is required.',
+                'Exactly one of --project, --app, --node, or --instance is required.',
             );
 
             return null;
         }
 
         return match (true) {
-            $hasApp => 'app',
+            $hasProject => 'app',
             $hasInstance => 'instance',
             default => 'node',
         };
@@ -190,7 +200,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'schedule.target_required',
-                'The --app option is required.',
+                'The --project or --app option is required.',
             );
         }
 
@@ -246,7 +256,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         if ($node !== null && $instance !== null) {
             $this->renderGatewayFailure(
                 'schedule.target_conflict',
-                'Use only one of --app, --node, or --instance.',
+                'Use only one of --project, --app, --node, or --instance.',
             );
 
             return null;

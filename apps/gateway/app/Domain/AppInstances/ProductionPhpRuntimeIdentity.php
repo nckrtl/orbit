@@ -42,7 +42,7 @@ final readonly class ProductionPhpRuntimeIdentity
         $documentRoot = $appInstance->effectiveRoot();
 
         if (
-            $appInstance->environment !== 'production'
+            ! $appInstance->placedOnAppProd()
             || ! is_string($user)
             || ! preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user)
             || ! is_string($home)
