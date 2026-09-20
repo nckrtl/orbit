@@ -1,7 +1,7 @@
 ---
 title: "ADR 0095: Relocate relocatable singleton roles as one Orbit action"
 sidebarTitle: "0095 Relocate relocatable singleton roles as one Orbit action"
-description: "Proposed. node:role:relocate moves relocatable singleton roles, starting with gateway, websocket, and metrics. Optional --from names leftover source state. Destination-already-has-role reconciles role-owned resources instead of no-op or overwrite."
+description: "Proposed. node:role:relocate moves relocatable singleton roles, starting with gateway, websocket, and metrics. Optional --from names leftover source state. When the destination already holds the role, relocate reconciles role-owned resources instead of no-op or overwrite."
 ---
 
 # ADR 0095: Relocate relocatable singleton roles as one Orbit action
@@ -16,11 +16,11 @@ This amends [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-o
 
 ## Context
 
-[ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn) added `POST /api/v1/nodes/{node}/roles/{role}/relocate` because remove-then-add is not a safe gateway cutover: the last gateway assignment owns implicit authority and `gateway.orbit`. The action and CLI still hardcoded `gateway`. `websocket` and `metrics` are also mutable singletons. Their node-scoped credentials, publication, and runtime live on the holder. Operators were told to add the role on the new Node and remove it from the old one. That two-step theater cannot work while the singleton assignment still exists, and a remove-first path drops the generated Reverb or Grafana identity.
+[ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn) added `POST /api/v1/nodes/{node}/roles/{role}/relocate` because remove-then-add is not a safe gateway cutover: the last gateway assignment owns implicit authority and `gateway.orbit`. The action and CLI still hardcoded `gateway`. `websocket` and `metrics` are also mutable singletons. Their node-scoped credentials, publication, and runtime live on the holder. Operators were told to add the role on the new Node and remove it from the old one. Those two commands cannot run as a pair while the singleton assignment still exists, and a remove-first path drops the generated Reverb or Grafana identity.
 
 The Gateway process is special: relocate must not rsync the serving checkout or stop leftover Caddy and PHP-FPM. Websocket and metrics can converge the destination baseline and retract the source host projection in the same request. Credentials are stored on the Node, so a row transfer without a settings move would generate a new identity on the destination and break clients.
 
-Ops also hits a leftover state: the destination already holds the assignment after a botched add or remove, and the old Node still has checkout, Caddy, or credentials. Refusing "already assigned" leaves that residue. Silently succeeding leaves it too. Overwriting destination credentials corrupts a working identity.
+Ops also hits leftover state: the destination already holds the assignment after a botched add or remove, and the old Node still has checkout, Caddy, or credentials. Refusing "already assigned" leaves that residue. Silently succeeding leaves it too. Overwriting destination credentials corrupts a working identity.
 
 ## Decision
 
@@ -43,7 +43,7 @@ Ops also hits a leftover state: the destination already holds the assignment aft
 - Infer relocatable from `singleton && mutable`: rejected so `RoleRegistry` states the product set explicitly. Mutability already means generic add and remove; relocate is a narrower contract.
 - Rsync Gateway or Metrics process state inside relocate: rejected. Gateway relocate still moves assignment, firewall, access, and DNS. Websocket and metrics converge a new runtime on the destination.
 - Overwrite destination credentials from the source: rejected because a destination that already has a working identity must keep it.
-- Treat destination-already-has-role as success with no work: rejected because leftover source state would remain.
+- Treat a destination that already holds the role as success with no work: rejected because leftover source state would remain.
 
 ## Consequences
 
@@ -51,7 +51,7 @@ Ops also hits a leftover state: the destination already holds the assignment aft
 - `orbit node:role:relocate <node> metrics --force` is the supported Metrics cutover.
 - `orbit node:role:relocate <node> websocket --from beast --force` reconciles leftovers on beast when services already holds `websocket`.
 - Remove-then-add remains a fallback with a window and a new identity. Relocate is the supported path.
-- Later relocatable roles add a `RoleDefinition` flag and a hook, not a new command.
+- A new relocatable role adds a `RoleDefinition` flag and a hook, not a new command.
 
 ## Affects
 

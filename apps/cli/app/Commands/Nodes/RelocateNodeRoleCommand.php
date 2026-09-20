@@ -99,9 +99,6 @@ final class RelocateNodeRoleCommand extends NodeCommand
         return self::SUCCESS;
     }
 
-    /**
-     * @return NodesResponse|null|false
-     */
     private function nodesForResolution(GatewayConnector $connector, mixed $target, ?string $from): NodesResponse|null|false
     {
         $needsList = $this->needsNodeList($target) || ($from !== null && $this->needsNodeList($from));
