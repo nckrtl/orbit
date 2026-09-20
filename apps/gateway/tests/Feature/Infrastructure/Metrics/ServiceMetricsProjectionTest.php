@@ -99,6 +99,7 @@ it('wires selected service monitoring into container-resolved publication and in
     $cluster = Cluster::query()->create(['name' => 'production']);
     $node->update(['cluster_id' => $cluster->id]);
     $node->roles()->create(['role' => 'ingress', 'status' => 'active', 'cluster_id' => $cluster->id]);
+    $node->roles()->create(['role' => 'router', 'status' => 'active', 'cluster_id' => $cluster->id]);
     $instance = service_metrics_instance($node, 'monitored', '8.5');
     $instance->update(['provisioning_step' => 'active', 'source_is_laravel' => false]);
     $route = Route::query()->create([
