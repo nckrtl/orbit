@@ -44,6 +44,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show analytics Stats API credentials
+         * @description Returns whether a Plausible Stats API key is stored. The key itself is never returned.
+         */
+        get: operations["analytics-credentials"];
+        /**
+         * Store the analytics Stats API key
+         * @description Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.
+         */
+        put: operations["analytics-credentials-set"];
+        post?: never;
+        /**
+         * Clear the analytics Stats API key
+         * @description Clears the stored Plausible Stats API key.
+         */
+        delete: operations["analytics-credentials-unset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/update": {
         parameters: {
             query?: never;
@@ -929,6 +957,26 @@ export interface paths {
          * @description Remove the analytics tracking hosts of an App instance.
          */
         delete: operations["instance-analytics-disable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/analytics/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read App instance analytics stats
+         * @description Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the App instance's tracked site. `available` is false when the analytics role is not active or the App instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.
+         */
+        get: operations["instance-analytics-stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2904,6 +2952,150 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while a Stats API key is stored. The key itself is never returned. */
+                            configured?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-credentials-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    api_key: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while a Stats API key is stored. The key itself is never returned. */
+                            configured?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-credentials-unset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while a Stats API key is stored. The key itself is never returned. */
+                            configured?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6580,6 +6772,73 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-analytics-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description False when the analytics role is not active or the App instance publishes no tracking host. Every other field is then absent. */
+                            available: boolean;
+                            /** @description False when the panel may show but the driver could not obtain stats. Visitor fields are then absent. */
+                            readable?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                            /** @description The App instance's authoritative public domain, which is the Plausible site. */
+                            site_domain?: string | null;
+                            live_visitors?: number;
+                            visitors?: {
+                                /** @description Plausible's `day` period: today in the site timezone. */
+                                past_24h?: number;
+                                past_7d?: number;
+                                past_30d?: number;
+                            };
+                            /** @description Up to ten paths for the last 30 days, most visitors first. */
+                            pages?: {
+                                path?: string;
+                                visitors?: number;
+                            }[];
+                            error_code?: string | null;
+                            error?: string | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

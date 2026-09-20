@@ -238,6 +238,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
         Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
         Route::post('instances/{instance}/dependencies/update', [AppInstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
+        Route::get('instances/{instance}/analytics/stats', [InstanceAnalyticsController::class, 'stats'])->whereNumber('instance')->name('instance:analytics:stats');
         Route::get('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'show'])->whereNumber('instance')->name('instance:analytics:show');
         Route::post('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'enable'])->whereNumber('instance')->name('instance:analytics:enable');
         Route::delete('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'disable'])->whereNumber('instance')->name('instance:analytics:disable');
@@ -437,6 +438,9 @@ Route::prefix('v1')->group(function (): void {
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
         Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::post('analytics/update', [AnalyticsController::class, 'update'])->name('analytics:update');
+        Route::get('analytics/credentials', [AnalyticsController::class, 'credentials'])->name('analytics:credentials');
+        Route::put('analytics/credentials', [AnalyticsController::class, 'setCredentials'])->name('analytics:credentials:set');
+        Route::delete('analytics/credentials', [AnalyticsController::class, 'unsetCredentials'])->name('analytics:credentials:unset');
         Route::get('metrics/status', [MetricsController::class, 'status'])->name('metrics:status');
         Route::get('metrics/credentials', [MetricsController::class, 'credentials'])->name('metrics:credentials');
         Route::post('metrics/credentials/reset', [MetricsController::class, 'reset'])->name(

@@ -106,3 +106,25 @@ export type InstanceAnalytics = {
     hosts: AnalyticsHost[];
     snippet: string | null;
 };
+
+/** One path in the App instance's top-pages breakdown. */
+export type AnalyticsPage = {
+    path: string;
+    visitors: number;
+};
+
+/**
+ * Visitor counts for an App instance's tracked site. Only `available` is there when the panel
+ * must not show. Visitor fields are absent when `readable` is false.
+ */
+export type InstanceAnalyticsStats = {
+    available: boolean;
+    readable?: boolean;
+    driver?: "plausible_ce";
+    site_domain?: string | null;
+    live_visitors?: number;
+    visitors?: { past_24h: number; past_7d: number; past_30d: number };
+    pages?: AnalyticsPage[];
+    error_code?: string | null;
+    error?: string | null;
+};

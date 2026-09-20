@@ -52,6 +52,7 @@ final readonly class CommandVocabulary
 
     /** @var list<string> */
     public const array NOUN_ENDING_COMMANDS = [
+        'analytics:credentials',
         'metrics:credentials',
         'node:metrics',
         'node:settings',

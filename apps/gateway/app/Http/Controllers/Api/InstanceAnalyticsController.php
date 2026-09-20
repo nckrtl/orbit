@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Actions\Analytics\DisableInstanceAnalyticsAction;
 use App\Actions\Analytics\EnableInstanceAnalyticsAction;
 use App\Actions\Analytics\ShowInstanceAnalyticsAction;
+use App\Actions\Analytics\ShowInstanceAnalyticsStatsAction;
 use App\Data\Analytics\InstanceAnalyticsData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -35,6 +36,14 @@ final class InstanceAnalyticsController extends Controller
     public function disable(Request $request, AppInstance $instance, DisableInstanceAnalyticsAction $action): JsonResponse
     {
         return $this->respond($request, $action->execute($instance));
+    }
+
+    public function stats(Request $request, AppInstance $instance, ShowInstanceAnalyticsStatsAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => $action->execute($instance),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
     }
 
     private function respond(Request $request, InstanceAnalyticsData $data): JsonResponse

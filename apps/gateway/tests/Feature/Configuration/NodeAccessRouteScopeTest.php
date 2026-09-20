@@ -59,6 +59,9 @@ it('declares node access scope on every active-peer API route', function (): voi
     $expectedScopes = [
         'activity:list' => ServingNode::Gateway,
         'activity:show' => ServingNode::Gateway,
+        'analytics:credentials' => ServingNode::Gateway,
+        'analytics:credentials:set' => ServingNode::Gateway,
+        'analytics:credentials:unset' => ServingNode::Gateway,
         'analytics:update' => ServingNode::Gateway,
         'app:create' => ServingNode::Gateway,
         'app:destroy' => ServingNode::AppOwning,
@@ -110,6 +113,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'instance:analytics:disable' => ServingNode::InstanceOwning,
         'instance:analytics:enable' => ServingNode::InstanceOwning,
         'instance:analytics:show' => ServingNode::InstanceOwning,
+        'instance:analytics:stats' => ServingNode::InstanceOwning,
         'instance:clone' => ServingNode::CandidateClone,
         'instance:create' => ServingNode::InstanceOwning,
         'instance:database:add' => ServingNode::EnvironmentInstanceOwning,

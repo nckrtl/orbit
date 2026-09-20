@@ -11,6 +11,7 @@ import type {
     FirewallRule,
     Instance,
     InstanceAnalytics,
+    InstanceAnalyticsStats,
     LiveFirewallSnapshot,
     ManagedFirewallRule,
     Node,
@@ -181,6 +182,15 @@ export const instanceAnalyticsQuery = (id: number) =>
         queryKey: ["instance-analytics", id],
         queryFn: () => get<InstanceAnalytics>(`/api/v1/instances/${id}/analytics`),
         staleTime: 60_000,
+        retry: false,
+    });
+
+/** Live visitors, period counts, and top pages for an instance that publishes a tracking host. */
+export const instanceAnalyticsStatsQuery = (id: number) =>
+    queryOptions({
+        queryKey: ["instance-analytics-stats", id],
+        queryFn: () => get<InstanceAnalyticsStats>(`/api/v1/instances/${id}/analytics/stats`),
+        refetchInterval: 10_000,
         retry: false,
     });
 

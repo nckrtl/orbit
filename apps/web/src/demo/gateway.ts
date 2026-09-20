@@ -211,6 +211,44 @@ export function createDemoGateway() {
                             : [],
                     ),
             ],
+            [
+                "GET",
+                /^\/api\/v1\/instances\/(\d+)\/analytics\/stats$/,
+                ([id = ""]) => {
+                    if (!trackedInstances.has(id)) {
+                        return ok({ available: false });
+                    }
+
+                    const domain =
+                        instances.find((candidate) => String(candidate.id) === id)?.domain ?? null;
+
+                    // Instance 2 is the fixture instance without Horizon; use it for the failed read.
+                    if (id === "2") {
+                        return ok({
+                            available: true,
+                            readable: false,
+                            driver: "plausible_ce",
+                            site_domain: domain,
+                            error_code: "analytics.stats_key_missing",
+                            error: "No Plausible Stats API key is stored. Create one in Plausible and store it with analytics:credentials.",
+                        });
+                    }
+
+                    return ok({
+                        available: true,
+                        readable: true,
+                        driver: "plausible_ce",
+                        site_domain: domain,
+                        live_visitors: 2,
+                        visitors: { past_24h: 18, past_7d: 91, past_30d: 340 },
+                        pages: [
+                            { path: "/", visitors: 120 },
+                            { path: "/pricing", visitors: 40 },
+                            { path: "/docs", visitors: 18 },
+                        ],
+                    });
+                },
+            ],
             ...(["GET", "POST", "DELETE"] as const).map(
                 (method): [Method, RegExp, (match: string[]) => Answer] => [
                     method,

@@ -55,6 +55,60 @@
       }
     },
     {
+      "name": "analytics-credentials",
+      "title": "Show analytics Stats API credentials",
+      "description": "Returns whether a Plausible Stats API key is stored. The key itself is never returned.",
+      "method": "GET",
+      "path": "/api/v1/analytics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "analytics-credentials-set",
+      "title": "Store the analytics Stats API key",
+      "description": "Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.",
+      "method": "PUT",
+      "path": "/api/v1/analytics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 8
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "api_key"
+        ]
+      }
+    },
+    {
+      "name": "analytics-credentials-unset",
+      "title": "Clear the analytics Stats API key",
+      "description": "Clears the stored Plausible Stats API key.",
+      "method": "DELETE",
+      "path": "/api/v1/analytics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "analytics-update",
       "title": "Pin the Plausible version",
       "description": "Pin another Plausible version for the analytics role.",
@@ -2203,6 +2257,32 @@
       "description": "Show the analytics tracking hosts of an App instance.",
       "method": "GET",
       "path": "/api/v1/instances/{instance}/analytics",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-analytics-stats",
+      "title": "Read App instance analytics stats",
+      "description": "Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the App instance's tracked site. `available` is false when the analytics role is not active or the App instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/analytics/stats",
       "path_inputs": [
         "instance"
       ],

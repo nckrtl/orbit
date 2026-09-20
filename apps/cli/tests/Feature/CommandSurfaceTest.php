@@ -62,6 +62,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
     expect($visibleCommands)->toBe([
         'activity:list',
         'activity:show',
+        'analytics:credentials',
         'analytics:update',
         'app:create',
         'app:destroy',
@@ -304,7 +305,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(133);
+    expect($orbitCommands)->toHaveCount(134);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -497,6 +498,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
     $expected = [
         'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
         'activity:show' => [['activity'], ['json' => false]],
+        'analytics:credentials' => [[], ['set' => false, 'api-key' => null, 'unset' => false, 'json' => false]],
         'analytics:update' => [['version'], ['json' => false]],
         'app:list' => [[], ['json' => false]],
         'app:create' => [
@@ -943,6 +945,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
     $cases = [
         'activity:list' => [[], ...$profileMissing],
         'activity:show' => [['activity' => '1'], ...$profileMissing],
+        'analytics:credentials' => [[], ...$profileMissing],
         'analytics:update' => [['version' => '3.2.1'], ...$profileMissing],
         'app:list' => [[], ...$profileMissing],
         'app:create' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
