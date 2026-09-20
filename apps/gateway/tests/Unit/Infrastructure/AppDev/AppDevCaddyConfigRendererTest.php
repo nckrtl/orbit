@@ -57,7 +57,7 @@ it('shows the Orbit wake page before Caddy proxies a sleeping site', function ()
         ->toBeLessThan((int) mb_strpos($configuration, 'handle @orbit_vite'));
 });
 
-it('adapts hibernation wake on Caddy 2.6 with a nested awake-marker matcher', function (): void {
+it('adapts hibernation wake with a nested awake-marker matcher', function (): void {
     $configuration = new AppDevCaddyConfigRenderer()->render(collect([
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
     ]));

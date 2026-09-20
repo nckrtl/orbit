@@ -43,17 +43,28 @@ Check each checkpoint before you continue to the next step.
 
     ```bash Gateway machine · root
     apt-get update
-    apt-get install --yes git curl unzip openssl sqlite3 composer sudo \
-      openssh-server ca-certificates iproute2 ufw wireguard-tools dnsmasq caddy \
+    apt-get install --yes git curl unzip openssl sqlite3 composer sudo gnupg \
+      openssh-server ca-certificates iproute2 ufw wireguard-tools dnsmasq \
       php8.5-cli php8.5-fpm php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml
+    curl --fail --silent --show-error --location --proto '=https' \
+      https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
+      | gpg --dearmor --output /usr/share/keyrings/orbit-caddy.gpg
+    printf 'Types: deb\nURIs: %s\nSuites: any-version\nComponents: main\nSigned-By: %s\n' \
+      https://dl.cloudsmith.io/public/caddy/stable/deb/debian \
+      /usr/share/keyrings/orbit-caddy.gpg \
+      > /etc/apt/sources.list.d/orbit-caddy.sources
+    apt-get update
+    apt-get install --yes caddy
     adduser --disabled-password --gecos '' orbit
     printf 'orbit ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/orbit
     chmod 0440 /etc/sudoers.d/orbit
     ```
 
+    Caddy comes from the Caddy project's own package source, not the Ubuntu archive, because Orbit renders directives the archive release does not know. The Gateway publishes the same source on every Node it provisions; [node provisioning](/reference/node-provisioning#package-sources) describes the pinned key and the release floor.
+
     The `orbit` account has passwordless sudo because bootstrap configures Caddy, WireGuard, dnsmasq, and the firewall. The rest of the Gateway steps run as `orbit`, for example through `sudo -iu orbit` or `ssh orbit@<GATEWAY_IP>` after you add a key for it.
 
-    **Checkpoint:** `sudo -iu orbit whoami` prints `orbit`.
+    **Checkpoint:** `sudo -iu orbit whoami` prints `orbit`, and `caddy version` reports 2.8.0 or newer.
   </Step>
 
   <Step title="Install Orbit" titleSize="h2">

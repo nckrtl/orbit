@@ -10,6 +10,7 @@ use App\Infrastructure\Analytics\AnalyticsCaddyPublisher;
 use App\Infrastructure\Analytics\AnalyticsCaddySiteRenderer;
 use App\Infrastructure\Analytics\AnalyticsCertificatePublisher;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -25,7 +26,7 @@ it('waits for Plausible, issues the certificate, publishes the Caddy site, then 
 
     $manager->converge(analytics_publication_node());
 
-    expect($events)->toBe(['ssh:health', 'certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge']);
+    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'ssh:caddy', 'dns:converge']);
 });
 
 it('publishes nothing when Plausible does not become healthy', function (): void {
@@ -45,7 +46,7 @@ it('throws when the certificate SSH push fails', function (): void {
     expect(fn () => $manager->converge(analytics_publication_node()))
         ->toThrow(NodeRoleOperationException::class);
 
-    expect($events)->toBe(['ssh:health', 'certificate:issue', 'ssh:certificate']);
+    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate']);
 });
 
 it('throws when the Caddy SSH push fails', function (): void {
@@ -55,7 +56,7 @@ it('throws when the Caddy SSH push fails', function (): void {
     expect(fn () => $manager->converge(analytics_publication_node()))
         ->toThrow(NodeRoleOperationException::class);
 
-    expect($events)->toBe(['ssh:health', 'certificate:issue', 'ssh:certificate', 'ssh:caddy']);
+    expect($events)->toBe(['ssh:health', 'ssh:caddy-source', 'certificate:issue', 'ssh:certificate', 'ssh:caddy']);
 });
 
 it('removes the Caddy site and certificate over SSH, then converges DNS without the node', function (): void {
@@ -135,6 +136,12 @@ function analytics_publication_manager(
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
+                if (in_array(CaddyPackageSourceProgram::SOURCE_URI, $command->arguments, true)) {
+                    $this->events[] = 'ssh:caddy-source';
+
+                    return new CommandResult(0, '', '', 1, false);
+                }
+
                 if (str_contains($command->input ?? '', '--max-time')) {
                     $this->events[] = 'ssh:health';
 

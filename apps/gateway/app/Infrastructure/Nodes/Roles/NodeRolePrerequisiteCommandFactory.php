@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\OsReleaseParserProgram;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -17,6 +18,23 @@ final readonly class NodeRolePrerequisiteCommandFactory
     public function __construct(
         private NodeBootstrapPackageCatalog $packages = new NodeBootstrapPackageCatalog,
     ) {}
+
+    /**
+     * Publishes the pinned Caddy apt source before the role installs its packages, so `caddy` comes
+     * from the Caddy project rather than the Ubuntu archive. Null when the role needs no Caddy.
+     * ADR 0100 records the decision.
+     */
+    public function caddySource(Node $node, RoleName $role): ?RemoteCommand
+    {
+        if (! in_array('caddy', $this->packages->forRole($node, $role), strict: true)) {
+            return null;
+        }
+
+        return new RemoteCommand(
+            arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
+            input: CaddyPackageSourceProgram::render(),
+        );
+    }
 
     public function make(Node $node, RoleName $role, ManagedUserAccount $account): RemoteCommand
     {

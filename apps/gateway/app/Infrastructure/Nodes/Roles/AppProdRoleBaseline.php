@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -26,6 +27,10 @@ final readonly class AppProdRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
+        $caddySource = $this->commands->caddySource($node, RoleName::AppProd);
+        if ($caddySource instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-prod.prerequisite_failed');
+        }
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::AppProd, $account),

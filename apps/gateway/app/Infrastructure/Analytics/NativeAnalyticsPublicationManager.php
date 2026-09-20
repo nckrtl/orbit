@@ -10,6 +10,7 @@ use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -34,6 +35,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
     {
         $address = $this->address($node);
         $this->awaitPlausible($node, $address);
+        $this->ensureCaddy($node, $address);
         $certificate = $this->certificates->issue(AnalyticsHostname::Value, $address);
         $certificatePem = $this->read($certificate->certificatePath);
         $privateKeyPem = $this->read($certificate->privateKeyPath);
@@ -70,6 +72,31 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
         }
 
         $this->dns->converge($node);
+    }
+
+    /**
+     * The analytics role has no package step of its own, so the dashboard host is the point where
+     * this Node needs a Caddy Orbit can render against. ADR 0100 owns the pinned source and floor.
+     */
+    private function ensureCaddy(Node $node, string $address): void
+    {
+        $result = $this->ssh->execute(
+            $this->connection($node, $address),
+            new RemoteCommand(
+                arguments: ['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()],
+                input: CaddyPackageSourceProgram::render(),
+            ),
+        );
+
+        if (! $result->succeeded()) {
+            throw new NodeRoleOperationException(
+                'caddy-package-source',
+                'node_role.convergence_failed',
+                'analytics.caddy_publication_failed',
+                "The Caddy package source failed on node [{$node->name}].",
+                $result,
+            );
+        }
     }
 
     /**

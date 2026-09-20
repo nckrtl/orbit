@@ -8,6 +8,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentials;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -29,16 +30,22 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
 
     $lifecycle->converge($node, $assignment, $credentials);
 
-    expect($commands)->toHaveCount(2);
+    expect($commands)->toHaveCount(3);
 
-    $prerequisites = $commands[0];
+    $caddySource = $commands[0];
+    expect($caddySource->arguments)
+        ->toContain(CaddyPackageSourceProgram::SOURCE_URI)
+        ->toContain(CaddyPackageSourceProgram::SOURCE_PATH)
+        ->and($caddySource->input)->toContain('apt-cache madison');
+
+    $prerequisites = $commands[1];
     expect($prerequisites->arguments)->toContain('caddy')
         ->and($prerequisites->arguments)->toContain('composer')
         ->and($prerequisites->arguments)->toContain('git')
         ->and($prerequisites->arguments)->toContain('php-curl')
         ->and($prerequisites->arguments)->toContain('php-xml');
 
-    $runtime = $commands[1];
+    $runtime = $commands[2];
 
     expect($runtime->arguments)
         ->toContain('orbit-websocket')

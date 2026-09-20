@@ -10,5 +10,7 @@ final readonly class RoleInspectionData
         public bool $packagesPresent,
         public bool $servicesActive,
         public bool $firewallProjectionMatches,
+        /** The release `caddy version` reports, or null when the role needs no Caddy or none is installed. */
+        public ?string $caddyVersion = null,
     ) {}
 }

@@ -188,8 +188,8 @@ function app_instance_removal_migration_boundary(): Migration
 }
 
 /**
- * Adapt a Caddyfile with the installed caddy binary. Reads the configuration
- * from a temporary file because Caddy 2.6 (Ubuntu 26.04) cannot read stdin.
+ * Adapt a Caddyfile with the installed caddy binary, which must meet the release floor in
+ * App\Domain\Nodes\CaddyRelease. Reads the configuration from a temporary file rather than stdin.
  */
 function caddy_adapt(string $configuration): CommandResult
 {

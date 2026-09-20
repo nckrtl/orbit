@@ -185,6 +185,43 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
         ->not->toContain('package-output', 'service-output', 'private-key', 'vpn-setting');
 });
 
+it('reports a Caddy below the rendered floor as drift, naming the floor and the installed release', function (): void {
+    $node = role_probe_node('caddy-old');
+    $role = role_probe_assignment($node, RoleName::AppDev);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls, new RoleInspectionData(true, true, true, '2.6.2')),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe(['role.caddy_version_unsupported'])
+        ->and($report->issues[0]->expected)
+        ->toBe('>=2.8.0')
+        ->and($report->issues[0]->observed)
+        ->toBe('2.6.2')
+        ->and($report->issues[0]->resourceId)
+        ->toBe($role->id);
+});
+
+it('keeps a Caddy at or above the floor, and a role without Caddy, out of the report', function (?string $version): void {
+    $node = role_probe_node('caddy-ok-'.($version ?? 'none'));
+    role_probe_assignment($node, RoleName::AppDev);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls, new RoleInspectionData(true, true, true, $version)),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node));
+
+    expect($report->issues)->toBe([]);
+})->with([
+    'the floor itself' => ['2.8.0'],
+    'the current stable' => ['v2.11.4'],
+    'a role that needs no Caddy' => [null],
+]);
+
 it('reports a mismatched private DNS projection as bounded drift instead of an inspection failure', function (): void {
     $node = role_probe_node('vpn-dns-projection');
     $role = role_probe_assignment($node, RoleName::Vpn);

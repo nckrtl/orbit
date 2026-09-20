@@ -23,10 +23,19 @@ case "$mode" in
     done
     ;;
   align-identity)
+    [[ $# -eq 1 ]]
+    # Caddy from the Caddy project's own package is built without cgo, so it reads /etc/resolv.conf
+    # instead of asking NSS. The stock image leaves a static resolv.conf there that cannot answer
+    # the private .orbit zone, which breaks the hibernation forward_auth to gateway.orbit. Point it
+    # at the systemd-resolved stub, the way a default Ubuntu install does.
+    if systemctl is-active --quiet systemd-resolved && [[ -e /run/systemd/resolve/stub-resolv.conf ]]; then
+      if [[ "$(readlink -f /etc/resolv.conf)" != /run/systemd/resolve/stub-resolv.conf ]]; then
+        ln -sfn ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+      fi
+    fi
     # Feature topologies mount the host worktree (owned by host uid/gid 1000)
     # into /home/orbit/orbit, so the orbit account must own uid/gid 1000.
     # The stock cloud image gives 1000 to the unused ubuntu user.
-    [[ $# -eq 1 ]]
     current_uid=$(id -u orbit)
     current_gid=$(id -g orbit)
     if [[ "$current_uid" != 1000 || "$current_gid" != 1000 ]]; then
