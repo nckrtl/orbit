@@ -9,7 +9,7 @@ use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -185,8 +185,8 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             return;
         }
 
-        if ($route->targets->isNotEmpty()) {
-            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+        if ($route->targets->count() <= 1 && $route->status !== RouteStatus::Retiring) {
+            $route->update(['status' => RouteStatus::Retiring]);
         }
 
         $this->publicEdge()->removePublicEdge($route);

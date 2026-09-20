@@ -18,7 +18,7 @@ use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App;
@@ -703,13 +703,12 @@ function instance_probe_public_route(): array
         'domain' => 'doctor.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
-        'public_publication' => RoutePublicPublication::Inactive,
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
     $route->update([
         'status' => RouteStatus::Active,
-        'public_publication' => RoutePublicPublication::Active,
+        'replacement_step' => RouteReplacementStep::IngressFirewall,
     ]);
 
     return [$workload, $ingress, $router, $instance];

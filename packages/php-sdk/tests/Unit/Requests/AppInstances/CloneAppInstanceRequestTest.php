@@ -164,7 +164,6 @@ function clone_instance_envelope(): array
                 'domain' => 'shop.com.prod.orbit',
                 'provenance' => 'explicit',
                 'publication' => 'private',
-                'public_publication' => 'inactive',
                 'status' => 'active',
                 'failed_step' => null,
                 'error_code' => null,

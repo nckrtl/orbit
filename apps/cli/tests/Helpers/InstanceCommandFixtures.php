@@ -111,7 +111,6 @@ function instance_route_payload(): array
         'domain' => 'dev.orbit.test',
         'provenance' => 'generated',
         'publication' => 'private',
-        'public_publication' => 'inactive',
         'status' => 'active',
         'failed_step' => null,
         'error_code' => null,

@@ -372,7 +372,9 @@ function analyticsProperties(analytics: InstanceAnalytics | undefined): Property
         ...analytics.hosts.map((host, index) => ({
             name: index === 0 ? "Analytics" : "",
             value:
-                host.public_publication === "active" ? host.host : `${host.host} · ${host.status}`,
+                host.status === "active" && host.error_code === null
+                    ? host.host
+                    : `${host.host} · ${host.status}`,
             warn: host.error_code !== null,
             onOpen: host.error_code === null ? () => openInNewTab(host.script_url) : undefined,
         })),

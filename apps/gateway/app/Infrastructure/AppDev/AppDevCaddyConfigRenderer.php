@@ -31,15 +31,20 @@ final readonly class AppDevCaddyConfigRenderer
                     $handler = $this->handler($site);
                     $internal = $this->localUnixSite($site);
 
-                    $scheme = $site->publicListener ? '' : 'https://';
-
-                    $siteBlock = <<<CADDY
-                        {$scheme}{$site->domain} {
-                            bind 0.0.0.0
-                            tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
-                            {$handler}
-                        }
-                        CADDY;
+                    $siteBlock = $site->publicListener
+                        ? <<<CADDY
+                            {$site->domain} {
+                                bind 0.0.0.0
+                                {$handler}
+                            }
+                            CADDY
+                        : <<<CADDY
+                            https://{$site->domain} {
+                                bind 0.0.0.0
+                                tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
+                                {$handler}
+                            }
+                            CADDY;
 
                     return $internal === null ? $siteBlock : $internal.PHP_EOL.PHP_EOL.$siteBlock;
                 })

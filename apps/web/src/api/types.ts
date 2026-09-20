@@ -89,7 +89,7 @@ export type AnalyticsHost = {
     host: string;
     route_id: number;
     status: string;
-    public_publication: string;
+    publication: string;
     failed_step: string | null;
     error_code: string | null;
     script_url: string;

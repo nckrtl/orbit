@@ -33,7 +33,7 @@ beforeEach(function (): void {
                 'host' => 'analytics.shop.example.com',
                 'route_id' => 91,
                 'status' => 'active',
-                'public_publication' => 'active',
+                'publication' => 'public',
                 'failed_step' => null,
                 'error_code' => null,
                 'script_url' => 'https://analytics.shop.example.com/js/script.js',

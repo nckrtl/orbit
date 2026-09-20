@@ -245,7 +245,6 @@ function transfer_cli_payload(): array
             'domain' => 'preview.shop.other.orbit',
             'provenance' => 'generated',
             'publication' => 'private',
-            'public_publication' => 'inactive',
             'status' => 'active',
             'failed_step' => null,
             'error_code' => null,

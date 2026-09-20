@@ -574,7 +574,8 @@
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
               "decisions/0099-collect-role-specific-service-metrics",
-              "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source"
+              "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
+              "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress"
             ]
           }
         ]

@@ -156,7 +156,6 @@ function transfer_instance_envelope(): array
                 'domain' => 'preview.shop.other.orbit',
                 'provenance' => 'generated',
                 'publication' => 'private',
-                'public_publication' => 'inactive',
                 'status' => 'active',
                 'failed_step' => null,
                 'error_code' => null,

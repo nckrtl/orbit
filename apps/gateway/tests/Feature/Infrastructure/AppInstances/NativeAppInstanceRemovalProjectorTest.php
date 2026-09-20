@@ -15,7 +15,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -239,12 +238,10 @@ it('removes a final public Route edge before deleting the Route and refreshes a 
     $survivorRoute->update([
         'status' => RouteStatus::Active,
         'publication' => RoutePublication::Public,
-        'public_publication' => RoutePublicPublication::Active,
     ]);
     $survivor->update(['status' => AppInstanceState::Active]);
     $route->update([
         'publication' => RoutePublication::Public,
-        'public_publication' => RoutePublicPublication::Active,
     ]);
     orb181_projector_node('ingress-final', '87', $route->cluster, RoleName::Ingress);
     $edge = new FakePublicRouteEdgeProjector;
@@ -254,8 +251,8 @@ it('removes a final public Route edge before deleting the Route and refreshes a 
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
         ->toBeNull()
-        ->and($survivorRoute->refresh()->public_publication)
-        ->toBe(RoutePublicPublication::Active)
+        ->and($survivorRoute->refresh()->publication)
+        ->toBe(RoutePublication::Public)
         ->and($edge->calls)
         ->toContain('remove-public-edge')
         ->and($edge->calls)

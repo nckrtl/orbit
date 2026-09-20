@@ -17,8 +17,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -79,7 +79,6 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->assertJsonPath('data.domain', 'app.example.test')
         ->assertJsonPath('data.provenance', 'explicit')
         ->assertJsonPath('data.publication', 'private')
-        ->assertJsonPath('data.public_publication', 'inactive')
         ->assertJsonPath('data.status', 'pending')
         ->assertJsonPath('data.failed_step', null)
         ->assertJsonPath('data.error_code', null)
@@ -696,7 +695,7 @@ it('updates an active explicit private production domain through a replacement R
         ->toBe($targetId);
 });
 
-it('keeps public publication inactive without artifacts for a Node-scoped Route, inactive Cluster, or missing Ingress', function (): void {
+it('keeps publication=public without artifacts for a Node-scoped Route, inactive Cluster, or missing Ingress', function (): void {
     $edge = new FakePublicRouteEdgeProjector;
     app()->instance(PublicRouteEdgeProjector::class, $edge);
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteApiProjectionOwner);
@@ -708,9 +707,10 @@ it('keeps public publication inactive without artifacts for a Node-scoped Route,
         'app_instance_id' => $this->target->id,
     ])->assertCreated();
 
-    expect($nodeScoped->json('data.public_publication'))
-        ->toBe('inactive')
+    expect($nodeScoped->json('data.publication'))
+        ->toBe('public')
         ->and($nodeScoped->json('data'))
+        ->not->toHaveKey('public_publication')
         ->not->toHaveKey('public_ip')
         ->and($edge->calls)
         ->toBe([]);
@@ -721,8 +721,8 @@ it('keeps public publication inactive without artifacts for a Node-scoped Route,
 
     expect($published->id)
         ->toBe($active->id)
-        ->and($published->public_publication)
-        ->toBe(RoutePublicPublication::Inactive)
+        ->and($published->publication)
+        ->toBe(RoutePublication::Public)
         ->and($edge->calls)
         ->toBe([]);
 
@@ -734,8 +734,8 @@ it('keeps public publication inactive without artifacts for a Node-scoped Route,
     $cluster->update(['state' => ClusterState::Inactive]);
     $inactiveCluster = app(PublishPublicRouteAction::class)->execute($clusterRoute, RoutePublication::Public);
 
-    expect($inactiveCluster->public_publication)
-        ->toBe(RoutePublicPublication::Inactive)
+    expect($inactiveCluster->publication)
+        ->toBe(RoutePublication::Public)
         ->and($edge->calls)
         ->toBe([]);
 
@@ -747,7 +747,7 @@ it('keeps public publication inactive without artifacts for a Node-scoped Route,
         'cluster_id' => $missingIngress->id,
     ])->assertCreated();
 
-    expect($missing->json('data.public_publication'))->toBe('inactive')->and($edge->calls)->toBe([]);
+    expect($missing->json('data.publication'))->toBe('public')->and($missing->json('data'))->not->toHaveKey('public_publication')->and($edge->calls)->toBe([]);
 });
 
 it('creates and shows a public Route without a Node public-IP field', function (): void {
@@ -761,8 +761,10 @@ it('creates and shows a public Route without a Node public-IP field', function (
     expect($created->json('data'))
         ->not->toHaveKey('public_ip')
         ->not->toHaveKey('public_ssh_host')
-        ->and($created->json('data.public_publication'))
-        ->toBe('inactive');
+        ->and($created->json('data.publication'))
+        ->toBe('public')
+        ->and($created->json('data'))
+        ->not->toHaveKey('public_publication');
 
     $shown = $this->getJson('/api/v1/routes/'.$created->json('data.id'))->assertOk();
 
@@ -785,8 +787,7 @@ it('publishes an eligible public Route on the same ID and names only the Ingress
         ->patchJson("/api/v1/routes/{$route->id}", ['publication' => 'public'])
         ->assertOk()
         ->assertJsonPath('data.id', $route->id)
-        ->assertJsonPath('data.publication', 'public')
-        ->assertJsonPath('data.public_publication', 'active');
+        ->assertJsonPath('data.publication', 'public');
 
     expect($updated->json('data'))
         ->not->toHaveKey('public_ip')
@@ -848,8 +849,7 @@ it('reserves a replacement Route for a combined domain and publication change', 
         ])
         ->assertOk()
         ->assertJsonPath('data.domain', 'final.example.test')
-        ->assertJsonPath('data.publication', 'public')
-        ->assertJsonPath('data.public_publication', 'active');
+        ->assertJsonPath('data.publication', 'public');
 
     expect($updated->json('data.id'))
         ->not->toBe($route->id)
@@ -859,7 +859,8 @@ it('reserves a replacement Route for a combined domain and publication change', 
 
 it('composes one public Caddy site when Ingress shares a Node and uses LAN without WireGuard fallback', function (): void {
     [$cluster, $router, $ingress, $workload, $instance, $route] = route_public_topology($this->orbitApp);
-    $route->update(['public_publication' => RoutePublicPublication::Active]);
+    $route->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
+    $route->refresh();
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevCaddyConfigRenderer;
 
@@ -870,6 +871,7 @@ it('composes one public Caddy site when Ingress shares a Node and uses LAN witho
         ->toContain('header_up X-Forwarded-Proto https')
         ->toContain('header_up X-Forwarded-Host '.$route->domain)
         ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
+        ->not->toContain("tls /etc/caddy/orbit-certificates/route-{$route->id}-ingress/current/cert.pem")
         ->not->toContain('https://'.$route->domain.' {');
 
     $colocated = route_node('ingress-router', '10.44.0.41', null);

@@ -28,7 +28,6 @@ use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteReplacementStep;
@@ -1074,8 +1073,8 @@ it('prepares public Ingress after Router Caddy and activates the handler only af
         ])
         ->and($updated->publication)
         ->toBe(RoutePublication::Public)
-        ->and($updated->public_publication)
-        ->toBe(RoutePublicPublication::Active)
+        ->and($updated->status)
+        ->toBe(RouteStatus::Active)
         ->and($updated->id)
         ->not->toBe($route->id);
 });
@@ -1091,8 +1090,8 @@ it('rolls back the public edge before cutover and keeps the handler inactive', f
         ->toBe('old.example.test')
         ->and($route->status)
         ->toBe(RouteStatus::Active)
-        ->and($route->public_publication)
-        ->toBe(RoutePublicPublication::Inactive)
+        ->and($route->publication)
+        ->toBe(RoutePublication::Private)
         ->and($route->replaced_by_route_id)
         ->toBeNull()
         ->and($this->events->values)
@@ -1116,8 +1115,10 @@ it('keeps an unverified public handler inactive when activation fails after cuto
 
     expect($replacement->status)
         ->toBe(RouteStatus::Activating)
-        ->and($replacement->public_publication)
-        ->toBe(RoutePublicPublication::Inactive)
+        ->and($replacement->publication)
+        ->toBe(RoutePublication::Public)
+        ->and($replacement->replacement_step)
+        ->not->toBeNull()
         ->and($this->events->values)
         ->toContain('rollback-public-edge')
         ->and($route->refresh()->status)
@@ -1128,8 +1129,8 @@ it('keeps an unverified public handler inactive when activation fails after cuto
 
     expect($updated->id)
         ->toBe($replacement->id)
-        ->and($updated->public_publication)
-        ->toBe(RoutePublicPublication::Active)
+        ->and($updated->publication)
+        ->toBe(RoutePublication::Public)
         ->and($updated->status)
         ->toBe(RouteStatus::Active)
         ->and(Route::query()->find($route->id))

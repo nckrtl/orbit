@@ -54,7 +54,8 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         else
                             printf 'ingress=0\n'
                         fi
-                        if sudo test -f "$certificates/cert.pem" && sudo test -f "$certificates/key.pem"; then
+                        if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null \
+                            && ! grep -Rqs -- "tls $certificates/cert.pem" "$fragment_dir" 2>/dev/null; then
                             printf 'tls=1\n'
                         else
                             printf 'tls=0\n'

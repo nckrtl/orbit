@@ -43,7 +43,7 @@ it('combines metrics preferences with applicable roles', function (): void {
         'publication' => 'private', 'status' => 'pending',
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['publication' => 'public', 'public_publication' => 'active', 'status' => 'active']);
+    $route->update(['publication' => 'public', 'status' => 'active']);
     $published = $projection->forNode($metrics, $node);
     expect($published->caddy)->toBeTrue();
     expect($published->hosts)->toBe(['app.example.test']);
@@ -108,7 +108,7 @@ it('wires selected service monitoring into container-resolved publication and in
         'publication' => 'private', 'status' => 'pending',
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['publication' => 'public', 'public_publication' => 'active', 'status' => 'active']);
+    $route->update(['publication' => 'public', 'status' => 'active']);
     $host = Mockery::mock(MetricsRuntimeHost::class);
     $host->shouldReceive('snapshotConfiguration')->once()->andReturn(new MetricsConfigurationSnapshot(true, []));
     $host->shouldReceive('publishConfiguration')->once()->withArgs(function (Node $target, MetricsConfigurationBundle $configuration) use ($node): bool {

@@ -42,7 +42,9 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
 
     public function prepareIngressCertificate(Route $route): void
     {
-        $this->certificates->convergeRouteIngress($route, $this->sites->ingressNode($route));
+        // Public Ingress uses Caddy automatic HTTPS (Let's Encrypt). Confirm Ingress exists
+        // and do not pin an Orbit CA leaf that would replace a working public certificate.
+        $this->sites->ingressNode($route);
     }
 
     public function stageIngressCaddy(Route $route): void
