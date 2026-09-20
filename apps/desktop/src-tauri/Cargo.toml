@@ -1,0 +1,16 @@
+[package]
+name = "orbit-desktop"
+version = "0.1.0"
+description = "Desktop shell for the Orbit web app"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[features]
+# This feature is used for production builds where the frontend is bundled.
+# The current production config loads the Gateway-served build over HTTPS instead.
+custom-protocol = ["tauri/custom-protocol"]
