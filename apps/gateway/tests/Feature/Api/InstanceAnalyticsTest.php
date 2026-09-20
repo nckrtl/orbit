@@ -160,6 +160,43 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonPath('data.analytics_instance_id', null);
     });
 
+    it('publishes a public tracking host through Ingress and Router when both roles sit on the App instance Node', function (): void {
+        $this->router->roles()->delete();
+        $this->ingress->roles()->delete();
+
+        foreach ([RoleName::Router, RoleName::Ingress] as $role) {
+            $this->workload->roles()->create([
+                'cluster_id' => $this->cluster->id,
+                'role' => $role,
+                'status' => LifecycleStatus::Active,
+            ]);
+        }
+
+        $this->postJson($this->url)
+            ->assertOk()
+            ->assertJsonPath('data.enabled', true)
+            ->assertJsonPath('data.hosts.0.host', 'analytics.shop.example.com')
+            ->assertJsonPath('data.hosts.0.status', 'active')
+            ->assertJsonPath('data.hosts.0.public_publication', 'active');
+
+        $route = Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->sole();
+
+        expect($this->appRoute->refresh()->cluster_id)->toBe($this->cluster->id)
+            ->and($this->appRoute->node_id)->toBeNull()
+            ->and($this->appRoute->publication)->toBe(RoutePublication::Public)
+            ->and($route->cluster_id)->toBe($this->cluster->id)
+            ->and($route->node_id)->toBeNull()
+            ->and($route->publication)->toBe(RoutePublication::Public)
+            ->and($route->public_publication)->toBe(RoutePublicPublication::Active)
+            ->and($this->edge->calls)->toBe([
+                'ingress-certificate',
+                'ingress-caddy',
+                'public-edge-verified',
+                'public-activated',
+                'ingress-firewall',
+            ]);
+    });
+
     it('treats an empty host list as the default host', function (): void {
         $this->postJson($this->url, ['hosts' => []])
             ->assertOk()
