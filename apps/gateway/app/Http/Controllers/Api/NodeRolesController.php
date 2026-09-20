@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Actions\Nodes\ListNodeRolesAction;
-use App\Actions\Nodes\RelocateGatewayRoleAction;
+use App\Actions\Nodes\RelocateNodeRoleAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Data\Nodes\NodeRoleAssignmentData;
 use App\Data\Nodes\NodeRoleMutationData;
@@ -76,9 +76,9 @@ final class NodeRolesController extends Controller
     public function relocate(
         RelocateNodeRoleRequest $request,
         Node $node,
-        RelocateGatewayRoleAction $action,
+        RelocateNodeRoleAction $action,
     ): JsonResponse {
-        $outcome = $action->execute($node, $request->role(), $request->force());
+        $outcome = $action->execute($node, $request->role(), $request->force(), $request->from());
 
         return response()->json([
             'data' => NodeRoleMutationData::added($node, $outcome)->toArray(),

@@ -91,7 +91,8 @@
                 "0081",
                 "0083",
                 "0090",
-                "0091"
+                "0091",
+                "0095"
             ]
         },
         {
@@ -2355,7 +2356,8 @@
             "governing_adrs": [
                 "0080",
                 "0084",
-                "0087"
+                "0087",
+                "0095"
             ]
         },
         {
@@ -2422,14 +2424,16 @@
                 "Database",
                 "Gateway",
                 "Node",
-                "Process"
+                "Process",
+                "Route"
             ],
             "governing_adrs": [
                 "0061",
                 "0090",
                 "0091",
                 "0092",
-                "0094"
+                "0094",
+                "0095"
             ]
         },
         {
@@ -2514,6 +2518,30 @@
                 "0090",
                 "0092",
                 "0094"
+            ]
+        },
+        {
+            "path": "docs/decisions/0095-relocate-relocatable-singleton-roles.md",
+            "title": "ADR 0095: Relocate relocatable singleton roles as one Orbit action",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0071",
+                "0087",
+                "0090",
+                "0092",
+                "0095"
             ]
         },
         {
@@ -2639,7 +2667,8 @@
                 "0091",
                 "0092",
                 "0093",
-                "0094"
+                "0094",
+                "0095"
             ]
         },
         {
@@ -3665,7 +3694,8 @@
             "governing_adrs": [
                 "0091",
                 "0092",
-                "0094"
+                "0094",
+                "0095"
             ]
         },
         {

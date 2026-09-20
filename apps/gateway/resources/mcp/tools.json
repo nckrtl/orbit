@@ -3414,7 +3414,7 @@
     {
       "name": "node-role-relocate",
       "title": "node:role:relocate",
-      "description": "Move the singleton gateway role to another node.",
+      "description": "Move a relocatable singleton role to another node.",
       "method": "POST",
       "path": "/api/v1/nodes/{node}/roles/{role}/relocate",
       "path_inputs": [
@@ -3448,7 +3448,12 @@
           },
           "force": {
             "type": "string",
-            "description": "Confirm the gateway role transfer"
+            "description": "Confirm the role transfer"
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Optional source Node ID or name"
           }
         },
         "additionalProperties": false,

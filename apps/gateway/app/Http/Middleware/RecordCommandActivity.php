@@ -871,7 +871,7 @@ final readonly class RecordCommandActivity
     private function relocateNodeRoleInput(Request $request): array
     {
         try {
-            $input = $this->jsonInspector->inspect($request->getContent(), ['force']);
+            $input = $this->jsonInspector->inspect($request->getContent(), ['force', 'from']);
         } catch (UnexpectedValueException) {
             return [];
         }
@@ -886,6 +886,7 @@ final readonly class RecordCommandActivity
             ! is_string($input['role'] ?? null)
             || ! RoleName::tryFrom((string) $input['role']) instanceof RoleName
             || (array_key_exists('force', $input) && ! is_bool($input['force']))
+            || (array_key_exists('from', $input) && (! is_int($input['from']) || $input['from'] < 1))
         ) {
             return [];
         }

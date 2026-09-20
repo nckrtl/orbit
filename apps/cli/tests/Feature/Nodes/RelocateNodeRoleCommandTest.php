@@ -43,6 +43,7 @@ it('registers the exact node role relocate command signature surface', function 
         ->and(relocate_node_role_command_options($command))
         ->toBe([
             'force' => false,
+            'from' => null,
             'json' => false,
         ]);
 });
@@ -72,6 +73,30 @@ it('sends one forced gateway role relocate request as json', function (): void {
         ->toBe('/api/v1/nodes/7/roles/gateway/relocate')
         ->and($pendingRequest?->body()->all())
         ->toBe(['force' => true]);
+});
+
+it('sends optional from as a numeric source node id', function (): void {
+    $mockClient = MockClient::global([
+        RelocateNodeRoleRequest::class => MockResponse::make([
+            'data' => relocated_gateway_role_payload(),
+            'meta' => ['request_id' => relocate_node_role_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:relocate', [
+            'node' => '7',
+            'role' => 'websocket',
+            '--from' => '3',
+            '--force' => true,
+            '--json' => true,
+        ])
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastPendingRequest()?->body()->all())
+        ->toBe(['force' => true, 'from' => 3])
+        ->and($mockClient->getLastRequest()?->resolveEndpoint())
+        ->toBe('/api/v1/nodes/7/roles/websocket/relocate');
 });
 
 it('shows deterministic human output for a relocated gateway role', function (): void {

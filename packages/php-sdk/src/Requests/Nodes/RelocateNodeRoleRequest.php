@@ -22,6 +22,7 @@ final class RelocateNodeRoleRequest extends GatewayRequest implements HasBody
         private readonly int $nodeId,
         private readonly string $role,
         private readonly bool $force,
+        private readonly ?int $from = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -37,11 +38,17 @@ final class RelocateNodeRoleRequest extends GatewayRequest implements HasBody
         return NodeRoleMutationResponse::fromGatewayData($data, $requestId);
     }
 
-    /** @return array{force: bool} */
+    /** @return array{force: bool, from?: int} */
     protected function defaultBody(): array
     {
-        return [
+        $body = [
             'force' => $this->force,
         ];
+
+        if ($this->from !== null) {
+            $body['from'] = $this->from;
+        }
+
+        return $body;
     }
 }

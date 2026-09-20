@@ -608,12 +608,82 @@ it('requires force before relocating the gateway role', function (): void {
     expect($assignment->refresh()->node_id)->toBe($this->caller->id);
 });
 
-it('refuses to relocate a role other than gateway', function (): void {
+it('refuses to relocate a role that is not relocatable', function (): void {
     $this
         ->postJson("/api/v1/nodes/{$this->node->id}/roles/vpn/relocate", ['force' => true])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.message', 'Role [vpn] cannot be relocated.');
+});
+
+it('relocates the singleton websocket assignment onto the target node', function (): void {
+    $source = node_roles_api_node('websocket-source');
+    $source->roles()->create([
+        'role' => RoleName::WebSocket,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/websocket/relocate", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.role', 'websocket')
+        ->assertJsonPath('data.node_id', $this->node->id)
+        ->assertJsonPath('data.assignment.role', 'websocket')
+        ->assertJsonPath('data.assignment.status', 'active');
+
+    expect($source->roles()->where('role', RoleName::WebSocket)->exists())
+        ->toBeFalse()
+        ->and($this->node->roles()->where('role', RoleName::WebSocket)->exists())
+        ->toBeTrue()
+        ->and($this->roleLifecycle->converged)
+        ->toBe(['websocket'])
+        ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => 'websocket', 'purge_data' => false]]);
+});
+
+it('relocates leftover websocket resources when the target already holds the role', function (): void {
+    $leftover = node_roles_api_node('websocket-leftover');
+    $this->node->roles()->create([
+        'role' => RoleName::WebSocket,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/websocket/relocate", [
+            'force' => true,
+            'from' => $leftover->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.role', 'websocket')
+        ->assertJsonPath('data.node_id', $this->node->id);
+
+    expect($this->node->roles()->where('role', RoleName::WebSocket)->count())
+        ->toBe(1)
+        ->and($this->roleLifecycle->converged)
+        ->toBe(['websocket'])
+        ->and($this->roleLifecycle->removed)
+        ->toBe([['role' => 'websocket', 'purge_data' => false]]);
+});
+
+it('relocates the singleton metrics assignment onto the target node', function (): void {
+    $source = node_roles_api_node('metrics-source');
+    $source->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles/metrics/relocate", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.role', 'metrics')
+        ->assertJsonPath('data.node_id', $this->node->id);
+
+    expect($source->roles()->where('role', RoleName::Metrics)->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->converged)
+        ->toBe(['metrics']);
 });
 
 it('includes the same role enum validation details for add and remove', function (): void {

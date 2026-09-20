@@ -12,6 +12,7 @@ final readonly class RoleDefinition
         public bool $singleton,
         public bool $assignableDuringProvisioning,
         public bool $mutable,
+        public bool $relocatable,
         public array $conflicts = [],
     ) {}
 }
