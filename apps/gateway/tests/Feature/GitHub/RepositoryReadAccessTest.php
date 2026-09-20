@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Models\Setting;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -43,6 +44,15 @@ describe('RepositoryReadAccess', function (): void {
         Http::fake(['https://api.github.com/repos/acme/shop/installation' => Http::response([], 404)]);
 
         expect(app(RepositoryReadAccess::class)->for('https://github.com/acme/shop')->isEmpty())->toBeTrue();
+    });
+
+    it('reads without a credential when the stored private key cannot be decrypted', function (): void {
+        GitHubTestSupport::storeApp();
+        Setting::query()->where('key', 'github.app.private_key')->update(['value' => 'not-encrypted']);
+
+        expect(app(RepositoryReadAccess::class)->for('https://github.com/acme/shop')->isEmpty())->toBeTrue();
+
+        Http::assertNothingSent();
     });
 
     it('reads without a credential when GitHub is unavailable', function (): void {

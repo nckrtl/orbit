@@ -6,13 +6,13 @@ namespace App\Infrastructure\Apps;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Apps\AppUpdateSourceMutator;
+use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
-use SensitiveParameter;
 
 final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMutator
 {
@@ -23,6 +23,8 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
 
     public function preflightRepository(array $checkouts, string $currentUrl, string $proposedUrl): void
     {
+        $read = $this->access->for($proposedUrl);
+
         foreach ($this->uniqueCheckouts($checkouts) as $checkout) {
             $this->run(
                 $checkout,
@@ -41,7 +43,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                     BASH,
                 'app-update-repository-preflight',
                 'app.repository_preflight_failed',
-                readRepository: $proposedUrl,
+                read: $read,
             );
         }
     }
@@ -131,7 +133,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                 BASH,
             'app-update-default-branch-preflight',
             'app.source_switch_failed',
-            readRepository: $instance->loadMissing('app')->app->repository_url,
+            read: $this->access->for($instance->loadMissing('app')->app->repository_url),
         );
     }
 
@@ -187,12 +189,11 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         string $script,
         string $step,
         string $errorCode,
-        #[SensitiveParameter]
-        ?string $readRepository = null,
+        ?GitReadEnvironment $read = null,
     ): void {
-        $readScript = $readRepository === null
-            ? null
-            : GitReadScript::for($this->access->for($readRepository), $script);
+        $readScript = $read instanceof GitReadEnvironment
+            ? GitReadScript::for($read, $script)
+            : null;
 
         try {
             $this->ssh->execute(

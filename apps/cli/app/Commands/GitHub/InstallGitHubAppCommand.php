@@ -186,9 +186,16 @@ final class InstallGitHubAppCommand extends GitHubCommand
         $progress = $this->progressDisplay('Wait for the installation');
         $progress->admit('install', 'Wait for the installation', 'Waiting for GitHub', 'Installed the App');
 
-        $account = $progress->during('install', function () use ($connector, $step, $deadline, $poll): ?string {
+        $failure = null;
+        $account = $progress->during('install', function () use ($connector, $step, $deadline, $poll, &$failure): ?string {
             while (true) {
-                $account = $this->newAccount($connector, $step->accounts);
+                try {
+                    $account = $this->newAccount($connector, $step->accounts);
+                } catch (GatewayApiException $exception) {
+                    $failure = $exception;
+
+                    return null;
+                }
 
                 if ($account !== null) {
                     return $account;
@@ -203,6 +210,17 @@ final class InstallGitHubAppCommand extends GitHubCommand
                 }
             }
         });
+
+        if ($failure instanceof GatewayApiException) {
+            $progress->complete('install', ProgressState::Failure);
+            $progress->finish('Stopped waiting for the installation.');
+
+            return $this->renderGatewayFailure(
+                $failure->errorCode() ?? 'gateway.request_failed',
+                $failure->getMessage(),
+                $failure->requestId(),
+            );
+        }
 
         if ($account === null) {
             $progress->complete('install', ProgressState::Failure);
@@ -222,16 +240,23 @@ final class InstallGitHubAppCommand extends GitHubCommand
 
     /**
      * The account of an installation that the baseline did not contain, or null while the Gateway
-     * still reports no App or no new account. A GitHub failure ends the wait.
+     * reports no new account. A Gateway that still has no App means the operator has not confirmed
+     * the registration yet, so the wait continues; any other failure ends it.
      *
      * @param  list<string>  $baseline
+     *
+     * @throws GatewayApiException
      */
     private function newAccount(GatewayConnector $connector, array $baseline): ?string
     {
         try {
             $app = $this->sendOrThrow($connector, new ShowGitHubAppRequest, GitHubAppResponse::class);
-        } catch (GatewayApiException) {
-            return null;
+        } catch (GatewayApiException $exception) {
+            if ($exception->errorCode() === 'github.app_missing') {
+                return null;
+            }
+
+            throw $exception;
         }
 
         if (! $app instanceof GitHubAppResponse) {

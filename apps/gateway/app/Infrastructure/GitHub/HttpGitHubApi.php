@@ -158,7 +158,7 @@ final readonly class HttpGitHubApi implements GitHubApi
         return new GitHubInstallation(
             id: $id,
             account: $account,
-            type: strtolower($type),
+            type: strtolower($type) === 'organization' ? 'organization' : 'user',
             repositories: $repositories === 'all' ? 'all' : 'selected',
             suspended: ($row['suspended_at'] ?? null) !== null,
         );

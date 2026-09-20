@@ -179,6 +179,24 @@ describe('GitHub App API', function (): void {
         });
     });
 
+    it('reports an unexpected installation target type as a user', function (): void {
+        GitHubTestSupport::storeApp();
+        Http::fake([
+            'https://api.github.com/app/installations*' => Http::response([[
+                'id' => 9,
+                'account' => ['login' => 'acme'],
+                'target_type' => 'Enterprise',
+                'repository_selection' => 'everything',
+                'suspended_at' => null,
+            ]]),
+        ]);
+
+        $this->getJson('/api/v1/github/app')
+            ->assertOk()
+            ->assertJsonPath('data.installations.0.type', 'user')
+            ->assertJsonPath('data.installations.0.repositories', 'selected');
+    });
+
     it('reports a missing App and an unreachable GitHub', function (): void {
         $this->getJson('/api/v1/github/app')->assertNotFound()->assertJsonPath('error.code', 'github.app_missing');
         $this->deleteJson('/api/v1/github/app')->assertNotFound()->assertJsonPath('error.code', 'github.app_missing');

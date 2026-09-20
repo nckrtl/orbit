@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\GitHub;
 
 use SensitiveParameter;
+use Throwable;
 
 /**
  * Supplies the Git configuration that lets one command read one repository through the Gateway's
@@ -13,8 +14,8 @@ use SensitiveParameter;
  * The configuration travels in `GIT_CONFIG_*` environment variables, so the token is never part of
  * the origin URL, the command arguments, `.git/config`, or a file. A repository that no installation
  * covers, and a repository on another host, gets no configuration and is read as before. A GitHub
- * failure also yields no configuration, so a public repository stays readable and a private one
- * fails with the read's own error code.
+ * failure, and an unreadable stored credential, also yield no configuration, so a public repository
+ * stays readable and a private one fails with the read's own error code.
  */
 final readonly class RepositoryReadAccess
 {
@@ -31,13 +32,13 @@ final readonly class RepositoryReadAccess
             return GitReadEnvironment::none();
         }
 
-        $credentials = $this->store->credentials();
-
-        if (! $credentials instanceof GitHubAppCredentials) {
-            return GitReadEnvironment::none();
-        }
-
         try {
+            $credentials = $this->store->credentials();
+
+            if (! $credentials instanceof GitHubAppCredentials) {
+                return GitReadEnvironment::none();
+            }
+
             $installation = $this->github->repositoryInstallation($credentials, $repository);
 
             if ($installation === null) {
@@ -47,7 +48,7 @@ final readonly class RepositoryReadAccess
             return GitReadEnvironment::forGitHubToken(
                 $this->github->repositoryReadToken($credentials, $installation, $repository),
             );
-        } catch (GitHubApiException) {
+        } catch (Throwable) {
             return GitReadEnvironment::none();
         }
     }

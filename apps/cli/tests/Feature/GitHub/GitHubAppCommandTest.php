@@ -227,6 +227,29 @@ describe('github:app:install', function (): void {
             ->toBe(['https://github.com/apps/orbit-acme/installations/new']);
     });
 
+    it('stops waiting and reports a Gateway failure instead of polling on', function (): void {
+        MockClient::global([
+            ShowGitHubAppRequest::class => github_show_sequence([
+                github_app_payload(['installations' => []]),
+            ], failAfter: 1),
+            InstallGitHubAppRequest::class => MockResponse::make([
+                'data' => [
+                    'step' => 'install',
+                    'url' => 'https://github.com/apps/orbit-acme/installations/new',
+                    'accounts' => [],
+                ],
+                'meta' => ['request_id' => github_request_id()],
+            ]),
+        ]);
+        config()->set('orbit.github.install_wait_seconds', 600);
+
+        $output = github_run('github:app:install', expectedStatus: 1);
+
+        expect($output)
+            ->toContain('Could not reach api.github.com.')
+            ->not->toContain('Stopped waiting before the Gateway saw a new installation.');
+    });
+
     it('ignores an account that was already installed when the step was issued', function (): void {
         MockClient::global([
             ShowGitHubAppRequest::class => MockResponse::make([
@@ -264,16 +287,23 @@ function github_run(string $command, int $expectedStatus = 0): string
 /**
  * @param  list<array<string, mixed>>  $payloads
  */
-function github_show_sequence(array $payloads): Closure
+function github_show_sequence(array $payloads, ?int $failAfter = null): Closure
 {
     $index = 0;
 
-    return static function () use ($payloads, &$index): MockResponse {
-        $payload = $payloads[min($index, count($payloads) - 1)];
-        $index++;
+    return static function () use ($payloads, $failAfter, &$index): MockResponse {
+        $current = $index++;
+
+        if ($failAfter !== null && $current >= $failAfter) {
+            return MockResponse::make(
+                ['error' => ['code' => 'github.unavailable', 'message' => 'Could not reach api.github.com.']],
+                502,
+                ['X-Orbit-Request-Id' => github_request_id()],
+            );
+        }
 
         return MockResponse::make([
-            'data' => $payload,
+            'data' => $payloads[min($current, count($payloads) - 1)],
             'meta' => ['request_id' => github_request_id()],
         ]);
     };
