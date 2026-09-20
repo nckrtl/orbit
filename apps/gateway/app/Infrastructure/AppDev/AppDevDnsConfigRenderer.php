@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\AppDev\ClusterRouterDnsSelection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
@@ -134,7 +135,29 @@ final readonly class AppDevDnsConfigRenderer
             }
         }
 
-        $websocket = Node::query()
+        $websocket = $this->roleNode(RoleName::WebSocket, $pendingNode);
+
+        if ($websocket instanceof Node) {
+            $records->push("host-record=reverb.orbit,{$websocket->wireguard_ip}");
+        }
+
+        $analytics = $this->roleNode(RoleName::Analytics, $pendingNode);
+
+        if ($analytics instanceof Node) {
+            $records->push('host-record='.AnalyticsHostname::Value.",{$analytics->wireguard_ip}");
+        }
+
+        foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
+            $records->push($record);
+        }
+
+        return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
+    }
+
+    /** The Node that holds a singleton role, counting a pending Node that is still provisioning it. */
+    private function roleNode(RoleName $role, ?Node $pendingNode): ?Node
+    {
+        return Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
                 $q->where('status', LifecycleStatus::Active->value);
 
@@ -143,8 +166,8 @@ final readonly class AppDevDnsConfigRenderer
                 }
             })
             ->whereNotNull('wireguard_ip')
-            ->whereHas('roles', static function (Builder $q) use ($pendingNode): void {
-                $q->where('role', RoleName::WebSocket->value)
+            ->whereHas('roles', static function (Builder $q) use ($pendingNode, $role): void {
+                $q->where('role', $role->value)
                     ->where(static function (Builder $q) use ($pendingNode): void {
                         $q->where('status', LifecycleStatus::Active->value);
 
@@ -156,16 +179,6 @@ final readonly class AppDevDnsConfigRenderer
                     });
             })
             ->first();
-
-        if ($websocket instanceof Node) {
-            $records->push("host-record=reverb.orbit,{$websocket->wireguard_ip}");
-        }
-
-        foreach ($this->selection->clusterTldRecords($nodeOverrides, $clusterOverrides) as $record) {
-            $records->push($record);
-        }
-
-        return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
     }
 
     /**

@@ -540,7 +540,10 @@ final readonly class RecordCommandActivity
         }
 
         try {
-            $input = $this->jsonInspector->inspect($request->getContent(), ['role', 'converge_existing']);
+            $input = $this->jsonInspector->inspect(
+                $request->getContent(),
+                ['role', 'converge_existing', 'postgres_process_id', 'clickhouse_process_id'],
+            );
         } catch (UnexpectedValueException) {
             return [];
         }
@@ -904,7 +907,9 @@ final readonly class RecordCommandActivity
         return
             is_string($role)
             && RoleName::tryFrom($role) instanceof RoleName
-            && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']));
+            && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']))
+            && (! array_key_exists('postgres_process_id', $input) || is_int($input['postgres_process_id']))
+            && (! array_key_exists('clickhouse_process_id', $input) || is_int($input['clickhouse_process_id']));
     }
 
     private function callerIp(Request $request): string

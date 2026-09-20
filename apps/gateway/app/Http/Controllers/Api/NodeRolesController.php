@@ -55,7 +55,7 @@ final class NodeRolesController extends Controller
         $this->guardMutable($role, $registry);
 
         try {
-            $result = $action->execute($node, $role, $request->convergeExisting());
+            $result = $action->execute($node, $role, $request->convergeExisting(), $request->analyticsSettings());
         } catch (RoleAssignmentException $exception) {
             throw new NodeRoleValidationException(
                 message: $exception->getMessage(),

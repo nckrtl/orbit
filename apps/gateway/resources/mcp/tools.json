@@ -55,6 +55,30 @@
       }
     },
     {
+      "name": "analytics-update",
+      "title": "Pin the Plausible version",
+      "description": "Pin another Plausible version for the analytics role.",
+      "method": "POST",
+      "path": "/api/v1/analytics/update",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "description": "Display this application version"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "version"
+        ]
+      }
+    },
+    {
       "name": "app-create",
       "title": "Create an App",
       "description": "Create an app.",
@@ -3178,7 +3202,8 @@
                 "app-prod",
                 "metrics",
                 "database",
-                "websocket"
+                "websocket",
+                "analytics"
               ]
             }
           },
@@ -3370,12 +3395,23 @@
               "app-prod",
               "metrics",
               "database",
-              "websocket"
+              "websocket",
+              "analytics"
             ],
             "description": "Role name"
           },
           "converge_existing": {
             "type": "boolean"
+          },
+          "postgres_process_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Conditionally required."
+          },
+          "clickhouse_process_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Conditionally required."
           }
         },
         "additionalProperties": false,
@@ -3442,7 +3478,8 @@
               "app-prod",
               "metrics",
               "database",
-              "websocket"
+              "websocket",
+              "analytics"
             ],
             "description": "Role name"
           },
@@ -3494,7 +3531,8 @@
               "app-prod",
               "metrics",
               "database",
-              "websocket"
+              "websocket",
+              "analytics"
             ],
             "description": "Role name"
           },

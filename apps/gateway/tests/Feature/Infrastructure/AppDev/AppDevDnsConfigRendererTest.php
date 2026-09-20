@@ -148,6 +148,50 @@ it('keeps reverb.orbit on the websocket role own node, not the Gateway', functio
         ->toContain('host-record=reverb.orbit,10.44.0.1');
 });
 
+it('keeps analytics.orbit on the analytics role own node, not the Gateway', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.1',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $analytics = Node::query()->create([
+        'name' => 'services',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.12',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.12',
+    ]);
+    $analytics->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)
+        ->toContain('host-record=analytics.orbit,10.44.0.12')
+        ->not
+        ->toContain('host-record=analytics.orbit,10.44.0.1'.PHP_EOL);
+});
+
+it('omits analytics.orbit when no analytics role is active', function (): void {
+    $node = Node::query()->create([
+        'name' => 'services',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.12',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.12',
+    ]);
+    $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Failed]);
+
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)->not->toContain('analytics.orbit');
+});
+
 it('omits reverb.orbit when no websocket role is active', function (): void {
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
 

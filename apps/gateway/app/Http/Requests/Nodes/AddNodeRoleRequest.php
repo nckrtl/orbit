@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Nodes;
 
+use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Nodes\RoleName;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Closure;
@@ -20,6 +21,9 @@ final class AddNodeRoleRequest extends FormRequest
         return [
             'role' => ['required', 'string', Rule::enum(RoleName::class)],
             'converge_existing' => ['sometimes', 'boolean', $this->strictBoolean(...)],
+            // Written out, not shared through a method, so the API reference reads the integer type.
+            'postgres_process_id' => ['required_if:role,analytics', 'prohibited_unless:role,analytics', 'integer', 'min:1', $this->strictPositiveInteger(...)],
+            'clickhouse_process_id' => ['required_if:role,analytics', 'prohibited_unless:role,analytics', 'integer', 'min:1', $this->strictPositiveInteger(...)],
         ];
     }
 
@@ -29,7 +33,7 @@ final class AddNodeRoleRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['role', 'converge_existing'],
+                ['role', 'converge_existing', 'postgres_process_id', 'clickhouse_process_id'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -44,6 +48,26 @@ final class AddNodeRoleRequest extends FormRequest
     public function convergeExisting(): bool
     {
         return $this->validated('converge_existing', false) === true;
+    }
+
+    /** The storage Processes of the analytics role, or null for every other role. */
+    public function analyticsSettings(): ?AnalyticsRoleSettings
+    {
+        if ($this->role() !== RoleName::Analytics) {
+            return null;
+        }
+
+        return new AnalyticsRoleSettings(
+            postgresProcessId: $this->integer('postgres_process_id'),
+            clickhouseProcessId: $this->integer('clickhouse_process_id'),
+        );
+    }
+
+    private function strictPositiveInteger(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (! is_int($value) || $value < 1) {
+            $fail("The {$attribute} field must be a positive integer.");
+        }
     }
 
     private function strictBoolean(string $attribute, mixed $value, Closure $fail): void

@@ -41,6 +41,8 @@ it('registers the exact node role add command signature surface', function (): v
         ->and(node_role_add_command_options($command))
         ->toBe([
             'converge' => false,
+            'postgres-process' => null,
+            'clickhouse-process' => null,
             'json' => false,
         ]);
 });
@@ -244,6 +246,52 @@ it('renders gateway-owned node role add failures through the shared boundary', f
         ->artisan('node:role:add', ['node' => '7', 'role' => 'gateway', '--json' => true])
         ->expectsOutput($expected)
         ->assertExitCode(1);
+});
+
+describe('the analytics role', function (): void {
+    it('sends the two storage Process IDs with the role', function (): void {
+        $mockClient = MockClient::global([
+            AddNodeRoleRequest::class => MockResponse::make([
+                'data' => [...added_node_role_payload(), 'role' => 'analytics'],
+                'meta' => ['request_id' => node_role_add_request_id()],
+            ], 201),
+        ]);
+
+        $this
+            ->artisan('node:role:add', ['node' => '7', 'role' => 'analytics', '--postgres-process' => '41', '--clickhouse-process' => '42', '--json' => true])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastPendingRequest()?->body()->all())
+            ->toBe(['role' => 'analytics', 'converge_existing' => false, 'postgres_process_id' => 41, 'clickhouse_process_id' => 42]);
+    });
+
+    it('refuses a missing or malformed storage Process without prompting when it cannot prompt, and sends nothing', function (array $options): void {
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('node:role:add', ['node' => '7', 'role' => 'analytics', '--json' => true, ...$options])
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'both missing' => [[]],
+        'ClickHouse missing' => [['--postgres-process' => '41']],
+        'not a number' => [['--postgres-process' => 'postgres', '--clickhouse-process' => '42']],
+        'zero' => [['--postgres-process' => '41', '--clickhouse-process' => '0']],
+    ]);
+
+    it('sends no storage Process for another role', function (): void {
+        $mockClient = MockClient::global([
+            AddNodeRoleRequest::class => MockResponse::make([
+                'data' => added_node_role_payload(),
+                'meta' => ['request_id' => node_role_add_request_id()],
+            ], 201),
+        ]);
+
+        $this->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev', '--json' => true])->assertExitCode(0);
+
+        expect($mockClient->getLastPendingRequest()?->body()->all())->toBe(['role' => 'app-dev', 'converge_existing' => false]);
+    });
 });
 
 function node_role_add_command_options(?SymfonyCommand $command): array

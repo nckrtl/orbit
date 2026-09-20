@@ -15,4 +15,5 @@ enum RoleName: string
     case Metrics = 'metrics';
     case Database = 'database';
     case WebSocket = 'websocket';
+    case Analytics = 'analytics';
 }

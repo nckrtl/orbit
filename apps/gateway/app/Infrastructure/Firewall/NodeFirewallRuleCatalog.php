@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressPolicy;
@@ -15,6 +18,7 @@ use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
@@ -86,7 +90,50 @@ final readonly class NodeFirewallRuleCatalog
             RoleName::WebSocket => [
                 $this->rule('orbit:websocket-https', '443', $this->wireguardIp($node), 'orbit'),
             ],
+            RoleName::Analytics => [
+                $this->rule('orbit:analytics-https', '443', $this->wireguardIp($node), 'orbit'),
+                ...$this->analyticsLocalStorage($node),
+            ],
         };
+    }
+
+    /**
+     * Plausible reaches a storage Process on another Node over WireGuard, which every managed Node
+     * already admits. A storage Process on the role's own Node is different: the request leaves
+     * the `plausible` container through the Docker bridge, so it needs a rule of its own.
+     *
+     * @return list<UfwManagedRule>
+     */
+    private function analyticsLocalStorage(Node $node): array
+    {
+        $settings = $node->exists ? app(AnalyticsRoleSettingsRepository::class)->find($node) : null;
+
+        if (! $settings instanceof AnalyticsRoleSettings) {
+            return [];
+        }
+
+        $rules = [];
+
+        foreach ([
+            ['orbit:analytics-postgres-local', $settings->postgresProcessId, 5432],
+            ['orbit:analytics-clickhouse-local', $settings->clickhouseProcessId, 8123],
+        ] as [$comment, $processId, $containerPort]) {
+            $process = Process::query()->find($processId);
+
+            if (! $process instanceof Process || $process->owner_type !== Node::class || $process->owner_id !== $node->id) {
+                continue;
+            }
+
+            try {
+                $port = AnalyticsStorageConnection::publishedPort($process, $containerPort);
+            } catch (ResourceOperationException) {
+                continue;
+            }
+
+            $rules[] = $this->rule($comment, (string) $port, $this->wireguardIp($node), 'docker0');
+        }
+
+        return $rules;
     }
 
     /** @return non-empty-list<UfwManagedRule> */
