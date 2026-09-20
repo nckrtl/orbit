@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Certificates;
 
+use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -33,6 +34,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         $scope = match ($hostname) {
             'metrics.orbit' => 'metrics',
             WebSocketHostname::Value => 'websocket',
+            AnalyticsHostname::Value => 'analytics',
             default => 'gateway',
         };
         $versionsDirectory = $directory.'/'.$scope.'-versions';

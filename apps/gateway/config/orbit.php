@@ -31,6 +31,10 @@ return [
         'install_path' => env(key: 'ORBIT_WEBSOCKET_INSTALL_PATH', default: '/opt/orbit/websocket'),
         'port' => max(1, (int) env('ORBIT_WEBSOCKET_PORT', 8790)),
     ],
+    'analytics' => [
+        // The Plausible Community Edition release a new analytics role runs; `analytics:update` pins another.
+        'plausible_version' => env(key: 'ORBIT_ANALYTICS_PLAUSIBLE_VERSION', default: '3.2.1'),
+    ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
         'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),

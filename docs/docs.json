@@ -103,6 +103,7 @@
               "reference/github-app",
               "reference/database-role",
               "reference/metrics",
+              "reference/analytics",
               "reference/herdr-sessions",
               "reference/local-resolver-overrides",
               "reference/cli-binaries",
@@ -157,6 +158,7 @@
               "cli/tool",
               "cli/github",
               "cli/metrics",
+              "cli/analytics",
               "cli/dns"
             ]
           },
@@ -283,6 +285,13 @@
               "DELETE /api/v1/github/app",
               "GET /api/v1/github/app",
               "POST /api/v1/github/app/install"
+            ]
+          },
+          {
+            "group": "Analytics",
+            "openapi": "/openapi.json",
+            "pages": [
+              "POST /api/v1/analytics/update"
             ]
           },
           {
@@ -557,6 +566,8 @@
               "decisions/0093-show-live-ufw-and-desired-rules-that-match-converge",
               "decisions/0094-project-wireguard-hub-config-onto-the-vpn-node",
               "decisions/0095-relocate-relocatable-singleton-roles",
+              "decisions/0096-run-plausible-through-an-analytics-role",
+              "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app"
             ]
           }

@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin the Plausible version
+         * @description Pin another Plausible version for the analytics role.
+         */
+        post: operations["analytics-update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/apps": {
         parameters: {
             query?: never;
@@ -2621,6 +2641,69 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Display this application version */
+                    version: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            node_id?: number;
+                            node_name?: string;
+                            /** @description The Plausible Community Edition version the role now runs, as three numbers. */
+                            version?: string;
+                            previous_version?: string;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7504,7 +7587,7 @@ export interface operations {
                     user?: string;
                     /** @description Orbit-managed system user; defaults to orbit for a new node */
                     orbit_user?: string;
-                    roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket")[];
+                    roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics")[];
                     cluster_id?: number | null;
                     /** @description Stable WireGuard IP address */
                     wireguard_ip?: string | null;
@@ -8318,8 +8401,12 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     converge_existing?: boolean;
+                    /** @description Conditionally required. */
+                    postgres_process_id?: number;
+                    /** @description Conditionally required. */
+                    clickhouse_process_id?: number;
                 };
             };
         };
@@ -8404,7 +8491,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     /** @description Confirm destructive role removal and dependent cleanup */
                     force?: string;
                     /** @description Request supported role-owned data cleanup */
@@ -8483,7 +8570,7 @@ export interface operations {
                      * @description Role name
                      * @enum {string}
                      */
-                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket";
+                    role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     /** @description Confirm the role transfer */
                     force?: string;
                     /** @description Optional source Node ID or name */

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
@@ -338,6 +340,197 @@ it('refuses database settings and documented role conflicts', function (): void 
         ->toBeEmpty()
         ->and($this->node->roles()->where('role', RoleName::Database)->exists())
         ->toBeFalse();
+});
+
+describe('analytics role assignment', function (): void {
+    beforeEach(function (): void {
+        $this->caller->accessibleNodes()->attach($this->node);
+    });
+
+    it('requires both storage Process IDs', function (array $body, string $field): void {
+        $this
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'analytics', ...$body])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonStructure(['error' => ['details' => [$field]]]);
+
+        expect($this->node->roles()->exists())
+            ->toBeFalse()
+            ->and($this->roleLifecycle->converged)
+            ->toBeEmpty();
+    })->with([
+        'no IDs' => [[], 'postgres_process_id'],
+        'no ClickHouse ID' => [['postgres_process_id' => 1], 'clickhouse_process_id'],
+        'no PostgreSQL ID' => [['clickhouse_process_id' => 1], 'postgres_process_id'],
+        'a string ID' => [['postgres_process_id' => '1', 'clickhouse_process_id' => 2], 'postgres_process_id'],
+        'a zero ID' => [['postgres_process_id' => 1, 'clickhouse_process_id' => 0], 'clickhouse_process_id'],
+    ]);
+
+    it('prohibits storage Process IDs for every other role', function (): void {
+        $storage = analytics_storage_processes();
+
+        $this
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'database',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonStructure(['error' => ['details' => ['postgres_process_id', 'clickhouse_process_id']]]);
+
+        expect($this->node->roles()->exists())->toBeFalse();
+    });
+
+    it('refuses an unsupported storage Process before the assignment exists', function (): void {
+        $storage = analytics_storage_processes();
+        $mysql = analytics_storage_process($storage['node'], 'mysql', 'mysql:8.4');
+
+        $this
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $mysql->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'analytics.postgres_unsupported');
+
+        expect(NodeRole::query()->where('role', RoleName::Analytics)->exists())
+            ->toBeFalse()
+            ->and(app(AnalyticsRoleSettingsRepository::class)->find($this->node))
+            ->toBeNull()
+            ->and($this->roleLifecycle->converged)
+            ->toBeEmpty();
+    });
+
+    it('refuses a missing storage Process before the assignment exists', function (): void {
+        $storage = analytics_storage_processes();
+
+        $this
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id + 100,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'analytics.clickhouse_process_missing');
+
+        expect(NodeRole::query()->where('role', RoleName::Analytics)->exists())->toBeFalse();
+    });
+
+    it('assigns the role and records the two storage Processes', function (): void {
+        $storage = analytics_storage_processes();
+        $requestId = (string) Str::uuid();
+
+        $this
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.role', 'analytics');
+
+        $assignment = $this->node->roles()->where('role', RoleName::Analytics)->sole();
+
+        expect($assignment->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($this->roleLifecycle->converged)
+            ->toBe(['analytics'])
+            ->and(app(AnalyticsRoleSettingsRepository::class)->find($this->node))
+            ->toEqual(new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id))
+            ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('input'))
+            ->toBe([
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ]);
+    });
+
+    it('refuses the analytics role on the Gateway Node', function (): void {
+        $storage = analytics_storage_processes();
+
+        $this
+            ->postJson("/api/v1/nodes/{$this->caller->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath('error.message', 'Role [analytics] conflicts with assigned role [gateway].');
+
+        expect(app(AnalyticsRoleSettingsRepository::class)->find($this->caller))->toBeNull();
+    });
+});
+
+describe('analytics:update', function (): void {
+    beforeEach(function (): void {
+        $this->caller->accessibleNodes()->attach($this->node);
+        $this->assign = function (): void {
+            $storage = analytics_storage_processes();
+            $this->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+                'role' => 'analytics',
+                'postgres_process_id' => $storage['postgres']->id,
+                'clickhouse_process_id' => $storage['clickhouse']->id,
+            ])->assertCreated();
+        };
+    });
+
+    it('pins another Plausible version and converges the role again', function (): void {
+        ($this->assign)();
+
+        $this->postJson('/api/v1/analytics/update', ['version' => '3.3.0'])
+            ->assertOk()
+            ->assertJsonPath('data', [
+                'node_id' => $this->node->id,
+                'node_name' => $this->node->name,
+                'version' => '3.3.0',
+                'previous_version' => '3.2.1',
+            ]);
+
+        expect(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.3.0')
+            ->and($this->roleLifecycle->converged)->toBe(['analytics', 'analytics']);
+    });
+
+    it('does not converge again for the version that already runs', function (): void {
+        ($this->assign)();
+
+        $this->postJson('/api/v1/analytics/update', ['version' => '3.2.1'])->assertOk();
+
+        expect($this->roleLifecycle->converged)->toBe(['analytics']);
+    });
+
+    it('puts the earlier version back when the new one does not converge', function (): void {
+        ($this->assign)();
+        $this->roleLifecycle->convergenceFailure = new NodeRoleOperationException(
+            'analytics-runtime',
+            'node_role.convergence_failed',
+            'process.start_failed',
+            'The plausible Process did not start.',
+        );
+
+        $this->postJson('/api/v1/analytics/update', ['version' => '9.9.9'])->assertStatus(502);
+
+        expect(app(AnalyticsRoleSettingsRepository::class)->version($this->node))->toBe('3.2.1');
+    });
+
+    it('refuses while no Node has the analytics role', function (): void {
+        $this->postJson('/api/v1/analytics/update', ['version' => '3.3.0'])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'analytics.role_missing');
+    });
+
+    it('accepts three numbers and nothing else as a version', function (mixed $version): void {
+        ($this->assign)();
+
+        $this->postJson('/api/v1/analytics/update', ['version' => $version])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed');
+
+        expect($this->roleLifecycle->converged)->toBe(['analytics']);
+    })->with(['v3.3.0', 'latest', '3.3', '3.3.0-rc1', '3.3.0; rm -rf /', '', null]);
 });
 
 it('assigns lists and retries one Ingress through the existing exact lifecycle contract', function (): void {

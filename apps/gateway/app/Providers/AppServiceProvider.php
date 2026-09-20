@@ -12,6 +12,10 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\Analytics\AnalyticsPublicationManager;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\Analytics\AnalyticsSecretManager;
+use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevPhpFpmManager;
@@ -142,6 +146,10 @@ use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
+use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
+use App\Infrastructure\Analytics\NativeAnalyticsRoleSettingsRepository;
+use App\Infrastructure\Analytics\NativeAnalyticsSecretManager;
+use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
@@ -405,6 +413,10 @@ final class AppServiceProvider extends ServiceProvider
         ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
         ToolOperationLock::class => NativeToolOperationLock::class,
+        AnalyticsRoleSettingsRepository::class => NativeAnalyticsRoleSettingsRepository::class,
+        AnalyticsSecretManager::class => NativeAnalyticsSecretManager::class,
+        PlausibleRuntimeLifecycle::class => NativePlausibleRuntimeLifecycle::class,
+        AnalyticsPublicationManager::class => NativeAnalyticsPublicationManager::class,
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,

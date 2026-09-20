@@ -46,6 +46,7 @@ it('names what each app role leaves behind', function (RoleName $role, string $e
         RoleName::WebSocket,
         'Reverb checkout, its systemd unit and its Caddy site for the websocket role',
     ],
+    'analytics firewall' => [RoleName::Analytics, 'Orbit firewall rule for the analytics role'],
     'websocket firewall' => [RoleName::WebSocket, 'Orbit firewall rule for the websocket role'],
     'websocket credentials' => [
         RoleName::WebSocket,
