@@ -670,6 +670,17 @@ it('prepares every projection and Laravel URL before DNS then cuts over and clea
         ->toBeNull();
 });
 
+it('cleans up from the Route that is now authoritative, so the live certificate names the served domain', function (): void {
+    $route = route_domain_change_route(laravel: true);
+
+    app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
+
+    // Cleanup issues the live app-instance leaf and removes the staging scopes. Handing it the
+    // retiring Route publishes a certificate for a domain the Node no longer serves, and Caddy then
+    // falls back to automatic HTTPS for a private Orbit domain.
+    expect($this->events->cleanupDomains)->toBe(['cleanup:next.example.test']);
+});
+
 it('does not configure Laravel for a source profile classified as non-Laravel', function (): void {
     $route = route_domain_change_route(laravel: false);
 
@@ -1655,6 +1666,9 @@ final class RouteDomainChangeEvents
 {
     /** @var list<string> */
     public array $values = [];
+
+    /** @var list<string> Domains the projector was given after cutover, in call order. */
+    public array $cleanupDomains = [];
 }
 
 final class RouteDomainChangeProjectorFake implements RouteDomainProjector
@@ -1733,6 +1747,7 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
 
     public function cleanup(AppInstance $appInstance, Route $route): void
     {
+        $this->events->cleanupDomains[] = "cleanup:{$route->domain}";
         $this->event('cleanup');
     }
 

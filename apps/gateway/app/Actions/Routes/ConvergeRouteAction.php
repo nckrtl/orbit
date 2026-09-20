@@ -821,7 +821,9 @@ final readonly class ConvergeRouteAction
     {
         try {
             foreach ($targets as $appInstance) {
-                $this->projection->cleanup($appInstance, $current);
+                // The replacement is authoritative from cutover on, so the live certificate and the
+                // staging scopes are named after it, not after the Route being retired.
+                $this->projection->cleanup($appInstance, $replacement);
 
                 if ($appInstance->environment === 'production') {
                     $this->routeEnvironment->synchronizeRouteDomain(

@@ -33,6 +33,7 @@ interface RouteDomainProjector
 
     public function publishDns(Route $current, Route $candidate): void;
 
+    /** Runs after cutover, so `$route` is the Route the Node now serves, never the retiring one. */
     public function cleanup(AppInstance $appInstance, Route $route): void;
 
     public function rollbackDns(Route $route): void;

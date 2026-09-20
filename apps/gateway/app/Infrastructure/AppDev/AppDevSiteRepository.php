@@ -144,12 +144,18 @@ final readonly class AppDevSiteRepository
             });
         }
 
+        // A Route only becomes Retiring at cutover, when another Route already answers for it. Serving
+        // it past that point means serving a domain whose certificate now names its replacement, which
+        // sends Caddy to automatic HTTPS for a private Orbit domain.
         $routeQuery->where(static function (Builder $query): void {
             $query->where('status', '!=', RouteStatus::Retiring->value)
-                ->orWhereNotIn('id', AppInstanceTransfer::query()
-                    ->select('source_route_id')
-                    ->whereNotNull('cutover_at')
-                    ->whereColumn('source_route_id', '!=', 'destination_route_id'));
+                ->orWhere(static function (Builder $query): void {
+                    $query->whereNull('replaced_by_route_id')
+                        ->whereNotIn('id', AppInstanceTransfer::query()
+                            ->select('source_route_id')
+                            ->whereNotNull('cutover_at')
+                            ->whereColumn('source_route_id', '!=', 'destination_route_id'));
+                });
         });
 
         $routes = $routeQuery->get();
