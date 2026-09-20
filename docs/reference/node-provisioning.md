@@ -72,6 +72,8 @@ Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the
 
 A later `node:add` of a roleless Node therefore connects over public SSH again and republishes the WireGuard peer. The Gateway finalizes that publication over the verified tunnel, because role convergence closes the public path during the same request.
 
+After [relocate](/solutions/relocate-gateway-role) splits `gateway` from `vpn`, republishing a peer writes the hub WireGuard configuration to the `vpn` node. It does not install the hub `PrivateKey` or `Address` on the Gateway PHP host. [ADR 0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) owns that target.
+
 ## Remove a Node
 
 `orbit node:remove <node> [--offline] [--force]` removes the Node record and Gateway configuration. Online removal restores public SSH so you can recover or provision the machine again. First remove its App instances, Orbit firewall rules, roles, processes, and Herdr sessions. Orbit refuses to remove the caller's Node or one with the Gateway or VPN role. Other units, containers, and checkouts stay on the machine. See [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine).

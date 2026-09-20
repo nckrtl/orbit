@@ -57,6 +57,8 @@ Between those commands `gateway.orbit` has no active role, so private DNS omits 
 
 Private DNS publication now SSHes to the `vpn` node when that node is not the serving Gateway. Inspect the catalog and listener there, not on the new Gateway. A Metrics `--converge` that fails while publishing DNS leaves Grafana, Prometheus, and `/etc/orbit/metrics` in place.
 
+Peer converge and `node:add` project the WireGuard hub `PrivateKey` and `Address` onto the `vpn` node. After the roles split, that install SSHes to the `vpn` node and does not write those hub credentials onto the Gateway PHP host. The Gateway host keeps the peer configuration that already joined the mesh. Inspect `/etc/wireguard/orbit.conf` on the `vpn` node for hub identity. [ADR 0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) owns that target.
+
 `vpn` cannot be removed or added through the generic role commands.
 
 ## Limits

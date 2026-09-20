@@ -2,13 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
@@ -125,6 +133,105 @@ it('removes and restores only the selected peer in the serialized gateway projec
         expect($processes->calls[9]->input)->not->toContain('/run/orbit-wireguard');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('projects hub credentials onto the vpn node when gateway and vpn are split', function (): void {
+    $harness = gateway_peer_projection_target_harness(split: true);
+
+    try {
+        $harness->manager->converge($harness->peer);
+
+        $generated = (string) file_get_contents($harness->orbitHome.'/generated/wireguard/orbit.conf');
+        $script = $harness->ssh->protectedInputs[0] ?? '';
+
+        expect($harness->processes->calls)
+            ->toBe([])
+            ->and($harness->ssh->hosts)
+            ->toBe(['10.44.0.1'])
+            ->and($harness->ssh->users)
+            ->toBe([$harness->vpn->user])
+            ->and($harness->ssh->commands[0]->arguments)
+            ->toBe(['sudo', 'bash', '-seu'])
+            ->and($harness->ssh->commands[0]->input)
+            ->toBeNull()
+            ->and(implode(' ', $harness->ssh->commands[0]->arguments))
+            ->not->toContain($harness->hubPrivateKey)
+            ->and($generated)
+            ->toContain(
+                'PrivateKey = '.$harness->hubPrivateKey,
+                'Address = 10.44.0.1/24',
+                '# gateway',
+                'AllowedIPs = 10.44.0.2/32',
+                '# services',
+                'AllowedIPs = 10.44.0.3/32',
+            )
+            ->and($script)
+            ->toContain(base64_encode($generated), 'wg-quick strip', 'systemctl enable wg-quick@orbit')
+            ->and(base64_decode(
+                (string) preg_replace(
+                    '/^.*printf \'%s\' \'([A-Za-z0-9+\/=]+)\' \| base64 --decode.*$/s',
+                    '$1',
+                    $script,
+                ),
+            ))
+            ->toBe($generated);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('keeps local hub install when gateway and vpn share a node', function (): void {
+    $harness = gateway_peer_projection_target_harness(split: false);
+
+    try {
+        $harness->manager->converge($harness->peer);
+
+        expect($harness->ssh->hosts)
+            ->toBe([])
+            ->and($harness->processes->calls)
+            ->toHaveCount(5)
+            ->and($harness->processes->calls[0]->arguments)
+            ->toContain($harness->orbitHome.'/generated/wireguard/orbit.conf', '/etc/wireguard/orbit-candidate.conf');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('fails a split hub projection without writing through the local process runner', function (): void {
+    $harness = gateway_peer_projection_target_harness(split: true, succeed: false);
+
+    try {
+        expect(fn () => $harness->manager->converge($harness->peer))
+            ->toThrow(function (NodeProvisioningException $exception) use ($harness): void {
+                expect($exception->errorCode)
+                    ->toBe('vpn.server_start_failed')
+                    ->and($exception->getMessage())
+                    ->toContain($harness->vpn->name);
+            })
+            ->and($harness->processes->calls)
+            ->toBe([]);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('refuses a split hub projection without SSH instead of installing locally', function (): void {
+    $harness = gateway_peer_projection_target_harness(split: true, ssh: false);
+
+    try {
+        expect(fn () => $harness->manager->converge($harness->peer))
+            ->toThrow(function (NodeProvisioningException $exception) use ($harness): void {
+                expect($exception->errorCode)
+                    ->toBe('vpn.server_config_install_failed')
+                    ->and($exception->getMessage())
+                    ->toContain($harness->vpn->name)
+                    ->toContain('without SSH');
+            })
+            ->and($harness->processes->calls)
+            ->toBe([]);
+    } finally {
+        $harness->cleanup();
     }
 });
 
@@ -350,6 +457,154 @@ it('deletes the insecure temp and never writes stripped secret bytes when chmod 
         $harness->cleanup();
     }
 });
+
+function gateway_peer_projection_target_harness(bool $split, bool $succeed = true, bool $ssh = true): object
+{
+    $orbitHome = sys_get_temp_dir().'/orbit-vpn-projection-target-'.Str::uuid();
+    mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
+    $hubPrivateKey = str_repeat(string: 'S', times: 43).'=';
+    file_put_contents($orbitHome.'/wireguard/private.key', $hubPrivateKey);
+    file_put_contents($orbitHome.'/wireguard/public.key', str_repeat(string: 'P', times: 43).'=');
+
+    $vpn = Node::query()->create([
+        'name' => $split ? 'vpn' : 'gateway',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '85.9.218.89',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.1',
+        'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
+    ]);
+    $vpn->roles()->create([
+        'role' => RoleName::Vpn,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    if ($split) {
+        $gateway = Node::query()->create([
+            'name' => 'gateway',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '85.9.218.90',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.2',
+            'wireguard_public_key' => str_repeat(string: 'G', times: 43).'=',
+        ]);
+        $gateway->roles()->create([
+            'role' => RoleName::Gateway,
+            'status' => LifecycleStatus::Active,
+        ]);
+    } else {
+        $vpn->roles()->create([
+            'role' => RoleName::Gateway,
+            'status' => LifecycleStatus::Active,
+        ]);
+    }
+
+    $peer = Node::query()->create([
+        'name' => 'services',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '94.237.40.75',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.44.0.3',
+        'wireguard_public_key' => str_repeat(string: 'A', times: 43).'=',
+    ]);
+    $settings = new VpnSettings(app(SettingRepository::class));
+    $settings->configure(
+        subnet: '10.44.0.0/24',
+        endpoint: '85.9.218.89:51820',
+        dnsServer: '10.44.0.1',
+    );
+
+    $processes = new class implements ProcessRunner
+    {
+        /** @var list<ProcessInvocation> */
+        public array $calls = [];
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->calls[] = $invocation;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $sshExecutor = new class($succeed) implements SshExecutor
+    {
+        /** @var list<string> */
+        public array $hosts = [];
+
+        /** @var list<string> */
+        public array $users = [];
+
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        /** @var list<string> */
+        public array $protectedInputs = [];
+
+        public function __construct(
+            private readonly bool $succeed,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->hosts[] = $connection->host;
+            $this->users[] = $connection->user;
+            $this->commands[] = $command;
+            $this->protectedInputs[] = $command->protectedInput === null
+                ? ''
+                : (string) stream_get_contents($command->protectedInput->stream());
+
+            return new CommandResult($this->succeed ? 0 : 1, '', $this->succeed ? '' : 'hub start failed', 1, false);
+        }
+    };
+
+    $manager = new NativeGatewayPeerProjectionManager(
+        configuration: new VpnConfigurationRepository($settings, $orbitHome),
+        serverRenderer: new WireGuardServerConfigRenderer,
+        files: new ProtectedFileWriter,
+        processes: $processes,
+        orbitHome: $orbitHome,
+        ssh: $ssh ? $sshExecutor : null,
+        keys: $ssh ? new class implements SshKeyProvider
+        {
+            public function privateKeyPath(): string
+            {
+                return '/tmp/orbit-hub.key';
+            }
+
+            public function publicKey(): string
+            {
+                return 'ssh-ed25519 hub';
+            }
+        } : null,
+        knownHosts: $ssh ? new class implements KnownHostsStore
+        {
+            public function path(): string
+            {
+                return '/tmp/orbit-hub-known-hosts';
+            }
+
+            public function put(string $host, int $port, HostKey $key): void {}
+        } : null,
+    );
+
+    return new class($orbitHome, $hubPrivateKey, $vpn, $peer, $manager, $processes, $sshExecutor)
+    {
+        public function __construct(
+            public readonly string $orbitHome,
+            public readonly string $hubPrivateKey,
+            public readonly Node $vpn,
+            public readonly Node $peer,
+            public readonly NativeGatewayPeerProjectionManager $manager,
+            public readonly object $processes,
+            public readonly object $ssh,
+        ) {}
+
+        public function cleanup(): void
+        {
+            new Filesystem()->deleteDirectory($this->orbitHome);
+        }
+    };
+}
 
 function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $failure = null): object
 {

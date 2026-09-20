@@ -2428,7 +2428,8 @@
                 "0061",
                 "0090",
                 "0091",
-                "0092"
+                "0092",
+                "0094"
             ]
         },
         {
@@ -2492,6 +2493,27 @@
             ],
             "governing_adrs": [
                 "0093"
+            ]
+        },
+        {
+            "path": "docs/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node.md",
+            "title": "ADR 0094: Project WireGuard hub config onto the VPN node",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0061",
+                "0090",
+                "0092",
+                "0094"
             ]
         },
         {
@@ -2616,7 +2638,8 @@
                 "0090",
                 "0091",
                 "0092",
-                "0093"
+                "0093",
+                "0094"
             ]
         },
         {
@@ -3339,7 +3362,8 @@
                 "Router"
             ],
             "governing_adrs": [
-                "0072"
+                "0072",
+                "0094"
             ]
         },
         {
@@ -3640,7 +3664,8 @@
             ],
             "governing_adrs": [
                 "0091",
-                "0092"
+                "0092",
+                "0094"
             ]
         },
         {

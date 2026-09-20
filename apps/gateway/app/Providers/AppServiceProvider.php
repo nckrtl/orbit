@@ -644,6 +644,9 @@ final class AppServiceProvider extends ServiceProvider
                 files: app(ProtectedFileWriter::class),
                 processes: app(ProcessRunner::class),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
+                ssh: app(SshExecutor::class),
+                keys: app(SshKeyProvider::class),
+                knownHosts: app(KnownHostsStore::class),
             ),
         );
         $this->app->alias(NativeGatewayPeerProjectionManager::class, GatewayPeerProjectionManager::class);
