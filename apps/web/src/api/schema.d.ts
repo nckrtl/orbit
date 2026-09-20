@@ -1525,7 +1525,7 @@ export interface paths {
         put?: never;
         /**
          * node:role:relocate
-         * @description Move the singleton gateway role to another node.
+         * @description Move a relocatable singleton role to another node.
          */
         post: operations["node-role-relocate"];
         delete?: never;
@@ -8484,8 +8484,10 @@ export interface operations {
                      * @enum {string}
                      */
                     role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket";
-                    /** @description Confirm the gateway role transfer */
+                    /** @description Confirm the role transfer */
                     force?: string;
+                    /** @description Optional source Node ID or name */
+                    from?: number;
                 };
             };
         };
