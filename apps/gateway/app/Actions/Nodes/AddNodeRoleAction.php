@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\NodeData;
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\Analytics\AnalyticsStorageProcessGuard;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -17,6 +20,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
@@ -36,22 +40,33 @@ final readonly class AddNodeRoleAction
         private ToolManagerMaterializer $toolManagers,
         private ToolManagerScopeLock $managerScope,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?AnalyticsStorageProcessGuard $analyticsStorage = null,
+        private ?AnalyticsRoleSettingsRepository $analyticsSettings = null,
     ) {}
 
     /**
      * @return array{assignment: NodeRole, created: bool}
      */
-    public function execute(Node $node, RoleName $role, bool $convergeExisting = false): array
-    {
+    public function execute(
+        Node $node,
+        RoleName $role,
+        bool $convergeExisting = false,
+        ?AnalyticsRoleSettings $analytics = null,
+    ): array {
         $this->guardActiveNode($node);
         $this->guardEmptyDatabaseSettings($role);
+        $this->guardAnalyticsStorage($node, $role, $analytics);
 
         if (! $this->registry->definition($role)->mutable) {
             throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
         }
 
-        $result = $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting): array {
+        $result = $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting, $analytics): array {
             $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
+
+            if ($analytics instanceof AnalyticsRoleSettings) {
+                $this->analyticsSettings()->store($node, $analytics);
+            }
 
             if ($role === RoleName::Ingress && ! $convergeExisting && ! $claim['created']) {
                 return [
@@ -215,6 +230,37 @@ final readonly class AddNodeRoleAction
         }
 
         DatabaseRoleSettings::from([]);
+    }
+
+    /**
+     * The analytics role names its two storage Processes at assignment. They are proven before
+     * the assignment exists, so a refused Process never leaves a role behind.
+     */
+    private function guardAnalyticsStorage(Node $node, RoleName $role, ?AnalyticsRoleSettings $analytics): void
+    {
+        if ($role !== RoleName::Analytics) {
+            return;
+        }
+
+        $analytics ??= $this->analyticsSettings()->find($node);
+
+        if (! $analytics instanceof AnalyticsRoleSettings) {
+            throw new ResourceOperationException(
+                errorCode: 'analytics.settings_missing',
+                message: 'The analytics role requires a PostgreSQL Process and a ClickHouse Process.',
+                status: 422,
+            );
+        }
+
+        ($this->analyticsStorage ?? app(AnalyticsStorageProcessGuard::class))->assert(
+            $analytics->postgresProcessId,
+            $analytics->clickhouseProcessId,
+        );
+    }
+
+    private function analyticsSettings(): AnalyticsRoleSettingsRepository
+    {
+        return $this->analyticsSettings ?? app(AnalyticsRoleSettingsRepository::class);
     }
 
     private function guardActiveNode(Node $node): void

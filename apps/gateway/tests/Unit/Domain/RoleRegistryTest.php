@@ -21,6 +21,7 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::Metrics,
                 RoleName::Database,
                 RoleName::WebSocket,
+                RoleName::Analytics,
             ])
             ->and($registry->definition(RoleName::Gateway)->singleton)
             ->toBeTrue()
@@ -75,6 +76,12 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::WebSocket)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::WebSocket)->mutable)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Analytics)->singleton)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Analytics)->assignableDuringProvisioning)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Analytics)->mutable)
             ->toBeTrue();
     });
 
@@ -147,6 +154,23 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->conflicts(RoleName::WebSocket, RoleName::Metrics))
             ->toBeFalse()
             ->and($registry->conflicts(RoleName::WebSocket, RoleName::Database))
+            ->toBeFalse();
+    });
+
+    it('keeps the analytics role off the Gateway and lets it share a services Node with database', function (): void {
+        $registry = new RoleRegistry;
+
+        expect($registry->conflicts(RoleName::Analytics, RoleName::Gateway))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::Gateway, RoleName::Analytics))
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Gateway)->conflicts)
+            ->toContain(RoleName::Analytics)
+            ->and($registry->conflicts(RoleName::Analytics, RoleName::Database))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Analytics, RoleName::Metrics))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Analytics, RoleName::WebSocket))
             ->toBeFalse();
     });
 });

@@ -19,6 +19,7 @@ final readonly class RoleRegistry
             RoleName::Metrics,
             RoleName::Database,
             RoleName::WebSocket,
+            RoleName::Analytics,
         ];
     }
 
@@ -30,7 +31,7 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: true,
-                conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database],
+                conflicts: [RoleName::AppDev, RoleName::AppProd, RoleName::Database, RoleName::Analytics],
             ),
             RoleName::Vpn => new RoleDefinition(
                 name: $role,
@@ -89,6 +90,13 @@ final readonly class RoleRegistry
                 singleton: true,
                 assignableDuringProvisioning: true,
                 mutable: true,
+            ),
+            RoleName::Analytics => new RoleDefinition(
+                name: $role,
+                singleton: true,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                conflicts: [RoleName::Gateway],
             ),
         };
     }

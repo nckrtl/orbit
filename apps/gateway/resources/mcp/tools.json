@@ -3178,7 +3178,8 @@
                 "app-prod",
                 "metrics",
                 "database",
-                "websocket"
+                "websocket",
+                "analytics"
               ]
             }
           },
@@ -3370,12 +3371,19 @@
               "app-prod",
               "metrics",
               "database",
-              "websocket"
+              "websocket",
+              "analytics"
             ],
             "description": "Role name"
           },
           "converge_existing": {
             "type": "boolean"
+          },
+          "postgres_process_id": {
+            "type": "string"
+          },
+          "clickhouse_process_id": {
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -3442,7 +3450,8 @@
               "app-prod",
               "metrics",
               "database",
-              "websocket"
+              "websocket",
+              "analytics"
             ],
             "description": "Role name"
           },
@@ -3489,7 +3498,8 @@
               "app-prod",
               "metrics",
               "database",
-              "websocket"
+              "websocket",
+              "analytics"
             ],
             "description": "Role name"
           },

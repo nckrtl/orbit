@@ -32,6 +32,8 @@ it('covers exact package and service matrices', function (): void {
         ->toBe(['docker.io'])
         ->and($p->forRole($node, RoleName::WebSocket))
         ->toBe(['caddy', 'composer', 'git', 'openssl'])
+        ->and($p->forRole($node, RoleName::Analytics))
+        ->toBe(['caddy', 'docker.io', 'openssl'])
         ->and($s->forRole(RoleName::Gateway))
         ->toBe(['caddy', 'php8.5-fpm'])
         ->and($s->forRole(RoleName::Vpn))
@@ -45,7 +47,32 @@ it('covers exact package and service matrices', function (): void {
         ->and($s->forRole(RoleName::Database))
         ->toBe(['docker'])
         ->and($s->forRole(RoleName::WebSocket))
-        ->toBe(['caddy', 'orbit-websocket']);
+        ->toBe(['caddy', 'orbit-websocket'])
+        ->and($s->forRole(RoleName::Analytics))
+        ->toBe(['caddy', 'docker']);
+});
+
+it('scopes the analytics role https listener to the node own WireGuard address', function (): void {
+    $rules = new NodeFirewallRuleCatalog()->forRole(
+        new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.44.0.12']),
+        RoleName::Analytics,
+    );
+
+    expect($rules)
+        ->toHaveCount(1)
+        ->and($rules[0]->shape)
+        ->toEqual(new UfwRuleShape(
+            comment: 'orbit:analytics-https',
+            action: 'allow',
+            direction: 'in',
+            source: 'any',
+            destination: '10.44.0.12',
+            port: '443',
+            protocol: 'tcp',
+            inInterface: 'orbit',
+            outInterface: null,
+            family: 'v4',
+        ));
 });
 
 it('scopes the websocket role https listener to the node own WireGuard address', function (): void {

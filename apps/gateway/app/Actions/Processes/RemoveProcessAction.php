@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
+use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AgentationUrlProjection;
@@ -50,9 +51,14 @@ final readonly class RemoveProcessAction
         $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
     }
 
-    public function execute(#[SensitiveParameter] Process $process): Process
+    /** `$removedByOwningRole` is true only when the analytics role removes its own `plausible` Process. */
+    public function execute(#[SensitiveParameter] Process $process, bool $removedByOwningRole = false): Process
     {
-        return $this->lease->run($process, function (Process $fresh): Process {
+        return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
+            if (! $removedByOwningRole) {
+                app(AnalyticsProcessOwnership::class)->assertRemovable($fresh);
+            }
+
             if (RouteCustomProxy::query()->where('process_id', $fresh->id)->exists()) {
                 throw new ResourceOperationException(
                     errorCode: 'process.has_routes',

@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsPublicationManager;
+use App\Domain\Analytics\AnalyticsRoleSettings;
+use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
+use App\Domain\Analytics\AnalyticsSecretManager;
+use App\Domain\Analytics\AnalyticsStorageConnection;
+use App\Domain\Analytics\AnalyticsStorageProcessGuard;
+use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
@@ -34,6 +41,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
@@ -500,7 +508,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
-    $metricsFleet->shouldReceive('reconcile')->times(7);
+    $metricsFleet->shouldReceive('reconcile')->times(8);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline($firewall, baseline_dns($events)),
         new VpnRoleBaseline(
@@ -529,6 +537,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
+        analytics: analytics_role_baseline(),
     );
 
     foreach (role_baseline_roles() as $role) {
@@ -747,6 +756,7 @@ it('checks the remote operating system before every role convergence', function 
         ),
         database: database_role_baseline($events),
         websocket: websocket_role_baseline($events),
+        analytics: analytics_role_baseline(),
     );
 
     foreach (role_baseline_roles() as $role) {
@@ -779,6 +789,7 @@ it('checks the remote operating system before every role convergence', function 
         'guard:unknown',
         'ssh:websocket',
         'ssh:orbit',
+        'guard:unknown',
     ]);
 });
 
@@ -958,6 +969,58 @@ function websocket_role_baseline(array &$events): WebSocketRoleBaseline
         // convergence, which this dispatch-only suite does not exercise.
         publication: Mockery::mock(WebSocketPublicationManager::class)->shouldIgnoreMissing(),
         credentials: $credentials,
+    );
+}
+
+/**
+ * The analytics baseline adds no dispatch events here. Its storage is created on first use, after every other role's Node has claimed its address.
+ */
+function analytics_role_baseline(): AnalyticsRoleBaseline
+{
+    $settings = new class implements AnalyticsRoleSettingsRepository
+    {
+        private ?AnalyticsRoleSettings $settings = null;
+
+        public function find(Node $node): AnalyticsRoleSettings
+        {
+            if ($this->settings === null) {
+                $storage = analytics_storage_processes();
+                $this->settings = new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id);
+            }
+
+            return $this->settings;
+        }
+
+        public function store(Node $node, AnalyticsRoleSettings $settings): void {}
+
+        public function version(Node $node): string
+        {
+            return '3.2.1';
+        }
+
+        public function storeVersion(Node $node, string $version): void {}
+
+        public function purge(Node $node): void {}
+    };
+
+    // The Process runtime and the publication reach a real node, which this dispatch-only
+    // suite does not exercise; AnalyticsRoleBaselineTest covers what the baseline asks of them.
+    return new AnalyticsRoleBaseline(
+        $settings,
+        new AnalyticsStorageProcessGuard,
+        Mockery::mock(AnalyticsSecretManager::class)->shouldReceive('secretKeyBase')->andReturn(str_repeat('k', 64))->getMock()->shouldIgnoreMissing(),
+        new class implements PlausibleRuntimeLifecycle
+        {
+            public function converge(Node $node, string $version, AnalyticsStorageConnection $storage, string $secretKeyBase): Process
+            {
+                return new Process;
+            }
+
+            public function remove(Node $node): void {}
+
+            public function forget(Node $node): void {}
+        },
+        Mockery::mock(AnalyticsPublicationManager::class)->shouldIgnoreMissing(),
     );
 }
 

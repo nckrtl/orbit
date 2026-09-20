@@ -80,6 +80,9 @@ final readonly class NodeSideResidue
                 'Orbit firewall rule for the websocket role',
                 'Stored Reverb application credentials and generated APP_KEY',
             ],
+            RoleName::Analytics => [
+                'Orbit firewall rule for the analytics role',
+            ],
             RoleName::Gateway => [
                 'Caddy site, PHP-FPM pool and serving checkout for the gateway role',
                 'Orbit firewall rule for the gateway role',

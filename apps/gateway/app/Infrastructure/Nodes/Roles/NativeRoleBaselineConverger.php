@@ -27,6 +27,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?ClusterRouterOperationLock $clusterRouterOperations = null,
         private ?DatabaseRoleBaseline $database = null,
         private ?WebSocketRoleBaseline $websocket = null,
+        private ?AnalyticsRoleBaseline $analytics = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -120,6 +121,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::AppProd => $this->appProd,
             RoleName::Metrics => $this->metrics,
             RoleName::WebSocket => $this->websocket ?? app(WebSocketRoleBaseline::class),
+            RoleName::Analytics => $this->analytics ?? app(AnalyticsRoleBaseline::class),
             RoleName::Router => $this->router ?? app(RouterRoleBaseline::class),
             RoleName::Database => $this->database ?? app(DatabaseRoleBaseline::class),
             RoleName::Ingress => throw new LogicException('Ingress roles do not have a host baseline.'),
