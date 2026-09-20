@@ -22,6 +22,6 @@ final readonly class ScheduleTarget
 
     public function isProduction(): bool
     {
-        return $this->appInstance?->placedOnAppProd();
+        return $this->appInstance?->placedOnAppProd() ?? false;
     }
 }

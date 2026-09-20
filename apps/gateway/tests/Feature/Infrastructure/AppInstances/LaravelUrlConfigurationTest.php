@@ -279,6 +279,8 @@ it('reconciles Laravel canonical URLs when an App slug changes', function (): vo
     app(UpdateAppAction::class)->execute(
         $fixture->app,
         new UpdateAppData(
+            typeProvided: false,
+            type: null,
             slugProvided: true,
             slug: 'shop',
             repositoryUrlProvided: false,
@@ -307,6 +309,8 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     expect(fn () => app(UpdateAppAction::class)->execute(
         $fixture->app,
         new UpdateAppData(
+            typeProvided: false,
+            type: null,
             slugProvided: true,
             slug: 'shop',
             repositoryUrlProvided: false,
@@ -327,6 +331,8 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     app(UpdateAppAction::class)->execute(
         $fixture->app->refresh(),
         new UpdateAppData(
+            typeProvided: false,
+            type: null,
             slugProvided: true,
             slug: 'shop',
             repositoryUrlProvided: false,

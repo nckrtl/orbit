@@ -81,7 +81,7 @@ it('persists a TaskGroup morph to an App instance and ordered subtasks', functio
     $fresh = $group->fresh(['taskable', 'tasks']);
 
     expect($fresh?->taskable)->toBeInstanceOf(AppInstance::class)
-        ->and($fresh?->taskable_type)->toBe(TaskableType::AppInstance)
+        ->and($fresh?->taskable_type)->toBe(TaskableType::Instance)
         ->and($fresh?->taskable_id)->toBe($instance->id)
         ->and($fresh?->tokens)->toBe(12)
         ->and($fresh?->line_diff)->toBe(40)

@@ -129,6 +129,9 @@ it('refuses wake from a different Node', function (): void {
 
 it('returns an HTML failure page for an ineligible production AppInstance', function (): void {
     $this->instance->update(['environment' => 'production', 'production_user' => 'orbit-docs', 'production_home' => '/var/www/docs']);
+    $this->node->roles()->where('role', 'app-dev')->delete();
+    $this->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
+    $this->instance->unsetRelation('node');
 
     $this->get('/api/v1/runtime-activations/app-instance/'.$this->instance->id)
         ->assertStatus(503)

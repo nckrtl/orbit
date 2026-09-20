@@ -9,6 +9,7 @@ use App\Data\Apps\CreateAppData;
 use App\Data\Apps\UpdateAppData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Projects\ProjectType;
 use App\Models\App as OrbitApp;
 use Illuminate\Support\Facades\Event;
 
@@ -24,6 +25,7 @@ describe('App record events', function (): void {
         $data = new CreateAppData(
             slug: 'acme',
             name: 'Acme',
+            type: ProjectType::LaravelApp,
             repositoryUrl: 'git@github.com:acme/site.git',
             defaultBranch: 'main',
             root: 'public',
@@ -46,6 +48,7 @@ describe('App record events', function (): void {
         $data = new CreateAppData(
             slug: 'acme',
             name: 'Acme',
+            type: ProjectType::LaravelApp,
             repositoryUrl: 'git@github.com:acme/site.git',
             defaultBranch: 'main',
             root: 'public',
@@ -73,6 +76,8 @@ describe('App record events', function (): void {
 
         $action = app(UpdateAppAction::class);
         $result = $action->execute($app, new UpdateAppData(
+            typeProvided: false,
+            type: null,
             slugProvided: true,
             slug: 'acme-renamed',
             repositoryUrlProvided: false,

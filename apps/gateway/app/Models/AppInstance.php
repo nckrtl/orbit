@@ -8,6 +8,8 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Relations\DualSafeMorphMany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -397,5 +399,14 @@ final class AppInstance extends Model
             'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,
         ];
+    }
+
+    /**
+     * @param  Builder<Model>  $query
+     * @return MorphMany<Model, Model>
+     */
+    protected function newMorphMany($query, $parent, $type, $id, $localKey)
+    {
+        return new DualSafeMorphMany($query, $parent, $type, $id, $localKey, self::morphTypes());
     }
 }

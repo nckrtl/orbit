@@ -39,7 +39,7 @@ final readonly class TaskConcurrencyGuard
             ->select('id');
 
         return $this->activeQuery($exceptGroupId)
-            ->where('taskable_type', TaskableType::AppInstance)
+            ->whereIn('taskable_type', AppInstance::morphTypes())
             ->whereIn('taskable_id', $instanceIds)
             ->count();
     }

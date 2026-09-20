@@ -14,10 +14,7 @@ final readonly class AppDevHibernationPolicy
 {
     public function appliesToInstance(AppInstance $instance): bool
     {
-        $instance->loadMissing('node.roles');
-
-        return $instance->environment === 'development'
-            && $this->hasActiveAppDevRole($instance->node);
+        return $instance->placedOnAppDev();
     }
 
     public function appliesToProcess(Process $process): bool
