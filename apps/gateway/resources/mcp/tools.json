@@ -4529,6 +4529,206 @@
       }
     },
     {
+      "name": "tasks-add",
+      "title": "Add a Task",
+      "description": "Appends one Task to a Task group at the next position. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "title",
+          "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-create",
+      "title": "Create a Task group",
+      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
+      "method": "POST",
+      "path": "/api/v1/task-groups",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "notify_coder": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                }
+              },
+              "required": [
+                "title",
+                "brief"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app_id",
+          "title",
+          "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-disable",
+      "title": "Disable Tasks",
+      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, and show return `tasks.disabled`.",
+      "method": "POST",
+      "path": "/api/v1/tasks/disable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-enable",
+      "title": "Enable Tasks",
+      "description": "Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.",
+      "method": "POST",
+      "path": "/api/v1/tasks/enable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-list",
+      "title": "List Task groups",
+      "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-groups",
+      "path_inputs": [],
+      "query_inputs": [
+        "app_id",
+        "status"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "reserved",
+              "running",
+              "reviewing",
+              "settling",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-show",
+      "title": "Show a Task group",
+      "description": "Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
+      "name": "tasks-status",
+      "title": "Show Tasks status",
+      "description": "Returns whether the Gateway tasks extension is enabled.",
+      "method": "GET",
+      "path": "/api/v1/tasks/status",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "tool-install",
       "title": "Install a Tool",
       "description": "Install a tool through the gateway.",

@@ -55,6 +55,10 @@ App instance commands manage App instances and Routes. Runtime publication, Cadd
 
 A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. Orbit can manage its process or adopt an existing server whose lifecycle stays external. Both modes let Commander view recorded panes through temporary, read-only `terminal.observe` access.
 
+## Tasks
+
+The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared App instance. Agents create groups through MCP after the extension is enabled. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the boundary.
+
 ## Database connections
 
 The Gateway stores named MySQL, PostgreSQL, SQLite, and Redis connections. Register a host or SQLite path, or create a MySQL user and database through a Node Docker Process and register that connection, then attach the connection to an App instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. Query, tables, schema, and describe use PDO for mysql, pgsql, and sqlite: mysql and pgsql on the Gateway, sqlite on the owning Node through a hidden Orbit CLI command. Redis has no PDO inspector, so those commands refuse a redis connection. See [Database connections](/reference/database-connections) and [ADR 0081](/decisions/0081-query-registered-databases-through-pdo).

@@ -83,6 +83,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, AppInstanceTransfer> $transfers
  * @property-read Collection<int, AppInstanceDependencyObservation> $dependencyObservations
  * @property-read Collection<int, AppInstanceDependencyScanAttempt> $dependencyScanAttempts
+ * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class AppInstance extends Model
 {
@@ -248,6 +249,12 @@ final class AppInstance extends Model
     public function dependencyScanAttempts(): HasMany
     {
         return $this->hasMany(AppInstanceDependencyScanAttempt::class);
+    }
+
+    /** @return MorphMany<TaskGroup, $this> */
+    public function taskGroups(): MorphMany
+    {
+        return $this->morphMany(TaskGroup::class, 'taskable');
     }
 
     public function effectiveRoot(): ?string

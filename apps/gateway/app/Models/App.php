@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use SensitiveParameter;
@@ -18,6 +19,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property array<string, mixed>|null $defaults
+ * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class App extends Model
 {
@@ -71,6 +73,12 @@ final class App extends Model
     public function updates(): HasMany
     {
         return $this->hasMany(AppUpdate::class);
+    }
+
+    /** @return HasMany<TaskGroup, $this> */
+    public function taskGroups(): HasMany
+    {
+        return $this->hasMany(TaskGroup::class);
     }
 
     /** @return array<string, string> */

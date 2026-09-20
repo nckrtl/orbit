@@ -106,6 +106,7 @@
               "reference/service-metrics",
               "reference/analytics",
               "reference/herdr-sessions",
+              "reference/tasks",
               "reference/local-resolver-overrides",
               "reference/cli-binaries",
               "reference/events",
@@ -417,6 +418,19 @@
             ]
           },
           {
+            "group": "Tasks",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/task-groups",
+              "POST /api/v1/task-groups",
+              "GET /api/v1/task-groups/{group}",
+              "POST /api/v1/task-groups/{group}/tasks",
+              "POST /api/v1/tasks/disable",
+              "POST /api/v1/tasks/enable",
+              "GET /api/v1/tasks/status"
+            ]
+          },
+          {
             "group": "Doctor",
             "openapi": "/openapi.json",
             "pages": [
@@ -575,7 +589,8 @@
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
               "decisions/0099-collect-role-specific-service-metrics",
               "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
-              "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress"
+              "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress",
+              "decisions/0103-absorb-commander-tasks-as-a-gateway-extension"
             ]
           }
         ]
