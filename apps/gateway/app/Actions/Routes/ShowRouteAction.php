@@ -10,6 +10,6 @@ final readonly class ShowRouteAction
 {
     public function handle(Route $route): Route
     {
-        return $route->load(['targets', 'customProxy']);
+        return $route->load(['targets', 'customProxy', 'analyticsTracking']);
     }
 }

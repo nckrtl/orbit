@@ -358,3 +358,82 @@ it('keeps assigned Vite endpoints separate and preserves their base path', funct
     expect($config)->toContain('reverse_proxy 127.0.0.1:5174')->toContain('reverse_proxy 127.0.0.1:5210')->not->toContain('uri strip_prefix');
     expect(caddy_adapt($config)->succeeded())->toBeTrue();
 });
+
+describe('analytics tracking site', function (): void {
+    it('proxies only the script and event paths on a Router behind a separate Ingress', function (): void {
+        $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+            new AppDevSite(
+                nodeId: 3,
+                nodeAddress: '10.45.0.20',
+                scope: 'route-91-router',
+                checkoutPath: '',
+                documentRoot: '',
+                phpVersion: null,
+                domain: 'analytics.shop.example.com',
+                analyticsUpstream: '10.44.0.40:8000',
+                analyticsTrustedProxies: ['10.10.0.30', '10.44.0.30'],
+            ),
+        ]));
+
+        expect($configuration)->toBe(<<<'CADDY'
+            https://analytics.shop.example.com {
+                bind 0.0.0.0
+                tls /etc/caddy/orbit-certificates/route-91-router/current/cert.pem /etc/caddy/orbit-certificates/route-91-router/current/key.pem
+                handle /js/* {
+                    reverse_proxy http://10.44.0.40:8000 {
+                        trusted_proxies 10.10.0.30 10.44.0.30
+                    }
+                }
+                handle /api/event {
+                    reverse_proxy http://10.44.0.40:8000 {
+                        trusted_proxies 10.10.0.30 10.44.0.30
+                    }
+                }
+                respond 404
+            }
+
+            CADDY);
+
+        $adapted = caddy_adapt($configuration);
+
+        expect($adapted->succeeded())->toBeTrue()
+            ->and($adapted->stdout)
+            ->toContain('"/js/*"')
+            ->toContain('"/api/event"')
+            ->toContain('"status_code":404')
+            ->toContain('"trusted_proxies":["10.10.0.30","10.44.0.30"]');
+    });
+
+    it('serves the public listener itself when the Router is also the Ingress', function (): void {
+        $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+            new AppDevSite(
+                nodeId: 3,
+                nodeAddress: '10.45.0.20',
+                scope: 'route-91-ingress',
+                checkoutPath: '',
+                documentRoot: '',
+                phpVersion: null,
+                domain: 'analytics.shop.example.com',
+                certificateScope: 'route-91-ingress',
+                publicListener: true,
+                analyticsUpstream: '10.44.0.40:8000',
+            ),
+        ]));
+
+        expect($configuration)->toBe(<<<'CADDY'
+            analytics.shop.example.com {
+                bind 0.0.0.0
+                tls /etc/caddy/orbit-certificates/route-91-ingress/current/cert.pem /etc/caddy/orbit-certificates/route-91-ingress/current/key.pem
+                handle /js/* {
+                    reverse_proxy http://10.44.0.40:8000
+                }
+                handle /api/event {
+                    reverse_proxy http://10.44.0.40:8000
+                }
+                respond 404
+            }
+
+            CADDY)
+            ->and(caddy_adapt($configuration)->succeeded())->toBeTrue();
+    });
+});

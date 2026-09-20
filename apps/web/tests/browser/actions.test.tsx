@@ -121,6 +121,47 @@ it("lists live UFW on a node and keeps Orbit's own rules without actions", async
     await expect.element(page.getByRole("menuitem", { name: "remove" })).toBeVisible();
 });
 
+it("enables analytics tracking from the menu, shows what to do next, then disables it after a confirmation", async () => {
+    const app = await openApp("/instances/1");
+    await expect.element(pane("Application log")).toBeVisible();
+    await expect.element(pane("Properties")).not.toHaveTextContent("Analytics");
+
+    await page.getByText("actions ▾").click();
+    await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
+
+    const modal = page.getByRole("dialog");
+    await expect
+        .element(modal)
+        .toHaveTextContent("DNS CNAME analytics.dev.charlie-shop.test -> dev.charlie-shop.test");
+    await expect
+        .element(modal)
+        .toHaveTextContent('src="https://analytics.dev.charlie-shop.test/js/script.js"');
+    expect(app.gateway.requests.at(-1)).toMatchObject({
+        method: "POST",
+        path: "/api/v1/instances/1/analytics",
+    });
+
+    await userEvent.keyboard("{Escape}");
+    await expect
+        .element(pane("Properties"))
+        .toHaveTextContent("Analyticsanalytics.dev.charlie-shop.test");
+    await expect.element(pane("Properties")).toHaveTextContent("Dashboardanalytics.orbit");
+
+    // Enabled now, so the menu offers the opposite, and asks before it stops the tracking.
+    await page.getByText("actions ▾").click();
+    await page.getByRole("menuitem", { name: "disable analytics", exact: true }).click();
+    await expect
+        .element(pane("charlie-shop/dev"))
+        .toHaveTextContent("Confirm? Remove every analytics tracking host");
+    expect(app.gateway.requests.some((request) => request.method === "DELETE")).toBe(false);
+
+    await userEvent.keyboard("{Enter}");
+    await expect
+        .element(footer())
+        .toHaveTextContent("Analytics tracking disabled for [charlie-shop/dev].");
+    await expect.element(pane("Properties")).not.toHaveTextContent("Analytics");
+});
+
 it("asks before a destructive action and sends nothing until it is confirmed", async () => {
     const app = await openApp("/firewall");
     await row("Firewall", "443/tcp").click({ button: "right" });

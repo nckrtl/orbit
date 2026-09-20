@@ -906,6 +906,34 @@ export interface paths {
         patch: operations["instance-update"];
         trace?: never;
     };
+    "/api/v1/instances/{instance}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show App instance analytics
+         * @description Show the analytics tracking hosts of an App instance.
+         */
+        get: operations["instance-analytics-show"];
+        put?: never;
+        /**
+         * Publish App instance tracking hosts
+         * @description Publish the analytics tracking hosts of an App instance.
+         */
+        post: operations["instance-analytics-enable"];
+        /**
+         * Remove App instance tracking hosts
+         * @description Remove the analytics tracking hosts of an App instance.
+         */
+        delete: operations["instance-analytics-disable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/database-connections/{database_connection}": {
         parameters: {
             query?: never;
@@ -2390,6 +2418,7 @@ export interface components {
             targets?: components["schemas"]["RouteTarget"][];
             process_id?: number | null;
             upstream?: string | null;
+            analytics_instance_id?: number | null;
         };
         RouteTarget: {
             id?: number;
@@ -6143,6 +6172,246 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-analytics-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            instance_id?: number;
+                            /** @description True while the App instance publishes at least one tracking host. */
+                            enabled?: boolean;
+                            domain?: string | null;
+                            /** @description The private Plausible dashboard, or null while no Node has an active analytics role. */
+                            dashboard_url?: string | null;
+                            hosts?: {
+                                host?: string;
+                                route_id?: number;
+                                status?: string;
+                                public_publication?: string;
+                                failed_step?: string | null;
+                                error_code?: string | null;
+                                script_url?: string;
+                                event_url?: string;
+                                /** @description The record to create, or null while the App instance has no domain. */
+                                dns?: {
+                                    type?: string;
+                                    name?: string;
+                                    value?: string;
+                                } | null;
+                            }[];
+                            /** @description The script tag for the App, using the first host. */
+                            snippet?: string | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-analytics-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    hosts?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            instance_id?: number;
+                            /** @description True while the App instance publishes at least one tracking host. */
+                            enabled?: boolean;
+                            domain?: string | null;
+                            /** @description The private Plausible dashboard, or null while no Node has an active analytics role. */
+                            dashboard_url?: string | null;
+                            hosts?: {
+                                host?: string;
+                                route_id?: number;
+                                status?: string;
+                                public_publication?: string;
+                                failed_step?: string | null;
+                                error_code?: string | null;
+                                script_url?: string;
+                                event_url?: string;
+                                /** @description The record to create, or null while the App instance has no domain. */
+                                dns?: {
+                                    type?: string;
+                                    name?: string;
+                                    value?: string;
+                                } | null;
+                            }[];
+                            /** @description The script tag for the App, using the first host. */
+                            snippet?: string | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-analytics-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            instance_id?: number;
+                            /** @description True while the App instance publishes at least one tracking host. */
+                            enabled?: boolean;
+                            domain?: string | null;
+                            /** @description The private Plausible dashboard, or null while no Node has an active analytics role. */
+                            dashboard_url?: string | null;
+                            hosts?: {
+                                host?: string;
+                                route_id?: number;
+                                status?: string;
+                                public_publication?: string;
+                                failed_step?: string | null;
+                                error_code?: string | null;
+                                script_url?: string;
+                                event_url?: string;
+                                /** @description The record to create, or null while the App instance has no domain. */
+                                dns?: {
+                                    type?: string;
+                                    name?: string;
+                                    value?: string;
+                                } | null;
+                            }[];
+                            /** @description The script tag for the App, using the first host. */
+                            snippet?: string | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

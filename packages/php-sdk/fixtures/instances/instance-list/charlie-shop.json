@@ -63,7 +63,8 @@
                         }
                     ],
                     "process_id": null,
-                    "upstream": null
+                    "upstream": null,
+                    "analytics_instance_id": null
                 },
                 "domain": "dev.charlie-shop.test",
                 "url": "https://dev.charlie-shop.test",
@@ -130,7 +131,8 @@
                         }
                     ],
                     "process_id": null,
-                    "upstream": null
+                    "upstream": null,
+                    "analytics_instance_id": null
                 },
                 "domain": "dev.acme.test",
                 "url": "https://dev.acme.test",
@@ -197,7 +199,8 @@
                         }
                     ],
                     "process_id": null,
-                    "upstream": null
+                    "upstream": null,
+                    "analytics_instance_id": null
                 },
                 "domain": "feature-checkout.charlie-shop.test",
                 "url": "https://feature-checkout.charlie-shop.test",
@@ -264,7 +267,8 @@
                         }
                     ],
                     "process_id": null,
-                    "upstream": null
+                    "upstream": null,
+                    "analytics_instance_id": null
                 },
                 "domain": "staging.charlie-shop.test",
                 "url": "https://staging.charlie-shop.test",

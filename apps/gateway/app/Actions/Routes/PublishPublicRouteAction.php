@@ -29,6 +29,31 @@ final readonly class PublishPublicRouteAction
         return $this->owner->run(fn (): Route => $this->publishOwned($route->id, $publication));
     }
 
+    /**
+     * Takes the Route off the public edge and keeps its publication. A Route that is always public
+     * uses this before removal, because an active public edge cannot be removed with its Route.
+     */
+    public function withdraw(Route $route): Route
+    {
+        return $this->owner->run(function () use ($route): Route {
+            $route = Route::query()
+                ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
+                ->findOrFail($route->id);
+
+            if ($route->public_publication === RoutePublicPublication::Active) {
+                $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+                $this->edge->removePublicEdge($route);
+            }
+
+            $route->update([
+                'replacement_step' => null,
+                ...($route->status === RouteStatus::Failed ? [] : ['failed_step' => null, 'error_code' => null]),
+            ]);
+
+            return $route->refresh()->load('targets');
+        });
+    }
+
     private function publishOwned(int $routeId, RoutePublication $publication): Route
     {
         $route = Route::query()

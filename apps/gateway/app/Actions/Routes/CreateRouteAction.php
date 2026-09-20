@@ -440,7 +440,7 @@ final readonly class CreateRouteAction
         $existing->load('targets');
         $existingTargetId = $existing->targets->first()?->app_instance_id;
 
-        if ($existing->isCustomProxy()) {
+        if (! $existing->isApp()) {
             throw new ResourceOperationException(
                 errorCode: 'route.domain_conflict',
                 message: "Route domain [{$existing->domain}] is already owned.",

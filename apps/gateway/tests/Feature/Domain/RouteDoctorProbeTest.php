@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\CustomProxyRouteObservation;
 use App\Domain\Doctor\DoctorFamily;
@@ -11,6 +12,7 @@ use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -18,6 +20,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
@@ -152,6 +155,34 @@ describe(RouteDoctorProbe::class, function (): void {
                 $first->route_id < $second->route_id ? $second->route_id : $first->route_id])
             ->and($report->issues)
             ->toBeEmpty();
+    });
+
+    it('ignores an analytics tracking Route on its Router Node', function (): void {
+        $router = route_doctor_node();
+        $cluster = Cluster::query()->create(['name' => 'edge', 'tld' => null, 'state' => ClusterState::Active]);
+        $router->update(['cluster_id' => $cluster->id]);
+        $router->roles()->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $tracking = Route::query()->create([
+            'kind' => RouteKind::AnalyticsTracking,
+            'cluster_id' => $cluster->id,
+            'domain' => 'analytics.shop.example.com',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Public,
+            'status' => RouteStatus::Pending,
+        ]);
+        $tracking->update(['status' => RouteStatus::Active]);
+        $inspector = Mockery::mock(CustomProxyRouteInspector::class);
+        $inspector->shouldNotReceive('inspect');
+
+        $report = new RouteDoctorProbe($inspector)->inspect(route_doctor_context($router));
+
+        expect($report->status)->toBe(DoctorFamilyStatus::Healthy)
+            ->and($report->checked)->toBe(0)
+            ->and($report->issues)->toBeEmpty();
     });
 });
 

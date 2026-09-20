@@ -37,11 +37,12 @@ final class RouteData extends Data
         public array $targets,
         public ?int $processId = null,
         public ?string $upstream = null,
+        public ?int $analyticsInstanceId = null,
     ) {}
 
     public static function fromModel(Route $route): self
     {
-        $route->loadMissing(['targets', 'customProxy']);
+        $route->loadMissing(['targets', 'customProxy', 'analyticsTracking']);
         $target = $route->targets->first();
         $proxy = $route->customProxy;
 
@@ -70,6 +71,7 @@ final class RouteData extends Data
                 ->all(),
             processId: $proxy instanceof RouteCustomProxy ? $proxy->process_id : null,
             upstream: $proxy instanceof RouteCustomProxy ? $proxy->upstream : null,
+            analyticsInstanceId: $route->analyticsTracking?->app_instance_id,
         );
     }
 }

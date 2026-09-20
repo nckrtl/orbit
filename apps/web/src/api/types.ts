@@ -83,3 +83,26 @@ export type LiveFirewallRule =
     | LiveFirewallSnapshot["live"][number]
     | LiveFirewallSnapshot["missing"][number];
 export type LiveFirewallMatch = LiveFirewallRule["match"];
+
+/** One tracking host an App instance publishes for the analytics role. */
+export type AnalyticsHost = {
+    host: string;
+    route_id: number;
+    status: string;
+    public_publication: string;
+    failed_step: string | null;
+    error_code: string | null;
+    script_url: string;
+    event_url: string;
+    /** Null while the instance has no domain to point the host at. */
+    dns: { type: string; name: string; value: string } | null;
+};
+/** An App instance's analytics: its tracking hosts, and what the operator does next. */
+export type InstanceAnalytics = {
+    instance_id: number;
+    enabled: boolean;
+    domain: string | null;
+    dashboard_url: string | null;
+    hosts: AnalyticsHost[];
+    snippet: string | null;
+};

@@ -50,6 +50,15 @@ final readonly class IngressSiteRepository
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
         $target = $route->targets->first()?->appInstance;
 
+        // A tracking host has no workload: the Router itself answers, so the Router is the last hop to verify.
+        if ($route->isAnalyticsTracking() && $router instanceof Node) {
+            return new PublicRoutePrivateOverride(
+                domain: $route->domain,
+                routerAddress: $this->privateAddress($router),
+                workloadAddress: $this->privateAddress($router),
+            );
+        }
+
         if (! $router instanceof Node || ! $target instanceof AppInstance) {
             throw new RuntimeConvergenceException(
                 step: 'route-address',
@@ -84,9 +93,12 @@ final readonly class IngressSiteRepository
 
     public function routerNode(Route $route): Node
     {
-        $route->loadMissing('cluster.routerAssignment.node');
+        $route->loadMissing('cluster.routerAssignment.node', 'node');
         $cluster = $route->cluster;
-        $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
+        // A node-scoped Route names the Node that serves it; a cluster-scoped one uses its Router.
+        $router = $cluster === null
+            ? $route->node
+            : $this->eligibility->activeRouter($cluster);
 
         if (! $router instanceof Node) {
             throw new RuntimeConvergenceException(

@@ -62,7 +62,8 @@
                     }
                 ],
                 "process_id": null,
-                "upstream": null
+                "upstream": null,
+                "analytics_instance_id": null
             },
             "domain": "dev.acme.test",
             "url": "https://dev.acme.test",

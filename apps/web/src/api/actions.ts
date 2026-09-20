@@ -1,6 +1,6 @@
 import { processRuntimeIsActive } from "../fleet/fleet";
 import { applyRow } from "../realtime/apply";
-import { api } from "./client";
+import { api, GatewayError } from "./client";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
@@ -9,6 +9,7 @@ import type {
     DoctorReport,
     FirewallRule,
     Instance,
+    InstanceAnalytics,
     Kind,
     Node,
     Process,
@@ -35,6 +36,82 @@ const leaves = (label: string, command: string, description: string): Action => 
     command,
     description,
 });
+
+/** What the operator does after enabling: one DNS record per host, then the script tag. */
+const analyticsReport = (analytics: InstanceAnalytics): string =>
+    [
+        ...analytics.hosts.map(
+            (host) =>
+                `${host.host}  ${host.status}${host.error_code === null ? "" : ` (${host.error_code})`}` +
+                (host.dns === null
+                    ? ""
+                    : `\n  DNS  ${host.dns.type} ${host.dns.name} -> ${host.dns.value}`),
+        ),
+        "",
+        "Add this tag to the App, and create the site in Plausible yourself:",
+        analytics.snippet ?? "",
+    ].join("\n");
+
+/**
+ * Enable while the instance has no tracking host and an analytics role exists; disable while it
+ * has one. The page has read the instance's analytics by the time the menu opens; before that,
+ * the menu offers neither.
+ */
+function analyticsActions(instance: Instance, target: string): Action[] {
+    const key = ["instance-analytics", instance.id];
+    const analytics = queryClient.getQueryData<InstanceAnalytics>(key);
+
+    if (analytics === undefined) {
+        return [];
+    }
+
+    if (analytics.enabled) {
+        return [
+            {
+                label: "disable analytics",
+                destructive: true,
+                description: `Remove every analytics tracking host of [${target}]? Plausible stops receiving its visits.`,
+                run: async () => {
+                    queryClient.setQueryData(
+                        key,
+                        await api<InstanceAnalytics>(
+                            "DELETE",
+                            `/api/v1/instances/${instance.id}/analytics`,
+                        ),
+                    );
+
+                    return `Analytics tracking disabled for [${target}].`;
+                },
+            },
+        ];
+    }
+
+    return analytics.dashboard_url === null
+        ? []
+        : [
+              {
+                  label: "enable analytics",
+                  description: `Publish analytics.${analytics.domain ?? instance.domain} for [${target}].`,
+                  report: async () => {
+                      try {
+                          const enabled = await api<InstanceAnalytics>(
+                              "POST",
+                              `/api/v1/instances/${instance.id}/analytics`,
+                              {},
+                          );
+                          queryClient.setQueryData(key, enabled);
+
+                          return { ok: true, output: analyticsReport(enabled) };
+                      } catch (error) {
+                          return {
+                              ok: false,
+                              output: error instanceof GatewayError ? error.message : String(error),
+                          };
+                      }
+                  },
+              },
+          ];
+}
 
 async function processAction(
     process: Process,
@@ -104,6 +181,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
             const target = `${instance.app.slug}/${instance.name}`;
 
             return [
+                ...analyticsActions(instance, target),
                 leaves(
                     "deploy",
                     `orbit instance:deploy ${target}`,

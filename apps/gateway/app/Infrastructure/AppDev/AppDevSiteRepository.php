@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -75,6 +76,7 @@ final readonly class AppDevSiteRepository
                 'cluster.routerAssignment.node',
                 'cluster.ingressAssignment.node',
                 'customProxy',
+                'analyticsTracking',
                 'node',
             ])
             ->where(static function (Builder $query) use ($pendingRoute): void {
@@ -165,6 +167,14 @@ final readonly class AppDevSiteRepository
                 $site = $this->customProxySite($route);
 
                 if ($site instanceof AppDevSite) {
+                    $sites->push($site);
+                }
+
+                continue;
+            }
+
+            if ($route->kind === RouteKind::AnalyticsTracking) {
+                foreach ($this->analyticsTrackingSites($route, $pendingRoute, $routerOverrides) as $site) {
                     $sites->push($site);
                 }
 
@@ -544,6 +554,77 @@ final readonly class AppDevSiteRepository
             certificateScope: "route-{$route->id}",
             localHttpUpstream: CustomProxyUpstream::parse($proxy->upstream)->authority(),
         );
+    }
+
+    /**
+     * A tracking host has no workload: its Router proxies Plausible's script and event paths to the
+     * analytics role and the Ingress forwards the whole host to that Router. A Router that is also
+     * the Ingress serves the public listener itself. The Router site is first, so private DNS
+     * answers with the Router.
+     *
+     * @param  array<int, int>  $routerOverrides
+     * @return list<AppDevSite>
+     */
+    private function analyticsTrackingSites(Route $route, ?Route $pendingRoute, array $routerOverrides): array
+    {
+        $served = in_array($route->status, [RouteStatus::Active, RouteStatus::Activating], true)
+            || ($pendingRoute instanceof Route && $route->is($pendingRoute));
+        // A cluster-scoped host is served by the cluster's Router; a node-scoped one by its own Node.
+        $router = $route->cluster_id === null ? $route->node : $this->routerFor($route, $routerOverrides);
+        $upstream = AnalyticsTrackingUpstream::current();
+
+        if (
+            ! $served
+            || $upstream === null
+            || ! $router instanceof Node
+            || ! is_string($router->wireguard_ip)
+            || $router->wireguard_ip === ''
+        ) {
+            return [];
+        }
+
+        $ingress = $route->cluster !== null && $this->publishesIngress($route)
+            ? $this->eligibility->activeIngress($route->cluster)
+            : null;
+
+        if ($ingress instanceof Node && $ingress->is($router)) {
+            return [new AppDevSite(
+                nodeId: $ingress->id,
+                nodeAddress: $router->wireguard_ip,
+                scope: "route-{$route->id}-ingress",
+                checkoutPath: '',
+                documentRoot: '',
+                phpVersion: null,
+                domain: $route->domain,
+                certificateScope: "route-{$route->id}-ingress",
+                publicListener: true,
+                analyticsUpstream: $upstream,
+            )];
+        }
+
+        $trusted = $ingress instanceof Node
+            ? array_values(array_filter(
+                [$ingress->lan_ip, $ingress->wireguard_ip],
+                static fn (?string $address): bool => is_string($address) && $address !== '',
+            ))
+            : [];
+        $sites = [new AppDevSite(
+            nodeId: $router->id,
+            nodeAddress: $router->wireguard_ip,
+            scope: "route-{$route->id}-router",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            domain: $route->domain,
+            analyticsUpstream: $upstream,
+            analyticsTrustedProxies: $trusted,
+        )];
+
+        if ($ingress instanceof Node) {
+            $sites[] = $this->ingressSite($route, $ingress, $router);
+        }
+
+        return $sites;
     }
 
     private function ingressSite(Route $route, Node $ingress, ?Node $router): AppDevSite

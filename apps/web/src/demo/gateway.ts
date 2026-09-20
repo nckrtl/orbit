@@ -2,6 +2,7 @@ import type { Method, Transport } from "../api/client";
 import type {
     Database,
     FirewallRule,
+    Instance,
     ManagedFirewallRule,
     Node,
     Process,
@@ -69,6 +70,9 @@ export function createDemoGateway() {
     const processes = list<Process>("GET /api/v1/processes");
     const schedules = list<Schedule>("GET /api/v1/schedules");
     const databases = list<Database>("GET /api/v1/database-connections");
+    const instances = list<Instance>("GET /api/v1/instances");
+    // The instances that publish a tracking host; none does until a test or a visitor enables one.
+    const trackedInstances = new Set<string>();
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
     const nodeById = (id: string): Node | undefined =>
@@ -207,6 +211,48 @@ export function createDemoGateway() {
                             : [],
                     ),
             ],
+            ...(["GET", "POST", "DELETE"] as const).map(
+                (method): [Method, RegExp, (match: string[]) => Answer] => [
+                    method,
+                    /^\/api\/v1\/instances\/(\d+)\/analytics$/,
+                    ([id = ""]) => {
+                        if (method !== "GET") {
+                            trackedInstances[method === "POST" ? "add" : "delete"](id);
+                        }
+
+                        const domain =
+                            instances.find((candidate) => String(candidate.id) === id)?.domain ??
+                            null;
+                        const host = `analytics.${domain}`;
+                        const enabled = trackedInstances.has(id);
+
+                        return ok({
+                            instance_id: Number(id),
+                            enabled,
+                            domain,
+                            dashboard_url: "https://analytics.orbit",
+                            hosts: enabled
+                                ? [
+                                      {
+                                          host,
+                                          route_id: 900 + Number(id),
+                                          status: "active",
+                                          public_publication: "active",
+                                          failed_step: null,
+                                          error_code: null,
+                                          script_url: `https://${host}/js/script.js`,
+                                          event_url: `https://${host}/api/event`,
+                                          dns: { type: "CNAME", name: host, value: domain },
+                                      },
+                                  ]
+                                : [],
+                            snippet: enabled
+                                ? `<script defer data-domain="${domain}" src="https://${host}/js/script.js"></script>`
+                                : null,
+                        });
+                    },
+                ],
+            ),
             [
                 "GET",
                 /^\/api\/v1\/instances\/(\d+)\/queue\?state=(pending|completed|failed)$/,

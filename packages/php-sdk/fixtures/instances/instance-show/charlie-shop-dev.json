@@ -62,7 +62,8 @@
                     }
                 ],
                 "process_id": null,
-                "upstream": null
+                "upstream": null,
+                "analytics_instance_id": null
             },
             "domain": "dev.charlie-shop.test",
             "url": "https://dev.charlie-shop.test",

@@ -43,6 +43,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read Route|null $replacedBy
  * @property-read Collection<int, RouteTarget> $targets
  * @property-read RouteCustomProxy|null $customProxy
+ * @property-read RouteAnalyticsTracking|null $analyticsTracking
  */
 final class Route extends Model
 {
@@ -79,6 +80,17 @@ final class Route extends Model
     public function isCustomProxy(): bool
     {
         return $this->kind === RouteKind::CustomProxy;
+    }
+
+    public function isAnalyticsTracking(): bool
+    {
+        return $this->kind === RouteKind::AnalyticsTracking;
+    }
+
+    /** An App Route is the only kind that owns App instance targets and an operator-chosen domain or publication. */
+    public function isApp(): bool
+    {
+        return $this->kind === RouteKind::App;
     }
 
     public function isAuthoritative(): bool
@@ -132,6 +144,12 @@ final class Route extends Model
     public function customProxy(): HasOne
     {
         return $this->hasOne(RouteCustomProxy::class);
+    }
+
+    /** @return HasOne<RouteAnalyticsTracking, $this> */
+    public function analyticsTracking(): HasOne
+    {
+        return $this->hasOne(RouteAnalyticsTracking::class);
     }
 
     /** @return array<string, class-string|string> */

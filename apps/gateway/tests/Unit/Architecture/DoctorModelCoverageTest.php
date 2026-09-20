@@ -32,6 +32,7 @@ use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Route;
+use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 use App\Models\Schedule;
@@ -61,6 +62,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Cluster::class,
         Route::class,
         RouteTarget::class,
+        RouteAnalyticsTracking::class,
         ProcessDefinition::class,
         ScheduleDefinition::class,
         JwksKey::class,
