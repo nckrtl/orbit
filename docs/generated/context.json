@@ -2873,6 +2873,7 @@
                 "App instance",
                 "Cluster",
                 "Database",
+                "Firewall rule",
                 "Gateway",
                 "Ingress",
                 "Node",

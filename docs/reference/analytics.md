@@ -16,19 +16,24 @@ The analytics role owns one Docker Process named `plausible` on its own Node, an
 | PostgreSQL | `postgres:16-alpine` | Plausible accounts and site settings. |
 | ClickHouse | `clickhouse/clickhouse-server:24.12-alpine` | Every tracked event. |
 
+A Process needs a command. For PostgreSQL use `postgres`. The ClickHouse image already passes its own configuration file, so give it a server argument that starts with two dashes, such as `-- --logger.level=warning`; `--config-file` makes it restart forever.
+
 Both Processes publish their port on the Node's WireGuard address only. Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user itself. Give analytics a PostgreSQL Process of its own, because Plausible connects as that Process's own user. ClickHouse assumes a large server by default, so give its Process the low-resource configuration that Plausible documents when the Node is small. Plan about 2 GB of memory for the three services together, and disk that grows with traffic.
 
 ## Assign the role
 
 `orbit node:role:add NODE analytics --postgres-process=ID --clickhouse-process=ID` assigns the role. The role is a singleton, it conflicts with `gateway`, and it combines with `database`, so one services Node can hold both.
 
+When a storage Process runs on the role's own Node, the role adds a firewall rule that admits the Docker bridge to its published port, because the `plausible` container reaches it through that bridge and not through WireGuard. Storage on another Node needs no rule.
+
 Assignment names the two Processes by ID and refuses when one is missing, is not a Docker Process on an active database Node, or is not the supported engine. The Gateway then runs the Plausible container on the role's Node and publishes `https://analytics.orbit`.
 
 | Step | Result |
 | --- | --- |
 | Connect storage | The two connection URLs, derived from the environment of the two Processes. |
+| Admit local storage | One `orbit:analytics-*-local` firewall rule for each storage Process on the same Node. |
 | Run Plausible | The `plausible` Process at the pinned version, published on the Node's WireGuard address. It creates and migrates its PostgreSQL database each time it starts. |
-| Publish the dashboard | An Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
+| Publish the dashboard | Only after Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
 The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens.
 
