@@ -184,7 +184,7 @@ Rename the current `gateway` Node to `vpn` before you register a new VPS as `gat
 Add one role assignment to a Node, or converge an existing assignment again.
 
 ```bash
-orbit node:role:add <node> <role> [--converge] [--json]
+orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -195,11 +195,16 @@ orbit node:role:add <node> <role> [--converge] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--converge` | Re-run convergence for an assignment that is active or whose failed step starts with `converge:`. |
+| `--postgres-process=ID` | For `analytics` only: the PostgreSQL 16 Process on a database Node that holds the Plausible accounts. |
+| `--clickhouse-process=ID` | For `analytics` only: the ClickHouse Process on a database Node that holds the events. |
 
 ```bash
 orbit node:role:add beast database
 orbit node:role:add beast metrics --converge
+orbit node:role:add services analytics --postgres-process=41 --clickhouse-process=42
 ```
+
+The `analytics` role needs both Process options. In a terminal the command lists the Docker Processes that run the right image and asks you to pick each one you left out; with `--json` or `--no-interaction` it refuses. The [Analytics role](/reference/analytics) page owns what the role runs and publishes.
 
 `gateway` is mutable. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the singleton assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
 

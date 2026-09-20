@@ -723,7 +723,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
         'node:rename' => [['node', 'name'], ['json' => false]],
         'node:settings' => [['node'], ['setting' => [], 'json' => false]],
-        'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
+        'node:role:add' => [['node', 'role'], ['converge' => false, 'postgres-process' => null, 'clickhouse-process' => null, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],
         'node:role:relocate' => [['node', 'role'], ['force' => false, 'json' => false]],
         'node:role:remove' => [

@@ -23,6 +23,16 @@ describe(AddNodeRoleRequest::class, function (): void {
             ->toBe(['role' => 'ingress', 'converge_existing' => true]);
     });
 
+    it('sends the two storage Process IDs for the analytics role and leaves them out otherwise', function (): void {
+        $analytics = new AddNodeRoleRequest(17, 'analytics', false, 41, 42);
+        $other = new AddNodeRoleRequest(17, 'database');
+
+        expect($analytics->body()->all())
+            ->toBe(['role' => 'analytics', 'converge_existing' => false, 'postgres_process_id' => 41, 'clickhouse_process_id' => 42])
+            ->and($other->body()->all())
+            ->toBe(['role' => 'database', 'converge_existing' => false]);
+    });
+
     it('uses the numeric node ID exact body and typed mutation response', function (): void {
         $mockClient = new MockClient([
             AddNodeRoleRequest::class => MockResponse::make([
