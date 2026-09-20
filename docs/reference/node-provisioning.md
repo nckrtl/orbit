@@ -60,6 +60,25 @@ Each identity or architecture failure names the boundary that stopped the reques
 | `node.architecture_unavailable` | The Gateway could not read a machine architecture from the Node as the managed user. |
 | `node.architecture_mismatch` | The request names an architecture that differs from the observed one for a Node without a record. The Gateway records no architecture and converges no role. |
 
+## Package sources
+
+A role installs its packages from the Ubuntu archive, except for the two Orbit pins.
+
+| Package | Source | Owned file |
+| --- | --- | --- |
+| PHP | Sury, `https://packages.sury.org/php/` | `/etc/apt/sources.list.d/orbit-php.sources`, `/usr/share/keyrings/orbit-sury-php.gpg` |
+| Caddy | The Caddy project, `https://dl.cloudsmith.io/public/caddy/stable/deb/debian` | `/etc/apt/sources.list.d/orbit-caddy.sources`, `/usr/share/keyrings/orbit-caddy.gpg` |
+
+Both sources work the same way. The Gateway downloads the publisher's signing key and refuses it unless it matches a pinned SHA-256 digest and a pinned primary fingerprint. It then publishes the keyring and a deb822 source file as `root:root` mode `0644`, and restores the previous pair when a step after that fails. It refuses to continue unless the package candidate comes from that exact origin. Orbit never uses `apt-key` or `add-apt-repository`, and never accepts a caller-supplied source.
+
+Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, which does not know `log_skip` — a directive an `app-dev` site renders for every hibernating App instance. A Node below **Caddy 2.8.0** fails the `caddy-package-source` step of role convergence with the installed and required release named. [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) records the decision. Roles that serve through Caddy are `router`, `app-dev`, `app-prod`, `websocket`, and `analytics`.
+
+Converging a role on a Node that still carries the archive package upgrades it in place. Orbit owns `/etc/caddy/Caddyfile` as a symlink into its own versions directory, and the install keeps the existing file, so the live configuration survives the upgrade.
+
+[`orbit doctor`](/cli/doctor) reports a Node whose Caddy is below the floor as `role.caddy_version_unsupported`, with the constraint as the expected value and the installed release as the observed one. Doctor never repairs; `orbit node:role:add <node> <role> --converge` does.
+
+The Gateway machine itself is not a managed Node for packages. Its own Caddy comes from the [quickstart](/quickstart) install, which uses the same pinned source.
+
 ## Converge an existing Node
 
 `node:add` for a recorded Node converges that machine again. The Gateway may record the Node as `provisioning` while that work runs. When the Node was already `active` and a later step fails, the Gateway restores `active`, including when private DNS or Router LAN cleanup also fails. It does not leave a serving Gateway in `provisioning`. A non-active Gateway hides the peer from fleet authority, so clients then receive `node_access.required` until an operator repairs the status by hand.

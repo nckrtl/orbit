@@ -16,6 +16,7 @@ use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\RoleDoctorIssueCode;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Nodes\CaddyRelease;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
@@ -247,6 +248,16 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 'Required role packages are missing.',
                 true,
                 false,
+            ));
+        }
+        if (is_string($state->caddyVersion) && ! CaddyRelease::supports($state->caddyVersion)) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::CaddyVersionUnsupported,
+                DoctorIssueKind::Drift,
+                'Installed Caddy is older than the release Orbit renders against.',
+                CaddyRelease::constraint(),
+                CaddyRelease::reported($state->caddyVersion) ?? 'unknown',
             ));
         }
         if (! $state->servicesActive) {

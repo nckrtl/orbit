@@ -48,6 +48,10 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
         printf '%s\n' "$present"
         BASH;
 
+    private const string CADDY_VERSION_SCRIPT = <<<'BASH'
+        caddy version 2>/dev/null | head -n 1 | awk '{ print $1 }'
+        BASH;
+
     private const string SERVICE_SCRIPT = <<<'BASH'
         active=1
         for service in "$@"; do
@@ -79,10 +83,11 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
             $role->loadMissing('node');
             $node = $role->node;
             $connection = $this->connection($node);
+            $required = $this->packages->forRole($node, $role->role);
             $packages = $this->booleanResult($this->ssh->execute(
                 $connection,
                 new RemoteCommand(
-                    ['bash', '-seu', '--', ...$this->packages->forRole($node, $role->role)],
+                    ['bash', '-seu', '--', ...$required],
                     self::PACKAGE_SCRIPT,
                 ),
             ));
@@ -102,6 +107,9 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
                 $packages,
                 $services,
                 $this->firewallMatches($firewall, $node, $role),
+                in_array('caddy', $required, strict: true)
+                    ? $this->caddyVersion($connection)
+                    : null,
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;
@@ -125,6 +133,23 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
             $this->knownHosts->path(),
             commandTimeout: $this->deadline->cap(30.0),
         );
+    }
+
+    /** Null means Caddy is absent, which the package expectation already reports. */
+    private function caddyVersion(SshConnection $connection): ?string
+    {
+        $result = $this->ssh->execute(
+            $connection,
+            new RemoteCommand(['bash', '-seu', '--'], self::CADDY_VERSION_SCRIPT),
+        );
+
+        if (! $result->succeeded() || $result->truncated) {
+            throw new DoctorInspectionException;
+        }
+
+        $reported = trim($result->stdout);
+
+        return $reported === '' ? null : $reported;
     }
 
     private function booleanResult(CommandResult $result): bool

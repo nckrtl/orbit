@@ -41,6 +41,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
@@ -79,6 +80,7 @@ it('converges and removes only app development role-owned infrastructure', funct
 
     expect($events)->toBe([
         "dns:{$node->id}",
+        'ssh:caddy-source',
         'ssh:app-dev',
         'caddy:converge',
         'firewall:converge:app-dev',
@@ -125,6 +127,7 @@ it('converges and removes only app production role-owned infrastructure', functi
     $baseline->remove($node, $assignment, purgeData: true);
 
     expect($events)->toBe([
+        'ssh:caddy-source',
         'ssh:app-prod',
         'caddy:converge',
         'firewall:converge:app-prod',
@@ -142,6 +145,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
     $router->remove($node, $assignment, purgeData: false);
 
     expect($events)->toBe([
+        'ssh:caddy-source',
         'ssh:router',
         'caddy:converge',
         'firewall:converge:router',
@@ -195,6 +199,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
     expect($events)->toBe([
         "owner:enter:{$assignment->cluster_id}",
         'guard:gateway',
+        'ssh:caddy-source',
         'ssh:router',
         'caddy:converge',
         'firewall:converge:router',
@@ -557,6 +562,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     expect($events)->toContain(
         'firewall:converge:gateway',
         'ssh:vpn',
+        'ssh:caddy-source',
         'ssh:app-dev',
         'ssh:app-prod',
         'ssh:database',
@@ -776,10 +782,12 @@ it('checks the remote operating system before every role convergence', function 
         'firewall:converge:vpn',
         'guard:app-dev',
         'dns:3',
+        'ssh:caddy-source',
         'ssh:app-dev',
         'caddy:converge',
         'firewall:converge:app-dev',
         'guard:app-prod',
+        'ssh:caddy-source',
         'ssh:app-prod',
         'caddy:converge',
         'firewall:converge:app-prod',
@@ -787,6 +795,7 @@ it('checks the remote operating system before every role convergence', function 
         'guard:database',
         'ssh:database',
         'guard:unknown',
+        'ssh:caddy-source',
         'ssh:websocket',
         'ssh:orbit',
         'guard:unknown',
@@ -1233,7 +1242,8 @@ function baseline_ssh(array &$events): SshExecutor
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
-            $this->events[] = 'ssh:'.($command->arguments[4] ?? 'unknown');
+            $label = $command->arguments[4] ?? 'unknown';
+            $this->events[] = 'ssh:'.($label === CaddyPackageSourceProgram::SOURCE_URI ? 'caddy-source' : $label);
 
             return new CommandResult(0, '', '', 1, false);
         }

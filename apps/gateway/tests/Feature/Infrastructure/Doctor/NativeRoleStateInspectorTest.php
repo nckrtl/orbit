@@ -44,10 +44,12 @@ it('inspects each role with exact package service and firewall requirements', fu
     array $services,
     array $comments,
 ): void {
+    $needsCaddy = in_array('caddy', $packages, strict: true);
     $ssh = new RoleInspectorSshExecutor([
         role_inspector_result("1\n"),
         role_inspector_result("1\n"),
         role_inspector_result(role_inspector_ufw($comments)),
+        role_inspector_result("v2.11.4\n"),
     ]);
 
     $state = role_state_inspector($ssh)->inspect(role_inspector_assignment($role));
@@ -58,8 +60,10 @@ it('inspects each role with exact package service and firewall requirements', fu
         ->toBeTrue()
         ->and($state->firewallProjectionMatches)
         ->toBeTrue()
+        ->and($state->caddyVersion)
+        ->toBe($needsCaddy ? 'v2.11.4' : null)
         ->and($ssh->calls)
-        ->toHaveCount(3)
+        ->toHaveCount($needsCaddy ? 4 : 3)
         ->and($ssh->calls[0]['command']->arguments)
         ->toBe(['bash', '-seu', '--', ...$packages])
         ->and($ssh->calls[1]['command']->arguments)
@@ -121,6 +125,7 @@ it('returns independent false projections for one missing requirement', function
         role_inspector_result($packageState),
         role_inspector_result($serviceState),
         role_inspector_result(role_inspector_ufw($firewallComments)),
+        role_inspector_result("v2.11.4\n"),
     ]);
 
     $state = role_state_inspector($ssh)->inspect(role_inspector_assignment($role));
@@ -185,6 +190,7 @@ it('accepts only a complete healthy Docker CE stack as the Docker prerequisite',
         role_inspector_result("1\n"),
         role_inspector_result("1\n"),
         role_inspector_result(role_inspector_ufw([])),
+        role_inspector_result("v2.11.4\n"),
     ]);
 
     role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::AppDev));

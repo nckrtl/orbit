@@ -14,6 +14,7 @@ use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -41,6 +42,10 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
         $this->dns->converge($node);
+        $caddySource = $this->commands->caddySource($node, RoleName::AppDev);
+        if ($caddySource instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-dev.prerequisite_failed');
+        }
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::AppDev, $account),

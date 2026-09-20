@@ -2682,6 +2682,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source.md",
+            "title": "ADR 0100: Install Caddy from the pinned Caddy apt source",
+            "kind": "decision",
+            "components": [
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "App instance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0021",
+                "0074",
+                "0100"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2807,7 +2830,8 @@
                 "0094",
                 "0095",
                 "0098",
-                "0099"
+                "0099",
+                "0100"
             ]
         },
         {
@@ -3564,6 +3588,7 @@
             "concepts": [
                 "App",
                 "App instance",
+                "Doctor",
                 "Gateway",
                 "Herdr session",
                 "Node",
@@ -3573,7 +3598,8 @@
             ],
             "governing_adrs": [
                 "0072",
-                "0094"
+                "0094",
+                "0100"
             ]
         },
         {
