@@ -10,7 +10,7 @@ In the context of production AppInstances that share a PHP-FPM master, facing ca
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production runtime ownership. Supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh.
+Accepted on 2026-09-10. Extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production runtime ownership. Supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh. Amended by [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) and [ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role): Unix-user isolation follows app-prod Node role for PHP Instances, and a dedicated FPM master starts only when the Instance serves PHP.
 
 ## Context
 

@@ -1,44 +1,49 @@
 ---
-title: "Apps"
-description: "How an App records one repository, its default branch, and the web root that App instances inherit."
+title: "Projects"
+description: "How a Project records one repository, its type, its default branch, and the web root that Instances inherit."
 ---
 
-# Apps
+# Projects
 
-An App stores one application's Git repository, access URL, default branch, and relative web root. New App instances inherit these source defaults. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity; [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
+A Project stores one repository, access URL, `type`, default branch, and relative web root. New Instances inherit these source defaults. [ADR 0105](/decisions/0105-name-applications-as-project-and-instance) names the record. [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) owns type. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity. [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
 
-App removal requires default-No interactive confirmation or explicit `--yes`. JSON and piped calls never imply consent. Inputs remain explicit; human requests show progress and preserve request IDs.
+The canonical HTTP surface is `/api/v1/projects` and the canonical CLI family is `project:*`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records so older CLI binaries and `app-*` MCP tools keep working.
 
-## Create an App
+Project removal requires default-No interactive confirmation or explicit `--yes`. JSON and piped calls never imply consent. Inputs remain explicit; human requests show progress and preserve request IDs.
 
-Use `app:create` with a slug and an HTTPS or SSH Git origin:
+## Create a Project
+
+Use `project:create` with a slug, a type, and an HTTPS or SSH Git origin:
 
 ```bash
-orbit app:create acme https://github.com/acme/site.git
+orbit project:create acme laravel-app https://github.com/acme/site.git
 ```
 
-The command-line interface (CLI) uses `public` as the web root unless you set `--root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the App.
+`type` is required on the canonical surface. Allowed values are `monorepo`, `laravel-app`, and `laravel-package`. Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+
+The command-line interface (CLI) uses `public` as the web root unless you set `--root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
 
 Both source defaults can be explicit:
 
 ```bash
-orbit app:create acme https://github.com/acme/site.git \
+orbit project:create acme laravel-app https://github.com/acme/site.git \
   --default-branch=stable \
   --root=web/public
 ```
 
 The Gateway verifies that an explicit default branch exists in the repository. Repository access failures, missing explicit branches, and an unavailable or malformed remote default return `app.default_branch_unavailable` without including repository diagnostics or credentials. A private `github.com` repository needs the Gateway's [GitHub App](/reference/github-app) installed on the account that owns it.
 
-The public App contract uses these source fields.
+The public Project contract uses these source fields.
 
 | Field or option | Result |
 | --- | --- |
+| `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, or `laravel-package`. |
 | `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
-| `default_branch` | Optional Gateway API and PHP SDK input; returned by every App response. |
-| `--default-branch` | Optional CLI input for `app:create`. |
+| `default_branch` | Optional Gateway API and PHP SDK input; returned by every Project response. |
+| `--default-branch` | Optional CLI input for `project:create`. |
 | `root` and `--root` | Required API and SDK field and the CLI's normalized relative web-root input. |
 
-SDK App responses and the `app:list` and `app:show` commands expose the stored repository, default branch, and root. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, and root. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Keep one repository owner
 
@@ -68,20 +73,21 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 ## Retry creation safely
 
-Repeating `app:create` with the same name, slug, repository access URL, default branch, root, and defaults returns the existing App. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and defaults returns the existing Project. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
-## Update an App
+## Update a Project
 
-Use `app:update` when an existing App must change its slug, repository access URL, default branch, or relative web root. The Gateway API accepts `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest`. Omitted fields stay unchanged. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, or relative web root. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
-orbit app:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
+orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
 ```
 
 | Field or option | Result |
 | --- | --- |
+| `type` and `--type` | Change Project capabilities. A change to `laravel-app` is refused while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
 | `slug` and `--slug` | Reconcile generated development Route domains and Laravel application URLs before the new slug is published. Existing checkout paths, production users, and homes stay as recorded. |
 | `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
 | `default_branch` and `--default-branch` | Store the new App default and switch every development `default` App instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |

@@ -18,7 +18,7 @@ A real command can run in a real terminal against a recorded Gateway response, s
 
 ```bash
 export ORBIT_DESIGN=1 ORBIT_HOME=/tmp/orbit-replay
-ORBIT_GATEWAY_FIXTURES=apps/app-list/default apps/cli/orbit app:list
+ORBIT_GATEWAY_FIXTURES=apps/app-list/default apps/cli/orbit project:list
 ORBIT_GATEWAY_FIXTURES=instances/instance-create/candidate-required apps/cli/orbit instance:create 1 3 release-name
 ```
 

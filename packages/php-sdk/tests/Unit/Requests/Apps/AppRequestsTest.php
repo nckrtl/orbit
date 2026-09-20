@@ -34,10 +34,11 @@ describe('app requests', function (): void {
         expect($request->getMethod())
             ->toBe(Method::POST)
             ->and($request->resolveEndpoint())
-            ->toBe('/api/v1/apps')
+            ->toBe('/api/v1/projects')
             ->and($request->body()->all())
             ->toBe([
                 'slug' => 'orbit-docs',
+                'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
                 'root' => 'public',
             ])
@@ -60,6 +61,7 @@ describe('app requests', function (): void {
         expect($request->body()->all())->toBe([
             'name' => 'Orbit Docs',
             'slug' => 'orbit-docs',
+            'type' => 'laravel-app',
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
             'default_branch' => 'stable',
             'root' => 'web/public',
@@ -82,7 +84,7 @@ describe('app requests', function (): void {
         expect($request?->getMethod())
             ->toBe(Method::GET)
             ->and($request?->resolveEndpoint())
-            ->toBe('/api/v1/apps')
+            ->toBe('/api/v1/projects')
             ->and($response)
             ->toBeInstanceOf(AppsResponse::class)
             ->and($response->apps)
@@ -111,7 +113,7 @@ describe('app requests', function (): void {
         expect($request?->getMethod())
             ->toBe(Method::GET)
             ->and($request?->resolveEndpoint())
-            ->toBe('/api/v1/apps/3')
+            ->toBe('/api/v1/projects/3')
             ->and($response)
             ->toBeInstanceOf(AppResponse::class);
     });
@@ -131,7 +133,7 @@ describe('app requests', function (): void {
         expect($request?->getMethod())
             ->toBe(Method::DELETE)
             ->and($request?->resolveEndpoint())
-            ->toBe('/api/v1/apps/3')
+            ->toBe('/api/v1/projects/3')
             ->and($response)
             ->toBeInstanceOf(AppResponse::class)
             ->and($response->id)
@@ -161,7 +163,7 @@ describe('app requests', function (): void {
         expect($request->getMethod())
             ->toBe(Method::PATCH)
             ->and($request->resolveEndpoint())
-            ->toBe('/api/v1/apps/3')
+            ->toBe('/api/v1/projects/3')
             ->and($request->body()->all())
             ->toBe([
                 'repository_url' => 'https://github.com/nckrtl/orbit-docs.git',
@@ -198,6 +200,7 @@ function app_gateway_data(): array
         'id' => 3,
         'name' => 'orbit-docs',
         'slug' => 'orbit-docs',
+        'type' => 'laravel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
         'default_branch' => 'main',
         'root' => 'public',

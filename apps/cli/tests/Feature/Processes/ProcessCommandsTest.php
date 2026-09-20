@@ -1000,7 +1000,7 @@ it('rejects invalid local process input before making a gateway request', functi
             'name' => 'queue',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --app, --instance, or --node option is required.',
+        'The --project, --app, --instance, or --node option is required.',
     ],
     'combined selectors' => [
         'process:create',
@@ -1010,7 +1010,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--node' => '4',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'app with instance' => [
         'process:create',
@@ -1021,7 +1021,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'for without app' => [
         'process:create',
@@ -1031,7 +1031,7 @@ it('rejects invalid local process input before making a gateway request', functi
             '--for' => 'development',
             '--command' => ['/usr/bin/php'],
         ],
-        'The --for option requires --app.',
+        'The --for option requires --project or --app.',
     ],
     'app without for' => [
         'process:create',
@@ -1094,7 +1094,7 @@ it('renders one exact json envelope for App-target process refusals', function (
         'process:update',
         ['name' => 'worker'],
         'process.target_invalid',
-        'The --app option is required.',
+        'The --project or --app option is required.',
     ],
     'create app with instance' => [
         'process:create',
@@ -1106,7 +1106,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.target_invalid',
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'create app with node' => [
         'process:create',
@@ -1118,7 +1118,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.target_invalid',
-        'Use only one of --app, --instance, or --node.',
+        'Use only one of --project, --app, --instance, or --node.',
     ],
     'create for without app' => [
         'process:create',
@@ -1129,7 +1129,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'process.option_invalid',
-        'The --for option requires --app.',
+        'The --for option requires --project or --app.',
     ],
     'create app without for' => [
         'process:create',
@@ -1149,7 +1149,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--command' => ['/usr/bin/php'],
         ],
         'app.id_invalid',
-        'App ID must be a positive integer.',
+        'Project ID must be a positive integer.',
     ],
     'update app without for' => [
         'process:update',

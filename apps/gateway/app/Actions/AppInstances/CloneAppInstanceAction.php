@@ -141,7 +141,7 @@ final readonly class CloneAppInstanceAction
 
     private function candidateBranch(AppInstance $candidate): string
     {
-        $branch = $candidate->environment === 'production'
+        $branch = $candidate->placedOnAppProd()
             ? $candidate->deployment_branch ?? $candidate->branch
             : $candidate->branch;
 
@@ -162,13 +162,15 @@ final readonly class CloneAppInstanceAction
         $node->refresh();
         $placement = $this->assertPlacement($candidate, $node);
 
-        if (! is_string($node->tld) || $node->tld === '') {
+        if ($candidate->requiresRoute() && (! is_string($node->tld) || $node->tld === '')) {
             throw $this->conflict('route.tld_required', 'A clone preview requires the destination Node TLD.');
         }
 
-        $domain = RouteDomain::validate("{$data->previewName}.{$node->tld}");
+        $domain = $candidate->requiresRoute()
+            ? RouteDomain::validate("{$data->previewName}.{$node->tld}")
+            : '';
 
-        if (Route::query()->where('domain', $domain)->exists()) {
+        if ($domain !== '' && Route::query()->where('domain', $domain)->exists()) {
             throw $this->conflict('route.domain_conflict', "Route domain [{$domain}] is already owned.");
         }
 
@@ -232,7 +234,7 @@ final readonly class CloneAppInstanceAction
                 $user,
                 $home,
             ): AppInstance {
-                if (Route::query()->where('domain', $domain)->lockForUpdate()->exists()) {
+                if ($domain !== '' && Route::query()->where('domain', $domain)->lockForUpdate()->exists()) {
                     throw $this->conflict(
                         'route.domain_conflict',
                         "Route domain [{$domain}] is already owned.",
@@ -260,20 +262,23 @@ final readonly class CloneAppInstanceAction
                     'provisioning_step' => 'clone-reserved',
                     'status' => AppInstanceState::Reserved,
                 ]);
-                $route = Route::query()->create([
-                    'app_id' => $candidate->app_id,
-                    'node_id' => $placement->nodeId,
-                    'cluster_id' => $placement->clusterId,
-                    'generation_basis_node_id' => null,
-                    'domain' => $domain,
-                    'provenance' => RouteProvenance::Explicit,
-                    'publication' => RoutePublication::Private,
-                    'status' => RouteStatus::Pending,
-                ]);
-                $route->targets()->create([
-                    'app_instance_id' => $target->id,
-                    'position' => 0,
-                ]);
+
+                if ($domain !== '') {
+                    $route = Route::query()->create([
+                        'app_id' => $candidate->app_id,
+                        'node_id' => $placement->nodeId,
+                        'cluster_id' => $placement->clusterId,
+                        'generation_basis_node_id' => null,
+                        'domain' => $domain,
+                        'provenance' => RouteProvenance::Explicit,
+                        'publication' => RoutePublication::Private,
+                        'status' => RouteStatus::Pending,
+                    ]);
+                    $route->targets()->create([
+                        'app_instance_id' => $target->id,
+                        'position' => 0,
+                    ]);
+                }
 
                 return $target;
             });
@@ -297,9 +302,9 @@ final readonly class CloneAppInstanceAction
         bool $created,
     ): AppInstance {
         $target->refresh()->loadMissing(['app', 'node', 'routes.targets']);
-        $route = $this->cloneRoute($target);
+        $route = $target->requiresRoute() ? $this->cloneRoute($target) : null;
 
-        if ($route->status === RouteStatus::Failed) {
+        if ($route instanceof Route && $route->status === RouteStatus::Failed) {
             $route->update([
                 'status' => RouteStatus::Pending,
                 'failed_step' => null,
@@ -337,7 +342,7 @@ final readonly class CloneAppInstanceAction
 
         if ($target->provisioning_step === 'clone-source-resolved') {
             $profile = $this->source->inspectProfile($target);
-            $runtime = is_string($profile->phpVersion)
+            $runtime = is_string($profile->phpVersion) && $target->refresh()->loadMissing('app')->servesPhp()
                 ? ProductionPhpRuntimeIdentity::forProvisioning($target, $profile->phpVersion)->attributes()
                 : [];
             $this->checkpoint($target, 'clone-source-classified', attributes: [
@@ -368,6 +373,18 @@ final readonly class CloneAppInstanceAction
         }
 
         if ($target->provisioning_step === 'clone-definitions-instantiated') {
+            if (! $route instanceof Route) {
+                $this->checkpoint($target, 'clone-completed', AppInstanceState::Active);
+                $target->update([
+                    'clone_completed_at' => now(),
+                    'provisioning_step' => 'clone-completed',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+
+                return $target->refresh()->load('routes.targets');
+            }
+
             $this->prepareRuntime($target, $route);
             $this->checkpoint($target, 'clone-runtime-prepared');
         }
@@ -516,7 +533,7 @@ final readonly class CloneAppInstanceAction
 
     private function prepareRuntime(AppInstance $target, Route $route): void
     {
-        if ($target->selected_php_version === null) {
+        if ($target->selected_php_version === null || ! $target->servesPhp()) {
             return;
         }
 

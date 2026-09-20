@@ -138,7 +138,7 @@ final readonly class CreateAppInstanceAction
      */
     private function announceCreated(array $result): array
     {
-        if ($result['appInstance']->environment === 'production') {
+        if ($result['appInstance']->placedOnAppProd()) {
             $this->metrics?->reconcile();
         }
         if ($result['created']) {

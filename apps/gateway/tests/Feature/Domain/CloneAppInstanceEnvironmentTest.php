@@ -53,21 +53,23 @@ it('copies independent encrypted values and resolves placeholders through the ex
             'app_instance_id' => $target->id,
             'operation' => 'clone',
             'changed' => true,
-            'key_count' => 3,
+            'key_count' => 4,
         ])
         ->and($targetValues)
         ->toBe([
-            'APP_ENV' => '{{app_instance.environment}}',
+            'APP_DEBUG' => 'false',
+            'APP_ENV' => 'production',
             'APP_KEY' => 'base64:literal-key',
             'APP_URL' => 'https://{{app_instance.domain}}/path',
         ])
-        ->and(array_keys($targetCiphertext))
-        ->toBe(array_keys($sourceCiphertext));
-    foreach ($sourceCiphertext as $key => $ciphertext) {
-        expect($targetCiphertext[$key])->not->toBe($ciphertext);
+        ->and($targetCiphertext)
+        ->toHaveKeys(['APP_DEBUG', 'APP_ENV', 'APP_KEY', 'APP_URL']);
+    foreach (['APP_KEY', 'APP_URL'] as $key) {
+        expect($targetCiphertext[$key])->not->toBe($sourceCiphertext[$key]);
     }
     expect($writer->contents)
-        ->toBe("APP_ENV=\"production\"\n"
+        ->toBe("APP_DEBUG=\"false\"\n"
+            ."APP_ENV=\"production\"\n"
             ."APP_KEY=\"base64:literal-key\"\n"
             ."APP_URL=\"https://preview.prod.orbit/path\"\n")
         ->and($writer->context?->routeDomain)
@@ -91,12 +93,15 @@ it('supports a clone with no stored environment rows', function (): void {
             'app_instance_id' => $target->id,
             'operation' => 'clone',
             'changed' => false,
-            'key_count' => 0,
+            'key_count' => 2,
         ])
-        ->and($target->environmentValues()->count())
-        ->toBe(0)
+        ->and($target->environmentValues()->pluck('env_value', 'env_key')->all())
+        ->toBe([
+            'APP_DEBUG' => 'false',
+            'APP_ENV' => 'production',
+        ])
         ->and($writer->contents)
-        ->toBe('')
+        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\n")
         ->and($preflight->requiredCapacityBytes)
         ->toBe(AppInstanceEnvironmentValidator::MaximumFileBytes);
 });
@@ -116,13 +121,17 @@ it('preserves target environment edits on retry', function (): void {
     $result = app(CloneAppInstanceEnvironmentAction::class)->execute($source, $target);
 
     expect($result->keyCount)
-        ->toBe(1)
-        ->and($target->environmentValues()->pluck('env_value', 'env_key')->all())
-        ->toBe(['APP_KEY' => 'edited-target-key'])
+        ->toBe(3)
+        ->and($target->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all())
+        ->toBe([
+            'APP_DEBUG' => 'false',
+            'APP_ENV' => 'production',
+            'APP_KEY' => 'edited-target-key',
+        ])
         ->and($source->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all())
         ->toBe(['APP_KEY' => 'source-key', 'SOURCE_ONLY' => 'source-value'])
         ->and($writer->contents)
-        ->toBe("APP_KEY=\"edited-target-key\"\n");
+        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"edited-target-key\"\n");
 });
 
 it('refuses a stale pending Route or target placement before copying values', function (Closure $change): void {

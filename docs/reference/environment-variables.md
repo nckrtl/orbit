@@ -5,7 +5,7 @@ description: "How the Gateway imports, stores, updates, and synchronizes an App 
 
 # App instance environment variables
 
-This page tells an operator how the Gateway reads, stores, and safely replaces an App instance environment file. [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns the environment-configuration boundary.
+This page tells an operator how the Gateway reads, stores, and safely replaces an Instance environment file. [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns the environment-configuration boundary. Laravel mode is the stored `APP_ENV` value. `APP_DEBUG` is independent. Isolation, release layout, and candidate-only creation follow the Node role, not these keys ([ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role)). When `APP_ENV` is absent, readers use `development` on app-dev and `production` on app-prod. Moving an Instance keeps the stored keys. A clone onto app-prod copies the candidate configuration and then writes `APP_ENV=production` and `APP_DEBUG=false`.
 
 ## Select an App instance
 

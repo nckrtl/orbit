@@ -1,10 +1,10 @@
-Fetching Apps...
- ┌────┬──────────────┬──────────────┬──────────────────────────────────┬────────────────┬────────────┐
- │ ID │ NAME         │ SLUG         │ REPOSITORY                       │ DEFAULT BRANCH │ WEB ROOT   │
- ├────┼──────────────┼──────────────┼──────────────────────────────────┼────────────────┼────────────┤
- │ 1  │ Acme         │ acme         │ https://github.com/acme/site.git │ main           │ public     │
- │ 2  │ Bravo docs   │ bravo-docs   │ git@github.com:bravo/docs.git    │ main           │ public     │
- │ 3  │ Charlie shop │ charlie-shop │ git@github.com:charlie/shop.git  │ release        │ web/public │
- │ 4  │ Delta api    │ delta-api    │ https://github.com/delta/api.git │ main           │ public     │
- └────┴──────────────┴──────────────┴──────────────────────────────────┴────────────────┴────────────┘
+Fetching Projects...
+ ┌────┬──────────────┬──────────────┬─────────────┬──────────────────────────────────┬────────────────┬────────────┐
+ │ ID │ NAME         │ SLUG         │ TYPE        │ REPOSITORY                       │ DEFAULT BRANCH │ WEB ROOT   │
+ ├────┼──────────────┼──────────────┼─────────────┼──────────────────────────────────┼────────────────┼────────────┤
+ │ 1  │ Acme         │ acme         │ laravel-app │ https://github.com/acme/site.git │ main           │ public     │
+ │ 2  │ Bravo docs   │ bravo-docs   │ laravel-app │ git@github.com:bravo/docs.git    │ main           │ public     │
+ │ 3  │ Charlie shop │ charlie-shop │ laravel-app │ git@github.com:charlie/shop.git  │ release        │ web/public │
+ │ 4  │ Delta api    │ delta-api    │ laravel-app │ https://github.com/delta/api.git │ main           │ public     │
+ └────┴──────────────┴──────────────┴─────────────┴──────────────────────────────────┴────────────────┴────────────┘
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

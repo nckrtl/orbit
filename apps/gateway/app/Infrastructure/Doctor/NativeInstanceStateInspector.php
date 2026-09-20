@@ -32,7 +32,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
     {
         $appInstance->loadMissing(['app', 'node']);
 
-        if ($appInstance->environment === 'production') {
+        if ($appInstance->placedOnAppProd()) {
             return $this->inspectProduction($appInstance);
         }
 

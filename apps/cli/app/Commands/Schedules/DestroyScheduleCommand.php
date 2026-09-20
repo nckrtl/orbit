@@ -21,7 +21,8 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
     #[\Override]
     protected $signature = 'schedule:destroy
         {schedule : Schedule UUID or definition name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--yes : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 

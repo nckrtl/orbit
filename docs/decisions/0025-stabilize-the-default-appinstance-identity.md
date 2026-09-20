@@ -10,7 +10,7 @@ In the context of AppInstance identity derived from a mutable Git branch name, f
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), and [ADR 0024](/decisions/0024-follow-generated-route-targets). Supersedes ADR 0009 for default AppInstance naming and generated hostname shape, and ADR 0016 for App branch terminology and prospective-only default-branch changes.
+Accepted on 2026-09-05. Extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), and [ADR 0024](/decisions/0024-follow-generated-route-targets). Supersedes ADR 0009 for default AppInstance naming and generated hostname shape, and ADR 0016 for App branch terminology and prospective-only default-branch changes. Amended by [ADR 0105](/decisions/0105-name-applications-as-project-and-instance): the reserved identity remains `default`, and that Instance tracks the Project `default_branch`.
 
 ## Context
 
@@ -18,9 +18,9 @@ ADR 0009 uses the App's configured main branch as both a Git source default and 
 
 ## Decision
 
-- An App owns one `default_branch` source setting.
-- Orbit must name the AppInstance that represents an App's default development source `default`.
-- Orbit must treat `default` as the reserved identity for that AppInstance role.
+- A Project owns one `default_branch` source setting.
+- Orbit must name the Instance that represents a Project's default development source `default`.
+- Orbit must treat `default` as the reserved identity for that Instance role. The Instance tracks `project.default_branch` when it inherits that setting.
 - Orbit must generate an unprefixed development Route hostname only for the `default` AppInstance.
 - Orbit must use every other AppInstance name as the generated development Route hostname prefix.
 - Orbit must keep the `default` AppInstance name, placement, and Route identity stable when `default_branch` changes.

@@ -88,7 +88,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
     private function performRemoval(AppInstance $appInstance, bool $force): AppInstanceRemoval
     {
-        if ($appInstance->environment === 'production') {
+        if ($appInstance->placedOnAppProd()) {
             return $this->environmentOperations->run(
                 [$appInstance->id],
                 fn (): AppInstanceRemoval => $this->executeOwned($appInstance, $force),
@@ -201,7 +201,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
     {
         $this->assertSupported($appInstance);
 
-        if ($appInstance->environment === 'production') {
+        if ($appInstance->placedOnAppProd()) {
             return $this->acceptProduction($appInstance, $force);
         }
 
@@ -423,7 +423,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         }
 
         if (
-            $appInstance->environment === 'development'
+            $appInstance->placedOnAppDev()
             && ! in_array(
                 $appInstance->source_layout,
                 [AppInstanceSourceLayout::Checkout->value, AppInstanceSourceLayout::Worktree->value],
@@ -653,7 +653,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                 && $route->publication === RoutePublication::Private
                 && $route->targets->count() === 1
                 && $route->targets->sole()->app_instance_id === $requested->id
-                && $requested->environment === 'production'
+                && $requested->placedOnAppProd()
                 && $requested->status === AppInstanceState::Active
                 && $node->status === LifecycleStatus::Active
                 && $placement->nodeId === $node->id
@@ -763,7 +763,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         AppInstanceRemoval $operation,
         AppInstanceRemovalMember $member,
     ): void {
-        if ($member->environment === 'production') {
+        if ($member->placedOnAppProd()) {
             $this->productionContent->prepare($member);
             $member->update(['source_prepared_at' => now()]);
 
@@ -789,7 +789,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         AppInstanceRemoval $operation,
         AppInstanceRemovalMember $member,
     ): void {
-        if ($member->environment === 'production') {
+        if ($member->placedOnAppProd()) {
             $this->productionContent->revalidate($member);
             $receipt = $this->productionContent->finalize($member);
             $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
@@ -839,7 +839,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             return;
         }
 
-        if ($member->environment === 'production') {
+        if ($member->placedOnAppProd()) {
             $this->productionContent->revalidate($member);
 
             return;

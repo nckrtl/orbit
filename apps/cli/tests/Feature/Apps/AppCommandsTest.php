@@ -36,15 +36,16 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-describe('app:create', function (): void {
+describe('project:create', function (): void {
     it('creates an app through the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             CreateAppRequest::class => app_mock_response(201),
         ]);
 
         $this
-            ->artisan('app:create', [
+            ->artisan('project:create', [
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--name' => 'Orbit',
                 '--default-branch' => 'stable',
@@ -56,13 +57,14 @@ describe('app:create', function (): void {
         $request = $mockClient->getLastRequest();
 
         expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/apps')
+            ->toBe('https://10.44.0.1/api/v1/projects')
             ->and($request)
             ->toBeInstanceOf(CreateAppRequest::class)
             ->and($request?->body()->all())
             ->toBe([
                 'name' => 'Orbit',
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
                 'default_branch' => 'stable',
                 'root' => 'public',
@@ -73,11 +75,12 @@ describe('app:create', function (): void {
         MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
 
         $this
-            ->artisan('app:create', [
+            ->artisan('project:create', [
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
             ])
-            ->expectsOutput('App [orbit] created.')
+            ->expectsOutput('Project [orbit] created.')
             ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
@@ -88,8 +91,9 @@ describe('app:create', function (): void {
         ]);
 
         $this
-            ->artisan('app:create', [
+            ->artisan('project:create', [
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--root' => 'web/public',
             ])
@@ -104,13 +108,14 @@ describe('app:create', function (): void {
         $expected = json_encode([
             'error' => [
                 'code' => 'app.slug_invalid',
-                'message' => 'App slug is invalid.',
+                'message' => 'Project slug is invalid.',
                 'request_id' => null,
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $exitCode = Artisan::call('app:create', [
+        $exitCode = Artisan::call('project:create', [
             'slug' => $slug,
+            'type' => 'laravel-app',
             'repository' => 'git@github.com:nckrtl/orbit.git',
             '--json' => true,
         ]);
@@ -133,8 +138,9 @@ describe('app:create', function (): void {
         ]);
 
         $this
-            ->artisan('app:create', [
+            ->artisan('project:create', [
                 'slug' => 'Orbit App',
+                'type' => 'laravel-app',
                 'repository' => 'nckrtl/orbit',
             ])
             ->assertExitCode(0);
@@ -144,13 +150,14 @@ describe('app:create', function (): void {
             ->and($mockClient->getLastRequest()?->body()->all())
             ->toBe([
                 'slug' => 'Orbit App',
+                'type' => 'laravel-app',
                 'repository_url' => 'nckrtl/orbit',
                 'root' => 'public',
             ]);
     });
 });
 
-describe('app:create repository boundary', function (): void {
+describe('project:create repository boundary', function (): void {
     it('rejects unsafe repository input without disclosure or gateway IO', function (string $repository): void {
         $mockClient = MockClient::global();
         $expected = json_encode([
@@ -161,8 +168,9 @@ describe('app:create repository boundary', function (): void {
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $exitCode = Artisan::call('app:create', [
+        $exitCode = Artisan::call('project:create', [
             'slug' => 'orbit',
+            'type' => 'laravel-app',
             'repository' => $repository,
             '--json' => true,
         ]);
@@ -195,8 +203,9 @@ describe('app:create repository boundary', function (): void {
         ]);
 
         $this
-            ->artisan('app:create', [
+            ->artisan('project:create', [
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository' => $repository,
             ])
             ->assertExitCode(0);
@@ -216,8 +225,9 @@ describe('app:create repository boundary', function (): void {
         ]);
 
         $this
-            ->artisan('app:create', [
+            ->artisan('project:create', [
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository' => $repository,
             ])
             ->assertExitCode(0);
@@ -227,6 +237,7 @@ describe('app:create repository boundary', function (): void {
             ->and($mockClient->getLastRequest()?->body()->all())
             ->toBe([
                 'slug' => 'orbit',
+                'type' => 'laravel-app',
                 'repository_url' => $repository,
                 'root' => 'public',
             ]);
@@ -237,7 +248,7 @@ describe('app:create repository boundary', function (): void {
     ]);
 });
 
-describe('app:list', function (): void {
+describe('project:list', function (): void {
     it('lists apps as JSON', function (): void {
         MockClient::global([
             ListAppsRequest::class => MockResponse::make([
@@ -251,7 +262,7 @@ describe('app:list', function (): void {
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         $this
-            ->artisan('app:list', ['--json' => true])
+            ->artisan('project:list', ['--json' => true])
             ->expectsOutput($expected)
             ->assertExitCode(0);
     });
@@ -264,9 +275,10 @@ describe('app:list', function (): void {
             ]),
         ]);
 
-        expect(Artisan::call('app:list'))->toBe(0);
+        expect(Artisan::call('project:list'))->toBe(0);
         expect(Artisan::output())->toContain('NAME')
             ->toContain('SLUG')
+            ->toContain('TYPE')
             ->toContain('REPOSITORY')
             ->toContain('WEB ROOT')
             ->toContain(app_request_id());
@@ -277,7 +289,7 @@ describe('app:list', function (): void {
         $mockClient = MockClient::global();
 
         $this
-            ->artisan('app:list')
+            ->artisan('project:list')
             ->expectsOutputToContain('No active gateway profile.')
             ->assertExitCode(1);
 
@@ -305,7 +317,7 @@ describe('app:list', function (): void {
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-        $exitCode = Artisan::call('app:list', ['--json' => true]);
+        $exitCode = Artisan::call('project:list', ['--json' => true]);
         $output = trim(Artisan::output());
 
         expect($exitCode)->toBe(1);
@@ -327,7 +339,7 @@ describe('app:list', function (): void {
         ]);
 
         $this
-            ->artisan('app:list')
+            ->artisan('project:list')
             ->expectsOutputToContain('Gateway is unavailable.')
             ->assertExitCode(1);
     });
@@ -343,7 +355,7 @@ describe('app:list', function (): void {
         ]);
 
         $this
-            ->artisan('app:list')
+            ->artisan('project:list')
             ->expectsOutputToContain('Could not reach the gateway.')
             ->doesntExpectOutputToContain('TLS failed')
             ->doesntExpectOutputToContain('super-secret')
@@ -351,19 +363,19 @@ describe('app:list', function (): void {
     });
 });
 
-describe('app:show', function (): void {
+describe('project:show', function (): void {
     it('shows an app as JSON', function (): void {
         $mockClient = MockClient::global([
             ShowAppRequest::class => app_mock_response(),
         ]);
 
         $this
-            ->artisan('app:show', ['app' => '3', '--json' => true])
+            ->artisan('project:show', ['project' => '3', '--json' => true])
             ->expectsOutput(app_json())
             ->assertExitCode(0);
 
         expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/apps/3');
+            ->toBe('https://10.44.0.1/api/v1/projects/3');
     });
 
     it('shows app details for humans', function (): void {
@@ -372,15 +384,15 @@ describe('app:show', function (): void {
             ListAppInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
         ]);
 
-        expect(Artisan::call('app:show', ['app' => '3']))->toBe(0);
-        expect(Artisan::output())->toContain('App: orbit')
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('Project: orbit')
             ->toContain('Orbit')
             ->toContain('git@github.com:nckrtl/orbit.git')
             ->toContain('Default branch')
             ->toContain('main')
             ->toContain('Web root')
             ->toContain('public')
-            ->toContain('No App instances.')
+            ->toContain('No Instances.')
             ->not->toContain(app_request_id());
     });
 
@@ -398,20 +410,20 @@ describe('app:show', function (): void {
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         $this
-            ->artisan('app:show', ['app' => '3', '--json' => true])
+            ->artisan('project:show', ['project' => '3', '--json' => true])
             ->expectsOutput($expected)
             ->assertExitCode(0);
     });
 });
 
-describe('app:update', function (): void {
+describe('project:update', function (): void {
     it('updates an app through the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             UpdateAppRequest::class => app_mock_response(),
         ]);
 
         $this
-            ->artisan('app:update', [
+            ->artisan('project:update', [
                 'app' => '3',
                 '--repository' => 'https://github.com/nckrtl/orbit.git',
                 '--default-branch' => 'stable',
@@ -423,7 +435,7 @@ describe('app:update', function (): void {
         $request = $mockClient->getLastRequest();
 
         expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/apps/3')
+            ->toBe('https://10.44.0.1/api/v1/projects/3')
             ->and($request)
             ->toBeInstanceOf(UpdateAppRequest::class)
             ->and($request?->body()->all())
@@ -440,11 +452,11 @@ describe('app:update', function (): void {
         MockClient::global([UpdateAppRequest::class => app_mock_response()]);
 
         $this
-            ->artisan('app:update', [
+            ->artisan('project:update', [
                 'app' => '3',
                 '--slug' => 'orbit',
             ])
-            ->expectsOutput('App [orbit] updated.')
+            ->expectsOutput('Project [orbit] updated.')
             ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
@@ -453,8 +465,8 @@ describe('app:update', function (): void {
         $mockClient = MockClient::global();
 
         $this
-            ->artisan('app:update', ['app' => '3'])
-            ->expectsOutputToContain('Provide at least one App update.')
+            ->artisan('project:update', ['project' => '3'])
+            ->expectsOutputToContain('Provide at least one Project update.')
             ->assertExitCode(1);
 
         expect($mockClient->getLastPendingRequest())->toBeNull();
@@ -470,27 +482,27 @@ describe('app:update', function (): void {
     });
 });
 
-describe('app:destroy', function (): void {
+describe('project:destroy', function (): void {
     it('removes an app as JSON', function (): void {
         $mockClient = MockClient::global([
             DestroyAppRequest::class => app_mock_response(),
         ]);
 
         $this
-            ->artisan('app:destroy', ['app' => '3', '--yes' => true, '--json' => true])
+            ->artisan('project:destroy', ['project' => '3', '--yes' => true, '--json' => true])
             ->expectsOutput(app_json())
             ->assertExitCode(0);
 
         expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/apps/3');
+            ->toBe('https://10.44.0.1/api/v1/projects/3');
     });
 
     it('reports the removed app for humans', function (): void {
         MockClient::global([DestroyAppRequest::class => app_mock_response()]);
 
         $this
-            ->artisan('app:destroy', ['app' => '3', '--yes' => true])
-            ->expectsOutput('App [orbit] removed.')
+            ->artisan('project:destroy', ['project' => '3', '--yes' => true])
+            ->expectsOutput('Project [orbit] removed.')
             ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
@@ -500,16 +512,16 @@ it('rejects invalid app IDs before making an API request', function (string $com
     $mockClient = MockClient::global();
 
     $this
-        ->artisan($command, ['app' => $appId])
-        ->expectsOutputToContain('App ID must be a positive integer.')
+        ->artisan($command, ['project' => $appId])
+        ->expectsOutputToContain('Project ID must be a positive integer.')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'show zero' => ['app:show', '0'],
-    'show negative' => ['app:show', '-1'],
-    'update zero' => ['app:update', '0'],
-    'remove non-numeric' => ['app:destroy', 'orbit'],
+    'show zero' => ['project:show', '0'],
+    'show negative' => ['project:show', '-1'],
+    'update zero' => ['project:update', '0'],
+    'remove non-numeric' => ['project:destroy', 'orbit'],
 ]);
 
 /** @return array<string, int|string|array<string, string>> */
@@ -519,6 +531,7 @@ function app_payload(): array
         'id' => 3,
         'name' => 'Orbit',
         'slug' => 'orbit',
+        'type' => 'laravel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'default_branch' => 'main',
         'root' => 'public',
@@ -558,7 +571,7 @@ it('resolves destructive subjects but refuses automation without independent con
     bool $json,
 ): void {
     $mock = MockClient::global([ShowAppRequest::class => app_mock_response()]);
-    $arguments = ['app' => '3', '--no-interaction' => true];
+    $arguments = ['project' => '3', '--no-interaction' => true];
 
     if ($json) {
         $arguments['--json'] = true;
@@ -581,7 +594,7 @@ it('resolves destructive subjects but refuses automation without independent con
         ]);
     }
 })->with([
-    'app:destroy' => ['app:destroy', 'Removing App'],
+    'project:destroy' => ['project:destroy', 'Removing Project'],
 ])->with([false, true]);
 
 it('preserves lookup failures before destructive consent without sending a mutation', function (
@@ -594,7 +607,7 @@ it('preserves lookup failures before destructive consent without sending a mutat
             'error' => ['code' => 'http.404', 'message' => 'Resource not found.', 'details' => []],
         ], 404),
     ]);
-    $arguments = ['app' => '3', '--no-interaction' => true];
+    $arguments = ['project' => '3', '--no-interaction' => true];
 
     if ($json) {
         $arguments['--json'] = true;
@@ -613,7 +626,7 @@ it('preserves lookup failures before destructive consent without sending a mutat
         ]);
     }
 })->with([
-    'app:destroy' => ['app:destroy', 'Removing App'],
+    'project:destroy' => ['project:destroy', 'Removing Project'],
 ])->with([false, true]);
 
 it('renders an explicit empty list and preserves the empty machine collection', function (bool $json): void {
@@ -621,7 +634,7 @@ it('renders an explicit empty list and preserves the empty machine collection', 
         ListAppsRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
     ]);
 
-    expect(Artisan::call('app:list', ['--json' => $json]))->toBe(0);
+    expect(Artisan::call('project:list', ['--json' => $json]))->toBe(0);
     $output = Artisan::output();
     expect($output)->not->toContain("\e[");
 
@@ -630,6 +643,6 @@ it('renders an explicit empty list and preserves the empty machine collection', 
             'apps' => [], 'request_id' => app_request_id(),
         ]);
     } else {
-        expect($output)->toContain('No Apps found.', app_request_id())->not->toContain('Operation failed.');
+        expect($output)->toContain('No Projects found.', app_request_id())->not->toContain('Operation failed.');
     }
 })->with([false, true]);

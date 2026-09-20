@@ -180,13 +180,13 @@ final readonly class ProcessTargetResolver
     {
         $this->ensureLinux($instance->node);
 
-        if ($instance->environment === 'development') {
+        if ($instance->placedOnAppDev()) {
             $workingDirectory = $instance->checkout_path;
             $environmentFile = "{$instance->checkout_path}/.env";
             $user = $instance->node->user;
             $certificateScope = "app-instance-{$instance->id}";
             $productionReleaseLayout = false;
-        } elseif ($instance->environment === 'production') {
+        } elseif ($instance->placedOnAppProd()) {
             $home = $instance->production_home;
             $user = $instance->production_user;
 

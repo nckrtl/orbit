@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Requests\Apps;
 
 use App\Data\Apps\CreateAppData;
+use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\RelativeWebRoot;
+use Illuminate\Validation\Rule;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +24,11 @@ final class StoreAppRequest extends FormRequest
         return [
             'name' => ['sometimes', 'string', 'max:255'],
             'slug' => ['required', 'string', 'alpha_dash:ascii', 'max:63'],
+            'type' => [
+                str_starts_with((string) $this->route()?->getName(), 'project:') ? 'required' : 'sometimes',
+                'string',
+                Rule::enum(ProjectType::class),
+            ],
             'repository_url' => ['required', 'string', 'max:2048'],
             'default_branch' => ['sometimes', 'string', 'max:255'],
             'root' => ['required', 'string', 'max:255'],
@@ -35,7 +42,7 @@ final class StoreAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'defaults'],
+                ['name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -73,6 +80,7 @@ final class StoreAppRequest extends FormRequest
         return new CreateAppData(
             name: is_string($validated['name'] ?? null) ? $validated['name'] : $slug,
             slug: $slug,
+            type: ProjectType::tryFrom((string) ($validated['type'] ?? '')) ?? ProjectType::LaravelApp,
             repositoryUrl: (string) $validated['repository_url'],
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             root: (string) $validated['root'],

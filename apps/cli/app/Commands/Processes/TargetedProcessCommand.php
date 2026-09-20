@@ -16,15 +16,24 @@ abstract class TargetedProcessCommand extends ProcessCommand
     /** @return 'app'|'instance'|'node'|null */
     protected function exclusiveProcessTarget(): ?string
     {
-        $hasApp = $this->providedOption('app');
+        $hasProject = $this->providedProjectOption();
         $hasInstance = $this->providedOption('instance');
         $hasNode = $this->providedOption('node');
-        $count = (int) $hasApp + (int) $hasInstance + (int) $hasNode;
+        $count = (int) $hasProject + (int) $hasInstance + (int) $hasNode;
+
+        if ($this->providedOption('project') && $this->providedOption('app')) {
+            $this->renderGatewayFailure(
+                'process.target_invalid',
+                'Use only one of --project or --app.',
+            );
+
+            return null;
+        }
 
         if ($count > 1) {
             $this->renderGatewayFailure(
                 'process.target_invalid',
-                'Use only one of --app, --instance, or --node.',
+                'Use only one of --project, --app, --instance, or --node.',
             );
 
             return null;
@@ -33,14 +42,14 @@ abstract class TargetedProcessCommand extends ProcessCommand
         if ($count === 0) {
             $this->renderGatewayFailure(
                 'process.target_invalid',
-                'The --app, --instance, or --node option is required.',
+                'The --project, --app, --instance, or --node option is required.',
             );
 
             return null;
         }
 
         return match (true) {
-            $hasApp => 'app',
+            $hasProject => 'app',
             $hasInstance => 'instance',
             default => 'node',
         };

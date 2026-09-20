@@ -44,6 +44,7 @@ final readonly class CloneAppInstanceEnvironmentAction
                 $sourceContext = $this->contexts->resolve($source, requireActiveNode: true);
                 $targetContext = $this->contexts->resolveForClone($target, requireActiveNode: true);
                 $this->store->copyForClone($sourceContext, $targetContext);
+                $this->store->forceAppProdLaravelMode($target);
                 $requiredCapacity = $this->store->cloneSynchronizationCapacity($targetContext);
                 $this->preflight->assertEnvironmentWritable($targetContext, $requiredCapacity);
                 $snapshot = $this->store->cloneSynchronizationSnapshot($targetContext);

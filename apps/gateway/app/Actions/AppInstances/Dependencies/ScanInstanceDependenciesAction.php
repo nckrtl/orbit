@@ -45,7 +45,7 @@ final readonly class ScanInstanceDependenciesAction
                     return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable', false);
                 }
 
-                return $current->environment === 'development'
+                return $current->placedOnAppDev()
                     ? $this->sourceOperations->synchronized($current->node_id, fn (): InstanceDependencyScanResult => $this->scan($current, $attemptedAt))
                     : $this->scan($current, $attemptedAt);
             });

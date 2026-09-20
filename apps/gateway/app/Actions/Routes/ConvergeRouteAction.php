@@ -275,7 +275,7 @@ final readonly class ConvergeRouteAction
 
             $production = array_values(array_filter(
                 $targets,
-                static fn (AppInstance $instance): bool => $instance->environment === 'production',
+                static fn (AppInstance $instance): bool => $instance->placedOnAppProd(),
             ));
 
             if ($production !== []) {
@@ -621,7 +621,7 @@ final readonly class ConvergeRouteAction
 
             $production = array_values(array_filter(
                 $targets,
-                static fn (AppInstance $instance): bool => $instance->environment === 'production',
+                static fn (AppInstance $instance): bool => $instance->placedOnAppProd(),
             ));
 
             if ($production !== []) {
@@ -729,7 +729,7 @@ final readonly class ConvergeRouteAction
             foreach ($targets as $appInstance) {
                 $this->projection->cleanup($appInstance, $retired);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Candidate,
@@ -772,7 +772,7 @@ final readonly class ConvergeRouteAction
                 $this->projection->rollbackCertificates($appInstance, $route);
                 $this->projection->rollbackCaddy($appInstance, $route);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Authoritative,
@@ -828,7 +828,7 @@ final readonly class ConvergeRouteAction
                 // staging scopes are named after it, not after the Route being retired.
                 $this->projection->cleanup($appInstance, $replacement);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Candidate,
@@ -883,7 +883,7 @@ final readonly class ConvergeRouteAction
                 $this->projection->rollbackCertificates($appInstance, $replacement);
                 $this->projection->rollbackCaddy($appInstance, $replacement);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Authoritative,

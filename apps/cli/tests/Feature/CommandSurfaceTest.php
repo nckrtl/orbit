@@ -64,11 +64,11 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'activity:show',
         'analytics:credentials',
         'analytics:update',
-        'app:create',
-        'app:destroy',
-        'app:list',
-        'app:show',
-        'app:update',
+        'project:create',
+        'project:destroy',
+        'project:list',
+        'project:show',
+        'project:update',
         'cluster:create',
         'cluster:destroy',
         'cluster:list',
@@ -191,7 +191,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
 
 describe('command vocabulary', function (): void {
     it('rejects a command whose last segment is outside the vocabulary and family-specific actions', function (): void {
-        expect(CommandVocabulary::allowsCommand('app:create'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('project:create'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('instance:clone'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('instance:transfer'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
@@ -216,7 +216,7 @@ describe('command vocabulary', function (): void {
     });
 
     it('rejects a named Gateway API route that matches a CLI family without a command', function (): void {
-        $commands = ['app:create', 'metrics:enable', 'metrics:status'];
+        $commands = ['project:create', 'metrics:enable', 'metrics:status'];
 
         expect(CommandVocabulary::routeRequiresMatchingCommand('metrics:list', $commands))->toBeTrue();
         expect($commands)->not->toContain('metrics:list');
@@ -500,16 +500,16 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'activity:show' => [['activity'], ['json' => false]],
         'analytics:credentials' => [[], ['set' => false, 'api-key' => null, 'unset' => false, 'json' => false]],
         'analytics:update' => [['version'], ['json' => false]],
-        'app:list' => [[], ['json' => false]],
-        'app:create' => [
-            ['slug', 'repository'],
+        'project:list' => [[], ['json' => false]],
+        'project:create' => [
+            ['slug', 'type', 'repository'],
             ['name' => null, 'default-branch' => null, 'root' => 'public', 'json' => false],
         ],
-        'app:destroy' => [['app'], ['yes' => false, 'json' => false]],
-        'app:show' => [['app'], ['json' => false]],
-        'app:update' => [
-            ['app'],
-            ['slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'json' => false],
+        'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
+        'project:show' => [['project'], ['json' => false]],
+        'project:update' => [
+            ['project'],
+            ['type' => null, 'slug' => null, 'repository' => null, 'default-branch' => null, 'root' => null, 'json' => false],
         ],
         'cluster:list' => [[], ['json' => false]],
         'cluster:create' => [['name'], ['tld' => null, 'json' => false]],
@@ -753,6 +753,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'instance' => null,
                 'preset' => null,
                 'node' => null,
+                'project' => null,
                 'app' => null,
                 'for' => null,
                 'runtime' => 'systemd',
@@ -768,16 +769,17 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'process:list' => [[], ['instance' => null, 'node' => null, 'app' => null, 'json' => false]],
+        'process:list' => [[], ['instance' => null, 'node' => null, 'project' => null, 'app' => null, 'json' => false]],
         'process:logs' => [['process'], ['lines' => '100', 'json' => false]],
-        'process:destroy' => [['process'], ['app' => null, 'yes' => false, 'json' => false]],
+        'process:destroy' => [['process'], ['project' => null, 'app' => null, 'yes' => false, 'json' => false]],
         'process:restart' => [['process'], ['json' => false]],
-        'process:show' => [['name'], ['app' => null, 'json' => false]],
+        'process:show' => [['name'], ['project' => null, 'app' => null, 'json' => false]],
         'process:start' => [['process'], ['json' => false]],
         'process:stop' => [['process'], ['json' => false]],
         'process:update' => [
             ['name'],
             [
+                'project' => null,
                 'app' => null,
                 'for' => null,
                 'runtime' => 'systemd',
@@ -819,6 +821,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ], [
             'node' => null,
             'instance' => null,
+            'project' => null,
             'app' => null,
             'for' => null,
             'calendar' => null,
@@ -827,14 +830,15 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'no-start' => false,
             'json' => false,
         ]],
-        'schedule:list' => [[], ['app' => null, 'json' => false]],
+        'schedule:list' => [[], ['project' => null, 'app' => null, 'json' => false]],
         'schedule:logs' => [['schedule'], ['lines' => '100', 'json' => false]],
-        'schedule:destroy' => [['schedule'], ['app' => null, 'yes' => false, 'json' => false]],
+        'schedule:destroy' => [['schedule'], ['project' => null, 'app' => null, 'yes' => false, 'json' => false]],
         'schedule:run' => [['schedule'], ['json' => false]],
-        'schedule:show' => [['schedule'], ['app' => null, 'json' => false]],
+        'schedule:show' => [['schedule'], ['project' => null, 'app' => null, 'json' => false]],
         'schedule:update' => [[
             'name',
         ], [
+            'project' => null,
             'app' => null,
             'for' => null,
             'calendar' => null,
@@ -947,11 +951,11 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'activity:show' => [['activity' => '1'], ...$profileMissing],
         'analytics:credentials' => [[], ...$profileMissing],
         'analytics:update' => [['version' => '3.2.1'], ...$profileMissing],
-        'app:list' => [[], ...$profileMissing],
-        'app:create' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
-        'app:destroy' => [['app' => '1'], ...$profileMissing],
-        'app:show' => [['app' => '1'], ...$profileMissing],
-        'app:update' => [['app' => '1', '--slug' => 'shop'], ...$profileMissing],
+        'project:list' => [[], ...$profileMissing],
+        'project:create' => [['slug' => 'app', 'type' => 'laravel-app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
+        'project:destroy' => [['project' => '1'], ...$profileMissing],
+        'project:show' => [['project' => '1'], ...$profileMissing],
+        'project:update' => [['project' => '1', '--slug' => 'shop'], ...$profileMissing],
         'cluster:list' => [[], ...$profileMissing],
         'cluster:create' => [['name' => 'development'], ...$profileMissing],
         'cluster:node:add' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],

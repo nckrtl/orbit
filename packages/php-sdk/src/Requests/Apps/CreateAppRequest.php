@@ -26,6 +26,7 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         #[\SensitiveParameter]
         private readonly string $repositoryUrl,
         private readonly string $root,
+        private readonly string $type = 'laravel-app',
         private readonly ?string $name = null,
         private readonly ?string $defaultBranch = null,
         #[\SensitiveParameter]
@@ -34,7 +35,7 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
 
     public function resolveEndpoint(): string
     {
-        return '/api/v1/apps';
+        return '/api/v1/projects';
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppResponse
@@ -52,6 +53,7 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
             [
                 'name' => $this->name,
                 'slug' => $this->slug,
+                'type' => $this->type,
                 'repository_url' => $this->repositoryUrl,
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,

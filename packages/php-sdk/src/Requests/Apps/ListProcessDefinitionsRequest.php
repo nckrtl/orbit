@@ -19,7 +19,7 @@ final class ListProcessDefinitionsRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/process-definitions";
+        return "/api/v1/projects/{$this->appId}/process-definitions";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppRuntimeDefinitionsResponse

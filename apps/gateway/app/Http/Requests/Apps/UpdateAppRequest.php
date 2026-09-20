@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Requests\Apps;
 
 use App\Data\Apps\UpdateAppData;
+use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\RelativeWebRoot;
+use Illuminate\Validation\Rule;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
@@ -20,6 +22,7 @@ final class UpdateAppRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'type' => ['sometimes', 'required', 'string', Rule::enum(ProjectType::class)],
             'slug' => ['sometimes', 'required', 'string', 'alpha_dash:ascii', 'max:63'],
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
@@ -33,7 +36,7 @@ final class UpdateAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['slug', 'repository_url', 'default_branch', 'root'],
+                ['type', 'slug', 'repository_url', 'default_branch', 'root'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -45,7 +48,8 @@ final class UpdateAppRequest extends FormRequest
     {
         return [function (Validator $validator): void {
             if (
-                ! $this->exists('slug')
+                ! $this->exists('type')
+                && ! $this->exists('slug')
                 && ! $this->exists('repository_url')
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
@@ -82,6 +86,8 @@ final class UpdateAppRequest extends FormRequest
         $validated = $this->validated();
 
         return new UpdateAppData(
+            typeProvided: array_key_exists('type', $validated),
+            type: ProjectType::tryFrom((string) ($validated['type'] ?? '')),
             slugProvided: array_key_exists('slug', $validated),
             slug: is_string($validated['slug'] ?? null) ? $validated['slug'] : null,
             repositoryUrlProvided: array_key_exists('repository_url', $validated),

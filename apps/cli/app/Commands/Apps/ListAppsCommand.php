@@ -15,11 +15,11 @@ use Orbit\Sdk\Responses\Apps\AppsResponse;
 final class ListAppsCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:list
+    protected $signature = 'project:list
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List apps.';
+    protected $description = 'List projects.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -31,7 +31,7 @@ final class ListAppsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress($connector, new ListAppsRequest, AppsResponse::class, ['List Apps', 'Fetching Apps', 'Fetched Apps'], dismiss: true);
+        $response = $this->sendWithProgress($connector, new ListAppsRequest, AppsResponse::class, ['List Projects', 'Fetching Projects', 'Fetched Projects'], dismiss: true);
 
         if (! $response instanceof AppsResponse) {
             return self::FAILURE;
@@ -43,13 +43,14 @@ final class ListAppsCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $headers = ['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Web root'];
+        $headers = ['ID', 'Name', 'Slug', 'Type', 'Repository', 'Default branch', 'Web root'];
         $rows = [];
         foreach ($response->apps as $app) {
             $rows[$app->id] = [
                 (string) $app->id,
                 $app->name,
                 $app->slug,
+                $app->type,
                 $app->repositoryUrl,
                 $app->defaultBranch ?? '—',
                 $app->root ?? '—',
@@ -59,15 +60,15 @@ final class ListAppsCommand extends GatewayCommand
         if ($this->consoleMode()->mayPrompt && $rows !== []) {
             // In a terminal the list is the selector: Enter shows the highlighted App.
             try {
-                $selected = $this->commandPrompts()->selectEntity('Apps', $headers, $rows);
+                $selected = $this->commandPrompts()->selectEntity('Projects', $headers, $rows);
             } catch (PromptAborted) {
                 return self::SUCCESS;
             }
 
-            return $this->call('app:show', ['app' => (string) $selected]);
+            return $this->call('project:show', ['project' => (string) $selected]);
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->table($headers, array_values($rows), 'No Apps found.'));
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table($headers, array_values($rows), 'No Projects found.'));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

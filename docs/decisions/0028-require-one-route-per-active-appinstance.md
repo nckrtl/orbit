@@ -10,7 +10,7 @@ In the context of AppInstances that can be targeted by several Routes or remain 
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing). Supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for AppInstance activation and independent target detachment, and [ADR 0024](/decisions/0024-follow-generated-route-targets) for target replacement and clearing that would leave an active AppInstance without a Route.
+Accepted on 2026-09-05. Extends [ADR 0023](/decisions/0023-separate-hostname-selection-from-cluster-routing). Supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) for AppInstance activation and independent target detachment, and [ADR 0024](/decisions/0024-follow-generated-route-targets) for target replacement and clearing that would leave an active AppInstance without a Route. Amended by [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type): the one-Route rule applies to web-serving Project types (`laravel-app`). `monorepo` and `laravel-package` Instances may be active without a Route.
 
 ## Context
 

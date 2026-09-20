@@ -100,17 +100,17 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 );
             }
 
-            if ($instance->environment === 'production' && $this->productionAssociationMissing($instance)) {
+            if ($instance->placedOnAppProd() && $this->productionAssociationMissing($instance)) {
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationMissing);
             }
 
-            if ($instance->environment === 'production' && $this->productionAssociationShared($instance, $rows)) {
+            if ($instance->placedOnAppProd() && $this->productionAssociationShared($instance, $rows)) {
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationShared);
             }
 
             try {
                 $observation = $this->inspector->inspect($instance);
-                $fields = $instance->environment === 'production' ? [
+                $fields = $instance->placedOnAppProd() ? [
                     'productionHomeMatches' => InstanceDoctorIssueCode::ProductionHomeMismatch,
                     'releaseSelectionMatches' => InstanceDoctorIssueCode::ReleaseSelectionMismatch,
                     'selectedReleaseRootMatches' => InstanceDoctorIssueCode::SelectedReleaseRootMismatch,

@@ -20,6 +20,7 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $appId,
+        private readonly ?string $type = null,
         private readonly ?string $slug = null,
         #[\SensitiveParameter]
         private readonly ?string $repositoryUrl = null,
@@ -29,7 +30,7 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}";
+        return "/api/v1/projects/{$this->appId}";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppResponse
@@ -42,6 +43,7 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
     {
         return array_filter(
             [
+                'type' => $this->type,
                 'slug' => $this->slug,
                 'repository_url' => $this->repositoryUrl,
                 'default_branch' => $this->defaultBranch,

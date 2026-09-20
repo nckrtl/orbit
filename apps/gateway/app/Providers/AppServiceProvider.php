@@ -12,6 +12,7 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Models\AppInstance;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
@@ -310,6 +311,7 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Boost\Console\InstallCommand;
 use Laravel\Boost\Install\GuidelineComposer;
@@ -706,6 +708,9 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
         Activity::observe($activityPropertiesObserver);
+        Relation::morphMap([
+            'instance' => AppInstance::class,
+        ]);
     }
 
     private static function resolveManagedUserHomeDirectory(string $user): string|false

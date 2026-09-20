@@ -412,16 +412,16 @@ it('applies explicit selector validation before HTTP in every output and interac
         'both selectors' => [[
             '--node' => '3',
             '--instance' => '7',
-        ], 'schedule.target_conflict', 'Use only one of --app, --node, or --instance.'],
+        ], 'schedule.target_conflict', 'Use only one of --project, --app, --node, or --instance.'],
         'app with instance' => [[
             '--app' => '7',
             '--instance' => '7',
             '--for' => 'production',
-        ], 'schedule.target_conflict', 'Use only one of --app, --node, or --instance.'],
+        ], 'schedule.target_conflict', 'Use only one of --project, --app, --node, or --instance.'],
         'for without app' => [[
             '--node' => '3',
             '--for' => 'production',
-        ], 'schedule.option_invalid', 'The --for option requires --app.'],
+        ], 'schedule.option_invalid', 'The --for option requires --project or --app.'],
         'app without for' => [[
             '--app' => '7',
         ], 'schedule.option_invalid', 'The --for option is required with --app.'],
@@ -487,7 +487,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--command' => 'x',
         ],
         'schedule.target_required',
-        'The --app option is required.',
+        'The --project or --app option is required.',
     ],
     'create app with instance' => [
         'schedule:create',
@@ -497,7 +497,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--for' => 'production',
         ]),
         'schedule.target_conflict',
-        'Use only one of --app, --node, or --instance.',
+        'Use only one of --project, --app, --node, or --instance.',
     ],
     'create app with node' => [
         'schedule:create',
@@ -507,7 +507,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--for' => 'production',
         ]),
         'schedule.target_conflict',
-        'Use only one of --app, --node, or --instance.',
+        'Use only one of --project, --app, --node, or --instance.',
     ],
     'create for without app' => [
         'schedule:create',
@@ -516,7 +516,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--for' => 'production',
         ]),
         'schedule.option_invalid',
-        'The --for option requires --app.',
+        'The --for option requires --project or --app.',
     ],
     'create app without for' => [
         'schedule:create',
@@ -532,7 +532,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
             '--app' => 'abc',
         ]),
         'app.id_invalid',
-        'App ID must be a positive integer.',
+        'Project ID must be a positive integer.',
     ],
     'update app without for' => [
         'schedule:update',

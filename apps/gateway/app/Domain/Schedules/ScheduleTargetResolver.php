@@ -155,12 +155,12 @@ final readonly class ScheduleTargetResolver
             $this->unavailable();
         }
 
-        if ($instance->environment === 'development') {
+        if ($instance->placedOnAppDev()) {
             $account = $this->account($instance->node, $instance->node->user);
             $this->assertAccount($account, $instance->node);
             $workingDirectory = $instance->checkout_path;
             $loginShell = true;
-        } elseif ($instance->environment === 'production') {
+        } elseif ($instance->placedOnAppProd()) {
             $user = $instance->production_user;
             $home = $instance->production_home;
 

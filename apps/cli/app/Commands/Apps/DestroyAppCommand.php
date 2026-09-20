@@ -14,19 +14,19 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 final class DestroyAppCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:destroy
-        {app : Numeric app ID}
+    protected $signature = 'project:destroy
+        {project : Numeric project ID}
         {--yes : Confirm removal without prompting}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove an app.';
+    protected $description = 'Remove a project.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->positiveId('app', 'App', 'app.id_invalid');
+        $appId = $this->positiveId('project', 'Project', 'app.id_invalid');
 
         if ($appId === null) {
             return self::FAILURE;
@@ -43,18 +43,18 @@ final class DestroyAppCommand extends GatewayCommand
                 $connector,
                 new ShowAppRequest($appId),
                 AppResponse::class,
-                ['Inspect App', 'Inspecting App', 'Inspected App'],
+                ['Inspect Project', 'Inspecting Project', 'Inspected Project'],
             );
 
             if (! $existing instanceof AppResponse || ! $this->confirmAction(
-                "Confirm App removal [{$existing->slug}]?",
-                'App removal cancelled.',
+                "Confirm Project removal [{$existing->slug}]?",
+                'Project removal cancelled.',
             )) {
                 return self::FAILURE;
             }
         }
 
-        $app = $this->sendWithProgress($connector, new DestroyAppRequest($appId), AppResponse::class, ['Remove App', 'Removing App', 'Removed App']);
+        $app = $this->sendWithProgress($connector, new DestroyAppRequest($appId), AppResponse::class, ['Remove Project', 'Removing Project', 'Removed Project']);
 
         if (! $app instanceof AppResponse) {
             return self::FAILURE;
@@ -66,7 +66,7 @@ final class DestroyAppCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->writeHumanMessage("App [{$app->slug}] removed.");
+        $this->writeHumanMessage("Project [{$app->slug}] removed.");
         $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;

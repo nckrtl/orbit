@@ -6,8 +6,10 @@ namespace App\Actions\Apps;
 
 use App\Data\Apps\AppData;
 use App\Data\Apps\UpdateAppData;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Apps\AppDefaultBranchInheritance;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Apps\AppRepositoryUpdatePlanner;
 use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateSourceMutator;
@@ -46,6 +48,22 @@ final readonly class UpdateAppAction
                 message: 'Provide at least one App update.',
                 status: 422,
             );
+        }
+
+        if ($data->typeProvided && $data->type instanceof ProjectType) {
+            $this->assertTypeChange($app, $data->type);
+            $app->update(['type' => $data->type]);
+            $app = $app->fresh() ?? $app;
+        }
+
+        if (! $data->hasReconcilableChanges()) {
+            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
+                RecordEventType::AppUpdated,
+                $app->id,
+                AppData::fromModel($app)->toArray(),
+            );
+
+            return $app;
         }
 
         $instanceIds = $app->appInstances()
@@ -213,7 +231,7 @@ final readonly class UpdateAppAction
             );
 
             foreach ($instances as $instance) {
-                if ($instance->environment === 'production') {
+                if ($instance->placedOnAppProd()) {
                     continue;
                 }
 
@@ -566,5 +584,29 @@ final readonly class UpdateAppAction
                 );
             }
         }
+    }
+
+    private function assertTypeChange(OrbitApp $app, ProjectType $type): void
+    {
+        if ($type !== ProjectType::LaravelApp) {
+            return;
+        }
+
+        $unrouted = $app->appInstances()
+            ->where('status', AppInstanceState::Active)
+            ->whereDoesntHave('routes')
+            ->orderBy('id')
+            ->pluck('id');
+
+        if ($unrouted->isEmpty()) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'project.type_requires_route',
+            message: 'A laravel-app Project cannot be assigned while an active Instance has no Route.',
+            status: 409,
+            details: ['instance_ids' => $unrouted->implode(',')],
+        );
     }
 }

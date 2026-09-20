@@ -99,7 +99,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         }
 
         if (
-            $member->environment === 'development'
+            $member->placedOnAppDev()
             && ($removedTarget
             || $this->certificates->appInstanceCertificateExists($appInstance))
         ) {
@@ -119,7 +119,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
-        if ($appInstance->environment === 'production' && $appInstance->production_php_service !== null) {
+        if ($appInstance->placedOnAppProd() && $appInstance->production_php_service !== null) {
             $this->productionPhp()->remove($appInstance);
         } else {
             $this->php->converge($appInstance->node);
@@ -171,7 +171,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             $this->certificates->removeRouteRouter($route, $router);
         }
 
-        if ($appInstance->environment === 'development') {
+        if ($appInstance->placedOnAppDev()) {
             $this->firewall->remove($appInstance->node, $route->id);
         }
 

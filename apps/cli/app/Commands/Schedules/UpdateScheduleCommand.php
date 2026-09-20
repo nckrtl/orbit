@@ -20,7 +20,8 @@ final class UpdateScheduleCommand extends ScheduleCommand
     #[\Override]
     protected $signature = 'schedule:update
         {name : Schedule definition name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
@@ -83,7 +84,7 @@ final class UpdateScheduleCommand extends ScheduleCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'schedule.target_required',
-                'The --app option is required.',
+                'The --project or --app option is required.',
             );
         }
 

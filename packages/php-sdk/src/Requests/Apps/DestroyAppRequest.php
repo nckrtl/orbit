@@ -20,7 +20,7 @@ final class DestroyAppRequest extends GatewayRequest
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}";
+        return "/api/v1/projects/{$this->appId}";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppResponse
