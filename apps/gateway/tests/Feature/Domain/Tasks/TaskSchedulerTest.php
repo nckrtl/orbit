@@ -2,15 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\T3Dispatcher;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -175,6 +185,13 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
         {
             return 'implementer-thread';
         }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return 'signoff-sha';
+        }
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
@@ -222,4 +239,158 @@ it('leaves a provisioned group reserved when the Node is already at the ceiling'
         ->and($claimed?->status)->toBe(TaskGroupStatus::Reserved)
         ->and($claimed?->taskable_id)->toBe($instance->id)
         ->and($claimed?->reviewer_thread_id)->toBeNull();
+});
+
+it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
+    $app = scheduler_app('orbit');
+    $app->update(['root' => 'public']);
+    $node = scheduler_node('real-wire', '10.44.0.94');
+    $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
+    $node->roles()->create([
+        'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $group = queued_group($app, 'Real wire');
+
+    app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+        }
+    });
+    app()->instance(AppInstanceDestinationGuard::class, new class implements AppInstanceDestinationGuard
+    {
+        public function assertUnoccupied(Node $node, StoragePath $destination): void {}
+    });
+    app()->instance(DevelopmentAppInstanceSourceLifecycle::class, new class implements DevelopmentAppInstanceSourceLifecycle
+    {
+        public function prepare(AppInstance $appInstance, bool $allowExisting): void {}
+
+        public function inspectPrepared(AppInstance $appInstance): void {}
+
+        public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+        {
+            return new DevelopmentSourceResolution($appInstance->name, str_repeat('c', 40));
+        }
+
+        public function inspectResolved(AppInstance $appInstance): DevelopmentSourceResolution
+        {
+            return new DevelopmentSourceResolution((string) $appInstance->branch, (string) $appInstance->starting_commit);
+        }
+    });
+    app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
+    {
+        public function dispatch(Node $node, array $command): array
+        {
+            $threadId = is_string($command['threadId'] ?? null) ? $command['threadId'] : 't3-thread';
+
+            return ['sequence' => 1, 'thread_id' => $threadId];
+        }
+    });
+    app()->instance(TaskWorkspaceSigner::class, new class implements TaskWorkspaceSigner
+    {
+        public function commit(AppInstance $instance, string $message): ?string
+        {
+            return str_repeat('d', 40);
+        }
+    });
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+
+    expect($claimed?->id)->toBe($group->id)
+        ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
+        ->and($claimed?->taskable_id)->not->toBeNull()
+        ->and($claimed?->taskable)->toBeInstanceOf(AppInstance::class)
+        ->and($claimed?->taskable?->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($claimed?->taskable?->routes()->count())->toBe(0)
+        ->and($claimed?->reviewer_thread_id)->not->toBeNull()
+        ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
+        ->and($claimed?->tasks->first()?->implementer_thread_id)->not->toBeNull();
+});
+
+it('hands a settled subtask to the reviewer and starts the next implementer after sign-off', function (): void {
+    $app = scheduler_app('handoff-app');
+    $node = scheduler_node('handoff-node', '10.44.0.93');
+    $instance = scheduler_instance($app, $node, 'handoff');
+    $group = queued_group($app, 'Handoff', $instance);
+    Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Second',
+        'brief' => 'Next subtask',
+        'status' => TaskStatus::Pending,
+    ]);
+    $spawner = new class implements AgentSpawner
+    {
+        /** @var list<string> */
+        public array $events = [];
+
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            $this->events[] = 'reviewer';
+
+            return 'reviewer-thread';
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            $this->events[] = 'implementer:'.$task->position;
+
+            return 'implementer-'.$task->position;
+        }
+
+        public function requestReview(Task $task): void
+        {
+            $this->events[] = 'review:'.$task->position;
+        }
+
+        public function signOff(Task $task): ?string
+        {
+            $this->events[] = 'signoff:'.$task->position;
+
+            return 'sha-'.$task->position;
+        }
+    };
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, $spawner);
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $first = $claimed?->tasks->first();
+
+    expect($claimed?->status)->toBe(TaskGroupStatus::Running)
+        ->and($first?->status)->toBe(TaskStatus::Running)
+        ->and($first?->implementer_thread_id)->toBe('implementer-1');
+
+    $reviewing = app(TaskScheduler::class)->settleImplementer($first ?? $group->tasks->first());
+
+    expect($reviewing->status)->toBe(TaskGroupStatus::Reviewing)
+        ->and($reviewing->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1']);
+
+    $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+
+    expect($advanced->status)->toBe(TaskGroupStatus::Running)
+        ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
+        ->and($advanced->tasks->last()?->status)->toBe(TaskStatus::Running)
+        ->and($advanced->tasks->last()?->implementer_thread_id)->toBe('implementer-2')
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'signoff:1', 'implementer:2']);
+
+    $lastReview = app(TaskScheduler::class)->settleImplementer($advanced->tasks->last());
+    $settled = app(TaskScheduler::class)->acceptReview($lastReview->tasks->last());
+
+    expect($settled->status)->toBe(TaskGroupStatus::Settling)
+        ->and($settled->tasks->pluck('status')->all())->toBe([
+            TaskStatus::Completed,
+            TaskStatus::Completed,
+        ]);
 });

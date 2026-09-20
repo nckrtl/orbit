@@ -19,7 +19,7 @@ final readonly class TaskScheduler
 
     public function claimNext(): ?TaskGroup
     {
-        return DB::transaction(function (): ?TaskGroup {
+        $reserved = DB::transaction(function (): ?TaskGroup {
             $candidates = TaskGroup::query()
                 ->with(['tasks', 'taskable'])
                 ->where('status', TaskGroupStatus::Queued)
@@ -35,40 +35,144 @@ final readonly class TaskScheduler
                 $group->status = TaskGroupStatus::Reserved;
                 $group->save();
 
-                $instance = $this->provisioning->provision(new InstanceProvisionIntent(
-                    group: $group,
-                    visitable: $this->visitable($group),
-                ));
-
-                if ($instance instanceof AppInstance) {
-                    $group->taskable()->associate($instance);
-                    $group->load('taskable');
-
-                    if (! $this->ceilings->canActivate($group)) {
-                        $group->save();
-
-                        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-                    }
-
-                    $this->start($group);
-                }
-
-                $group->save();
-
                 return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
             }
 
             return null;
         });
+
+        if (! $reserved instanceof TaskGroup) {
+            return null;
+        }
+
+        $instance = $this->provisioning->provision(new InstanceProvisionIntent(
+            group: $reserved,
+            visitable: $this->visitable($reserved),
+        ));
+
+        if (! $instance instanceof AppInstance) {
+            return $reserved->fresh(['tasks', 'app', 'taskable']) ?? $reserved;
+        }
+
+        $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
+            $group = TaskGroup::query()
+                ->with(['tasks', 'app', 'taskable'])
+                ->lockForUpdate()
+                ->findOrFail($reserved->id);
+
+            $group->taskable()->associate($instance);
+            $group->load('taskable');
+
+            if (! $this->ceilings->canActivate($group)) {
+                $group->save();
+
+                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            }
+
+            $group->status = TaskGroupStatus::Running;
+            $group->started_at ??= now();
+            $group->save();
+
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        });
+
+        if ($started->status === TaskGroupStatus::Running) {
+            $this->spawnOpeningAgents($started);
+        }
+
+        return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
     }
 
-    private function start(TaskGroup $group): void
+    public function settleImplementer(Task $task): TaskGroup
     {
-        $group->status = TaskGroupStatus::Running;
+        $group = DB::transaction(function () use ($task): TaskGroup {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $group = TaskGroup::query()
+                ->with(['tasks', 'app', 'taskable'])
+                ->lockForUpdate()
+                ->findOrFail($locked->task_group_id);
+
+            if ($group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
+                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            }
+
+            $locked->status = TaskStatus::Reviewing;
+            $locked->save();
+            $group->status = TaskGroupStatus::Reviewing;
+            $group->save();
+
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        });
+
+        $reviewing = $group->tasks->first(
+            static fn (Task $candidate): bool => $candidate->id === $task->id,
+        );
+
+        if ($reviewing instanceof Task && $reviewing->status === TaskStatus::Reviewing) {
+            $this->spawner->requestReview($reviewing);
+        }
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
+    public function acceptReview(Task $task): TaskGroup
+    {
+        $this->spawner->signOff($task);
+
+        /** @var Task|null $next */
+        $next = null;
+        $group = DB::transaction(function () use ($task, &$next): TaskGroup {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $group = TaskGroup::query()
+                ->with(['tasks', 'app', 'taskable'])
+                ->lockForUpdate()
+                ->findOrFail($locked->task_group_id);
+
+            if ($group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
+                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            }
+
+            $locked->status = TaskStatus::Completed;
+            $locked->settled_at ??= now();
+            $locked->save();
+
+            $next = $group->tasks
+                ->sortBy(static fn (Task $candidate): array => [$candidate->position, $candidate->id])
+                ->first(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Pending);
+
+            if ($next instanceof Task) {
+                $next->status = TaskStatus::Running;
+                $next->started_at ??= now();
+                $next->save();
+                $group->status = TaskGroupStatus::Running;
+            } else {
+                $group->status = TaskGroupStatus::Settling;
+            }
+
+            $group->save();
+
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        });
+
+        if ($next instanceof Task && $next->status === TaskStatus::Running) {
+            $threadId = $this->spawner->spawnImplementer($next->fresh() ?? $next);
+
+            if (is_string($threadId) && $threadId !== '') {
+                $next->implementer_thread_id = $threadId;
+                $next->save();
+            }
+        }
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
+    private function spawnOpeningAgents(TaskGroup $group): void
+    {
         $reviewerThreadId = $this->spawner->spawnReviewer($group);
 
         if (is_string($reviewerThreadId) && $reviewerThreadId !== '') {
             $group->reviewer_thread_id = $reviewerThreadId;
+            $group->save();
         }
 
         $first = $group->tasks
@@ -80,6 +184,7 @@ final readonly class TaskScheduler
         }
 
         $first->status = TaskStatus::Running;
+        $first->started_at ??= now();
         $implementerThreadId = $this->spawner->spawnImplementer($first);
 
         if (is_string($implementerThreadId) && $implementerThreadId !== '') {

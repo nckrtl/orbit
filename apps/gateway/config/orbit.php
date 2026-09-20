@@ -35,6 +35,10 @@ return [
         // The Plausible Community Edition release a new analytics role runs; `analytics:update` pins another.
         'plausible_version' => env(key: 'ORBIT_ANALYTICS_PLAUSIBLE_VERSION', default: '3.2.1'),
     ],
+    't3' => [
+        'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
+        'token' => env('ORBIT_T3_TOKEN'),
+    ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
         'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),
