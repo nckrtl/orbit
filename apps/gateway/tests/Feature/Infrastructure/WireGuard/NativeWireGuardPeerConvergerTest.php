@@ -5,15 +5,19 @@ declare(strict_types=1);
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
@@ -219,6 +223,143 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             ->toBeInt()
             ->and($dnsStateWrite)
             ->toBeLessThan($backupRemoval);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('does not install hub credentials on the gateway host when peer converge runs after a role split', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-vpn-split-'.Str::uuid();
+    mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
+    $hubPrivateKey = str_repeat(string: 'S', times: 43).'=';
+    file_put_contents($orbitHome.'/wireguard/private.key', $hubPrivateKey);
+    file_put_contents($orbitHome.'/wireguard/public.key', str_repeat(string: 'P', times: 43).'=');
+
+    try {
+        $vpn = Node::query()->create([
+            'name' => 'vpn',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '85.9.218.89',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.1',
+            'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
+        ]);
+        $vpn->roles()->create([
+            'role' => RoleName::Vpn,
+            'status' => LifecycleStatus::Active,
+        ]);
+        Node::query()->create([
+            'name' => 'gateway',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '85.9.218.90',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.2',
+            'wireguard_public_key' => str_repeat(string: 'G', times: 43).'=',
+        ])->roles()->create([
+            'role' => RoleName::Gateway,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $peer = Node::query()->create([
+            'name' => 'services',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '94.237.40.75',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.3',
+        ]);
+        $settings = new VpnSettings(app(SettingRepository::class));
+        $settings->configure(
+            subnet: '10.44.0.0/24',
+            endpoint: '85.9.218.89:51820',
+            dnsServer: '10.44.0.1',
+        );
+
+        $processes = new class implements ProcessRunner
+        {
+            /** @var list<ProcessInvocation> */
+            public array $calls = [];
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                $this->calls[] = $invocation;
+
+                return new CommandResult(0, '', '', 2, false);
+            }
+        };
+        $peerSsh = new class implements SshExecutor
+        {
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                return new CommandResult(0, str_repeat(string: 'A', times: 43)."=\n", '', 2, false);
+            }
+        };
+        $hubSsh = new class implements SshExecutor
+        {
+            /** @var list<string> */
+            public array $hosts = [];
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                $this->hosts[] = $connection->host;
+
+                return new CommandResult(0, '', '', 1, false);
+            }
+        };
+        $converger = new NativeWireGuardPeerConverger(
+            configuration: new VpnConfigurationRepository($settings, $orbitHome),
+            gatewayPeers: new NativeGatewayPeerProjectionManager(
+                configuration: new VpnConfigurationRepository($settings, $orbitHome),
+                serverRenderer: new WireGuardServerConfigRenderer,
+                files: new ProtectedFileWriter,
+                processes: $processes,
+                orbitHome: $orbitHome,
+                ssh: $hubSsh,
+                keys: new class implements SshKeyProvider
+                {
+                    public function privateKeyPath(): string
+                    {
+                        return '/tmp/orbit-hub.key';
+                    }
+
+                    public function publicKey(): string
+                    {
+                        return 'ssh-ed25519 hub';
+                    }
+                },
+                knownHosts: new class implements KnownHostsStore
+                {
+                    public function path(): string
+                    {
+                        return '/tmp/orbit-hub-known-hosts';
+                    }
+
+                    public function put(string $host, int $port, HostKey $key): void {}
+                },
+            ),
+            ssh: $peerSsh,
+        );
+
+        $converger->converge(
+            $peer,
+            new SshConnection(
+                host: '94.237.40.75',
+                user: 'orbit',
+                port: 22,
+                identityFile: '/tmp/key',
+                knownHostsFile: '/tmp/known_hosts',
+            ),
+        );
+
+        expect($processes->calls)
+            ->toBe([])
+            ->and($hubSsh->hosts)
+            ->toBe(['10.44.0.1'])
+            ->and(file_get_contents($orbitHome.'/generated/wireguard/orbit.conf'))
+            ->toContain(
+                'PrivateKey = '.$hubPrivateKey,
+                'Address = 10.44.0.1/24',
+                'AllowedIPs = 10.44.0.2/32',
+                'AllowedIPs = 10.44.0.3/32',
+            );
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
