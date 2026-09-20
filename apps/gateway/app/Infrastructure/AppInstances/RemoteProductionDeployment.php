@@ -12,8 +12,10 @@ use App\Domain\AppInstances\Deployment\DeploymentReleaseState;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Deployment\ProductionDeployment;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
@@ -30,6 +32,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     /** @param (Closure(): string)|null $releaseName */
     public function __construct(
         private AppProdSshExecutor $ssh,
+        private RepositoryReadAccess $access,
         ?Closure $releaseName = null,
     ) {
         $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
@@ -41,22 +44,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
 
-        $result = $this->execute(
-            $appInstance,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $repository,
-                    $user,
-                    $home,
-                    (string) $appInstance->id,
-                    $branch,
-                    $name,
-                    $root,
-                ],
-                input: <<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository), <<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -94,9 +82,9 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo -u "$user" -H test ! -e "$release"
                     sudo -u "$user" -H test ! -L "$release"
 
-                    sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$release" >/dev/null 2>&1
+                    git_read sudo $git_read_sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$release" >/dev/null 2>&1
                     source_ref="refs/remotes/origin/$branch"
-                    sudo -u "$user" -H git -C "$release" fetch --prune -- origin >/dev/null 2>&1
+                    git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin >/dev/null 2>&1
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
                     sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1
                     sudo -u "$user" -H ln -s ../../.env "$release_environment"
@@ -112,7 +100,24 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH,
+                    BASH);
+        $result = $this->execute(
+            $appInstance,
+            new RemoteCommand(
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $repository,
+                    $user,
+                    $home,
+                    (string) $appInstance->id,
+                    $branch,
+                    $name,
+                    $root,
+                ],
+                input: $script->input,
+                protectedInput: $script->protectedInput,
                 maxOutputBytes: 4096,
             ),
             'deployment-prepare',

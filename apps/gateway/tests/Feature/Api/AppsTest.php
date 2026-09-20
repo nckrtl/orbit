@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -617,7 +618,7 @@ describe('app validation', function (): void {
         };
         app()->instance(
             RepositoryDefaultBranchResolver::class,
-            new NativeRepositoryDefaultBranchResolver($processes),
+            new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class)),
         );
 
         $response = $this

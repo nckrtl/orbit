@@ -12,7 +12,14 @@ use Illuminate\Support\Facades\Route;
  */
 describe('MCP tool manifest', function (): void {
     // Machine callbacks that bin/mcp-tools leaves out on purpose; keep the two lists identical.
-    $excluded = ['realtime:auth', 'metrics:grafana:authorize', 'runtime-activation:app-instance', 'schedule:complete'];
+    $excluded = [
+        'realtime:auth',
+        'metrics:grafana:authorize',
+        'runtime-activation:app-instance',
+        'schedule:complete',
+        'github:app:register',
+        'github:app:callback',
+    ];
 
     $signature = static fn (string $method, string $path): string => $method.' '.preg_replace('/\{[^}]+\}/', '{}', '/'.ltrim($path, '/'));
 

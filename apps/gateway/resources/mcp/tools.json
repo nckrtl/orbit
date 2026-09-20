@@ -1826,6 +1826,65 @@
       }
     },
     {
+      "name": "github-app-destroy",
+      "title": "Remove the stored GitHub App",
+      "description": "Delete the GitHub App credentials the Gateway stores.",
+      "method": "DELETE",
+      "path": "/api/v1/github/app",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github-app-install",
+      "title": "Start a GitHub App registration or installation",
+      "description": "Register the GitHub App when the Gateway has none, then install it on a GitHub account.",
+      "method": "POST",
+      "path": "/api/v1/github/app/install",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$",
+            "description": "Proposed App name for a first registration"
+          },
+          "owner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+            "description": "GitHub organization that owns the App registration"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "github-app-show",
+      "title": "Show the GitHub App",
+      "description": "Show the Gateway's GitHub App and the accounts that installed it.",
+      "method": "GET",
+      "path": "/api/v1/github/app",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "herdr-observe",
       "title": "Issue an observation grant",
       "description": "Issue one short-lived receive-only Herdr observation grant.",

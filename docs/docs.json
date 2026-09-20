@@ -100,6 +100,7 @@
               "reference/wireguard-endpoints",
               "reference/private-dns",
               "reference/tools",
+              "reference/github-app",
               "reference/database-role",
               "reference/metrics",
               "reference/service-metrics",
@@ -156,6 +157,7 @@
               "cli/cluster",
               "cli/firewall",
               "cli/tool",
+              "cli/github",
               "cli/metrics",
               "cli/analytics",
               "cli/dns"
@@ -275,6 +277,15 @@
               "DELETE /api/v1/metrics/exporters/{node}",
               "PUT /api/v1/metrics/exporters/{node}",
               "GET /api/v1/metrics/status"
+            ]
+          },
+          {
+            "group": "GitHub App",
+            "openapi": "/openapi.json",
+            "pages": [
+              "DELETE /api/v1/github/app",
+              "GET /api/v1/github/app",
+              "POST /api/v1/github/app/install"
             ]
           },
           {
@@ -442,6 +453,8 @@
             "group": "Node callbacks",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/github/app/callback",
+              "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
               "GET /api/v1/runtime-activations/app-instance/{instance}",
               "POST /api/v1/schedules/{schedule}/complete"
@@ -556,6 +569,7 @@
               "decisions/0095-relocate-relocatable-singleton-roles",
               "decisions/0096-run-plausible-through-an-analytics-role",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
+              "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
               "decisions/0099-collect-role-specific-service-metrics"
             ]
           }

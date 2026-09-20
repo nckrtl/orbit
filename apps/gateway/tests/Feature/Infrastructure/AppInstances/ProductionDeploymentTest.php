@@ -8,6 +8,7 @@ use App\Domain\AppInstances\Deployment\DeploymentPhase;
 use App\Domain\AppInstances\Deployment\DeploymentRelease;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\RemoteProductionDeployment;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
@@ -22,7 +23,9 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('prepares a fresh branch-pinned release without changing current', function (): void {
@@ -62,6 +65,32 @@ it('prepares a fresh branch-pinned release without changing current', function (
             'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
         )
         ->not->toContain('mv -Tf -- "$temporary" "$current"');
+});
+
+it('carries a GitHub App token only in protected input for a covered repository', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $instance->app->update(['repository_url' => 'git@github.com:acme/deployment.git']);
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/deployment/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_sentinel'], 201),
+    ]);
+
+    $deployment->prepare($instance->refresh(), 'release');
+
+    $command = $ssh->commands[0];
+    $header = base64_encode('x-access-token:ghs_sentinel');
+    $script = stream_get_contents($command->protectedInput?->stream());
+
+    expect($command->input)->toBeNull()
+        ->and(implode(' ', $command->arguments))->not->toContain('ghs_sentinel')->not->toContain($header)
+        ->and($command->arguments[3])->toBe('git@github.com:acme/deployment.git')
+        ->and($script)
+        ->toContain("export GIT_CONFIG_VALUE_0='Authorization: Basic {$header}'")
+        ->toContain('git_read sudo $git_read_sudo -u "$user" -H git clone --no-checkout --origin origin')
+        ->toContain('git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin');
 });
 
 it('runs protected application input from the release with streaming controls', function (): void {
@@ -409,7 +438,7 @@ function orb219_remote_deployment(array $results): array
     ]);
 
     return [
-        new RemoteProductionDeployment($executor, static fn (): string => '20260911-a1'),
+        new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20260911-a1'),
         $ssh,
         $instance,
     ];

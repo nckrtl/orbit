@@ -27,7 +27,7 @@ orbit app:create acme https://github.com/acme/site.git \
   --root=web/public
 ```
 
-The Gateway verifies that an explicit default branch exists in the repository. Repository access failures, missing explicit branches, and an unavailable or malformed remote default return `app.default_branch_unavailable` without including repository diagnostics or credentials.
+The Gateway verifies that an explicit default branch exists in the repository. Repository access failures, missing explicit branches, and an unavailable or malformed remote default return `app.default_branch_unavailable` without including repository diagnostics or credentials. A private `github.com` repository needs the Gateway's [GitHub App](/reference/github-app) installed on the account that owns it.
 
 The public App contract uses these source fields.
 

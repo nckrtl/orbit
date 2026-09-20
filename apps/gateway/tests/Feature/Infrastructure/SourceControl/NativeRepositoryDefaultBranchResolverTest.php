@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -48,7 +49,7 @@ afterEach(function (): void {
 });
 
 it('resolves a real bare repository default and observes a later remote default change', function (): void {
-    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
+    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
     expect($resolver->resolve($this->bareRepository))->toBe('main');
 
@@ -66,7 +67,7 @@ it('resolves a real bare repository default and observes a later remote default 
 });
 
 it('verifies a real explicit branch and rejects a missing one', function (): void {
-    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
+    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
     $resolver->verify($this->bareRepository, 'stable');
 
@@ -84,7 +85,7 @@ it('resolves and verifies when the process directory has unavailable worktree me
     expect($originalDirectory)->toBeString()->and(chdir($mountedWorktree))->toBeTrue();
 
     try {
-        $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
+        $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
         expect($resolver->resolve($this->bareRepository))->toBe('main');
         $resolver->verify($this->bareRepository, 'stable');
@@ -95,7 +96,7 @@ it('resolves and verifies when the process directory has unavailable worktree me
 
 it('resolves and verifies a real branch using valid Git punctuation and Unicode', function (): void {
     $branch = 'release/été+hotfix@2026';
-    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
+    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
     $resolver->verify($this->bareRepository, $branch);
     $changed = new NativeProcessRunner()->run(new ProcessInvocation([
@@ -121,7 +122,7 @@ it('maps malformed symbolic HEAD to the stable branch error', function (): void 
     ]));
     expect($changed->succeeded())->toBeTrue();
 
-    expect(fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner)
+    expect(fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class))
         ->resolve($this->bareRepository))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
@@ -130,7 +131,7 @@ it('maps an inaccessible repository to the stable branch error', function (): vo
     $missingRepository = $this->repositoryDirectory.'/missing.git';
 
     expect(
-        fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner)
+        fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class))
             ->resolve($missingRepository),
     )
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
@@ -151,7 +152,7 @@ it('maps thrown process timeouts from resolution and verification to the stable 
             throw $this->timeout;
         }
     };
-    $resolver = new NativeRepositoryDefaultBranchResolver($processes);
+    $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
 
     expect(fn (): string => $resolver->resolve('https://example.test/private-sentinel.git'))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified')
@@ -179,7 +180,7 @@ it('uses bounded argv-only Git calls and redacts timeout, error, and malformed o
         }
     };
     $repository = 'https://example.test/private-sentinel.git';
-    $resolver = new NativeRepositoryDefaultBranchResolver($processes);
+    $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
 
     try {
         $resolver->resolve($repository);
@@ -203,3 +204,23 @@ it('uses bounded argv-only Git calls and redacts timeout, error, and malformed o
     'truncated output' => [new CommandResult(0, 'ref: refs/heads/main\tHEAD', '', 1, true)],
     'malformed output' => [new CommandResult(0, 'diagnostic-sentinel', '', 1, false)],
 ]);
+
+it('names the GitHub App as a possible cause when a github.com repository cannot be read', function (): void {
+    $processes = new class implements ProcessRunner
+    {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(128, '', 'fatal: could not read Username', 1, false);
+        }
+    };
+    $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
+
+    expect(fn (): string => $resolver->resolve('https://github.com/acme/private'))
+        ->toThrow(ResourceOperationException::class, "needs the Gateway's GitHub App installed");
+
+    try {
+        $resolver->resolve('https://example.test/private.git');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->getMessage())->not->toContain('GitHub App');
+    }
+});
