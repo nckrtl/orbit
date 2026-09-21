@@ -75,12 +75,10 @@ it('accepts a successful project.create that returns only a sequence', function 
     ]);
 });
 
-it('parses an existing project id from a workspace-root collision without leaking the bearer', function (): void {
+it('parses an existing project id from a workspace-root collision without leaking the bearer', function (array $error): void {
     Http::preventStrayRequests();
     Http::fake([
-        'http://10.44.0.120:3773/api/orchestration/dispatch' => Http::response([
-            'reason' => 'Active project 550e8400-e29b-41d4-a716-446655440000 already exists for that workspace root',
-        ], 500),
+        'http://10.44.0.120:3773/api/orchestration/dispatch' => Http::response($error, 500),
     ]);
     config()->set('orbit.t3.token', 'bearer-secret');
 
@@ -91,6 +89,86 @@ it('parses an existing project id from a workspace-root collision without leakin
     ]))->toThrow(function (T3DispatchException $exception): void {
         expect($exception->existingProjectId)->toBe('550e8400-e29b-41d4-a716-446655440000')
             ->and($exception->getMessage())->toBe('T3 dispatch failed.')
+            ->and($exception->getMessage())->not->toContain('bearer-secret');
+    });
+})->with([
+    'documented reason' => [[
+        'reason' => 'Active project 550e8400-e29b-41d4-a716-446655440000 already exists for that workspace root',
+    ]],
+    'live quoted phrase' => [[
+        'reason' => "Active project '550e8400-e29b-41d4-a716-446655440000' already exists for workspace root '/srv/orbit/apps/orbit/task-1'.",
+    ]],
+    'nested effect cause' => [[
+        '_tag' => 'EnvironmentInternalError',
+        'code' => 'internal_error',
+        'reason' => 'orchestration_dispatch_failed',
+        'traceId' => 'trace-1',
+        'cause' => [
+            'message' => "Active project '550e8400-e29b-41d4-a716-446655440000' already exists for workspace root '/srv/orbit/apps/orbit/task-1'.",
+        ],
+    ]],
+]);
+
+it('adopts the existing project from the orchestration snapshot when collide is an opaque 500', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.120:3773/api/orchestration/dispatch' => Http::response([
+            '_tag' => 'EnvironmentInternalError',
+            'code' => 'internal_error',
+            'reason' => 'orchestration_dispatch_failed',
+            'traceId' => 'trace-occupied',
+        ], 500),
+        'http://10.44.0.120:3773/api/orchestration/snapshot' => Http::response([
+            'snapshotSequence' => 3,
+            'projects' => [
+                [
+                    'id' => '550e8400-e29b-41d4-a716-446655440000',
+                    'workspaceRoot' => '/srv/orbit/apps/orbit/task-1/',
+                    'deletedAt' => null,
+                ],
+            ],
+            'threads' => [],
+            'updatedAt' => '2026-09-21T00:00:00.000Z',
+        ]),
+    ]);
+    config()->set('orbit.t3.token', 'bearer-secret');
+
+    expect(fn () => app(HttpT3Dispatcher::class)->dispatch(t3_node(), [
+        'type' => 'project.create',
+        'projectId' => '11111111-1111-1111-1111-111111111111',
+        'workspaceRoot' => '/srv/orbit/apps/orbit/task-1',
+    ]))->toThrow(function (T3DispatchException $exception): void {
+        expect($exception->existingProjectId)->toBe('550e8400-e29b-41d4-a716-446655440000')
+            ->and($exception->getMessage())->toBe('T3 dispatch failed.')
+            ->and($exception->getMessage())->not->toContain('bearer-secret');
+    });
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.120:3773/api/orchestration/snapshot'
+        && $request->method() === 'GET'
+        && $request->hasHeader('Authorization', 'Bearer bearer-secret'));
+});
+
+it('does not adopt from an opaque 500 when the snapshot has no active project for the root', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.120:3773/api/orchestration/dispatch' => Http::response('', 500),
+        'http://10.44.0.120:3773/api/orchestration/snapshot' => Http::response([
+            'projects' => [
+                [
+                    'id' => '550e8400-e29b-41d4-a716-446655440000',
+                    'workspaceRoot' => '/srv/orbit/apps/other/task-1',
+                    'deletedAt' => null,
+                ],
+            ],
+        ]),
+    ]);
+    config()->set('orbit.t3.token', 'bearer-secret');
+
+    expect(fn () => app(HttpT3Dispatcher::class)->dispatch(t3_node(), [
+        'type' => 'project.create',
+        'workspaceRoot' => '/srv/orbit/apps/orbit/task-1',
+    ]))->toThrow(function (T3DispatchException $exception): void {
+        expect($exception->existingProjectId)->toBeNull()
             ->and($exception->getMessage())->not->toContain('bearer-secret');
     });
 });

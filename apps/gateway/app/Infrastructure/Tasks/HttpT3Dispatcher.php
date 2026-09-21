@@ -9,6 +9,7 @@ use App\Domain\Tasks\T3DispatchException;
 use App\Models\Node;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use SensitiveParameter;
 
@@ -38,7 +39,7 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
 
         if (! $response->successful()) {
             throw new T3DispatchException(
-                existingProjectId: T3DispatchException::existingProjectId((string) $response->body()),
+                existingProjectId: $this->existingProjectId($host, $command, $response),
             );
         }
 
@@ -53,6 +54,100 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
             'sequence' => $sequence,
             'thread_id' => $returnedThreadId ?? $threadId,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $command
+     */
+    private function existingProjectId(string $host, array $command, Response $response): ?string
+    {
+        $existingProjectId = T3DispatchException::existingProjectId($this->errorHaystack($response));
+
+        if ($existingProjectId !== null || ($command['type'] ?? null) !== 'project.create') {
+            return $existingProjectId;
+        }
+
+        $workspaceRoot = $this->string($command['workspaceRoot'] ?? $command['workspace_root'] ?? null);
+
+        return $workspaceRoot === null ? null : $this->existingProjectIdFromSnapshot($host, $workspaceRoot);
+    }
+
+    private function errorHaystack(Response $response): string
+    {
+        $parts = [(string) $response->body()];
+
+        foreach ($response->headers() as $name => $values) {
+            if (strcasecmp((string) $name, 'Authorization') === 0) {
+                continue;
+            }
+
+            foreach ($values as $value) {
+                if (is_string($value) && $value !== '') {
+                    $parts[] = $value;
+                }
+            }
+        }
+
+        return implode("\n", $parts);
+    }
+
+    private function existingProjectIdFromSnapshot(string $host, string $workspaceRoot): ?string
+    {
+        try {
+            $response = $this->request()->get($this->url($host, '/api/orchestration/snapshot'));
+        } catch (ConnectionException) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $projects = $response->json('projects');
+
+        if (! is_array($projects)) {
+            return null;
+        }
+
+        $wanted = $this->normalizedWorkspaceRoot($workspaceRoot);
+
+        foreach ($projects as $project) {
+            if (! is_array($project)) {
+                continue;
+            }
+
+            $deletedAt = $project['deletedAt'] ?? $project['deleted_at'] ?? null;
+
+            if ($deletedAt !== null && $deletedAt !== '') {
+                continue;
+            }
+
+            $root = $project['workspaceRoot'] ?? $project['workspace_root'] ?? null;
+            $id = $project['id'] ?? $project['projectId'] ?? $project['project_id'] ?? null;
+
+            if (! is_string($root) || ! is_string($id) || $this->normalizedWorkspaceRoot($root) !== $wanted) {
+                continue;
+            }
+
+            $projectId = T3DispatchException::projectId($id);
+
+            if ($projectId !== null) {
+                return $projectId;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizedWorkspaceRoot(string $workspaceRoot): string
+    {
+        $normalized = trim($workspaceRoot);
+
+        if ($normalized === '/' || $normalized === '') {
+            return $normalized;
+        }
+
+        return rtrim($normalized, '/');
     }
 
     private function request(): PendingRequest
@@ -71,7 +166,7 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         return $request;
     }
 
-    private function url(string $host): string
+    private function url(string $host, string $path = '/api/orchestration/dispatch'): string
     {
         $port = (int) config('orbit.t3.port', 3773);
 
@@ -79,7 +174,7 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
             $port = 3773;
         }
 
-        return 'http://'.$host.':'.$port.'/api/orchestration/dispatch';
+        return 'http://'.$host.':'.$port.$path;
     }
 
     private function string(#[SensitiveParameter] mixed $value): ?string
