@@ -219,4 +219,12 @@ These items stay unimplemented here and need a later feature PR.
 - Creating or changing tasks through the web UI
 - Per-Project model overrides
 - Tom-on-Mini routing
-- Fleet TypeSafe key mint (Ops after CLEAN)
+ - Fleet TypeSafe key mint (Ops after CLEAN)
+
+## Cancel a stuck group
+
+Call `tasks-cancel` with `{ "group": 123 }` to cancel a `queued`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. Cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
+
+A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not send a T3 stop command.
+
+A `settling` or `completed` group returns HTTP 409 with `tasks.not_cancellable` (an MCP error result). Use `tasks-complete` for a settling group after review and merge.
