@@ -17,7 +17,11 @@ import "../../src/styles.css";
  */
 export async function openApp(
     path = "/",
-    options: { proxycli?: boolean; wrapTransport?: (inner: Transport) => Transport } = {},
+    options: {
+        proxycli?: boolean;
+        tasks?: boolean;
+        wrapTransport?: (inner: Transport) => Transport;
+    } = {},
 ) {
     document.getElementById("app")?.remove();
     queryClient.clear();
@@ -36,6 +40,9 @@ export async function openApp(
 
     if (options.proxycli === true) {
         gateway.enableProxyCli();
+    }
+    if (options.tasks === false) {
+        gateway.disableTasks();
     }
 
     if (options.wrapTransport !== undefined) {

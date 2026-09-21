@@ -21,6 +21,7 @@ import type {
     QueueState,
     QuotaProvider,
     Schedule,
+    TasksStatus,
 } from "./types";
 
 /** How often the lists reload while realtime is down. `orbit top --tick` has the same default. */
@@ -194,6 +195,14 @@ export const proxycliStatusQuery = queryOptions({
     queryKey: ["proxycli-status"],
     refetchInterval: POLL_SECONDS * 1000,
     queryFn: () => get<ProxyCliStatus>("/api/v1/proxycli").catch(() => disabledProxyCli()),
+    retry: false,
+});
+
+/** Task status gates token spend display; task payloads currently lack provider attribution. */
+export const tasksStatusQuery = queryOptions({
+    queryKey: ["tasks-status"],
+    queryFn: () => get<TasksStatus>("/api/v1/tasks/status").catch(() => ({ enabled: false })),
+    refetchInterval: POLL_SECONDS * 1000,
     retry: false,
 });
 

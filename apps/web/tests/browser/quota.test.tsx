@@ -9,12 +9,21 @@ it("keeps Quota out of the sidebar while proxycli is disabled", async () => {
     expect(screenText()).not.toContain("Quota");
 });
 
+it("shows an explicit disabled state when tasks are disabled", async () => {
+    await openApp("/quota", { proxycli: true, tasks: false });
+
+    await expect
+        .poll(() => screenText())
+        .toContain("require both the CLIProxyAPI collector and the tasks extension");
+});
+
 it("lists provider windows from the snapshot without Primary or Secondary labels", async () => {
     await openApp("/quota", { proxycli: true });
 
     await expect.element(row("Quota", "Codex")).toBeVisible();
     await expect.element(row("Quota", "7d 60%")).toBeVisible();
     await expect.element(row("Quota", "5h 90%")).toBeVisible();
+    await expect.element(row("Quota", "Not reported by Gateway")).toBeVisible();
     expect(screenText()).not.toContain("Primary");
     expect(screenText()).not.toContain("Secondary");
     expect(screenText()).toContain("Cache updated");
