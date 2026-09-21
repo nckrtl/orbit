@@ -163,8 +163,12 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
         ])
         ->and($dispatcher->commands[2]['message']['text'])->toContain('long-lived reviewer')
         ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
+        ->and($dispatcher->commands[2]['runtimeMode'])->toBe('full-access')
+        ->and($dispatcher->commands[2]['interactionMode'])->toBe('default')
         ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
         ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection)
+        ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
+        ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')
         ->and($implementerSelection['instanceId'])->toBe('codex')
         ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'low']]);
 });
@@ -199,6 +203,17 @@ it('posts T3 model options as id and value JSON objects', function (): void {
                 ['id' => 'effort', 'value' => 'high'],
             ];
     });
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode($request->body(), true);
+
+        return is_array($payload)
+            && ($payload['type'] ?? null) === 'thread.turn.start'
+            && ($payload['runtimeMode'] ?? null) === 'full-access'
+            && ($payload['interactionMode'] ?? null) === 'default'
+            && ($payload['modelSelection']['options'] ?? null) === [
+                ['id' => 'effort', 'value' => 'high'],
+            ];
+    });
 });
 
 it('sends please review to the stored reviewer thread and commits on sign-off', function (): void {
@@ -216,6 +231,8 @@ it('sends please review to the stored reviewer thread and commits on sign-off', 
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('please review')
         ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
         ->and($dispatcher->commands[0]['modelSelection'])->toBe(TaskAgentDefaults::reviewerSelection())
+        ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
+        ->and($dispatcher->commands[0]['interactionMode'])->toBe('default')
         ->and($sha)->toBe(str_repeat('b', 40))
         ->and($signer->commits)->toBe(1);
 });
