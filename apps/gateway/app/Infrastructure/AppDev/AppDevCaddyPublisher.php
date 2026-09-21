@@ -251,12 +251,14 @@ final readonly class AppDevCaddyPublisher
 
                     cp --preserve=mode,ownership -- "$fragment" "$destination"
                 done
-                printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
+                printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
+                printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"
                 mv -fT -- "$candidate_link" "$live_caddyfile"

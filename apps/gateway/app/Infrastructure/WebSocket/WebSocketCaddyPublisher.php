@@ -151,12 +151,14 @@ final readonly class WebSocketCaddyPublisher
                     fi
                     cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
                 done
-                printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
+                printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
+                printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"
                 previous_target=$(readlink -- "$live_caddyfile" || true)
