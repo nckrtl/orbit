@@ -113,7 +113,7 @@ final readonly class TaskSessionObserver
 
             if (isset($references[$session->thread_id])) {
                 $references[$session->thread_id]['task'] ??= $task;
-                $references[$session->thread_id]['node'] ??= $node;
+                $references[$session->thread_id]['node'] = $node;
 
                 continue;
             }

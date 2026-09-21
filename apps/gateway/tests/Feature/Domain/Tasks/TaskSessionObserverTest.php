@@ -249,6 +249,39 @@ it('observes only the threads Orbit started for this group', function (): void {
         ->and($threads->read)->toBe(['reviewer-thread', 'implementer-thread']);
 });
 
+it('reads a thread on the Node its recorded session names', function (): void {
+    $group = observed_group();
+    $moved = Node::query()->create([
+        'name' => 'observed-node-two',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.8',
+        'wireguard_ip' => '10.44.0.8',
+    ]);
+    TaskAgentSession::query()->where('task_group_id', $group->id)
+        ->where('role', 'implementer')
+        ->update(['node_id' => $moved->id]);
+    $threads = new class implements T3ThreadReader
+    {
+        /** @var list<string> */
+        public array $hosts = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->hosts[] = $threadId.'@'.(string) $node->wireguard_ip;
+
+            return null;
+        }
+    };
+
+    new TaskSessionObserver($threads, new NullTaskWorkspaceCommitReader)->observe($group);
+
+    expect($threads->hosts)->toBe([
+        'reviewer-thread@10.44.0.7',
+        'implementer-thread@10.44.0.8',
+    ]);
+});
+
 it('keeps a thread with an unknown state when T3 refuses the snapshot', function (): void {
     $observation = observed_observer(['implementer-thread' => null])->observe(observed_group());
 
