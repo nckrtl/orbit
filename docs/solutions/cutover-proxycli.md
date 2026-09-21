@@ -31,8 +31,10 @@ orbit proxycli:enable --node=<cliproxy-node> --cache-connection=valkey --cliprox
 ```
 
 5. Confirm `orbit proxycli:status` shows one enabled collector and a `collected_at` timestamp.
-6. Point CodexBar at `https://collector.proxycli.orbit` with the read token from Gateway settings. Do not give CodexBar the management key. Publish CLIProxyAPI management on apex `proxycli.orbit` as a custom proxy Route to `http://127.0.0.1:8317` when that UI stays on the same Node.
+6. Point CodexBar at `https://collector.proxycli.orbit` with the read token from Gateway settings. Do not give CodexBar the management key.
 7. Refresh the Orbit Quota page twice. The collector lock must prevent a second upstream fetch.
+
+Publish CLIProxyAPI management on apex `proxycli.orbit` as a custom proxy Route to `http://127.0.0.1:8317`.
 
 ## Prove one collector
 
