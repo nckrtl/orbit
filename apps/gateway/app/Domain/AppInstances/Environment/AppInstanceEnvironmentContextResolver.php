@@ -6,6 +6,7 @@ namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -65,7 +66,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             ! $route->isAuthoritative()
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
-            || $route->replacement_step !== null
+            || ($route->replacement_step !== null && ! new PublicRouteEligibility()->publicEdgeIsLive($route))
         ) {
             $this->conflict();
         }
