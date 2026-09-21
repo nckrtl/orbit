@@ -24,13 +24,13 @@ final readonly class T3ModelCatalog
      *
      * @var array<string, string>
      */
-    private const RetiredSlugs = [
+    private const array RetiredSlugs = [
         'codex-luna-lite' => 'gpt-5.6-luna',
         'claude-opus' => 'claude-opus-5',
     ];
 
     /** @var array<string, string> */
-    private const EffortOptions = [
+    private const array EffortOptions = [
         self::CodexInstance => 'reasoningEffort',
         self::ClaudeInstance => 'effort',
     ];

@@ -136,7 +136,7 @@ A `modelSelection` names the T3 provider instance, not the model. The Gateway re
 
 Each provider names its reasoning option itself. Codex reads `reasoningEffort` and ignores a plain `effort`, which leaves the model on its medium default. Claude reads `effort`.
 
-Groups created before the catalog was verified still store `codex-luna-lite` or `claude-opus`. The Gateway resolves those retired slugs to `gpt-5.6-luna` and `claude-opus-5`.
+Older groups still store `codex-luna-lite` or `claude-opus`. The Gateway reads those slugs as `gpt-5.6-luna` and `claude-opus-5`, so their agents spawn on the same catalog entries as a new group.
 
 ## Pull request and settle metrics
 
