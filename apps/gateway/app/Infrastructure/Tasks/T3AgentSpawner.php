@@ -173,8 +173,8 @@ final readonly class T3AgentSpawner implements AgentSpawner
             'task_id' => $taskId,
             'node_id' => $node->id,
             'role' => $taskId === null ? 'reviewer' : 'implementer',
-            'model' => $model,
-            'effort' => $effort,
+            'model' => $selection['model'],
+            'effort' => $selection['options'][0]['value'] ?? null,
         ]);
 
         return $resolvedThreadId;
