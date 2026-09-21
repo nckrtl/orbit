@@ -6,7 +6,5 @@ namespace App\Domain\Tasks;
 
 final readonly class TaskCeilings
 {
-    public const int PerApp = 3;
-
     public const int PerNode = 10;
 }

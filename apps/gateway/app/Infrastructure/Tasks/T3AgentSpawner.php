@@ -35,8 +35,9 @@ final readonly class T3AgentSpawner implements AgentSpawner
         return $this->spawnThread(
             $group,
             title: 'Orbit task #'.$group->id.' · Reviewer: '.$group->title,
-            model: $group->reviewer_model !== '' ? $group->reviewer_model : TaskAgentDefaults::ReviewerModel,
-            effort: TaskAgentDefaults::ReviewerEffort,
+            selection: TaskAgentDefaults::reviewerSelection(
+                $group->reviewer_model !== '' ? $group->reviewer_model : null,
+            ),
             message: $this->reviewerPrompt($group),
         );
     }
@@ -54,8 +55,9 @@ final readonly class T3AgentSpawner implements AgentSpawner
         return $this->spawnThread(
             $group,
             title: 'Orbit task #'.$group->id.' / subtask #'.$task->id.' · Implementer: '.$task->title,
-            model: $group->implementer_model !== '' ? $group->implementer_model : TaskAgentDefaults::ImplementerModel,
-            effort: TaskAgentDefaults::ImplementerEffort,
+            selection: TaskAgentDefaults::implementerSelection(
+                $group->implementer_model !== '' ? $group->implementer_model : null,
+            ),
             message: $this->implementerPrompt($group, $task),
             taskId: $task->id,
         );
@@ -72,7 +74,14 @@ final readonly class T3AgentSpawner implements AgentSpawner
         }
 
         try {
-            $this->startTurn($node, $group->reviewer_thread_id, $this->reviewPrompt($task));
+            $this->startTurn(
+                $node,
+                $group->reviewer_thread_id,
+                $this->reviewPrompt($task),
+                TaskAgentDefaults::reviewerSelection(
+                    $group->reviewer_model !== '' ? $group->reviewer_model : null,
+                ),
+            );
         } catch (T3DispatchException) {
         }
     }
@@ -92,11 +101,13 @@ final readonly class T3AgentSpawner implements AgentSpawner
         );
     }
 
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
     private function spawnThread(
         TaskGroup $group,
         string $title,
-        string $model,
-        string $effort,
+        array $selection,
         string $message,
         ?int $taskId = null,
     ): ?string {
@@ -110,7 +121,6 @@ final readonly class T3AgentSpawner implements AgentSpawner
         $threadId = (string) Str::uuid();
         $projectId = (string) Str::uuid();
         $createdAt = now()->toIso8601String();
-        $selection = $this->modelSelection($model, $effort);
 
         try {
             try {
@@ -149,6 +159,15 @@ final readonly class T3AgentSpawner implements AgentSpawner
         }
 
         $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
+
+        try {
+            $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection);
+        } catch (T3DispatchException) {
+            TaskAgentSession::query()->where('thread_id', $resolvedThreadId)->delete();
+
+            return null;
+        }
+
         TaskAgentSession::query()->firstOrCreate(['thread_id' => $resolvedThreadId], [
             'task_group_id' => $group->id,
             'task_id' => $taskId,
@@ -157,51 +176,51 @@ final readonly class T3AgentSpawner implements AgentSpawner
             'model' => $model,
             'effort' => $effort,
         ]);
-        $this->startOpeningTurn($node, $resolvedThreadId, $message);
 
         return $resolvedThreadId;
     }
 
-    private function startOpeningTurn(Node $node, string $threadId, string $message): void
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
+    private function startOpeningTurn(Node $node, string $threadId, string $message, array $selection): void
     {
         try {
-            $this->startTurn($node, $threadId, $message);
+            $this->startTurn($node, $threadId, $message, $selection);
         } catch (T3DispatchException) {
             try {
-                $this->startTurn($node, $threadId, $message);
+                $this->startTurn($node, $threadId, $message, $selection);
             } catch (T3DispatchException $exception) {
-                Log::warning('T3 thread.turn.start failed after the thread was created.', [
+                Log::error('T3 thread.turn.start failed after the thread was created.', [
                     'thread_id' => $threadId,
                     'exception' => $exception->getMessage(),
                 ]);
+
+                throw $exception;
             }
         }
     }
 
-    private function startTurn(Node $node, string $threadId, string $message): void
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
+    private function startTurn(Node $node, string $threadId, string $message, array $selection): void
     {
+        $messageId = (string) Str::uuid();
+
         $this->dispatcher->dispatch($node, [
             'type' => 'thread.turn.start',
             'commandId' => (string) Str::uuid(),
             'threadId' => $threadId,
-            'messageId' => (string) Str::uuid(),
-            'message' => $message,
+            'message' => [
+                'messageId' => $messageId,
+                'role' => 'user',
+                'text' => $message,
+                'attachments' => [],
+            ],
+            'modelSelection' => $selection,
             'createdAt' => now()->toIso8601String(),
         ]);
-    }
-
-    /**
-     * @return array{instanceId: string, model: string, options: list<array{id: string, value: string}>}
-     */
-    private function modelSelection(string $model, string $effort): array
-    {
-        return [
-            'instanceId' => $model,
-            'model' => $model,
-            'options' => [
-                ['id' => 'effort', 'value' => $effort],
-            ],
-        ];
     }
 
     private function node(TaskGroup $group): ?Node

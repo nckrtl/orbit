@@ -96,7 +96,8 @@
                 "0095",
                 "0103",
                 "0104",
-                "0109"
+                "0109",
+                "0110"
             ]
         },
         {
@@ -2942,6 +2943,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0110-route-task-sessions-with-laravel-ai-jev.md",
+            "title": "ADR 0110: Route task sessions with Laravel AI Jev",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0110"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3082,7 +3102,8 @@
                 "0106",
                 "0107",
                 "0108",
-                "0109"
+                "0109",
+                "0110"
             ]
         },
         {
@@ -3542,6 +3563,7 @@
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
@@ -4096,7 +4118,8 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0103"
+                "0103",
+                "0110"
             ]
         },
         {

@@ -90,6 +90,29 @@ it('sums insertions and deletions from git numstat', function (): void {
         ->and((string) $transport->commands[0]->input)->toContain('git -C "$checkout" diff --numstat');
 });
 
+it('reports commits after a revision or date', function (): void {
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, "2\n", '', 1, false),
+    ]);
+
+    expect(new RemoteTaskWorkspaceDiffReader(remote_diff_ssh($transport))->hasCommitsSince(
+        remote_diff_instance(),
+        str_repeat('a', 40),
+    ))->toBeTrue()
+        ->and((string) $transport->commands[0]->input)->toContain('rev-list --count');
+});
+
+it('returns false when the workspace has no commits since the marker', function (): void {
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, "0\n", '', 1, false),
+    ]);
+
+    expect(new RemoteTaskWorkspaceDiffReader(remote_diff_ssh($transport))->hasCommitsSince(
+        remote_diff_instance(),
+        '2026-09-21T00:00:00+00:00',
+    ))->toBeFalse();
+});
+
 it('returns 0 when remote git cannot read the diff', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', 'missing', 1, false)]);
 

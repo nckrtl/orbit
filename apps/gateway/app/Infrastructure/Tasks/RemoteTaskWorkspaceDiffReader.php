@@ -73,4 +73,49 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
 
         return ['additions' => $additions, 'deletions' => $deletions];
     }
+
+    public function hasCommitsSince(AppInstance $instance, string $since): bool
+    {
+        $instance->loadMissing('node');
+
+        if ($instance->checkout_path === '' || $since === '') {
+            return false;
+        }
+
+        try {
+            $result = $this->ssh->execute(
+                $instance->node,
+                new RemoteCommand(
+                    arguments: [
+                        'bash',
+                        '-seu',
+                        '--',
+                        $instance->checkout_path,
+                        $since,
+                    ],
+                    input: <<<'BASH'
+                    checkout=$1
+                    since=$2
+                    if git -C "$checkout" rev-parse --verify "$since" >/dev/null 2>&1; then
+                        git -C "$checkout" rev-list --count "$since"..HEAD
+                    else
+                        git -C "$checkout" log --since="$since" --pretty=oneline
+                    fi
+                    BASH,
+                ),
+                'task-workspace-commits',
+                'tasks.diff_failed',
+            );
+        } catch (RuntimeConvergenceException) {
+            return false;
+        }
+
+        $stdout = trim($result->stdout);
+
+        if ($stdout === '' || $stdout === '0') {
+            return false;
+        }
+
+        return true;
+    }
 }

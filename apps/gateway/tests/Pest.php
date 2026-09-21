@@ -12,6 +12,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Ai\Classification;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -41,6 +42,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(AgentationSiteProjection::class, new FakeAgentationSiteProjection);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
+        Classification::resetFake();
     })
     ->in('Feature');
 

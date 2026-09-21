@@ -17,4 +17,6 @@ interface TaskWorkspaceDiffReader
     public function lineChanges(AppInstance $instance, string $baseBranch): ?array;
 
     public function lineDiff(AppInstance $instance, string $baseBranch): int;
+
+    public function hasCommitsSince(AppInstance $instance, string $since): bool;
 }
