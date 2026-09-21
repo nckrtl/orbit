@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Hibernation\HibernationDirectoryEnsure;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 
 final readonly class AppDevCaddyPublisher
 {
+    use OwnsCaddyGlobalOptions;
+
     public function __construct(
         private string $versionsDirectory = '/etc/caddy/orbit-versions',
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
@@ -130,7 +133,8 @@ final readonly class AppDevCaddyPublisher
                 esac
                 printf '%s' '{$encoded}' | base64 --decode | \
                     tee "\$candidate/fragments/app-dev.caddy" >/dev/null
-                printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
@@ -140,7 +144,8 @@ final readonly class AppDevCaddyPublisher
                 fi
 
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
                 mv -fT -- "\$candidate_link" "\$live_caddyfile"

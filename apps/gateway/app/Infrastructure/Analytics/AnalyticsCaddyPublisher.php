@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Analytics;
 
+use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Ssh\RemoteCommand;
 
 /**
@@ -15,6 +16,8 @@ use App\Infrastructure\Ssh\RemoteCommand;
  */
 final readonly class AnalyticsCaddyPublisher
 {
+    use OwnsCaddyGlobalOptions;
+
     public function command(string $configuration, string $port, string $wireguardIp): RemoteCommand
     {
         $encoded = base64_encode($configuration);
@@ -71,7 +74,8 @@ final readonly class AnalyticsCaddyPublisher
                 fi
                 printf '%s' '{$encoded}' | base64 --decode \\
                     | sed "s/\$bind_placeholder/\$bind_address/" > "\$candidate/fragments/\$owned_fragment"
-                printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
@@ -83,7 +87,8 @@ final readonly class AnalyticsCaddyPublisher
                     exit 0
                 fi
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
                 previous_target=\$(readlink -- "\$live_caddyfile" || true)
@@ -146,12 +151,14 @@ final readonly class AnalyticsCaddyPublisher
                     fi
                     cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
                 done
-                printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"
                 previous_target=$(readlink -- "$live_caddyfile" || true)

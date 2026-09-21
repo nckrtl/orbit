@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -12,6 +13,8 @@ use InvalidArgumentException;
 
 final readonly class MetricsCaddyPublisher
 {
+    use OwnsCaddyGlobalOptions;
+
     private const string Fragment = 'metrics.caddy';
 
     public function __construct(
@@ -90,7 +93,8 @@ final readonly class MetricsCaddyPublisher
                         ;;
                 esac
                 printf '%s' '{$encoded}' | base64 --decode > "\$candidate/fragments/\$owned_fragment"
-                printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
@@ -99,7 +103,8 @@ final readonly class MetricsCaddyPublisher
                     exit 0
                 fi
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
                 mv -fT -- "\$candidate_link" "\$live_caddyfile"
@@ -218,12 +223,14 @@ final readonly class MetricsCaddyPublisher
                     fi
                     cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
                 done
-                printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"
                 mv -fT -- "$candidate_link" "$live_caddyfile"
