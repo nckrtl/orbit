@@ -106,11 +106,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
         $threadId = (string) Str::uuid();
         $projectId = (string) Str::uuid();
         $createdAt = now()->toIso8601String();
-        $selection = [
-            'instanceId' => $model,
-            'model' => $model,
-            'options' => [['effort' => $effort]],
-        ];
+        $selection = $this->modelSelection($model, $effort);
 
         try {
             try {
@@ -163,6 +159,20 @@ final readonly class T3AgentSpawner implements AgentSpawner
             'message' => $message,
             'createdAt' => now()->toIso8601String(),
         ]);
+    }
+
+    /**
+     * @return array{instanceId: string, model: string, options: list<array{id: string, value: string}>}
+     */
+    private function modelSelection(string $model, string $effort): array
+    {
+        return [
+            'instanceId' => $model,
+            'model' => $model,
+            'options' => [
+                ['id' => 'effort', 'value' => $effort],
+            ],
+        ];
     }
 
     private function node(TaskGroup $group): ?Node
