@@ -355,7 +355,7 @@
         "apps/gateway/app/Models/AppInstanceDeployStep.php",
         "apps/gateway/app/Models/Cluster.php",
         "apps/gateway/app/Models/FirewallRule.php",
-        "apps/gateway/app/Models/Instance.php",
+        "apps/gateway/app/Models/AppInstance.php",
         "apps/gateway/app/Models/Node.php",
         "apps/gateway/app/Models/NodeAccess.php",
         "apps/gateway/app/Models/NodeRole.php",
