@@ -181,12 +181,12 @@ it('still returns the created group when the opening spawn fails', function (): 
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?string
+        public function spawnReviewer(TaskGroup $group): ?int
         {
             return null;
         }
 
-        public function spawnImplementer(Task $task): ?string
+        public function spawnImplementer(Task $task): ?int
         {
             return null;
         }
@@ -433,4 +433,17 @@ it('returns 409 tasks.not_settling when complete runs before settle', function (
     $this->postJson("/api/v1/task-groups/{$group->id}/complete")
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'tasks.not_settling');
+});
+
+it('rejects an unregistered configured driver with 409 before storing a group', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app();
+    config()->set('orbit.tasks.agent_driver', 'missing-driver');
+
+    $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
+        ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_driver_unavailable');
+
+    $this->assertDatabaseCount('task_groups', 0);
+    $this->assertDatabaseCount('tasks', 0);
 });

@@ -2,10 +2,8 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
-use App\Domain\Tasks\T3Dispatcher;
-use App\Domain\Tasks\T3DispatchException;
 use App\Models\Node;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -27,7 +25,8 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
             throw new T3DispatchException('The Node has no WireGuard address.');
         }
 
-        $credentials = $this->credentials($node);
+        $credentials = new T3Connection()->credentials($node);
+        $credentials['base_url'] = new T3Connection()->baseUrl($node);
 
         $threadId = $this->string($command['threadId'] ?? $command['thread_id'] ?? null) ?? '';
         $payload = $command;
@@ -154,37 +153,6 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         }
 
         return rtrim($normalized, '/');
-    }
-
-    /**
-     * @return array{token: string|null, base_url: string|null}
-     */
-    private function credentials(Node $node): array
-    {
-        $settings = $node->settings;
-        $t3 = is_array($settings) && array_key_exists('t3', $settings) ? $settings['t3'] : null;
-
-        if ($t3 !== null) {
-            if (! is_array($t3)) {
-                throw new T3DispatchException('The Node has no T3 token configured.');
-            }
-
-            $token = $this->string($t3['token'] ?? null);
-
-            if ($token === null) {
-                throw new T3DispatchException('The Node has no T3 token configured.');
-            }
-
-            return [
-                'token' => $token,
-                'base_url' => $this->string($t3['url'] ?? $t3['base_url'] ?? null),
-            ];
-        }
-
-        return [
-            'token' => $this->string(config('orbit.t3.token')),
-            'base_url' => null,
-        ];
     }
 
     private function request(?string $token): PendingRequest

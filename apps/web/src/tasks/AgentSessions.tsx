@@ -1,5 +1,5 @@
 import { EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import { useFleet } from "../api/queries";
@@ -10,7 +10,8 @@ import {
     agentProvider,
     applyAgentEvent,
     emptyConversation,
-    type AgentSession,
+    type AgentThread,
+    agentStateLabel,
     type Conversation,
     type Entry,
     groupConversation,
@@ -18,27 +19,24 @@ import {
 
 const sessionMetaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
 
-function statusColor(live: boolean, working: boolean): string {
-    return !live ? "text-dim" : working ? "text-green" : "text-yellow";
+function statusColor(status: string): string {
+    return status === "Failed"
+        ? "text-red"
+        : status === "Asking for input"
+          ? "text-yellow"
+          : status === "Working" || status === "Done"
+            ? "text-green"
+            : "text-dim";
 }
 
-function ProviderMark({
-    model,
-    live,
-    working,
-}: {
-    model?: string | null;
-    live: boolean;
-    working: boolean;
-}) {
+function ProviderMark({ model, status }: { model?: string | null; status: string }) {
     const provider = agentProvider(model);
-    const state = !live ? "Not live" : working ? "Working" : "Idle";
     return (
         <span className="text-dim">
-            <span role="status" aria-label={state} className={statusColor(live, working)}>
-                ●
+            <span role="status" aria-label={status} className={statusColor(status)}>
+                ● {status}
             </span>
-            {provider ? ` ${provider.name}` : ""}
+            {provider ? ` · ${provider.name}` : ""}
         </span>
     );
 }
@@ -54,13 +52,17 @@ export function AgentSessions({
 }) {
     const query = useQuery({
         queryKey: ["task-agents", groupId],
-        queryFn: () => get<AgentSession[]>(`/api/v1/task-groups/${groupId}/agents`),
+        queryFn: () => get<AgentThread[]>(`/api/v1/task-groups/${groupId}/agents`),
         refetchInterval: 10000,
         retry: false,
     });
     const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [sessionLive, setSessionLive] = useState(false);
-    const [sessionWorking, setSessionWorking] = useState(false);
+    const [activity, setActivity] = useState<{ id: number; status: string } | null>(null);
+    const onActivity = useCallback((id: number, status: string) => {
+        setActivity((previous) =>
+            previous?.id === id && previous.status === status ? previous : { id, status },
+        );
+    }, []);
     const sessions = (query.data ?? []).filter(
         (session) =>
             subtaskId === undefined ||
@@ -149,8 +151,9 @@ export function AgentSessions({
                                     <strong className="block">
                                         <span
                                             className={statusColor(
-                                                session.id === selected.id && sessionLive,
-                                                session.id === selected.id && sessionWorking,
+                                                activity?.id === session.id
+                                                    ? activity.status
+                                                    : agentStateLabel(session.state),
                                             )}
                                             aria-hidden
                                         >
@@ -162,14 +165,7 @@ export function AgentSessions({
                             );
                         })}
                     </div>
-                    <SessionViewer
-                        key={selected.id}
-                        session={selected}
-                        onActivity={(live, working) => {
-                            setSessionLive(live);
-                            setSessionWorking(working);
-                        }}
-                    />
+                    <SessionViewer key={selected.id} session={selected} onActivity={onActivity} />
                 </div>
             )}
         </Frame>
@@ -245,15 +241,22 @@ function SessionViewer({
     session,
     onActivity,
 }: {
-    session: AgentSession;
-    onActivity: (live: boolean, working: boolean) => void;
+    session: AgentThread;
+    onActivity: (id: number, status: string) => void;
 }) {
     const fleet = useFleet();
     const nodeSlug =
         session.node_id === null
             ? null
             : (fleet.nodes.find((node) => node.id === session.node_id)?.name ?? null);
-    const [conversation, setConversation] = useState<Conversation>(emptyConversation);
+    const [conversation, setConversation] = useState<Conversation>({
+        ...emptyConversation,
+        status: agentStateLabel(session.state),
+        tokens: session.tokens ?? null,
+        linesAdded: session.lines_added ?? null,
+        linesDeleted: session.lines_deleted ?? null,
+        error: session.error ?? null,
+    });
     const [connection, setConnection] = useState("Connecting…");
     const [following, setFollowing] = useState(true);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -267,7 +270,7 @@ function SessionViewer({
         source.addEventListener("agent", (event: MessageEvent<string>) => {
             try {
                 const data: unknown = JSON.parse(event.data);
-                setConversation((state) => applyAgentEvent(state, data, session.thread_id));
+                setConversation((state) => applyAgentEvent(state, data, session.id));
                 setConnection("Live");
             } catch {
                 setConnection("Unreadable update. Reconnecting…");
@@ -283,13 +286,10 @@ function SessionViewer({
                     : "Reconnecting…",
             );
         return () => source.close();
-    }, [session.id, session.node_id, session.task_group_id, session.thread_id]);
+    }, [session.id, session.node_id, session.task_group_id]);
     useEffect(() => {
-        onActivity(
-            connection === "Live",
-            conversation.status === "Working" || conversation.status === "Starting",
-        );
-    }, [connection, conversation.status, onActivity]);
+        onActivity(session.id, conversation.status);
+    }, [session.id, conversation.status, onActivity]);
     useEffect(() => {
         if (following && viewport.current)
             viewport.current.scrollTop = viewport.current.scrollHeight;
@@ -322,19 +322,22 @@ function SessionViewer({
                         <p className="text-dim">Original node unavailable</p>
                     )}
                     <p className="break-all text-dim">
-                        <ProviderMark
-                            model={session.model}
-                            live={connection === "Live"}
-                            working={
-                                conversation.status === "Working" ||
-                                conversation.status === "Starting"
-                            }
-                        />{" "}
-                        T3
+                        <ProviderMark model={session.model} status={conversation.status} />{" "}
+                        {session.driver}
                         {session.model ? ` · ${session.model}` : ""}
                         {session.effort ? ` · ${session.effort} effort` : ""}
                         {nodeSlug === null ? "" : ` - ${nodeSlug}`}
                     </p>
+                    {connection !== "Live" && (
+                        <p className="text-dim" aria-label="Agent connection">
+                            {connection}
+                        </p>
+                    )}
+                    {conversation.error && (
+                        <p role="alert" className="text-red">
+                            {conversation.error}
+                        </p>
+                    )}
                     <SessionMetrics
                         tokens={conversation.tokens}
                         added={conversation.linesAdded}
@@ -375,11 +378,11 @@ function SessionViewer({
                                 role="menuitem"
                                 className="block w-full cursor-pointer px-[1ch] py-[2px] text-left hover:bg-fg/10"
                                 onClick={() => {
-                                    void navigator.clipboard?.writeText(session.thread_id);
+                                    void navigator.clipboard?.writeText(session.external_id);
                                     setMenuOpen(false);
                                 }}
                             >
-                                Copy T3 thread ID
+                                Copy external thread ID
                             </button>
                         </div>
                     )}
@@ -396,15 +399,14 @@ function SessionViewer({
             >
                 {conversation.entries.length === 0 && (
                     <p className="text-dim">
-                        {conversation.status === "Not started"
+                        {conversation.status === "Idle"
                             ? "Thread created. No agent activity yet."
                             : "No conversation output yet."}
                     </p>
                 )}
                 {groupConversation(conversation.entries).map((group, index, groups) => {
                     if (group.type === "activities") {
-                        const running =
-                            conversation.status === "Working" || conversation.status === "Starting";
+                        const running = conversation.status === "Working";
                         return (
                             <ActivityGroup
                                 key={group.entries[0]?.id ?? index}

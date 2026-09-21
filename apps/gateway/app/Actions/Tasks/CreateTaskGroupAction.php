@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\CreateTaskGroupData;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AgentDriverException;
+use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -17,14 +20,22 @@ final readonly class CreateTaskGroupAction
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private TaskScheduler $scheduler,
+        private AgentDriverRegistry $drivers,
     ) {}
 
     public function execute(CreateTaskGroupData $data): TaskGroup
     {
         $this->requireExtension->execute();
 
+        try {
+            $driver = $this->drivers->get((string) config('orbit.tasks.agent_driver', 't3'))->key();
+        } catch (AgentDriverException) {
+            throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
+        }
+
         $group = TaskGroup::query()->create([
             'app_id' => $data->appId,
+            'agent_driver' => $driver,
             'title' => $data->title,
             'brief' => $data->brief,
             'status' => TaskGroupStatus::Queued,

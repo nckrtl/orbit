@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\T3ThreadMetrics;
+use App\Infrastructure\Tasks\T3\T3ThreadMetrics;
 
 it('prefers cumulative processed tokens over the current window', function (): void {
     $metrics = T3ThreadMetrics::fromSnapshot([
@@ -79,10 +79,10 @@ it('sums checkpoint file additions and deletions for the thread', function (): v
     expect($metrics->linesAdded)->toBe(13)
         ->and($metrics->linesDeleted)->toBe(3)
         ->and($metrics->lineDiff)->toBe(16)
-        ->and($metrics->tokens)->toBe(0);
+        ->and($metrics->tokens)->toBeNull();
 });
 
-it('returns zeros for an empty or malformed snapshot', function (): void {
-    expect(T3ThreadMetrics::fromSnapshot([])->tokens)->toBe(0)
-        ->and(T3ThreadMetrics::fromSnapshot(['thread' => 'nope'])->lineDiff)->toBe(0);
+it('leaves metrics unknown for an empty or malformed snapshot', function (): void {
+    expect(T3ThreadMetrics::fromSnapshot([])->tokens)->toBeNull()
+        ->and(T3ThreadMetrics::fromSnapshot(['thread' => 'nope'])->lineDiff)->toBeNull();
 });

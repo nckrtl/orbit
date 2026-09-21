@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
 /**
  * Tokens and line diff observed on one T3 thread snapshot.
@@ -14,8 +14,8 @@ namespace App\Domain\Tasks;
 final readonly class T3ThreadMetrics
 {
     public function __construct(
-        public int $tokens,
-        public int $lineDiff,
+        public ?int $tokens,
+        public ?int $lineDiff,
         public ?int $linesAdded = null,
         public ?int $linesDeleted = null,
     ) {}
@@ -28,13 +28,13 @@ final readonly class T3ThreadMetrics
         $thread = $snapshot['thread'] ?? $snapshot;
 
         if (! is_array($thread)) {
-            return new self(0, 0);
+            return new self(null, null);
         }
 
         /** @var array<string, mixed> $thread */
         return new self(
             tokens: self::tokens($thread),
-            lineDiff: self::lineCount($thread, 'additions') + self::lineCount($thread, 'deletions'),
+            lineDiff: is_array($thread['checkpoints'] ?? null) ? self::lineCount($thread, 'additions') + self::lineCount($thread, 'deletions') : null,
             linesAdded: is_array($thread['checkpoints'] ?? null) ? self::lineCount($thread, 'additions') : null,
             linesDeleted: is_array($thread['checkpoints'] ?? null) ? self::lineCount($thread, 'deletions') : null,
         );
@@ -43,20 +43,22 @@ final readonly class T3ThreadMetrics
     /**
      * @param  array<string, mixed>  $thread
      */
-    private static function tokens(array $thread): int
+    private static function tokens(array $thread): ?int
     {
-        $tokens = 0;
+        $tokens = null;
         self::walk($thread, function (array $node) use (&$tokens): void {
-            if (! array_key_exists('usedTokens', $node)) {
+            if (! array_key_exists('usedTokens', $node) && ! array_key_exists('totalProcessedTokens', $node)) {
                 return;
             }
 
-            $used = self::nonNegativeInt($node['usedTokens']);
+            $used = self::nonNegativeInt($node['usedTokens'] ?? null);
             $processed = self::nonNegativeInt($node['totalProcessedTokens'] ?? null);
             $value = $processed !== null && $processed > 0
                 ? $processed
-                : ($used ?? 0);
-            $tokens = max($tokens, $value);
+                : $used;
+            if ($value !== null) {
+                $tokens = max($tokens ?? 0, $value);
+            }
         });
 
         return $tokens;

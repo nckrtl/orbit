@@ -3,23 +3,27 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\T3Dispatcher;
-use App\Domain\Tasks\T3DispatchException;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceSigner;
-use App\Infrastructure\Tasks\HttpT3Dispatcher;
-use App\Infrastructure\Tasks\T3AgentSpawner;
+use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
+use App\Infrastructure\Tasks\T3\T3Dispatcher;
+use App\Infrastructure\Tasks\T3\T3DispatchException;
+use App\Infrastructure\Tasks\T3\T3ModelSelection;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
-use App\Models\TaskAgentSession;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 function t3_spawner_group(): TaskGroup
 {
@@ -64,7 +68,7 @@ function t3_spawner_group(): TaskGroup
 }
 
 /**
- * @return array{T3AgentSpawner, object, object}
+ * @return array{TaskAgentSpawner, object, object}
  */
 function t3_spawner_stack(): array
 {
@@ -121,7 +125,7 @@ function t3_spawner_stack(): array
         }
     };
 
-    return [new T3AgentSpawner($dispatcher, $signer), $dispatcher, $signer];
+    return [new TaskAgentSpawner(test_t3_registry($dispatcher), $signer), $dispatcher, $signer];
 }
 
 it('spawns a long-lived reviewer and a fresh implementer on the instance Node', function (): void {
@@ -147,8 +151,8 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
     $reviewerCreate = $dispatcher->commands[1];
     $implementerProject = $dispatcher->commands[3];
     $implementerCreate = $dispatcher->commands[4];
-    $reviewerSelection = TaskAgentDefaults::reviewerSelection();
-    $implementerSelection = TaskAgentDefaults::implementerSelection();
+    $reviewerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort);
+    $implementerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort);
 
     expect($reviewerCreate['title'])->toStartWith('Orbit task #'.$group->id.' · Reviewer:')
         ->and($reviewerProject['defaultModelSelection'])->toBe($reviewerSelection)
@@ -181,7 +185,7 @@ it('posts T3 model options as id and value JSON objects', function (): void {
     $group = t3_spawner_group();
     [, , $signer] = t3_spawner_stack();
 
-    $threadId = (new T3AgentSpawner(app(HttpT3Dispatcher::class), $signer))->spawnReviewer($group);
+    $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class)), $signer))->spawnReviewer($group);
 
     expect($threadId)->not->toBeNull();
 
@@ -218,7 +222,7 @@ it('posts T3 model options as id and value JSON objects', function (): void {
 
 it('sends please review to the stored reviewer thread and commits on sign-off', function (): void {
     $group = t3_spawner_group();
-    $group->reviewer_thread_id = 'reviewer-existing';
+    $group->reviewer_agent_thread_id = test_agent_thread($group, 'reviewer-existing')->id;
     $group->save();
     [$spawner, $dispatcher, $signer] = t3_spawner_stack();
 
@@ -230,7 +234,7 @@ it('sends please review to the stored reviewer thread and commits on sign-off', 
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('please review')
         ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(TaskAgentDefaults::reviewerSelection())
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort))
         ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[0]['interactionMode'])->toBe('default')
         ->and($sha)->toBe(str_repeat('b', 40))
@@ -260,6 +264,7 @@ it('stores no thread id when turn start fails after thread create', function (?s
     $dispatcher->adoptProjectId = $adoptProjectId;
     $dispatcher->failTurnStartRemaining = 2;
 
+    Log::shouldReceive('error')->with('Agent conversation creation failed.', Mockery::any())->once();
     Log::shouldReceive('error')
         ->once()
         ->with('T3 thread.turn.start failed after the thread was created.', Mockery::on(function (array $context): bool {
@@ -272,8 +277,8 @@ it('stores no thread id when turn start fails after thread create', function (?s
     $reviewerId = $spawner->spawnReviewer($group);
 
     expect($reviewerId)->toBeNull()
-        ->and($group->fresh()?->reviewer_thread_id)->toBeNull()
-        ->and(TaskAgentSession::query()->where('task_group_id', $group->id)->count())->toBe(0)
+        ->and($group->fresh()?->reviewer_agent_thread_id)->toBeNull()
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0)
         ->and(array_column($dispatcher->commands, 'type'))->toBe([
             'project.create',
             'thread.create',
@@ -301,14 +306,14 @@ it('returns null when T3 refuses the spawn', function (): void {
 
 it('reuses persisted thread ids instead of spawning again', function (): void {
     $group = t3_spawner_group();
-    $group->reviewer_thread_id = 'kept-reviewer';
+    $group->reviewer_agent_thread_id = test_agent_thread($group, 'kept-reviewer')->id;
     $group->save();
-    $group->tasks->first()->update(['implementer_thread_id' => 'kept-implementer']);
+    $group->tasks->first()->update(['implementer_agent_thread_id' => test_agent_thread($group, 'kept-implementer', $group->tasks->firstOrFail())->id]);
     [$spawner, $dispatcher] = t3_spawner_stack();
 
-    expect($spawner->spawnReviewer($group->fresh(['taskable']) ?? $group))->toBe('kept-reviewer')
+    expect($spawner->spawnReviewer($group->fresh(['taskable']) ?? $group))->toBe($group->reviewer_agent_thread_id)
         ->and($spawner->spawnImplementer($group->tasks->first()->fresh(['taskGroup.taskable']) ?? $group->tasks->first()))
-        ->toBe('kept-implementer')
+        ->toBe($group->tasks->firstOrFail()->implementer_agent_thread_id)
         ->and($dispatcher->commands)->toBe([]);
 });
 
@@ -318,32 +323,81 @@ it('keeps persisted role links after workspace removal', function (): void {
     $reviewer = $spawner->spawnReviewer($group);
     $implementer = $spawner->spawnImplementer($group->tasks->firstOrFail());
     $group->taskable->delete();
-    $links = TaskAgentSession::query()->where('task_group_id', $group->id)->orderBy('id')->get();
+    $links = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get();
     expect($reviewer)->not->toBeNull()
         ->and($implementer)->not->toBeNull()
         ->and($links)->toHaveCount(2)
-        ->and($links[0]->thread_id)->toBe($reviewer)
+        ->and($links[0]->id)->toBe($reviewer)
         ->and($links[0]->task_id)->toBeNull()
         ->and($links[0]->model)->toBe(TaskAgentDefaults::ReviewerModel)
         ->and($links[0]->effort)->toBe(TaskAgentDefaults::ReviewerEffort)
-        ->and($links[1]->thread_id)->toBe($implementer)
+        ->and($links[1]->id)->toBe($implementer)
         ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[1]->model)->toBe(TaskAgentDefaults::ImplementerModel)
         ->and($links[1]->effort)->toBe(TaskAgentDefaults::ImplementerEffort)
         ->and($links[1]->node_id)->not->toBeNull();
 });
 
-it('imports legacy thread links using the instance morph alias', function (): void {
+it('imports legacy thread links using the instance morph alias', function (string $scenario): void {
+    $default = DB::getDefaultConnection();
+    config()->set('database.connections.agent_migration', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
+    DB::setDefaultConnection('agent_migration');
+    try {
+        $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'create_agent_threads_from_task_agent_sessions')));
+        Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
+        $appId = DB::table('apps')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
+        $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);
+        $instanceId = DB::table('app_instances')->insertGetId(['app_id' => $appId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
+        $groupId = DB::table('task_groups')->insertGetId([
+            'app_id' => $appId, 'title' => 'Legacy', 'brief' => 'Legacy links',
+            'taskable_type' => 'instance', 'taskable_id' => $instanceId,
+            'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
+        ]);
+        $taskId = DB::table('tasks')->insertGetId(['task_group_id' => $groupId, 'position' => 1, 'title' => 'Legacy task', 'brief' => 'Legacy', 'implementer_thread_id' => 'legacy-implement']);
+        if ($scenario !== 'pointers') {
+            DB::table('task_agent_sessions')->insert([
+                'id' => 42, 'task_group_id' => $groupId, 'node_id' => $nodeId, 'task_id' => null,
+                'role' => $scenario === 'conflict' ? 'implementer' : 'reviewer', 'thread_id' => 'legacy-review',
+                'model' => 'claude-opus-5', 'effort' => 'high',
+            ]);
+        }
+        $migration = require glob(database_path('migrations/*create_agent_threads_from_task_agent_sessions.php'))[0];
+        if ($scenario === 'conflict') {
+            expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'ownership is ambiguous');
+            expect(Schema::hasTable('task_agent_sessions'))->toBeTrue()
+                ->and(Schema::hasTable('agent_threads'))->toBeFalse();
+            DB::table('task_agent_sessions')->where('id', 42)->update(['role' => 'reviewer']);
+        }
+        $migration->up();
+        $links = AgentThread::query()->orderBy('id')->get();
+        expect($links)->toHaveCount(2)
+            ->and($links[0]->node_id)->toBe($nodeId)
+            ->and($links[0]->id)->toBe($scenario === 'pointers' ? 1 : 42)
+            ->and($links[0]->effort)->toBe('high')
+            ->and($links[1]->effort)->toBe('low')
+            ->and($links[0]->model)->toBe('claude-opus-5')
+            ->and($links[0]->driver)->toBe('t3')
+            ->and($links[0]->runtime_key)->toBe('node:'.$nodeId)
+            ->and($links[1]->task_id)->toBe($taskId)
+            ->and($links[1]->external_id)->toBe('legacy-implement')
+            ->and(DB::table('task_groups')->where('id', $groupId)->value('reviewer_agent_thread_id'))->toBe($links[0]->id)
+            ->and(DB::table('tasks')->where('id', $taskId)->value('implementer_agent_thread_id'))->toBe($links[1]->id);
+    } finally {
+        DB::setDefaultConnection($default);
+        DB::purge('agent_migration');
+    }
+})->with(['persisted', 'pointers', 'conflict']);
+
+it('uses high effort for a reviewer follow-up when a legacy effort is absent', function (): void {
     $group = t3_spawner_group();
-    $group->update(['reviewer_thread_id' => 'legacy-review']);
-    $task = $group->tasks->firstOrFail();
-    $task->update(['implementer_thread_id' => 'legacy-implement']);
-    $migration = require database_path('migrations/2026_09_21_124805_create_task_agent_sessions_table.php');
-    $migration->down();
-    $migration->up();
-    $links = TaskAgentSession::query()->orderBy('id')->get();
-    expect($links)->toHaveCount(2)
-        ->and($links[0]->node_id)->toBe($group->taskable->node_id)
-        ->and($links[1]->task_id)->toBe($task->id)
-        ->and($links[1]->thread_id)->toBe('legacy-implement');
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $id = $spawner->spawnReviewer($group);
+    $thread = AgentThread::query()->findOrFail($id);
+    $thread->update(['effort' => null]);
+
+    test_t3_registry(dispatcher: $dispatcher)->get('t3')->send($thread, 'Please review.');
+
+    $command = $dispatcher->commands[array_key_last($dispatcher->commands)];
+    expect($command['type'])->toBe('thread.turn.start')
+        ->and($command['modelSelection']['options'])->toBe([['id' => 'effort', 'value' => 'high']]);
 });

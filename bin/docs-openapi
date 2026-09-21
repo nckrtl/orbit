@@ -1025,7 +1025,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 body = {'type': 'object', 'properties': {'release': {'type': 'string', 'description': 'Retained release name to select.'}}, 'required': ['release'], 'additionalProperties': False}
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': body}}}
     elif route['name'] == 'tasks:agent-stream':
-        responses['200'] = {'description': 'Read-only T3 thread snapshots and events. Resume with Last-Event-ID. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
+        responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'schedule:complete':
         responses['204'] = {'description': 'The Gateway recorded the latest run.'}
     elif route['name'] == 'metrics:grafana:authorize':

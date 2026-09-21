@@ -29,6 +29,7 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\TestCase;
 
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
+require_once __DIR__.'/Support/AgentDriverTestSupport.php';
 require_once __DIR__.'/Support/ResponseFixtures.php';
 require_once __DIR__.'/Helpers/MetricsRoleFixtures.php';
 require_once __DIR__.'/Helpers/WebSocketRoleFixtures.php';

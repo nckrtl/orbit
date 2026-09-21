@@ -19,7 +19,7 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
     {
         $answers = Classification::of($observation->toArray())
             ->question('next_action', new Choice(
-                'Which single next action should the Gateway task scheduler execute for these T3 task threads?',
+                'Which single next action should the Gateway task scheduler execute for these agent threads?',
                 TaskSessionNextAction::choiceCriteria(),
             ))
             ->classify();

@@ -12,6 +12,8 @@ Commander feature work moves into Orbit as the enable-gated Gateway extension `t
 
 Proposed. Amended on 2026-09-21 for T3-capable placement and fail-closed spawns. The original record let a refused `project.create`, `thread.create`, or opening `thread.turn.start` leave the group `running` without thread ids. That is withdrawn below.
 
+[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) proposes an `AgentThread` and `AgentDriver` boundary to replace this record's direct T3 integration. ADR 0112 defines the current driver boundary.
+
 ## Context
 
 Commander owns feature decomposition, implementer and reviewer threads, and pull request handoff outside Orbit. Orbit already owns Apps, App instances, Routes, node access, and the MCP catalogue generated from the Gateway API ([ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)). Absorbing Commander work without a new forever-on core surface would either bury an experimental scheduler in every Gateway or force a second control plane to keep polling Nodes.

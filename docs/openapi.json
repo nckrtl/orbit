@@ -18293,7 +18293,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/TaskAgentSession"
+                        "$ref": "#/components/schemas/AgentThread"
                       }
                     },
                     "meta": {
@@ -18372,17 +18372,17 @@
             "required": false,
             "schema": {
               "type": [
-                "integer",
+                "string",
                 "null"
               ],
-              "maximum": 9007199254740991,
-              "minimum": 0
+              "pattern": "^[A-Za-z0-9._:+=\\/-]+$",
+              "maxLength": 512
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Read-only T3 thread snapshots and events. Resume with Last-Event-ID. Requires Gateway access.",
+            "description": "Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -21289,9 +21289,9 @@
               "cancelled"
             ]
           },
-          "reviewer_thread_id": {
+          "reviewer_agent_thread_id": {
             "type": [
-              "string",
+              "integer",
               "null"
             ]
           },
@@ -21378,9 +21378,9 @@
               "cancelled"
             ]
           },
-          "implementer_thread_id": {
+          "implementer_agent_thread_id": {
             "type": [
-              "string",
+              "integer",
               "null"
             ]
           },
@@ -21416,7 +21416,7 @@
           }
         }
       },
-      "TaskAgentSession": {
+      "AgentThread": {
         "type": "object",
         "properties": {
           "id": {
@@ -21440,8 +21440,72 @@
           "role": {
             "type": "string"
           },
-          "thread_id": {
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driver": {
             "type": "string"
+          },
+          "external_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "idle",
+              "working",
+              "asking_for_input",
+              "done",
+              "failed"
+            ]
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observation_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_added": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         }
       },

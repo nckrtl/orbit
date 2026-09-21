@@ -2,33 +2,27 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
-use App\Domain\Tasks\TaskAgentStream;
 use App\Models\Node;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-final readonly class T3TaskAgentStream implements TaskAgentStream
+final readonly class T3TaskAgentStream implements T3Stream
 {
     /** @return iterable<array<string, mixed>> */
     public function events(Node $node, string $threadId, ?int $afterSequence): iterable
     {
-        $host = $node->wireguard_ip;
-        if (! is_string($host) || filter_var($host, FILTER_VALIDATE_IP) === false) {
-            throw new RuntimeException('T3 Node address unavailable.');
-        }
-        $host = str_contains($host, ':') ? '['.$host.']' : $host;
-        $base = $host.':'.(int) config('orbit.t3.port', 3773);
-        $token = config('orbit.t3.token');
+        $base = new T3Connection()->baseUrl($node);
+        $token = new T3Connection()->credentials($node)['token'];
         $headers = is_string($token) && $token !== '' ? ['Authorization' => 'Bearer '.$token] : [];
-        $ticket = Http::timeout(5)->withHeaders($headers)->post('http://'.$base.'/api/auth/websocket-ticket');
+        $ticket = Http::timeout(5)->withHeaders($headers)->post($base.'/api/auth/websocket-ticket');
         $value = $ticket->json('ticket') ?? $ticket->json('wsTicket');
         $suffix = $ticket->successful() && is_string($value) ? '?wsTicket='.rawurlencode($value) : '';
         $socket = new T3WebSocket;
         try {
-            $socket->connect('ws://'.$base.'/ws'.$suffix, $headers, 5);
+            $socket->connect(preg_replace('/^http/', 'ws', $base).'/ws'.$suffix, $headers, 5);
             $id = (string) Str::uuid();
             $payload = ['threadId' => $threadId, 'reasoningMessages' => true, 'requestCompletionMarker' => true];
             if ($afterSequence !== null) {

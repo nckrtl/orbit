@@ -3139,7 +3139,7 @@ export interface components {
             brief?: string;
             /** @enum {string} */
             status?: "queued" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
-            reviewer_thread_id?: string | null;
+            reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
             notify_coder?: boolean;
             implementer_model?: string;
@@ -3159,20 +3159,31 @@ export interface components {
             brief?: string;
             /** @enum {string} */
             status?: "pending" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
-            implementer_thread_id?: string | null;
+            implementer_agent_thread_id?: number | null;
             tokens?: number | null;
             line_diff?: number | null;
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
         };
-        TaskAgentSession: {
+        AgentThread: {
             id?: number;
             task_group_id?: number;
             task_id?: number | null;
             node_id?: number | null;
             role?: string;
-            thread_id?: string;
+            model?: string | null;
+            effort?: string | null;
+            driver?: string;
+            external_id?: string;
+            /** @enum {string|null} */
+            state?: "idle" | "working" | "asking_for_input" | "done" | "failed" | null;
+            observed_at?: string | null;
+            observation_error?: string | null;
+            error?: string | null;
+            tokens?: number | null;
+            lines_added?: number | null;
+            lines_deleted?: number | null;
         };
         ToolManager: {
             id?: number | null;
@@ -12961,7 +12972,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["TaskAgentSession"][];
+                        data: components["schemas"]["AgentThread"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12989,7 +13000,7 @@ export interface operations {
     "tasks-agent-stream": {
         parameters: {
             query?: {
-                after_sequence?: number | null;
+                after_sequence?: string | null;
             };
             header?: never;
             path: {
@@ -13002,7 +13013,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Read-only T3 thread snapshots and events. Resume with Last-Event-ID. Requires Gateway access. */
+            /** @description Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access. */
             200: {
                 headers: {
                     [name: string]: unknown;

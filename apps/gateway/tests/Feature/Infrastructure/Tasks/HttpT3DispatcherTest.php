@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\T3DispatchException;
-use App\Infrastructure\Tasks\HttpT3Dispatcher;
+use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
+use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Models\Node;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;

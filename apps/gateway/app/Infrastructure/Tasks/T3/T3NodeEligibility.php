@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;

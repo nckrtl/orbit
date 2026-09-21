@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
+use App\Models\AgentThread;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDependencyEdge;
@@ -39,7 +40,6 @@ use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
 use App\Models\Task;
-use App\Models\TaskAgentSession;
 use App\Models\TaskGroup;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -88,7 +88,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         DatabaseUser::class,
         HerdrObservationNonce::class,
         Task::class,
-        TaskAgentSession::class,
+        AgentThread::class,
         TaskGroup::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();

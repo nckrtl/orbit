@@ -3,10 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullCoderSettleNotifier;
-use App\Domain\Tasks\T3Dispatcher;
-use App\Domain\Tasks\T3DispatchException;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionActor;
@@ -16,6 +15,9 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Infrastructure\Tasks\T3\T3Dispatcher;
+use App\Infrastructure\Tasks\T3\T3DispatchException;
+use App\Infrastructure\Tasks\T3\T3ModelSelection;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -50,7 +52,6 @@ function router_group(): TaskGroup
         'title' => 'Execute Jev actions',
         'brief' => 'Drain, advance, escalate, or stay quiet.',
         'status' => TaskGroupStatus::Running,
-        'reviewer_thread_id' => 'reviewer-thread',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -60,9 +61,10 @@ function router_group(): TaskGroup
         'title' => 'Models',
         'brief' => 'Store the records.',
         'status' => TaskStatus::Running,
-        'implementer_thread_id' => 'implementer-thread',
         'started_at' => now(),
     ]);
+
+    test_link_agent_threads($group);
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
 }
@@ -79,9 +81,9 @@ function router_observation(TaskGroup $group, ?string $pendingApprovalId = null)
         ciSummary: null,
         threads: [
             new TaskThreadObservation(
-                threadId: 'implementer-thread',
+                threadId: $group->tasks->firstOrFail()->implementer_agent_thread_id,
                 role: TaskThreadRole::Implementer,
-                sessState: $pendingApprovalId === null ? 'idle' : 'waiting',
+                sessState: $pendingApprovalId === null ? 'idle' : 'asking_for_input',
                 idle: $pendingApprovalId === null,
                 pendingApprovalId: $pendingApprovalId,
                 pendingUserInputId: null,
@@ -90,6 +92,7 @@ function router_observation(TaskGroup $group, ?string $pendingApprovalId = null)
                 hasNewCommitsSinceThreadStart: false,
                 prUrl: $group->pr_url,
                 ciSummary: null,
+                inputRequests: $pendingApprovalId === null ? [] : [new AgentInputRequest($pendingApprovalId, 'approval')],
             ),
         ],
     );
@@ -116,7 +119,7 @@ it('dispatches acceptForSession for a pending approval', function (): void {
     $dispatcher = router_dispatcher();
     $observation = router_observation($group, 'approval-3');
 
-    new TaskSessionActor($dispatcher, new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         $observation,
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
@@ -139,7 +142,7 @@ it('surfaces a refused drain instead of swallowing the dispatch', function (): v
         }
     };
 
-    expect(fn () => new TaskSessionActor($dispatcher, new NullCoderSettleNotifier)->execute(
+    expect(fn () => new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         router_observation($group, 'approval-3'),
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
@@ -150,7 +153,7 @@ it('starts an implementer turn with the T3 0.0.42 message struct', function (): 
     $group = router_group();
     $dispatcher = router_dispatcher();
 
-    new TaskSessionActor($dispatcher, new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 0.86, 'Jev selected continue_implementer.'),
@@ -163,7 +166,7 @@ it('starts an implementer turn with the T3 0.0.42 message struct', function (): 
             'attachments' => [],
         ])
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not expand scope.')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(TaskAgentDefaults::implementerSelection())
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort))
         ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
 });
@@ -187,7 +190,7 @@ it('notifies Coder only when Jev escalates', function (): void {
     };
     $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
 
-    new TaskSessionActor($dispatcher, $notifier)->execute($group, router_observation($group), $decision);
+    new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute($group, router_observation($group), $decision);
 
     expect($dispatcher->commands)->toBe([])
         ->and($notifier->escalated?->id)->toBe($group->id)
@@ -212,7 +215,7 @@ it('dispatches nothing for noop', function (): void {
         }
     };
 
-    new TaskSessionActor($dispatcher, $notifier)->execute(
+    new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::Noop, 0.95, 'Jev selected noop.'),

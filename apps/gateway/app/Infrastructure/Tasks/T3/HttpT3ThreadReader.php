@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
-use App\Domain\Tasks\T3ThreadReader;
 use App\Models\Node;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -25,7 +24,7 @@ final readonly class HttpT3ThreadReader implements T3ThreadReader
         }
 
         try {
-            $response = $this->request()->get($this->url($host, '/api/orchestration/threads/'.rawurlencode($threadId)));
+            $response = $this->request($node)->get(new T3Connection()->baseUrl($node).'/api/orchestration/threads/'.rawurlencode($threadId));
         } catch (ConnectionException) {
             return null;
         }
@@ -39,30 +38,19 @@ final readonly class HttpT3ThreadReader implements T3ThreadReader
         return is_array($payload) ? $payload : null;
     }
 
-    private function request(): PendingRequest
+    private function request(Node $node): PendingRequest
     {
         $request = Http::connectTimeout(self::CONNECT_TIMEOUT)
             ->timeout(self::TIMEOUT)
             ->acceptJson()
             ->asJson();
 
-        $token = config('orbit.t3.token');
+        $token = new T3Connection()->credentials($node)['token'];
 
         if (is_string($token) && $token !== '') {
             $request = $request->withToken($token);
         }
 
         return $request;
-    }
-
-    private function url(string $host, string $path): string
-    {
-        $port = (int) config('orbit.t3.port', 3773);
-
-        if ($port < 1 || $port > 65535) {
-            $port = 3773;
-        }
-
-        return 'http://'.$host.':'.$port.$path;
     }
 }

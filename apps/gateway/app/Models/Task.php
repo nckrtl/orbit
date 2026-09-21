@@ -10,13 +10,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property-read AgentThread|null $implementerThread
  * @property int $id
  * @property int $task_group_id
  * @property int $position
  * @property string $title
  * @property string $brief
  * @property TaskStatus $status
- * @property string|null $implementer_thread_id
+ * @property int|null $implementer_agent_thread_id
  * @property int|null $tokens
  * @property int|null $lines_added
  * @property int|null $lines_deleted
@@ -42,7 +43,7 @@ final class Task extends Model
         'title',
         'brief',
         'status',
-        'implementer_thread_id',
+        'implementer_agent_thread_id',
         'tokens',
         'line_diff',
         'lines_added',
@@ -56,6 +57,12 @@ final class Task extends Model
     public function taskGroup(): BelongsTo
     {
         return $this->belongsTo(TaskGroup::class);
+    }
+
+    /** @return BelongsTo<AgentThread, $this> */
+    public function implementerThread(): BelongsTo
+    {
+        return $this->belongsTo(AgentThread::class, 'implementer_agent_thread_id');
     }
 
     /** @return array<string, string> */

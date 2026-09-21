@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
 use App\Http\Controllers\Api\AppInstanceDependenciesController;
@@ -46,7 +47,6 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
-use App\Http\Controllers\Api\TaskAgentSessionsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolManagersController;
@@ -492,9 +492,9 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('metrics/exporters/{node}', [MetricsController::class, 'disableExporter'])
             ->whereNumber('node')
             ->name('metrics:exporter:disable');
-        Route::get('task-groups/{group}/agents', [TaskAgentSessionsController::class, 'index'])
+        Route::get('task-groups/{group}/agents', [AgentThreadsController::class, 'index'])
             ->whereNumber('group')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agents');
-        Route::get('task-groups/{group}/agents/{session}/stream', [TaskAgentSessionsController::class, 'stream'])
+        Route::get('task-groups/{group}/agents/{session}/stream', [AgentThreadsController::class, 'stream'])
             ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
         Route::post('tasks/enable', [TasksController::class, 'enable'])->name('tasks:enable');
         Route::post('tasks/disable', [TasksController::class, 'disable'])->name('tasks:disable');

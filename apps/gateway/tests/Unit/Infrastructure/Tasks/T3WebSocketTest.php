@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Infrastructure\Tasks\T3WebSocket;
+use App\Infrastructure\Tasks\T3\T3WebSocket;
 
 it('reads coalesced and fragmented frames without losing handshake bytes', function (): void {
     $server = stream_socket_server('tcp://127.0.0.1:0');

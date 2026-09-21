@@ -4,164 +4,68 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
-use App\Models\Node;
+use App\Models\AgentThread;
 use App\Models\TaskGroup;
-use Illuminate\Support\Str;
 
 final readonly class TaskSessionActor
 {
-    public function __construct(
-        private T3Dispatcher $dispatcher,
-        private CoderSettleNotifier $coder,
-    ) {}
+    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $coder) {}
 
     public function execute(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
     {
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+            $this->coder->escalate($group, $observation, $decision);
 
-        match ($decision->action) {
-            TaskSessionNextAction::DrainApproval => $this->drainApproval($group, $observation),
-            TaskSessionNextAction::DrainUserInput => $this->drainUserInput($group, $observation),
-            TaskSessionNextAction::ContinueImplementer => $this->continueImplementer($group, $observation),
-            TaskSessionNextAction::RelayReviewToImplementer => $this->relayReview($group, $observation),
-            TaskSessionNextAction::EscalateCoder => $this->coder->escalate($group, $observation, $decision),
-            TaskSessionNextAction::MarkSubtaskDone,
-            TaskSessionNextAction::SettleGroup,
-            TaskSessionNextAction::Noop => null,
-        };
-    }
-
-    private function drainApproval(TaskGroup $group, TaskSessionObservation $observation): void
-    {
-        foreach ($observation->threads as $thread) {
-            if ($thread->pendingApprovalId === null) {
-                continue;
-            }
-
-            $this->dispatch($group, [
-                'type' => 'thread.approval.respond',
-                'commandId' => (string) Str::uuid(),
-                'threadId' => $thread->threadId,
-                'requestId' => $thread->pendingApprovalId,
-                'decision' => 'acceptForSession',
-                'createdAt' => now()->toIso8601String(),
-            ]);
-        }
-    }
-
-    private function drainUserInput(TaskGroup $group, TaskSessionObservation $observation): void
-    {
-        foreach ($observation->threads as $thread) {
-            if ($thread->pendingUserInputId === null) {
-                continue;
-            }
-
-            $this->dispatch($group, [
-                'type' => 'thread.user-input.respond',
-                'commandId' => (string) Str::uuid(),
-                'threadId' => $thread->threadId,
-                'requestId' => $thread->pendingUserInputId,
-                'answers' => [
-                    'continue' => true,
-                    'expand_scope' => false,
-                    'note' => 'Continue the current brief. Do not expand scope.',
-                ],
-                'createdAt' => now()->toIso8601String(),
-            ]);
-        }
-    }
-
-    private function continueImplementer(TaskGroup $group, TaskSessionObservation $observation): void
-    {
-        $implementer = $observation->thread(TaskThreadRole::Implementer);
-
-        if (! $implementer instanceof TaskThreadObservation) {
             return;
         }
-
-        $this->startTurn(
-            $group,
-            $implementer->threadId,
-            'Continue the current brief. Do not expand scope.',
-            TaskAgentDefaults::implementerSelection($group->implementer_model),
-        );
-    }
-
-    private function relayReview(TaskGroup $group, TaskSessionObservation $observation): void
-    {
-        $implementer = $observation->thread(TaskThreadRole::Implementer);
-        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-
-        if (! $implementer instanceof TaskThreadObservation) {
+        if (in_array($decision->action, [TaskSessionNextAction::Noop, TaskSessionNextAction::MarkSubtaskDone, TaskSessionNextAction::SettleGroup], true)) {
             return;
         }
+        if (in_array($decision->action, [TaskSessionNextAction::DrainApproval, TaskSessionNextAction::DrainUserInput], true)) {
+            $responded = false;
+            foreach ($observation->threads as $observed) {
+                $kind = $decision->action === TaskSessionNextAction::DrainApproval ? 'approval' : 'question';
+                foreach ($observed->inputRequests as $request) {
+                    if ($request->kind !== $kind) {
+                        continue;
+                    }
+                    $thread = $this->thread($group, $observed);
+                    $answers = $kind === 'approval' ? ['approve' => true] : [
+                        'continue' => true, 'expand_scope' => false, 'note' => 'Continue the current brief. Do not expand scope.',
+                    ];
+                    $this->drivers->get($thread->driver)->respond($thread, $request, $answers);
+                    $responded = true;
+                }
+            }
+            if (! $responded) {
+                throw new AgentDriverException('No matching agent input request is available.');
+            }
 
-        $excerpt = 'The reviewer asked you to continue.';
-
-        if ($reviewer instanceof TaskThreadObservation) {
-            $excerpt = $reviewer->lastAssistantText ?? $reviewer->lastUserText ?? $excerpt;
+            return;
         }
-
-        $this->startTurn(
-            $group,
-            $implementer->threadId,
-            implode("\n\n", [
-                'Relay from the reviewer. Continue the current brief. Do not expand scope.',
-                $excerpt,
-            ]),
-            TaskAgentDefaults::implementerSelection($group->implementer_model),
-        );
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($implementer === null) {
+            throw new AgentDriverException('Implementer observation is unavailable.');
+        }
+        $thread = $this->thread($group, $implementer);
+        if ($implementer->sessState === AgentThreadState::Working->value || $implementer->sessState === AgentThreadState::AskingForInput->value) {
+            throw new AgentDriverException('The implementer cannot start a follow-up turn in this state.');
+        }
+        $message = 'Continue the current brief. Do not expand scope.';
+        if ($decision->action === TaskSessionNextAction::RelayReviewToImplementer) {
+            $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+            $message = "Relay from the reviewer. Continue the current brief. Do not expand scope.\n\n".($reviewer->lastAssistantText ?? $reviewer->lastUserText ?? 'The reviewer asked you to continue.');
+        }
+        $this->drivers->get($thread->driver)->send($thread, $message);
     }
 
-    /**
-     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
-     */
-    private function startTurn(TaskGroup $group, string $threadId, string $text, array $selection): void
+    private function thread(TaskGroup $group, TaskThreadObservation $observed): AgentThread
     {
-        $messageId = (string) Str::uuid();
-
-        $this->dispatch($group, [
-            'type' => 'thread.turn.start',
-            'commandId' => (string) Str::uuid(),
-            'threadId' => $threadId,
-            'message' => [
-                'messageId' => $messageId,
-                'role' => 'user',
-                'text' => $text,
-                'attachments' => [],
-            ],
-            'modelSelection' => $selection,
-            'runtimeMode' => 'full-access',
-            'interactionMode' => 'default',
-            'createdAt' => now()->toIso8601String(),
-        ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $command
-     */
-    private function dispatch(TaskGroup $group, array $command): void
-    {
-        $node = $this->node($group);
-
-        if (! $node instanceof Node) {
-            throw new T3DispatchException('Task workspace Node is missing.');
+        if (! $observed->available) {
+            throw new AgentDriverException('Agent observation unavailable.');
         }
+        $thread = AgentThread::query()->where('task_group_id', $group->id)->where('id', $observed->threadId)->first();
 
-        $this->dispatcher->dispatch($node, $command);
-    }
-
-    private function node(TaskGroup $group): ?Node
-    {
-        $instance = $group->taskable;
-
-        if (! $instance instanceof AppInstance) {
-            return null;
-        }
-
-        $instance->loadMissing('node');
-
-        return $instance->node;
+        return $thread ?? throw new AgentDriverException('Agent conversation is unavailable.');
     }
 }

@@ -14,6 +14,10 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property-read AgentThread|null $reviewerThread
+ * @property Carbon|null $agent_unavailable_since
+ * @property Carbon|null $agent_unavailable_notified_at
+ * @property string $agent_driver
  * @property int $id
  * @property int $app_id
  * @property string|null $taskable_type
@@ -21,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property string $brief
  * @property TaskGroupStatus $status
- * @property string|null $reviewer_thread_id
+ * @property int|null $reviewer_agent_thread_id
  * @property string|null $pr_url
  * @property bool $notify_coder
  * @property string $implementer_model
@@ -43,6 +47,7 @@ final class TaskGroup extends Model
     #[\Override]
     protected $attributes = [
         'status' => 'queued',
+        'agent_driver' => 't3',
         'notify_coder' => false,
         'implementer_model' => TaskAgentDefaults::ImplementerModel,
         'reviewer_model' => TaskAgentDefaults::ReviewerModel,
@@ -51,13 +56,16 @@ final class TaskGroup extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'agent_driver',
+        'agent_unavailable_since',
+        'agent_unavailable_notified_at',
         'app_id',
         'taskable_type',
         'taskable_id',
         'title',
         'brief',
         'status',
-        'reviewer_thread_id',
+        'reviewer_agent_thread_id',
         'pr_url',
         'notify_coder',
         'implementer_model',
@@ -89,11 +97,19 @@ final class TaskGroup extends Model
         return $this->hasMany(Task::class)->orderBy('position')->orderBy('id');
     }
 
+    /** @return BelongsTo<AgentThread, $this> */
+    public function reviewerThread(): BelongsTo
+    {
+        return $this->belongsTo(AgentThread::class, 'reviewer_agent_thread_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'notify_coder' => 'boolean',
+            'agent_unavailable_since' => 'datetime',
+            'agent_unavailable_notified_at' => 'datetime',
             'status' => TaskGroupStatus::class,
             'tokens' => 'integer',
             'line_diff' => 'integer',

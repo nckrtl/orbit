@@ -4,95 +4,94 @@ import { applyAgentEvent, emptyConversation, groupConversation, type Entry } fro
 it("keeps a created thread distinct from a running agent", () => {
     const state = applyAgentEvent(
         emptyConversation,
-        {
-            kind: "snapshot",
-            snapshot: {
-                snapshotSequence: 8,
-                thread: { id: "one", messages: [], activities: [], session: null },
-            },
-        },
-        "one",
+        { kind: "snapshot", thread_id: 1, cursor: "a", state: "idle", entries: [] },
+        1,
     );
-    expect(state.status).toBe("Not started");
+    expect(state.status).toBe("Idle");
     expect(state.tokens).toBeNull();
     expect(state.linesAdded).toBeNull();
     expect(state.linesDeleted).toBeNull();
     expect(
-        applyAgentEvent(
-            state,
-            {
-                kind: "event",
-                event: {
-                    sequence: 9,
-                    aggregateId: "one",
-                    type: "thread.session-set",
-                    payload: { session: { status: "running" } },
-                },
-            },
-            "one",
-        ).status,
+        applyAgentEvent(state, { kind: "state", thread_id: 1, cursor: "b", state: "working" }, 1)
+            .status,
     ).toBe("Working");
 });
+
 it("upserts streamed text and ignores duplicate or foreign events", () => {
-    const event = (sequence: number, text: string, aggregateId = "one") => ({
-        kind: "event",
-        event: {
-            sequence,
-            aggregateId,
-            type: "thread.message-sent",
-            payload: { messageId: "m1", role: "assistant", text },
-        },
+    const event = (cursor: string, text: string, thread_id = 1) => ({
+        kind: "entry",
+        cursor,
+        thread_id,
+        entry: { id: "m1", kind: "message", label: "assistant", text, at: "" },
     });
-    const first = applyAgentEvent(emptyConversation, event(1, "Hello"), "one");
-    const second = applyAgentEvent(first, event(2, "Hello world"), "one");
+    const first = applyAgentEvent(emptyConversation, event("one", "Hello"), 1);
+    const second = applyAgentEvent(first, event("two", "Hello world"), 1);
     expect(second.entries).toHaveLength(1);
     expect(second.entries[0]?.text).toBe("Hello world");
-    expect(applyAgentEvent(second, event(1, "Old"), "one")).toBe(second);
-    expect(applyAgentEvent(second, event(3, "Foreign", "other"), "one")).toBe(second);
+    expect(applyAgentEvent(second, event("two", "Duplicate"), 1)).toBe(second);
+    expect(applyAgentEvent(second, event("three", "Foreign", 2), 1)).toBe(second);
     expect(
         applyAgentEvent(
             second,
-            {
-                kind: "snapshot",
-                snapshot: { snapshotSequence: 3, thread: { id: "one", messages: [] } },
-            },
-            "one",
+            { kind: "snapshot", thread_id: 1, cursor: "resumed", entries: [] },
+            1,
         ).entries,
     ).toEqual([]);
 });
 
-it("reads session tokens and checkpoint line diff from a snapshot", () => {
+it("reads normalized session tokens and line counts from a snapshot", () => {
     const state = applyAgentEvent(
         emptyConversation,
         {
             kind: "snapshot",
-            snapshot: {
-                snapshotSequence: 4,
-                thread: {
-                    id: "one",
-                    activities: [
-                        {
-                            id: "a1",
-                            kind: "token-usage",
-                            payload: { usage: { usedTokens: 200, totalProcessedTokens: 1200 } },
-                        },
-                    ],
-                    checkpoints: [
-                        {
-                            files: [
-                                { path: "a.php", kind: "modified", additions: 4, deletions: 1 },
-                            ],
-                        },
-                    ],
-                    session: { status: "idle" },
-                },
-            },
+            thread_id: 1,
+            cursor: "4",
+            tokens: 1200,
+            lines_added: 4,
+            lines_deleted: 1,
+            entries: [],
+            state: "done",
         },
-        "one",
+        1,
     );
     expect(state.tokens).toBe(1200);
     expect(state.linesAdded).toBe(4);
     expect(state.linesDeleted).toBe(1);
+    expect(
+        applyAgentEvent(
+            state,
+            { kind: "snapshot", thread_id: 1, cursor: "5", tokens: null, entries: [] },
+            1,
+        ).tokens,
+    ).toBe(1200);
+});
+
+it.each([
+    ["idle", "Idle"],
+    ["working", "Working"],
+    ["asking_for_input", "Asking for input"],
+    ["done", "Done"],
+    ["failed", "Failed"],
+])("renders the generic %s state", (state, label) => {
+    expect(
+        applyAgentEvent(emptyConversation, { kind: "state", thread_id: 1, state }, 1).status,
+    ).toBe(label);
+});
+
+it("retains failure details and replaces them on a successful retry", () => {
+    const failed = applyAgentEvent(
+        emptyConversation,
+        { kind: "state", thread_id: 1, state: "failed", error: "Turn failed" },
+        1,
+    );
+    expect(failed.error).toBe("Turn failed");
+    const retry = applyAgentEvent(
+        failed,
+        { kind: "state", thread_id: 1, state: "working", error: null },
+        1,
+    );
+    expect(retry.status).toBe("Working");
+    expect(retry.error).toBeNull();
 });
 
 it("groups tool steps until a text message, then starts a new group", () => {

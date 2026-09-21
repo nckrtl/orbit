@@ -11,7 +11,7 @@ use App\Models\AppInstance;
  *
  * A no-op implementation returns null and leaves the group reserved.
  * TaskWorkspaceProvisioner creates one fresh instance per group, honors
- * visitable, places it on an app-dev Node that can run T3, and reuses that
+ * visitable, places it on an app-dev Node that supports the selected agent driver, and reuses that
  * instance for every subtask.
  */
 interface InstanceProvisioning

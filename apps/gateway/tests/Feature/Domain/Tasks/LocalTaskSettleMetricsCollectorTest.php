@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
-use App\Domain\Tasks\NullT3ThreadReader;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -83,7 +83,7 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
     };
 
     $metrics = new LocalTaskSettleMetricsCollector(
-        new TaskGroupMetricsRefresher(new NullT3ThreadReader, $reader),
+        new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), $reader),
     )->collect($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
 
     expect($metrics->tokens)->toBe(40)

@@ -18,6 +18,7 @@ final readonly class TaskSessionObservation
         public ?string $prUrl,
         public ?string $ciSummary,
         public array $threads,
+        public bool $available = true,
     ) {}
 
     public function thread(TaskThreadRole $role): ?TaskThreadObservation
@@ -36,6 +37,7 @@ final readonly class TaskSessionObservation
     {
         return [
             'group_id' => $this->groupId,
+            'available' => $this->available,
             'group_status' => $this->groupStatus,
             'title' => $this->title,
             'brief' => $this->brief,

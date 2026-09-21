@@ -89,7 +89,7 @@ it('posts an HMAC-signed escalate body to Coder', function (): void {
         ciSummary: null,
         threads: [
             new TaskThreadObservation(
-                threadId: 'implementer-1',
+                threadId: 1,
                 role: TaskThreadRole::Implementer,
                 sessState: 'idle',
                 idle: true,
@@ -120,7 +120,7 @@ it('posts an HMAC-signed escalate body to Coder', function (): void {
             && ($payload['task_group_id'] ?? null) === $group->id
             && ($payload['reason'] ?? null) === 'Choice confidence 0.2 is below 0.75.'
             && ($payload['confidence'] ?? null) === 0.2
-            && ($payload['thread_id'] ?? null) === 'implementer-1'
+            && ($payload['thread_id'] ?? null) === 1
             && ($payload['observation'] ?? null) === $observation->toArray()
             && ! str_contains($body, 'coder-secret');
     });

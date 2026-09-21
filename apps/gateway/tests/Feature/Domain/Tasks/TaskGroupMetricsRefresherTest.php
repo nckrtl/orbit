@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\T3ThreadReader;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -43,7 +43,6 @@ function metrics_running_group(): TaskGroup
         'title' => 'Live metrics',
         'brief' => 'Show session totals.',
         'status' => TaskGroupStatus::Running,
-        'reviewer_thread_id' => 'reviewer-thread',
         'started_at' => '2026-09-21 10:00:00',
     ]);
     $group->taskable()->associate($instance);
@@ -54,9 +53,10 @@ function metrics_running_group(): TaskGroup
         'title' => 'First',
         'brief' => 'One',
         'status' => TaskStatus::Running,
-        'implementer_thread_id' => 'implementer-1',
         'started_at' => '2026-09-21 10:00:00',
     ]);
+
+    test_link_agent_threads($group, implementer: 'implementer-1');
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
 }
@@ -111,7 +111,7 @@ it('fills subtask session metrics from T3 and the group line diff from git', fun
         }
     };
 
-    $refreshed = new TaskGroupMetricsRefresher($threads, $diff)->refresh($group);
+    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), $diff)->refresh($group);
 
     expect($refreshed->tokens)->toBe(1500)
         ->and($refreshed->line_diff)->toBe(22)
@@ -154,7 +154,7 @@ it('keeps stored thread metrics when T3 refuses the snapshot', function (): void
         }
     };
 
-    $refreshed = new TaskGroupMetricsRefresher($threads, $diff)->refresh($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
+    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), $diff)->refresh($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
 
     expect($refreshed->tokens)->toBe(90)
         ->and($refreshed->line_diff)->toBe(11)
@@ -226,7 +226,7 @@ it('does not query T3 for a finished group', function (): void {
         }
     };
 
-    $refreshed = new TaskGroupMetricsRefresher($threads, new class implements TaskWorkspaceDiffReader
+    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), new class implements TaskWorkspaceDiffReader
     {
         public function lineChanges(AppInstance $instance, string $baseBranch): ?array
         {
