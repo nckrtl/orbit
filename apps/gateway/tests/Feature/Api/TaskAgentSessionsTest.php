@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\T3ThreadReader;
 use App\Domain\Tasks\TaskAgentStream;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
@@ -25,8 +26,16 @@ function agent_viewer_fixture(): array
 describe('task agent viewer', function (): void {
     it('lists persisted links after the workspace is removed', function (): void {
         [$group, $session] = agent_viewer_fixture();
+        app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+        {
+            public function snapshot(Node $node, string $threadId): ?array
+            {
+                return ['thread' => ['session' => ['status' => 'pending']]];
+            }
+        });
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.thread_id', 'thread-one')
+            ->assertJsonPath('data.0.state', 'pending')
             ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id);
         $this->postJson('/api/v1/tasks/disable')->assertOk();
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertStatus(409)->assertJsonPath('error.code', 'tasks.disabled');

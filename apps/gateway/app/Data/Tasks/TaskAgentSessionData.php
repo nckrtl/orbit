@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\TaskThreadState;
 use App\Models\TaskAgentSession;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -19,10 +20,11 @@ final class TaskAgentSessionData extends Data
         public ?int $nodeId,
         public string $role,
         public string $threadId,
+        public ?TaskThreadState $state,
     ) {}
 
     public static function fromModel(TaskAgentSession $session): self
     {
-        return new self($session->id, $session->task_group_id, $session->task_id, $session->node_id, $session->role, $session->thread_id);
+        return new self($session->id, $session->task_group_id, $session->task_id, $session->node_id, $session->role, $session->thread_id, $session->getAttribute('state'));
     }
 }
