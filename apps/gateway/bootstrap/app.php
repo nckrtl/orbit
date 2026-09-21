@@ -15,6 +15,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskSchedule;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Controllers\Api\JwksController;
 use App\Http\Middleware\EnsureRequestId;
@@ -22,6 +23,7 @@ use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -54,6 +56,9 @@ return Application::configure(basePath: dirname(__DIR__))
             require __DIR__.'/../routes/channels.php';
         },
     )
+    ->withSchedule(function (Schedule $schedule): void {
+        app(TaskSchedule::class)->register($schedule);
+    })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class]);
