@@ -2962,6 +2962,21 @@
             ]
         },
         {
+            "path": "docs/decisions/0111-retain-transfer-history-through-instance-removal.md",
+            "title": "ADR 0111: Retain completed transfer history through AppInstance removal",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": [
+                "0111"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3352,7 +3367,8 @@
                 "0038",
                 "0041",
                 "0045",
-                "0046"
+                "0046",
+                "0111"
             ]
         },
         {

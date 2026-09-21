@@ -31,6 +31,8 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
+use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -47,6 +49,7 @@ use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -2908,6 +2911,67 @@ it('keeps preflight refusals free of Route source and lifecycle mutation', funct
         ->toBe(1)
         ->and($route->refresh()->toArray())
         ->toBe($routeBefore);
+});
+
+it('retains completed transfer history without leaving an instance reference', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $instanceId = $created->json('data.id');
+
+    AppInstanceTransfer::query()->create([
+        'app_instance_id' => $instanceId,
+        'source_node_id' => $this->node->id,
+        'destination_node_id' => $this->node->id,
+        'destination_name' => 'dev',
+        'destination_path' => '/srv/orbit/apps/dev',
+        'destination_domain' => 'dev.example.test',
+        'source_layout' => 'checkout',
+        'source_path' => '/srv/orbit/apps/dev',
+        'source_route_id' => 1,
+        'status' => AppInstanceTransferStatus::Completed,
+        'current_step' => AppInstanceTransferStep::Completed,
+        'completed_at' => now(),
+    ]);
+
+    $this->deleteJson("/api/v1/instances/{$instanceId}")->assertOk();
+
+    expect(AppInstance::query()->whereKey($instanceId)->exists())->toBeFalse()
+        ->and(AppInstanceTransfer::query()->sole()->app_instance_id)->toBeNull();
+});
+
+it('refuses removal while transfer history is incomplete', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $instanceId = $created->json('data.id');
+
+    AppInstanceTransfer::query()->create([
+        'app_instance_id' => $instanceId,
+        'source_node_id' => $this->node->id,
+        'destination_node_id' => $this->node->id,
+        'destination_name' => 'dev',
+        'destination_path' => '/srv/orbit/apps/dev',
+        'destination_domain' => 'dev.example.test',
+        'source_layout' => 'checkout',
+        'source_path' => '/srv/orbit/apps/dev',
+        'source_route_id' => 1,
+        'status' => AppInstanceTransferStatus::Failed,
+        'current_step' => AppInstanceTransferStep::SourcePaused,
+        'failed_step' => AppInstanceTransferStep::SourcePaused,
+        'error_code' => 'instance.transfer_failed',
+    ]);
+
+    $this->deleteJson("/api/v1/instances/{$instanceId}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.transfer_incomplete');
+
+    expect(AppInstance::query()->whereKey($instanceId)->firstOrFail()->status)
+        ->toBe(AppInstanceState::Active);
 });
 
 it('retains bounded failed progress and resumes without recreating a deleted Route', function (): void {
