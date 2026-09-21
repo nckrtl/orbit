@@ -18,6 +18,7 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 function t3_spawner_group(): TaskGroup
 {
@@ -75,6 +76,8 @@ function t3_spawner_stack(): array
 
         public ?string $adoptProjectId = null;
 
+        public int $failTurnStartRemaining = 0;
+
         public function dispatch(Node $node, array $command): array
         {
             expect($command)->not->toHaveKey('command')
@@ -88,6 +91,13 @@ function t3_spawner_stack(): array
                 $this->commands[] = $command;
 
                 throw new T3DispatchException(existingProjectId: $this->adoptProjectId);
+            }
+
+            if (($command['type'] ?? null) === 'thread.turn.start' && $this->failTurnStartRemaining > 0) {
+                $this->failTurnStartRemaining--;
+                $this->commands[] = $command;
+
+                throw new T3DispatchException('T3 turn start failed.');
             }
 
             $this->commands[] = $command;
@@ -223,6 +233,43 @@ it('adopts the existing T3 project when workspace root already has one', functio
         ->and($dispatcher->commands[1]['projectId'])->toBe('550e8400-e29b-41d4-a716-446655440000')
         ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
 });
+
+it('returns the created thread id when turn start fails after thread create', function (?string $adoptProjectId): void {
+    $group = t3_spawner_group();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $dispatcher->adoptProjectId = $adoptProjectId;
+    $dispatcher->failTurnStartRemaining = 2;
+
+    Log::shouldReceive('warning')
+        ->once()
+        ->with('T3 thread.turn.start failed after the thread was created.', Mockery::on(function (array $context): bool {
+            expect($context['thread_id'])->toBeString()->not->toBe('')
+                ->and($context['exception'])->toBe('T3 turn start failed.');
+
+            return true;
+        }));
+
+    $reviewerId = $spawner->spawnReviewer($group);
+
+    expect($reviewerId)->not->toBeNull()
+        ->and($reviewerId)->not->toBe('')
+        ->and(array_column($dispatcher->commands, 'type'))->toBe([
+            'project.create',
+            'thread.create',
+            'thread.turn.start',
+            'thread.turn.start',
+        ])
+        ->and($dispatcher->commands[2]['threadId'])->toBe($reviewerId)
+        ->and($dispatcher->commands[3]['threadId'])->toBe($reviewerId);
+
+    if (is_string($adoptProjectId)) {
+        expect($dispatcher->commands[1]['projectId'])->toBe($adoptProjectId)
+            ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
+    }
+})->with([
+    'fresh project' => [null],
+    'adopted project' => ['550e8400-e29b-41d4-a716-446655440000'],
+]);
 
 it('returns null when T3 refuses the spawn', function (): void {
     $group = t3_spawner_group();
