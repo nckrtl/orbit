@@ -9,6 +9,8 @@ This page tells an operator how Orbit removes one Instance, what `--force` chang
 
 Registration transfers an adopted checkout or worktree into Instance ownership. Orbit removes that source through `instance:destroy`; it exposes no separate unregister command or lifecycle.
 
+Completed transfer history is retained when an Instance is removed. Its `app_instance_id` is cleared so the Instance row can be deleted. A reserved, in-progress, or failed transfer remains attached and removal returns `instance.transfer_incomplete`; this preserves the transfer's recovery state and prevents silent discard. [ADR 0111](/decisions/0111-retain-transfer-history-through-instance-removal) owns this contract.
+
 Removal requires a default-No confirmation naming the Instance and effect, or explicit `--yes`. JSON and noninteractive calls require `--yes`. The separate `--force` option permits the source overrides below and never supplies consent. Decline, cancellation and end of input stop before mutation.
 
 Human output shows waiting feedback, the verified outcome and any remaining removal checkpoints. JSON keeps the bounded removal-progress contract.
