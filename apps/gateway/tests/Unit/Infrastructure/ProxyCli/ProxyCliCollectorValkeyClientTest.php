@@ -38,7 +38,12 @@ if result != payload:
 print("ok")
 PY;
 
-    $process = new Process(['/usr/bin/python3', '-c', $script, resource_path('proxycli/server.py')]);
+    $process = new Process([
+        '/usr/bin/python3',
+        '-c',
+        $script,
+        dirname(__DIR__, 4).'/resources/proxycli/server.py',
+    ]);
     $process->setTimeout(5);
     $process->run();
 

@@ -38,7 +38,7 @@ Secrets must not enter local or remote argv. Projecting the map through `/usr/bi
 - Keep systemd environment only on an App instance `.env` file: rejected because a Node Process has no App instance environment file, and `proxycli` would still drop `PROXYCLI_*`.
 - Prefix `ExecStart` with `/usr/bin/env KEY=value`: rejected because secret bytes must not enter argv.
 - Open HTTP `process:create` environment for systemd: rejected for this change because operators do not need a new create flag for `proxycli`, and Docker remains the public environment map runtime.
-- Write a separate mode-0600 EnvironmentFile during converge: rejected as a larger runtime-manager change. `Environment=` on the Orbit-owned unit is enough for the collector to start. A later change may move secrets into a protected file without changing the specification contract.
+- Write a separate mode-0600 EnvironmentFile during converge: rejected as a larger runtime-manager change. `Environment=` on the Orbit-owned unit is enough for the collector to start. Orbit can move secrets into a protected file without changing the specification contract.
 
 ## Consequences
 
