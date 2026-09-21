@@ -320,7 +320,10 @@ final readonly class TaskScheduler
         }
 
         try {
-            $this->startTask($first);
+            $started = $this->startTask($first);
+            $first = $started->tasks->first(
+                static fn (Task $task): bool => $task->id === $first->id,
+            ) ?? $first;
         } catch (TaskSequenceException) {
         }
 
@@ -466,7 +469,6 @@ final readonly class TaskScheduler
             'task_id' => $task?->id,
             'agent' => $agent,
         ]);
-
     }
 
     private function visitable(TaskGroup $group): bool
