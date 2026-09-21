@@ -73,7 +73,7 @@ it("counts completed nested tasks against the group total", () => {
         title: `Step ${id}`,
         brief: "",
         status,
-        implementer_thread_id: null,
+        implementer_agent_thread_id: null,
         tokens: null,
         line_diff: null,
         duration_ms: null,
@@ -99,7 +99,7 @@ it("accumulates subtask line changes and skips tasks without a split diff", () =
             { lines_added: 4, lines_deleted: 7 },
         ]),
     ).toEqual({ lines_added: 14, lines_deleted: 9 });
-    expect(accumulatedLineChanges([{ line_diff: 5 }])).toBeNull();
+    expect(accumulatedLineChanges([{ lines_added: null, lines_deleted: null }])).toBeNull();
 });
 
 it("formats card durations in minutes and hours without counting unknown time", () => {

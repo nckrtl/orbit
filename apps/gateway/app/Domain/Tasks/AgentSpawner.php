@@ -8,7 +8,7 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 
 /**
- * Starts T3 agents on the Node that owns the group's App instance.
+ * Starts agent conversations on the Node that owns the group's App instance.
  *
  * A no-op implementation returns null. A spawner implementation starts one
  * long-lived reviewer for the group and a fresh implementer per subtask, then
@@ -16,9 +16,9 @@ use App\Models\TaskGroup;
  */
 interface AgentSpawner
 {
-    public function spawnReviewer(TaskGroup $group): ?string;
+    public function spawnReviewer(TaskGroup $group): ?int;
 
-    public function spawnImplementer(Task $task): ?string;
+    public function spawnImplementer(Task $task): ?int;
 
     public function requestReview(Task $task): void;
 

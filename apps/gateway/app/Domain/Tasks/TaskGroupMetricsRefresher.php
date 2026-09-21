@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AppInstance;
-use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
 /**
- * Fills Task and TaskGroup settle metrics from T3 thread snapshots and the
- * shared checkout. A refused T3 read keeps the last stored thread values.
+ * Fills Task and TaskGroup settle metrics from agent observations and the
+ * shared checkout. A refused agent read keeps the last stored thread values.
  */
 final readonly class TaskGroupMetricsRefresher
 {
     public function __construct(
-        private T3ThreadReader $threads,
+        private AgentThreadObserver $threads,
         private TaskWorkspaceDiffReader $diff,
     ) {}
 
@@ -28,13 +27,16 @@ final readonly class TaskGroupMetricsRefresher
             return $group;
         }
 
-        $node = $this->node($group);
-        $reviewerTokens = $this->threadTokens($node, $group->reviewer_thread_id);
+        $reviewer = $group->reviewerThread;
+        if ($reviewer !== null) {
+            $this->threads->observe($reviewer);
+        }
+        $reviewerTokens = $reviewer?->tokens;
         $taskTokens = 0;
         $hasTaskTokens = false;
 
         foreach ($group->tasks as $task) {
-            $this->refreshTask($task, $node);
+            $this->refreshTask($task);
 
             if ($task->tokens !== null) {
                 $hasTaskTokens = true;
@@ -71,16 +73,18 @@ final readonly class TaskGroupMetricsRefresher
         return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
     }
 
-    private function refreshTask(Task $task, ?Node $node): void
+    private function refreshTask(Task $task): void
     {
-        $metrics = $this->threadMetrics($node, $task->implementer_thread_id);
-
-        if ($metrics instanceof T3ThreadMetrics) {
-            $task->tokens = $metrics->tokens;
-            $task->line_diff = $metrics->lineDiff;
-            if ($metrics->linesAdded !== null && $metrics->linesDeleted !== null) {
-                $task->lines_added = $metrics->linesAdded;
-                $task->lines_deleted = $metrics->linesDeleted;
+        $thread = $task->implementerThread;
+        if ($thread !== null) {
+            $this->threads->observe($thread);
+            if ($thread->tokens !== null) {
+                $task->tokens = $thread->tokens;
+            }
+            if ($thread->lines_added !== null && $thread->lines_deleted !== null) {
+                $task->lines_added = $thread->lines_added;
+                $task->lines_deleted = $thread->lines_deleted;
+                $task->line_diff = $thread->lines_added + $thread->lines_deleted;
             }
         }
 
@@ -94,36 +98,5 @@ final readonly class TaskGroupMetricsRefresher
         if ($task->isDirty()) {
             $task->save();
         }
-    }
-
-    private function threadTokens(?Node $node, ?string $threadId): ?int
-    {
-        $metrics = $this->threadMetrics($node, $threadId);
-
-        return $metrics instanceof T3ThreadMetrics ? $metrics->tokens : null;
-    }
-
-    private function threadMetrics(?Node $node, ?string $threadId): ?T3ThreadMetrics
-    {
-        if (! $node instanceof Node || ! is_string($threadId) || $threadId === '') {
-            return null;
-        }
-
-        $snapshot = $this->threads->snapshot($node, $threadId);
-
-        return is_array($snapshot) ? T3ThreadMetrics::fromSnapshot($snapshot) : null;
-    }
-
-    private function node(TaskGroup $group): ?Node
-    {
-        $instance = $group->taskable;
-
-        if (! $instance instanceof AppInstance) {
-            return null;
-        }
-
-        $instance->loadMissing('node');
-
-        return $instance->node;
     }
 }

@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
-use RuntimeException;
+use App\Domain\Tasks\AgentDriverException;
 use SensitiveParameter;
 
-final class T3DispatchException extends RuntimeException
+final class T3DispatchException extends AgentDriverException
 {
     private const string PROJECT_ID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 

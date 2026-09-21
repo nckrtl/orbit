@@ -5,10 +5,6 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
-use App\Domain\Tasks\NullT3ThreadReader;
-use App\Domain\Tasks\T3Dispatcher;
-use App\Domain\Tasks\T3DispatchException;
-use App\Domain\Tasks\T3ThreadReader;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -18,6 +14,9 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
+use App\Infrastructure\Tasks\T3\T3Dispatcher;
+use App\Infrastructure\Tasks\T3\T3DispatchException;
+use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -54,7 +53,6 @@ function tick_group(): TaskGroup
         'title' => 'Tick routing',
         'brief' => 'Observe, classify, and execute.',
         'status' => TaskGroupStatus::Running,
-        'reviewer_thread_id' => 'reviewer-thread',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -64,9 +62,10 @@ function tick_group(): TaskGroup
         'title' => 'Models',
         'brief' => 'Store the records.',
         'status' => TaskStatus::Running,
-        'implementer_thread_id' => 'implementer-thread',
         'started_at' => now(),
     ]);
+
+    test_link_agent_threads($group);
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
 }
@@ -195,14 +194,14 @@ it('advances the current subtask when Jev marks it done', function (): void {
     {
         public int $reviews = 0;
 
-        public function spawnReviewer(TaskGroup $group): ?string
+        public function spawnReviewer(TaskGroup $group): ?int
         {
-            return 'reviewer-thread';
+            return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
-        public function spawnImplementer(Task $task): ?string
+        public function spawnImplementer(Task $task): ?int
         {
-            return 'implementer-thread';
+            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
         }
 
         public function requestReview(Task $task): void
@@ -216,7 +215,13 @@ it('advances the current subtask when Jev marks it done', function (): void {
         }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
-    app()->instance(T3ThreadReader::class, new NullT3ThreadReader);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done']]];
+        }
+    });
     app()->instance(AgentSpawner::class, $spawner);
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, [], 0.92),

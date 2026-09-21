@@ -181,12 +181,12 @@ it('still returns the created group when the opening spawn fails', function (): 
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?string
+        public function spawnReviewer(TaskGroup $group): ?int
         {
             return null;
         }
 
-        public function spawnImplementer(Task $task): ?string
+        public function spawnImplementer(Task $task): ?int
         {
             return null;
         }

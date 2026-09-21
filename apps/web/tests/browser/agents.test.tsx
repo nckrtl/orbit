@@ -47,7 +47,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
             task_id: null,
             node_id: 3,
             role: "reviewer",
-            thread_id: "review",
+            external_id: "review",
+            driver: "t3",
+            state: "idle",
         },
         {
             id: 2,
@@ -55,7 +57,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
             task_id: 9,
             node_id: 2,
             role: "implementer",
-            thread_id: "implement",
+            external_id: "implement",
+            driver: "t3",
+            state: "idle",
         },
         {
             id: 3,
@@ -63,7 +67,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
             task_id: 10,
             node_id: 3,
             role: "implementer",
-            thread_id: "other",
+            external_id: "other",
+            driver: "other-driver",
+            state: "done",
         },
     ];
     setTransport((method, path, body) =>
@@ -83,88 +89,80 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
     await expect.poll(() => FakeSource.instances.length).toBe(1);
     const implementer = FakeSource.instances[0]!;
     expect(implementer.url).toBe("/api/v1/task-groups/7/agents/2/stream");
-    implementer.send({
-        kind: "snapshot",
-        snapshot: { snapshotSequence: 5, thread: { id: "implement", session: null, messages: [] } },
-    });
+    implementer.send({ kind: "snapshot", thread_id: 2, cursor: "5", state: "idle", entries: [] });
     await expect
         .element(page.getByRole("tabpanel"))
         .toHaveTextContent("Thread created. No agent activity yet.");
-    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("T3 - beast");
+    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("t3 - beast");
     expect(document.querySelector('[role="tabpanel"]')?.textContent).not.toContain("implement");
+    const entry = (id: string, kind: string, text: string) => ({
+        id,
+        kind,
+        label: kind === "message" ? "assistant" : "command",
+        text,
+        at: "",
+    });
     implementer.send({
-        kind: "event",
-        event: {
-            sequence: 6,
-            aggregateId: "implement",
-            type: "thread.message-sent",
-            payload: {
-                messageId: "m",
-                role: "assistant",
-                text: "Reading the source <script>unsafe()</script>",
-            },
-        },
+        kind: "entry",
+        thread_id: 2,
+        cursor: "6",
+        entry: entry("m", "message", "Reading the source <script>unsafe()</script>"),
     });
     await expect
         .element(page.getByRole("tabpanel"))
         .toHaveTextContent("Reading the source <script>unsafe()</script>");
     expect(document.querySelector('[role="tabpanel"] script')).toBeNull();
+    implementer.send({ kind: "state", thread_id: 2, cursor: "7", state: "working" });
     implementer.send({
-        kind: "event",
-        event: {
-            sequence: 7,
-            aggregateId: "implement",
-            type: "thread.session-set",
-            payload: { session: { status: "running" } },
-        },
+        kind: "entry",
+        thread_id: 2,
+        cursor: "8",
+        entry: entry("a1", "activity", "ran tests"),
     });
     implementer.send({
-        kind: "event",
-        event: {
-            sequence: 8,
-            aggregateId: "implement",
-            type: "thread.activity-appended",
-            payload: { activity: { id: "a1", kind: "command", summary: "ran tests" } },
-        },
-    });
-    implementer.send({
-        kind: "event",
-        event: {
-            sequence: 9,
-            aggregateId: "implement",
-            type: "thread.activity-appended",
-            payload: { activity: { id: "a2", kind: "command", summary: "edited file" } },
-        },
+        kind: "entry",
+        thread_id: 2,
+        cursor: "9",
+        entry: entry("a2", "activity", "edited file"),
     });
     await expect
-        .poll(() => document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"))
+        .poll(() =>
+            document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"),
+        )
         .toBe("active");
     await expect.element(page.getByRole("tabpanel")).toHaveTextContent("edited file");
     implementer.send({
-        kind: "event",
-        event: {
-            sequence: 10,
-            aggregateId: "implement",
-            type: "thread.message-sent",
-            payload: { messageId: "m2", role: "assistant", text: "Done." },
-        },
+        kind: "entry",
+        thread_id: 2,
+        cursor: "10",
+        entry: entry("m2", "message", "Done."),
     });
     await expect
-        .poll(() => document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"))
+        .poll(() =>
+            document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"),
+        )
         .toBe("complete");
     await expect.element(page.getByRole("tabpanel")).toHaveTextContent("2 steps");
     implementer.send({
-        kind: "event",
-        event: {
-            sequence: 11,
-            aggregateId: "implement",
-            type: "thread.activity-appended",
-            payload: { activity: { id: "a3", kind: "command", summary: "committed" } },
-        },
+        kind: "entry",
+        thread_id: 2,
+        cursor: "11",
+        entry: entry("a3", "activity", "committed"),
     });
     await expect
         .poll(() => document.querySelector("[data-activity-group='active']")?.textContent)
         .toContain("committed");
+    for (const [state, label] of [
+        ["asking_for_input", "Asking for input"],
+        ["done", "Done"],
+        ["failed", "Failed"],
+    ]) {
+        implementer.send({ kind: "state", thread_id: 2, cursor: state, state });
+        await expect.element(page.getByRole("status", { name: label, exact: true })).toBeVisible();
+    }
+    implementer.onerror?.();
+    await expect.element(page.getByRole("status", { name: "Failed", exact: true })).toBeVisible();
+    await expect.element(page.getByLabelText("Agent connection")).toHaveTextContent("Reconnecting");
     document.getElementById("agent-tab-2")!.focus();
     await userEvent.keyboard("{ArrowUp}");
     await expect
@@ -179,8 +177,10 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
     );
     reviewer.onerror?.();
     await expect
-        .poll(() => document.querySelector('[role="tabpanel"] [role="status"]')?.getAttribute("aria-label"))
-        .toBe("Not live");
+        .poll(() =>
+            document.querySelector('[role="tabpanel"] [role="status"]')?.getAttribute("aria-label"),
+        )
+        .toBe("Idle");
     await app.router.navigate({ to: "/" });
     expect(reviewer.closed).toBe(true);
     await app.router.navigate({ to: "/tasks/$id", params: { id: "7" } });

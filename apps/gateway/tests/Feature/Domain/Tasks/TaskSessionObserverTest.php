@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
-use App\Domain\Tasks\T3ThreadReader;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
-use App\Models\TaskAgentSession;
 use App\Models\TaskGroup;
 
 function observer_group(): TaskGroup
@@ -46,7 +45,6 @@ function observer_group(): TaskGroup
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',
         'status' => TaskGroupStatus::Running,
-        'reviewer_thread_id' => 'reviewer-thread',
         'pr_url' => 'https://github.com/nckrtl/orbit/pull/21',
     ]);
     $group->taskable()->associate($instance);
@@ -57,27 +55,10 @@ function observer_group(): TaskGroup
         'title' => 'Models',
         'brief' => 'Store the records.',
         'status' => TaskStatus::Running,
-        'implementer_thread_id' => 'implementer-thread',
     ]);
-    TaskAgentSession::query()->create([
-        'task_group_id' => $group->id,
-        'task_id' => $task->id,
-        'node_id' => $node->id,
-        'role' => 'implementer',
-        'thread_id' => 'implementer-thread',
-    ]);
-    TaskAgentSession::query()->create([
-        'task_group_id' => $group->id,
-        'node_id' => $node->id,
-        'role' => 'reviewer',
-        'thread_id' => 'reviewer-thread',
-    ]);
-    TaskAgentSession::query()->create([
-        'task_group_id' => $group->id,
-        'node_id' => $node->id,
-        'role' => 'spectator',
-        'thread_id' => 'non-task-thread',
-    ]);
+    test_agent_thread($group, 'non-task-thread')->update(['role' => 'spectator']);
+
+    test_link_agent_threads($group);
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
 }
@@ -142,11 +123,11 @@ it('marks an idle implementer observation with the last turn text', function ():
         }
     };
 
-    $observation = new TaskSessionObserver($reader, $diff)->observe($group);
+    $observation = new TaskSessionObserver(test_agent_observer($reader), $diff)->observe($group);
     $implementer = $observation->thread(TaskThreadRole::Implementer);
 
     expect($observation->threads)->toHaveCount(2)
-        ->and(array_map(static fn ($thread): string => $thread->threadId, $observation->threads))
+        ->and(array_map(static fn ($thread): int => $thread->threadId, $observation->threads))
         ->not->toContain('non-task-thread')
         ->and($implementer?->idle)->toBeTrue()
         ->and($implementer?->sessState)->toBe('idle')
@@ -179,10 +160,10 @@ it('reads a pending user-input request id from subscribeThread activities', func
         ],
     ]);
 
-    $observation = new TaskSessionObserver($reader, new NullTaskWorkspaceDiffReader)->observe($group);
+    $observation = new TaskSessionObserver(test_agent_observer($reader), new NullTaskWorkspaceDiffReader)->observe($group);
     $implementer = $observation->thread(TaskThreadRole::Implementer);
 
     expect($implementer?->idle)->toBeFalse()
         ->and($implementer?->pendingUserInputId)->toBe('input-req-77')
-        ->and($implementer?->sessState)->toBe('waiting');
+        ->and($implementer?->sessState)->toBe('asking_for_input');
 });

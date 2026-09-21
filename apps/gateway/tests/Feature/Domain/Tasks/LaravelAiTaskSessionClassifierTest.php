@@ -31,7 +31,7 @@ function classifier_observation(
         ciSummary: $prUrl === null ? null : 'passing',
         threads: [
             new TaskThreadObservation(
-                threadId: 'implementer-thread',
+                threadId: 1,
                 role: TaskThreadRole::Implementer,
                 sessState: $sessState,
                 idle: $idle,
@@ -44,7 +44,7 @@ function classifier_observation(
                 ciSummary: $prUrl === null ? null : 'passing',
             ),
             new TaskThreadObservation(
-                threadId: 'reviewer-thread',
+                threadId: 2,
                 role: TaskThreadRole::Reviewer,
                 sessState: 'idle',
                 idle: true,

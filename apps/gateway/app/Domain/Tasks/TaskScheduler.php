@@ -46,24 +46,27 @@ final readonly class TaskScheduler
         foreach ($groups as $group) {
             $observation = $this->observer->observe($group);
 
-            if ($observation->threads === []) {
+            if ($observation->threads === [] && $observation->available) {
                 continue;
             }
 
             try {
-                $decision = $this->classifier->classify($observation);
+                $unavailable = ! $observation->available || array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available);
+                $decision = $unavailable
+                    ? TaskSessionDecision::escalate('Agent observation unavailable.')
+                    : $this->classifier->classify($observation);
             } catch (TaskSessionClassificationException $exception) {
                 $decision = TaskSessionDecision::escalate($exception->getMessage());
             }
 
             try {
                 $this->actor->execute($group, $observation, $decision);
-            } catch (T3DispatchException $exception) {
+                $this->advance($group, $decision);
+            } catch (AgentDriverException $exception) {
                 $decision = TaskSessionDecision::escalate($exception->getMessage());
                 $this->actor->execute($group, $observation, $decision);
             }
 
-            $this->advance($group, $decision);
             $decisions[] = $decision;
         }
 
@@ -303,15 +306,15 @@ final readonly class TaskScheduler
 
     private function spawnOpeningAgents(TaskGroup $group): void
     {
-        $reviewerThreadId = $this->spawner->spawnReviewer($group);
+        $reviewerAgentThreadId = $this->spawner->spawnReviewer($group);
 
-        if (! is_string($reviewerThreadId) || $reviewerThreadId === '') {
+        if ($reviewerAgentThreadId === null) {
             $this->failSpawn($group, null, 'reviewer');
 
             return;
         }
 
-        $group->reviewer_thread_id = $reviewerThreadId;
+        $group->reviewer_agent_thread_id = $reviewerAgentThreadId;
         $group->save();
 
         $first = $this->orderedTasks($group->tasks)->first();
@@ -376,7 +379,7 @@ final readonly class TaskScheduler
 
         $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
 
-        if (! is_string($threadId) || $threadId === '') {
+        if ($threadId === null) {
             $group = $task->taskGroup()->first();
 
             $this->failSpawn($group instanceof TaskGroup ? $group : null, $task, 'implementer');
@@ -384,7 +387,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        $task->implementer_thread_id = $threadId;
+        $task->implementer_agent_thread_id = $threadId;
         $task->save();
     }
 

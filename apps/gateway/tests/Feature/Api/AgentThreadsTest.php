@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\TaskAgentStream;
+use App\Infrastructure\Tasks\T3\T3Stream as TaskAgentStream;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
-use App\Models\TaskAgentSession;
 use App\Models\TaskGroup;
 
-/** @return array{TaskGroup, TaskAgentSession} */
+/** @return array{TaskGroup, AgentThread} */
 function agent_viewer_fixture(): array
 {
     $node = Node::query()->create(['name' => 'agent-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.80', 'wireguard_ip' => '10.44.0.80']);
@@ -17,7 +17,7 @@ function agent_viewer_fixture(): array
     test()->postJson('/api/v1/tasks/enable')->assertOk();
     $app = OrbitApp::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
     $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
-    $session = TaskAgentSession::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'thread_id' => 'thread-one']);
+    $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 't3', 'runtime_key' => 'node:'.$node->id]);
 
     return [$group, $session];
 }
@@ -26,7 +26,7 @@ describe('task agent viewer', function (): void {
     it('lists persisted links after the workspace is removed', function (): void {
         [$group, $session] = agent_viewer_fixture();
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")
-            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.thread_id', 'thread-one')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.external_id', 'thread-one')
             ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id)
             ->assertJsonPath('data.0.model', 'claude-opus')->assertJsonPath('data.0.effort', 'high');
         $this->postJson('/api/v1/tasks/disable')->assertOk();
@@ -45,7 +45,7 @@ describe('task agent viewer', function (): void {
         [$group, $session] = agent_viewer_fixture();
         $other = TaskGroup::query()->create(['app_id' => $group->app_id, 'title' => 'Other', 'brief' => 'Other']);
         $this->getJson("/api/v1/task-groups/{$other->id}/agents/{$session->id}/stream")->assertNotFound();
-        $this->withHeader('Last-Event-ID', '-1')->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertUnprocessable();
+        $this->withHeader('Last-Event-ID', 'bad cursor')->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertUnprocessable();
         $this->flushHeaders();
         $session->update(['node_id' => null]);
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_unavailable');
@@ -61,9 +61,9 @@ describe('task agent viewer', function (): void {
             public function events(Node $node, string $threadId, ?int $afterSequence): iterable
             {
                 $this->cursor = $afterSequence;
-                yield ['kind' => 'snapshot', 'snapshot' => ['snapshotSequence' => 8, 'thread' => ['id' => $threadId, 'messages' => [['text' => 'TOKEN=hidden private-t3-bearer']]]]];
+                yield ['kind' => 'snapshot', 'snapshot' => ['snapshotSequence' => 8, 'thread' => ['id' => $threadId, 'session' => ['status' => 'failed', 'lastError' => 'Turn failed.'], 'messages' => [['text' => 'TOKEN=hidden private-t3-bearer']]]]];
                 yield ['kind' => 'event', 'event' => ['sequence' => 9, 'aggregateId' => 'unrelated', 'payload' => ['text' => 'must-not-leak']]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 10, 'aggregateId' => $threadId, 'type' => 'thread.message-sent', 'payload' => ['text' => 'Visible progress']]];
+                yield ['kind' => 'event', 'event' => ['sequence' => 10, 'aggregateId' => $threadId, 'type' => 'thread.message-sent', 'payload' => ['id' => 'm2', 'role' => 'assistant', 'text' => 'Visible progress']]];
                 throw new RuntimeException('private-t3-bearer secret error');
             }
         };
@@ -73,6 +73,9 @@ describe('task agent viewer', function (): void {
         $output = $response->streamedContent();
         expect($output)->toContain('id: 8', 'id: 10', 'Visible progress', '[REDACTED]', 'event: unavailable')
             ->not->toContain('hidden', 'private-t3-bearer', 'must-not-leak', 'secret error');
-        expect($fake->cursor)->toBe(7);
+        expect($fake->cursor)->toBeNull();
+        expect($session->fresh()->state->value)->toBe('failed')
+            ->and($session->fresh()->error)->toBe('Turn failed.')
+            ->and($session->fresh()->observation_error)->toBe('Agent stream unavailable.');
     });
 });

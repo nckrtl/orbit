@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure\Tasks;
+namespace App\Infrastructure\Tasks\T3;
 
 use LogicException;
 

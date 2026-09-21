@@ -25,6 +25,7 @@ final readonly class CreateTaskGroupAction
 
         $group = TaskGroup::query()->create([
             'app_id' => $data->appId,
+            'agent_driver' => config('orbit.tasks.agent_driver', 't3'),
             'title' => $data->title,
             'brief' => $data->brief,
             'status' => TaskGroupStatus::Queued,

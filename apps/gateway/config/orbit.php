@@ -40,6 +40,7 @@ return [
         'token' => env('ORBIT_T3_TOKEN'),
     ],
     'tasks' => [
+        'agent_driver' => env('ORBIT_TASKS_AGENT_DRIVER', 't3'),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
         'github_token' => env('ORBIT_TASKS_GITHUB_TOKEN'),

@@ -34,7 +34,8 @@ export function accumulatedLineChanges(tasks: readonly LineChanges[]): {
     let deleted = 0;
     let found = false;
     for (const task of tasks) {
-        if (typeof task.lines_added !== "number" || typeof task.lines_deleted !== "number") continue;
+        if (typeof task.lines_added !== "number" || typeof task.lines_deleted !== "number")
+            continue;
         found = true;
         added += task.lines_added;
         deleted += task.lines_deleted;

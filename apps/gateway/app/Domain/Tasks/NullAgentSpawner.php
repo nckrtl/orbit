@@ -9,12 +9,12 @@ use App\Models\TaskGroup;
 
 final readonly class NullAgentSpawner implements AgentSpawner
 {
-    public function spawnReviewer(TaskGroup $group): ?string
+    public function spawnReviewer(TaskGroup $group): ?int
     {
         return null;
     }
 
-    public function spawnImplementer(Task $task): ?string
+    public function spawnImplementer(Task $task): ?int
     {
         return null;
     }
