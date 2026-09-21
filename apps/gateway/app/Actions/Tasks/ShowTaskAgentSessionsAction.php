@@ -31,7 +31,7 @@ final readonly class ShowTaskAgentSessionsAction
 
             $snapshot = $this->threads->snapshot($session->node, $session->thread_id);
             $status = is_array($snapshot) ? data_get($snapshot, 'thread.session.status') : null;
-            $session->setAttribute('state', is_string($status) ? TaskThreadState::tryFrom($status) : null);
+            $session->setAttribute('state', TaskThreadState::fromSessionStatus($status));
         }
 
         return $sessions;

@@ -113,6 +113,8 @@ The task group page shows an Agents section below Subtasks. Vertical tabs select
 
 The Gateway stores each session's group, optional subtask, role, Node, and T3 thread ID independently of the workspace. Existing thread links are imported when the session table is created. If the original Node cannot be resolved, the link remains visible but cannot stream. New T3 thread titles and opening prompts include Orbit task identifiers.
 
+Each listed session reports its state: `idle` when T3 holds the session ready, `pending` while a turn runs, and `finished` once the runtime stopped. A session without a reachable Node or snapshot reports no state.
+
 `GET /api/v1/task-groups/{group}/agents` lists recorded sessions. `GET /api/v1/task-groups/{group}/agents/{session}/stream` relays the selected thread from T3's `orchestration.subscribeThread` WebSocket as server-sent events. Both require Gateway access and an enabled tasks extension. T3 credentials stay server-side. The browser reconnects using the last event sequence; snapshots replace local state. Connections rotate periodically and close when the viewer is left. T3 remains the transcript store, so deleted T3 threads cannot be recovered from Orbit.
 
 ## T3 agents

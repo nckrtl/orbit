@@ -30,7 +30,7 @@ describe('task agent viewer', function (): void {
         {
             public function snapshot(Node $node, string $threadId): ?array
             {
-                return ['thread' => ['session' => ['status' => 'pending']]];
+                return ['thread' => ['session' => ['status' => 'running']]];
             }
         });
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")

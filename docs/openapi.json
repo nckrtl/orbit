@@ -21338,6 +21338,17 @@
           },
           "thread_id": {
             "type": "string"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "idle",
+              "pending",
+              "finished"
+            ]
           }
         }
       },
