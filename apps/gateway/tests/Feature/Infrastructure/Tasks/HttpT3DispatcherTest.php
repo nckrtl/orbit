@@ -20,6 +20,60 @@ function t3_node(): Node
     ]);
 }
 
+function configured_t3_node(string $name, string $host, array $t3): Node
+{
+    return Node::query()->create([
+        'name' => $name,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => $host,
+        'wireguard_ip' => $host,
+        'settings' => ['t3' => $t3],
+    ]);
+}
+
+it('dispatches to each node with its projected token and optional URL', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://t3-a.internal/api/orchestration/dispatch' => Http::response(['sequence' => 1]),
+        'http://10.44.0.121:3773/api/orchestration/dispatch' => Http::response(['sequence' => 2]),
+    ]);
+    config()->set('orbit.t3.token', 'global-token');
+
+    app(HttpT3Dispatcher::class)->dispatch(configured_t3_node('node-a', '10.44.0.120', [
+        'token' => 'token-a',
+        'url' => 'https://t3-a.internal',
+    ]), ['type' => 'thread.create']);
+    app(HttpT3Dispatcher::class)->dispatch(configured_t3_node('node-b', '10.44.0.121', [
+        'token' => 'token-b',
+    ]), ['type' => 'thread.create']);
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://t3-a.internal/api/orchestration/dispatch'
+        && $request->hasHeader('Authorization', 'Bearer token-a'));
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.121:3773/api/orchestration/dispatch'
+        && $request->hasHeader('Authorization', 'Bearer token-b'));
+    Http::assertNotSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer global-token'));
+});
+
+it('fails closed when a node projection has no token', function (): void {
+    Http::preventStrayRequests();
+    config()->set('orbit.t3.token', 'global-token');
+    $node = configured_t3_node('missing-token', '10.44.0.122', ['url' => 'https://t3.internal']);
+
+    expect(fn () => app(HttpT3Dispatcher::class)->dispatch($node, ['type' => 'thread.create']))
+        ->toThrow(T3DispatchException::class, 'The Node has no T3 token configured.');
+});
+
+it('keeps the global token compatibility path for nodes without a projection', function (): void {
+    Http::preventStrayRequests();
+    Http::fake(['http://10.44.0.120:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1])]);
+    config()->set('orbit.t3.token', 'global-token');
+
+    app(HttpT3Dispatcher::class)->dispatch(t3_node(), ['type' => 'thread.create']);
+
+    Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer global-token'));
+});
+
 it('posts a flat dispatch body with an empty headers array', function (): void {
     Http::preventStrayRequests();
     Http::fake([
