@@ -23,7 +23,7 @@ final class StoreAppRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'string', 'max:255'],
-            'code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/D'],
+            'code' => ['sometimes', 'filled', 'string', 'regex:/\A[A-Z]{3}\z/D'],
             'slug' => ['required', 'string', 'alpha_dash:ascii', 'max:63'],
             'type' => [
                 str_starts_with((string) $this->route()?->getName(), 'project:') ? 'required' : 'sometimes',

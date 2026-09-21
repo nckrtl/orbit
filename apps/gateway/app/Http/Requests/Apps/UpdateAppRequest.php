@@ -22,7 +22,7 @@ final class UpdateAppRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/D'],
+            'code' => ['sometimes', 'filled', 'string', 'regex:/\A[A-Z]{3}\z/D'],
             'type' => ['sometimes', 'required', 'string', Rule::enum(ProjectType::class)],
             'slug' => ['sometimes', 'required', 'string', 'alpha_dash:ascii', 'max:63'],
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],

@@ -186,7 +186,6 @@
         },
         "additionalProperties": false,
         "required": [
-          "code",
           "slug",
           "type",
           "repository_url",
@@ -927,7 +926,6 @@
         "additionalProperties": false,
         "required": [
           "app",
-          "code",
           "type",
           "slug",
           "repository_url",
@@ -4232,7 +4230,6 @@
         },
         "additionalProperties": false,
         "required": [
-          "code",
           "slug",
           "type",
           "repository_url",
@@ -4973,7 +4970,6 @@
         "additionalProperties": false,
         "required": [
           "app",
-          "code",
           "type",
           "slug",
           "repository_url",

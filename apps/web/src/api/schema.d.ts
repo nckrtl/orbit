@@ -3514,7 +3514,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name?: string;
-                    code: string;
+                    code?: string;
                     slug: string;
                     /** @enum {string} */
                     type: "monorepo" | "laravel-app" | "laravel-package";
@@ -3689,7 +3689,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    code: string;
+                    code?: string;
                     /** @enum {string} */
                     type: "monorepo" | "laravel-app" | "laravel-package";
                     slug: string;
@@ -10609,7 +10609,7 @@ export interface operations {
                 "application/json": {
                     /** @description Optional display name */
                     name?: string;
-                    code: string;
+                    code?: string;
                     /** @description Unique project slug */
                     slug: string;
                     /**
@@ -10790,7 +10790,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    code: string;
+                    code?: string;
                     /**
                      * @description New Project type
                      * @enum {string}
