@@ -8,7 +8,7 @@
     "require": {
         "php": "^8.5",
         "composer/semver": "^3.4",
-        "laravel/ai": "1.x-dev",
+        "laravel/ai": "^1.0@dev",
         "laravel/framework": "^13.0",
         "laravel/mcp": "^1.0",
         "laravel/tinker": "^3.0",
