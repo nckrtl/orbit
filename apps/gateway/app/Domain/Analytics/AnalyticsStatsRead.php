@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Analytics;
 
 /**
- * One driver read of an App instance's tracked site.
+ * One driver read of an Instance's tracked site.
  *
  * A failed read has no visitor numbers, so a missing key cannot look like an empty site.
  */

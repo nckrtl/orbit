@@ -2,9 +2,9 @@
 ╭──────────────────╮╭ Nodes ───────────────────────────────────────────────────────────────────────────────────────────╮
 │› Dashboard       ││Name          Status    CPU                   Mem                  Disk                  Uptime   │
 │  Nodes         1 ││beast         active    —                     —                    —                          —   │
-│  Apps          1 │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-│  Instances     1 │╭ Apps ──────────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
-│  Processes     1 ││  Slug                  Branch         Instances││  Name         App          Node         Status │
+│  Projects      1 │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+│  Instances     1 │╭ Projects ──────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
+│  Processes     1 ││  Slug                  Branch         Instances││  Name         Project      Node         Status │
 │  Schedules     1 ││› charlie-shop          main                  1 ││› dev          charlie-shop beast        active │
 │  Databases     1 ││                                                ││                                                │
 │  Firewall      1 ││                                                ││                                                │

@@ -18,7 +18,7 @@ final class CreateInstanceCommand extends GatewayCommand
     protected $signature = 'instance:create
         {project : Numeric Project ID}
         {node : Numeric node ID}
-        {name : AppInstance name; default is reserved for the default development source}
+        {name : Instance name; default is reserved for the default development source}
         {--root= : Optional relative web-root override}
         {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
@@ -26,11 +26,11 @@ final class CreateInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create a development AppInstance on an app-dev Node.';
+    protected $description = 'Create a development Instance on an app-dev Node.';
 
     #[\Override]
     protected $help = <<<'HELP'
-Creates a development AppInstance. New production AppInstances require a candidate. Use instance:clone.
+Creates a development Instance. New production Instances require a candidate. Use instance:clone.
 HELP;
 
     public function handle(
@@ -73,7 +73,7 @@ HELP;
                 recoverSourceProfile: $this->option('recover-source-profile') === true ? true : null,
             ),
             AppInstanceResponse::class,
-            ['Create App instance', 'Creating App instance', 'Created App instance'],
+            ['Create Instance', 'Creating Instance', 'Created Instance'],
         );
 
         if (! $instance instanceof AppInstanceResponse) {

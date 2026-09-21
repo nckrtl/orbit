@@ -2,7 +2,7 @@
 ╭──────────────────╮  Nodes   + create                                                                                  
 │  Dashboard       │╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │› Nodes         1 ││  Name                Status         Roles                   WireGuard IP               Instances │
-│  Apps          1 ││› beast               active         app-dev                 10.44.0.2                          1 │
+│  Projects      1 ││› beast               active         app-dev                 10.44.0.2                          1 │
 │  Instances     1 ││                                                                                                  │
 │  Processes     1 ││                                                                                                  │
 │  Schedules     1 ││                                                                                                  │

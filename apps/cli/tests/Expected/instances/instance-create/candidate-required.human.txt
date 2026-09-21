@@ -1,8 +1,8 @@
-Creating App instance...
+Creating Instance...
 
-┌  Create App instance
+┌  Create Instance
 │
-├  ● Creating App instance
+├  ● Creating Instance
 │
 └  Operation failed.
 

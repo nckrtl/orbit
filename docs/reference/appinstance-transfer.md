@@ -1,17 +1,17 @@
-# App instance transfer
+# Instance transfer
 
-This page tells an operating agent how the Gateway moves one active development App instance from its current Node to another app-dev Node while keeping the same App instance ID. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) owns the transfer decision. [ADR 0065](/decisions/0065-replace-routes-when-domains-change) owns generated domain replacement. [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns stored environment configuration.
+This page tells an operating agent how the Gateway moves one active development Instance from its current Node to another app-dev Node while keeping the same Instance ID. [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes) owns the transfer decision. [ADR 0065](/decisions/0065-replace-routes-when-domains-change) owns generated domain replacement. [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) owns stored environment configuration.
 
 ## Request a transfer
 
-An authorized client sends one App instance selector and the destination Node to the Gateway.
+An authorized client sends one Instance selector and the destination Node to the Gateway.
 
 | Input | Requirement |
 | --- | --- |
 | Endpoint | `POST /api/v1/instances/{instance}/transfer` |
 | Command | `orbit instance:transfer INSTANCE NODE` |
 | `node_id` | Required positive ID of a distinct destination Node |
-| `name` | Optional normalized destination App instance name |
+| `name` | Optional normalized destination Instance name |
 | `sqlite_source_path` | Optional absolute path to one SQLite database on the source |
 
 The request accepts no destination path, Cluster, Route, Process, or extra persistent-data selector. The Gateway refuses malformed JSON, duplicate members, unknown members, and invalid values before it changes stored or remote state.
@@ -20,21 +20,21 @@ The caller needs directed access to both the source Node and the destination Nod
 
 ## Check eligibility
 
-The Gateway accepts one active development App instance on an active Linux Node that has the active `app-dev` role and belongs to an active Cluster. The destination must be a distinct active Linux Node that also has the active `app-dev` role and belongs to an active Cluster. The destination may be in the same Cluster or another Cluster.
+The Gateway accepts one active development Instance on an active Linux Node that has the active `app-dev` role and belongs to an active Cluster. The destination must be a distinct active Linux Node that also has the active `app-dev` role and belongs to an active Cluster. The destination may be in the same Cluster or another Cluster.
 
-The Gateway refuses the request before it mutates source state when the App instance is production, reserved, migrating, or being removed, when either Node is inactive, missing `app-dev`, or standalone, or when the destination is the current Node.
+The Gateway refuses the request before it mutates source state when the Instance is production, reserved, migrating, or being removed, when either Node is inactive, missing `app-dev`, or standalone, or when the destination is the current Node.
 
 ## Reserve the destination
 
-The Gateway reserves exactly `<destination-apps-root>/<app-slug>/<instance-name>`. The destination name is the current App instance name unless the operator supplies `name`. An explicit name recalculates that path and, for a generated Route, the destination domain.
+The Gateway reserves exactly `<destination-apps-root>/<app-slug>/<instance-name>`. The destination name is the current Instance name unless the operator supplies `name`. An explicit name recalculates that path and, for a generated Route, the destination domain.
 
 The Gateway refuses an occupied, overlapping, linked, or otherwise unsafe destination with `instance.destination_exists`. The error message contains `destination already exists` and tells the operator to retry with a different `name`. The original name stays unchanged until cutover.
 
-The Gateway also refuses an existing App instance identity on the same App and a Route domain that another Route already owns.
+The Gateway also refuses an existing Instance identity on the same Project and a Route domain that another Route already owns.
 
 ## Preserve application state
 
-Transfer keeps the App instance ID and App ownership. The Gateway copies source content into an independent destination checkout and does not fetch, reset, clean, or push the source.
+Transfer keeps the Instance ID and Project ownership. The Gateway copies source content into an independent destination checkout and does not fetch, reset, clean, or push the source.
 
 ### Source checkout
 
@@ -78,17 +78,17 @@ The result reports the destination Node, destination path, authoritative domain,
 
 ## Run the same-Cluster transfer
 
-Move a development App instance to another app-dev Node in the same Cluster:
+Move a development Instance to another app-dev Node in the same Cluster:
 
 ```text
 orbit instance:transfer 11 8 --force
 ```
 
-The destination path uses the destination Node apps root, the App slug, and the current App instance name. A generated Route that keeps the same Cluster TLD keeps its domain and Route ID.
+The destination path uses the destination Node apps root, the Project slug, and the current Instance name. A generated Route that keeps the same Cluster TLD keeps its domain and Route ID.
 
 ## Run the cross-Cluster transfer
 
-Move the same App instance to an app-dev Node in another Cluster:
+Move the same Instance to an app-dev Node in another Cluster:
 
 ```text
 orbit instance:transfer 11 9 --name=preview --force
@@ -102,15 +102,15 @@ The Gateway returns these transfer conflicts before or during the operation.
 
 | Code | When the Gateway returns it |
 | --- | --- |
-| `instance.lifecycle_conflict` | The App instance is not active, has no authoritative Route, or has an incomplete Route replacement. |
-| `instance.production_refused` | The App instance is not development. |
-| `instance.migration_required` | The App instance still requires source migration. |
-| `instance.removal_conflict` | The App instance is being removed. |
+| `instance.lifecycle_conflict` | The Instance is not active, has no authoritative Route, or has an incomplete Route replacement. |
+| `instance.production_refused` | The Instance is not development. |
+| `instance.migration_required` | The Instance still requires source migration. |
+| `instance.removal_conflict` | The Instance is being removed. |
 | `instance.same_node` | The destination is the current Node. |
 | `instance.node_inactive` | The source or destination Node is not an active Linux Node. |
 | `instance.node_not_app_dev` | The source or destination Node has no active app-dev role. |
 | `instance.standalone_unsupported` | The source or destination Node is not in an active Cluster. |
-| `instance.identity_conflict` | The destination name is already owned on the App. |
+| `instance.identity_conflict` | The destination name is already owned on the Project. |
 | `instance.destination_exists` | The destination path is occupied, overlapping, or unsafe. |
 | `route.domain_conflict` | The destination domain is already owned. |
 | `instance.transfer_retry_conflict` | A different request tried to resume an incomplete transfer. |

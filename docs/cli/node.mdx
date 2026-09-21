@@ -145,7 +145,7 @@ orbit node:remove <node> [--force] [--offline] [--json]
 | `--force` | Skip the confirmation prompt. Required with `--offline`. |
 | `--offline` | Shed roles on the Gateway side and remove a Node that the Gateway cannot reach. The Gateway probes the Node first; a Node that answers keeps every ordinary guard. |
 
-The Gateway refuses the request while the Node still owns App instances, legacy instances, firewall rules, roles, Processes, or Herdr sessions. It never removes the Gateway or VPN Node, or the Node that sends the request.
+The Gateway refuses the request while the Node still owns Instances, legacy instances, firewall rules, roles, Processes, or Herdr sessions. It never removes the Gateway or VPN Node, or the Node that sends the request.
 
 ```bash
 orbit node:remove 7
@@ -262,7 +262,7 @@ orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--jso
 orbit node:role:remove beast database --force
 ```
 
-A role that still hosts a Route target, such as `app-dev` or `app-prod` with active App instances, is refused until those App instances are removed.
+A role that still hosts a Route target, such as `app-dev` or `app-prod` with active Instances, is refused until those Instances are removed.
 
 ## orbit node:access:add
 
@@ -295,7 +295,7 @@ orbit node:access:remove <consumer> <serving> [--force] [--json]
 
 ## orbit node:settings
 
-Update the typed storage settings of one Node. The only setting path is `apps.path`, the root under which the Gateway creates App instance checkouts.
+Update the typed storage settings of one Node. The only setting path is `apps.path`, the root under which the Gateway creates Instance checkouts.
 
 ```bash
 orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]

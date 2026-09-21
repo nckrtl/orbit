@@ -26,7 +26,7 @@ final class ShowScheduleCommand extends ScheduleItemCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show one authorized Schedule or App Schedule definition.';
+    protected $description = 'Show one authorized Schedule or Project Schedule definition.';
 
     #[\Override]
     public function handle(

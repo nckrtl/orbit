@@ -11,7 +11,7 @@ Beast can already run a self-hosted Executor as a Node-owned Docker Process. The
 
 ## Cause
 
-App Routes only target App instances. There was no first-class way to give a Node Process an arbitrary hostname. Operators copied the Herdr-style loopback proxy by hand instead of waiting for a Route kind that is not an App.
+Project Routes only target Instances. There was no first-class way to give a Node Process an arbitrary hostname. Operators copied the Herdr-style loopback proxy by hand instead of waiting for a Route kind that is not a Project.
 
 ## Solution
 

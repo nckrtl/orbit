@@ -372,7 +372,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         ?string $error = null,
     ): void {
         $fields = [
-            'App' => $appId,
+            'Project' => $appId,
             'Node' => $nodeId,
             'Environment' => $environment,
         ];

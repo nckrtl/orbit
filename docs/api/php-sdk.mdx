@@ -84,8 +84,8 @@ Response classes are `final readonly` objects with public camel-case properties 
 | Response | Returned by |
 | --- | --- |
 | `NodeResponse`, `NodesResponse` | Node operations. |
-| `AppResponse`, `AppRuntimeDefinitionResponse` | Apps and their process and Schedule definitions. |
-| `AppInstanceResponse`, `AppInstanceRegistrationResponse`, `AppInstanceRemovalResponse` | App instance placement, registration, and removal. |
+| `AppResponse`, `AppRuntimeDefinitionResponse` | Projects and their process and Schedule definitions. |
+| `InstanceResponse`, `InstanceRegistrationResponse`, `InstanceRemovalResponse` | Instance placement, registration, and removal. |
 | `DeploymentConfigResponse`, `DeploymentStepResponse`, `DeploymentReleasesResponse` | Deploy steps, configuration documents, and retained releases. |
 | `EnvironmentOperationResponse` | Environment import, update, and sync. |
 | `RouteResponse`, `ClusterResponse`, `FirewallRuleResponse`, `ToolResponse`, `ToolManagerResponse` | Fleet records. |
@@ -117,15 +117,15 @@ A transport failure such as an unreachable Gateway or a certificate mismatch thr
 
 ## Stream a deployment
 
-`DeployAppInstanceRequest` and `RollbackAppInstanceRequest` return a `DeploymentStream`, an iterator of typed events. The SDK validates each newline-delimited JSON line, its sequence, and its request ID as you advance, and it reports success only when the final event is a succeeded result.
+`DeployInstanceRequest` and `RollbackInstanceRequest` return a `DeploymentStream`, an iterator of typed events. The SDK validates each newline-delimited JSON line, its sequence, and its request ID as you advance, and it reports success only when the final event is a succeeded result.
 
 ```php
-use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentOutputEvent;
 use Orbit\Sdk\Responses\Deployments\DeploymentPhaseEvent;
 use Orbit\Sdk\Responses\Deployments\DeploymentResultEvent;
 
-$stream = $connector->send(new DeployAppInstanceRequest(appInstanceId: 15))->dto();
+$stream = $connector->send(new DeployInstanceRequest(appInstanceId: 15))->dto();
 
 foreach ($stream as $event) {
     match (true) {

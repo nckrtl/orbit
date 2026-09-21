@@ -16,7 +16,7 @@ abstract class DatabaseAttachmentCommand extends DatabaseCommand
         if (! is_string($selector) || $selector === '') {
             $this->renderGatewayFailure(
                 'database.instance_required',
-                'AppInstance ID or Route domain is required.',
+                'Instance ID or Route domain is required.'
             );
 
             return null;
@@ -54,7 +54,7 @@ abstract class DatabaseAttachmentCommand extends DatabaseCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
-            'AppInstance ID' => $attachment->appInstanceId,
+            'Instance ID' => $attachment->appInstanceId,
             'Slug' => $attachment->slug,
             'Prefix' => $attachment->prefix,
             'Keys' => $attachment->keys === [] ? null : implode(', ', $attachment->keys),

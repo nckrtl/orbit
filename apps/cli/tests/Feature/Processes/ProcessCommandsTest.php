@@ -1056,7 +1056,7 @@ it('rejects invalid local process input before making a gateway request', functi
     'invalid AppInstance' => [
         'process:list',
         ['--instance' => '0'],
-        'AppInstance ID must be a positive integer.',
+        'Instance ID must be a positive integer.',
     ],
     'unbounded logs' => [
         'process:logs',

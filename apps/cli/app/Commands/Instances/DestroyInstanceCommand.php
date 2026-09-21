@@ -27,7 +27,7 @@ final class DestroyInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Destroy an AppInstance.';
+    protected $description = 'Destroy an Instance.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -47,7 +47,7 @@ final class DestroyInstanceCommand extends GatewayCommand
 
         if ($this->option('yes') !== true) {
             $existing = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
-                ['Resolve App instance', 'Loading App instance', 'Loaded App instance']);
+                ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
             if (! $existing instanceof AppInstanceResponse) {
                 return self::FAILURE;
             }
@@ -57,13 +57,13 @@ final class DestroyInstanceCommand extends GatewayCommand
             if ($this->option('force') === true && $existing->environment !== 'production') {
                 $effect .= ', including dirty or unpublished work and registered linked worktrees';
             }
-            if (! $this->confirmAction("Remove App instance [{$existing->name}] (#{$existing->id}) and {$effect}?", 'App instance removal cancelled.')) {
+            if (! $this->confirmAction("Remove Instance [{$existing->name}] (#{$existing->id}) and {$effect}?", 'Instance removal cancelled.')) {
                 return self::FAILURE;
             }
         }
 
-        $progress = $this->progressDisplay('Remove App instance');
-        $progress->admit('remove', 'Remove App instance', 'Removing App instance', 'Removed App instance');
+        $progress = $this->progressDisplay('Remove Instance');
+        $progress->admit('remove', 'Remove Instance', 'Removing Instance', 'Removed Instance');
         try {
             $response = $progress->during('remove', fn (): object => $this->sendOrThrow(
                 $connector,
@@ -84,7 +84,7 @@ final class DestroyInstanceCommand extends GatewayCommand
         }
 
         $progress->complete('remove', ProgressState::Success);
-        $progress->finish('App instance removed.');
+        $progress->finish('Instance removed.');
 
         if ($this->option('json') === true) {
             $this->writeJson($response->toArray());

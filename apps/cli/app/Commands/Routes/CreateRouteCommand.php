@@ -17,10 +17,10 @@ final class CreateRouteCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:create
-        {app? : Numeric App ID or custom proxy domain}
+        {app? : Numeric Project ID or custom proxy domain}
         {domain? : Route domain}
         {--publication=private : Publication intent}
-        {--target= : Numeric AppInstance target ID}
+        {--target= : Numeric Instance target ID}
         {--node= : Numeric Node scope ID or custom proxy serving Node}
         {--cluster= : Numeric Cluster scope ID for a targetless Route}
         {--upstream= : Loopback HTTP URL for a custom proxy Route}
@@ -44,7 +44,7 @@ final class CreateRouteCommand extends RouteCommand
 
     private function createAppRoute(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $appId = $this->positiveId('app', 'App', 'app.id_invalid');
+        $appId = $this->positiveId('app', 'Project', 'app.id_invalid');
         if ($appId === null) {
             return self::FAILURE;
         }
@@ -54,7 +54,7 @@ final class CreateRouteCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $targetId = $this->optionId('target', 'AppInstance');
+        $targetId = $this->optionId('target', 'Instance');
         if ($targetId === 0) {
             return self::FAILURE;
         }
@@ -128,7 +128,7 @@ final class CreateRouteCommand extends RouteCommand
         if ($this->option('target') !== null || $this->option('cluster') !== null) {
             return $this->renderGatewayFailure(
                 'route.scope_required',
-                'A custom proxy Route cannot own an App, App instance, or Cluster scope.',
+                'A custom proxy Route cannot own an App, Instance, or Cluster scope.',
             );
         }
 

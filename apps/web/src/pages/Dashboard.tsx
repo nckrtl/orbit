@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { useFleet } from "../api/queries";
-import type { App, Instance } from "../api/types";
+import type { Instance, Project } from "../api/types";
 import {
     type AttentionRow,
     attentionRows,
     instanceHealthy,
-    instancesForApp,
+    instancesForProject,
     nodeHealthy,
     processHealthy,
     scheduleHealthy,
@@ -25,20 +25,20 @@ export function Dashboard() {
     const attention = useMemo(() => attentionRows(fleet), [fleet]);
 
     const { workers, clients, workerColumns, clientColumns, offline } = useNodeTables();
-    const appColumns = useMemo<Column<App>[]>(
+    const projectColumns = useMemo<Column<Project>[]>(
         () => [
-            { header: "Slug", width: 44, value: (a) => a.slug },
+            { header: "Slug", width: 44, value: (project) => project.slug },
             {
                 header: "Branch",
                 width: 30,
                 hideOnMobile: true,
-                value: (a) => a.default_branch ?? "main",
+                value: (project) => project.default_branch ?? "main",
             },
             {
                 header: "Instances",
                 width: 26,
-                value: (a) => String(instancesForApp(fleet, a.slug).length),
-                sort: (a) => instancesForApp(fleet, a.slug).length,
+                value: (project) => String(instancesForProject(fleet, project.slug).length),
+                sort: (project) => instancesForProject(fleet, project.slug).length,
             },
         ],
         [fleet],
@@ -56,7 +56,7 @@ export function Dashboard() {
                     </span>
                 ),
             },
-            { header: "App", width: 26, value: (i) => i.app.slug },
+            { header: "Project", width: 26, value: (i) => i.app.slug },
             { header: "Node", width: 24, value: (i) => i.node.name },
             {
                 header: "Status",
@@ -115,15 +115,15 @@ export function Dashboard() {
                 empty={fleet.loading ? "Loading fleet data…" : "No client nodes."}
             />
             <Pane
-                name="apps"
+                name="projects"
                 className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={2}
-                title="Apps"
-                columns={appColumns}
-                rows={fleet.apps}
-                rowId={(a) => String(a.id)}
-                target={(row) => ({ kind: "apps", row })}
-                empty="No apps."
+                title="Projects"
+                columns={projectColumns}
+                rows={fleet.projects}
+                rowId={(project) => String(project.id)}
+                target={(row) => ({ kind: "projects", row })}
+                empty="No projects."
             />
             <Pane
                 name="instances"

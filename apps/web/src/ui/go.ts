@@ -8,7 +8,7 @@ import { ui } from "./store";
 export const SECTIONS = [
     "dashboard",
     "nodes",
-    "apps",
+    "projects",
     "instances",
     "processes",
     "schedules",
@@ -22,7 +22,7 @@ export type Section = (typeof SECTIONS)[number];
 export const NAV = [
     "dashboard",
     "nodes",
-    "apps",
+    "projects",
     "databases",
 ] as const satisfies readonly Section[];
 
@@ -36,8 +36,8 @@ export function useNav(): readonly Section[] {
 type Owned = { id: number | string; target_type: string };
 
 /**
- * The sidebar entry a page belongs under. An App owns its instances, a node owns its firewall
- * rules, and a process or a schedule belongs to a node or, through its instance, to an App.
+ * The sidebar entry a page belongs under. A Project owns its instances, a node owns its firewall
+ * rules, and a process or a schedule belongs to a node or, through its instance, to a Project.
  */
 export function navFor(
     section: Section,
@@ -46,14 +46,14 @@ export function navFor(
 ): Section {
     switch (section) {
         case "instances":
-            return "apps";
+            return "projects";
         case "firewall":
             return "nodes";
         case "processes":
         case "schedules":
             return owned[section].find((row) => String(row.id) === id)?.target_type === "node"
                 ? "nodes"
-                : "apps";
+                : "projects";
         default:
             return section;
     }
@@ -62,7 +62,7 @@ export function navFor(
 export const SECTION_TITLES: Record<Section, string> = {
     dashboard: "Dashboard",
     nodes: "Nodes",
-    apps: "Apps",
+    projects: "Projects",
     instances: "Instances",
     processes: "Processes",
     schedules: "Schedules",
@@ -119,11 +119,11 @@ export function useGo() {
                 reset();
                 void router.navigate({ to: "/nodes/create" });
             },
-            filter(section: string, name: "node" | "app", value: string | undefined): void {
+            filter(section: string, name: "node" | "project", value: string | undefined): void {
                 void router.navigate({
                     to: "/$section",
                     params: { section },
-                    search: (previous: { node?: string; app?: string }) => ({
+                    search: (previous: { node?: string; project?: string }) => ({
                         ...previous,
                         [name]: value,
                     }),

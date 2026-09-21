@@ -29,17 +29,17 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
         {--app= : Existing numeric Project ID (compatibility)}
-        {--app-name= : Confirmed App display name}
-        {--app-slug= : Confirmed App slug}
-        {--default-branch= : Confirmed App default branch}
-        {--name= : Optional non-default AppInstance name}
-        {--root= : Confirmed App root or existing-App root override}
+        {--app-name= : Confirmed Project display name}
+        {--app-slug= : Confirmed Project slug}
+        {--default-branch= : Confirmed Project default branch}
+        {--name= : Optional non-default Instance name}
+        {--root= : Confirmed Project root or existing-Project root override}
         {--domain= : Optional explicit Route domain}
         {--yes : Confirm source ownership transfer without prompting}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Adopt the current Git source as a managed AppInstance.';
+    protected $description = 'Adopt the current Git source as a managed Instance.';
 
     public function handle(
         GitRegistrationDiscovery $git,
@@ -117,10 +117,10 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         $instance = $response->appInstance;
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,
-            'App' => "{$response->app->slug} (#{$response->app->id})",
+            'Project' => "{$response->app->slug} (#{$response->app->id})",
             'Source layout' => $instance->sourceLayout,
             'Managed path' => $instance->checkoutPath,
             'Effective root' => $instance->effectiveRoot,

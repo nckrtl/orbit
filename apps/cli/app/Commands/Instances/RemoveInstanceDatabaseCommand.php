@@ -15,13 +15,13 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
     #[\Override]
     protected $signature = 'instance:database:remove
         {slug : Database connection slug}
-        {--instance= : Positive AppInstance ID or exact Route domain}
+        {--instance= : Positive Instance ID or exact Route domain}
         {--prefix= : Environment key prefix; defaults to DB}
         {--force : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove a Database connection from an AppInstance and clear stored environment keys.';
+    protected $description = 'Remove a Database connection from an Instance and clear stored environment keys.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -42,11 +42,11 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
         $effectivePrefix = $prefix ?? 'DB';
 
         if (! $this->confirmAction(
-            "Remove Database connection [{$slug}] from AppInstance [{$instance}] and clear stored {$effectivePrefix}_* keys? Workload .env stays unchanged.",
+            "Remove Database connection [{$slug}] from Instance [{$instance}] and clear stored {$effectivePrefix}_* keys? Workload .env stays unchanged.",
             'Database connection removal cancelled.',
             option: 'force',
             requiredCode: 'database.confirmation_required',
-            requiredMessage: 'Use --force to confirm Database connection removal from the AppInstance.',
+            requiredMessage: 'Use --force to confirm Database connection removal from the Instance.',
         )) {
             return self::FAILURE;
         }
@@ -68,7 +68,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
 
         return $this->renderAttachment(
             $attachment,
-            "Database connection [{$attachment->slug}] removed from AppInstance [{$attachment->appInstanceId}].",
+            "Database connection [{$attachment->slug}] removed from Instance [{$attachment->appInstanceId}].",
         );
     }
 }

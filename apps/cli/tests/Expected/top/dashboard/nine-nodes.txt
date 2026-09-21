@@ -2,7 +2,7 @@
 ╭──────────────────╮╭ Nodes ───────────────────────────────────────────────────────────────────────────────────────────╮
 │› Dashboard       ││Name          Status    CPU                   Mem                  Disk                  Uptime   │
 │  Nodes         9 ││node-1        active    —                     —                    —                          —   │
-│  Apps          1 ││node-2        active    —                     —                    —                          —   │
+│  Projects      1 ││node-2        active    —                     —                    —                          —   │
 │  Instances     1 ││node-3        active    [||||          ]  30% [|        ] 2.0G/16G /  [|    ] 40G/200G    5d 1h   │
 │  Processes     1 ││node-4        active    —                     —                    —                          —   │
 │  Schedules     1 ││node-5        active    —                     —                    —                          —   │
@@ -11,8 +11,8 @@
 │                  ││node-8        active    —                     —                    —                          —   │
 │                  ││node-9        failed    —                     —                    —                          —   │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-│                  │╭ Apps ──────────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
-│                  ││  Slug                  Branch         Instances││  Name         App          Node         Status │
+│                  │╭ Projects ──────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
+│                  ││  Slug                  Branch         Instances││  Name         Project      Node         Status │
 │                  ││› charlie-shop          main                  1 ││› dev          charlie-shop beast        active │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │

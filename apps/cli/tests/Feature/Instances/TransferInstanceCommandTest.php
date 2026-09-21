@@ -126,7 +126,7 @@ describe('instance:transfer request', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(Artisan::output())
-            ->toContain('Use --force to confirm AppInstance transfer downtime and old-placement deletion.')
+            ->toContain('Use --force to confirm Instance transfer downtime and old-placement deletion.')
             ->and($mock->getRecordedResponses())->toHaveCount(2);
         expect($mock->getLastRequest())->toBeInstanceOf(ShowNodeRequest::class);
     });
@@ -142,7 +142,7 @@ describe('instance:transfer output', function (): void {
             '--force' => true,
         ]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: preview',
+            'Instance: preview',
             'ID 11',
             'Destination Node 8',
             'Destination path /srv/orbit/apps/shop/preview',
@@ -183,7 +183,7 @@ describe('instance:transfer help and execution boundary', function (): void {
         $commands = app(Kernel::class)->all();
         expect($commands['instance:transfer']->getHelp())
             ->toContain(
-                'active development AppInstance',
+                'active development Instance',
                 'same Cluster or another Cluster',
                 'independent destination checkout',
                 'one selected SQLite snapshot',

@@ -14,7 +14,7 @@ trait InstanceOutput
     {
         $fields = [
             'ID' => $instance->id,
-            'App' => $instance->app->slug ?? (string) $instance->appId,
+            'Project' => $instance->app->slug ?? (string) $instance->appId,
             'Node' => $instance->node->name ?? (string) $instance->nodeId,
             'Status' => $instance->status,
             'Environment' => $instance->environment,
@@ -46,7 +46,7 @@ trait InstanceOutput
             ];
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", $fields));
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", $fields));
     }
 
     /** @param list<DeploymentStepResponse> $steps */

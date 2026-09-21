@@ -1,17 +1,17 @@
-Creating App instance...
+Creating Instance...
 
-┌  Create App instance
+┌  Create Instance
 │
-├  ● Created App instance
+├  ● Created Instance
 │
-└  Created App instance.
+└  Created Instance.
 
 
-┌  App instance: dev
+┌  Instance: dev
 │
 ├  ID                   1
 │
-├  App                  acme
+├  Project              acme
 │
 ├  Node                 app-dev
 │

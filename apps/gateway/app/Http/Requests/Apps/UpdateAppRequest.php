@@ -54,7 +54,7 @@ final class UpdateAppRequest extends FormRequest
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
             ) {
-                $validator->errors()->add('body', 'Provide at least one App update.');
+                $validator->errors()->add('body', 'Provide at least one Project update.');
             }
 
             $repository = $this->input('repository_url');

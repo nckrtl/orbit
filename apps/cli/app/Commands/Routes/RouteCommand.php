@@ -61,7 +61,7 @@ abstract class RouteCommand extends GatewayCommand
         $details = [
             'ID' => $route->id,
             'Kind' => $route->kind,
-            'App' => $route->appId,
+            'Project' => $route->appId,
             'Provenance' => $route->provenance,
             'Scope' => $route->clusterId === null ? "Node {$route->nodeId}" : "Cluster {$route->clusterId}",
         ];

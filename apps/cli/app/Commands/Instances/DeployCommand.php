@@ -17,7 +17,7 @@ final class DeployCommand extends DeploymentCommand
         {--json : Return machine-readable NDJSON}';
 
     #[\Override]
-    protected $description = 'Deploy the configured branch of a production AppInstance.';
+    protected $description = 'Deploy the configured branch of a production Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -40,7 +40,7 @@ final class DeployCommand extends DeploymentCommand
         );
 
         return $stream instanceof DeploymentStream
-            ? $this->renderDeploymentStream($stream, "Deploy AppInstance [{$instanceId}]", 'source_preparation', 'Deployment')
+            ? $this->renderDeploymentStream($stream, "Deploy Instance [{$instanceId}]", 'source_preparation', 'Deployment')
             : self::FAILURE;
     }
 }

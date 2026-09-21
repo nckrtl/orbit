@@ -656,7 +656,7 @@ final readonly class RegisterAppInstanceAction
         if ($slug !== $facts->inferredSlug) {
             throw $this->conflict(
                 'app.slug_conflict',
-                'The confirmed App slug conflicts with verified repository evidence.',
+                'The confirmed Project slug conflicts with verified repository evidence.',
             );
         }
 

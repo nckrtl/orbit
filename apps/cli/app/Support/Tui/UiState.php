@@ -17,7 +17,7 @@ final class UiState
     public const array SECTIONS = [
         'dashboard' => 'Dashboard',
         'nodes' => 'Nodes',
-        'apps' => 'Apps',
+        'apps' => 'Projects',
         'instances' => 'Instances',
         'processes' => 'Processes',
         'schedules' => 'Schedules',
@@ -42,8 +42,8 @@ final class UiState
      */
     public array $pages = [];
 
-    /** @var array{node: string|null, app: string|null} */
-    public array $filters = ['node' => null, 'app' => null];
+    /** @var array{node: string|null, project: string|null} */
+    public array $filters = ['node' => null, 'project' => null];
 
     /** @var array{kind: string, title: string, row: array<string, mixed>, actions: array<string, Action>, selected: int, confirm: bool, at: array{int, int}|null}|null */
     public ?array $menu = null;
@@ -89,7 +89,7 @@ final class UiState
         $this->form = null;
         $this->focus = null;
         $this->hover = 'nav';
-        $this->filters = ['node' => null, 'app' => null];
+        $this->filters = ['node' => null, 'project' => null];
     }
 
     /** @param array<string, mixed> $row */

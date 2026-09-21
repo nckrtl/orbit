@@ -99,10 +99,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Apps */
+        /** List Apps (Projects) */
         get: operations["app-list"];
         put?: never;
-        /** Create an App */
+        /** Create an App (Project) */
         post: operations["app-create"];
         delete?: never;
         options?: never;
@@ -117,15 +117,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Show an App */
+        /** Show an App (Project) */
         get: operations["app-show"];
         put?: never;
         post?: never;
-        /** Remove an App */
+        /** Remove an App (Project) */
         delete: operations["app-destroy"];
         options?: never;
         head?: never;
-        /** Update an App */
+        /** Update an App (Project) */
         patch: operations["app-update"];
         trace?: never;
     };
@@ -138,13 +138,13 @@ export interface paths {
         };
         /**
          * List process definitions
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         get: operations["app-process-list-definition"];
         put?: never;
         /**
          * Create a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         post: operations["app-process-create-definition"];
         delete?: never;
@@ -162,18 +162,18 @@ export interface paths {
         };
         /**
          * Show a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         get: operations["app-process-show-definition"];
         /**
          * Replace a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         put: operations["app-process-update-definition"];
         post?: never;
         /**
          * Remove a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         delete: operations["app-process-destroy-definition"];
         options?: never;
@@ -190,13 +190,13 @@ export interface paths {
         };
         /**
          * List Schedule definitions
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         get: operations["app-schedule-list-definition"];
         put?: never;
         /**
          * Create a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         post: operations["app-schedule-create-definition"];
         delete?: never;
@@ -214,18 +214,18 @@ export interface paths {
         };
         /**
          * Show a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         get: operations["app-schedule-show-definition"];
         /**
          * Replace a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         put: operations["app-schedule-update-definition"];
         post?: never;
         /**
          * Remove a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
         delete: operations["app-schedule-destroy-definition"];
         options?: never;
@@ -795,16 +795,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List App instances
+         * List Instances
          * @description List instances.
          */
         get: operations["instance-list"];
         put?: never;
         /**
-         * Create an App instance
-         * @description Create a development App instance on an app-dev Node.
+         * Create an Instance
+         * @description Create a development Instance on an app-dev Node.
          *
-         *     Creates a development App instance. New production App instances require a candidate. Use instance:clone.
+         *     Creates a development Instance. New production Instances require a candidate. Use instance:clone.
          */
         post: operations["instance-create"];
         delete?: never;
@@ -823,8 +823,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Register an App instance
-         * @description Adopt the current Git source as a managed App instance.
+         * Register an Instance
+         * @description Adopt the current Git source as a managed Instance.
          */
         post: operations["instance-register"];
         delete?: never;
@@ -877,8 +877,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Clone an App instance
-         * @description Clone a candidate into a prepared production App instance.
+         * Clone an Instance
+         * @description Clone a candidate into a prepared production Instance.
          *
          *     The candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
          *
@@ -899,22 +899,22 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show an App instance
+         * Show an Instance
          * @description Show an instance.
          */
         get: operations["instance-show"];
         put?: never;
         post?: never;
         /**
-         * Remove an App instance
-         * @description Destroy an App instance.
+         * Remove an Instance
+         * @description Destroy an Instance.
          */
         delete: operations["instance-destroy"];
         options?: never;
         head?: never;
         /**
          * Update the deployment branch
-         * @description Update a production App instance deployment branch.
+         * @description Update a production Instance deployment branch.
          */
         patch: operations["instance-update"];
         trace?: never;
@@ -927,19 +927,19 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show App instance analytics
-         * @description Show the analytics tracking hosts of an App instance.
+         * Show Instance analytics
+         * @description Show the analytics tracking hosts of an Instance.
          */
         get: operations["instance-analytics-show"];
         put?: never;
         /**
-         * Publish App instance tracking hosts
-         * @description Publish the analytics tracking hosts of an App instance.
+         * Publish Instance tracking hosts
+         * @description Publish the analytics tracking hosts of an Instance.
          */
         post: operations["instance-analytics-enable"];
         /**
-         * Remove App instance tracking hosts
-         * @description Remove the analytics tracking hosts of an App instance.
+         * Remove Instance tracking hosts
+         * @description Remove the analytics tracking hosts of an Instance.
          */
         delete: operations["instance-analytics-disable"];
         options?: never;
@@ -955,8 +955,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read App instance analytics stats
-         * @description Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the App instance's tracked site. `available` is false when the analytics role is not active or the App instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.
+         * Read Instance analytics stats
+         * @description Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the Instance's tracked site. `available` is false when the analytics role is not active or the Instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.
          */
         get: operations["instance-analytics-stats"];
         put?: never;
@@ -977,13 +977,13 @@ export interface paths {
         get?: never;
         /**
          * Attach a Database connection
-         * @description Add a Database connection on an App instance and write stored environment keys.
+         * @description Add a Database connection on an Instance and write stored environment keys.
          */
         put: operations["instance-database-add"];
         post?: never;
         /**
          * Detach a Database connection
-         * @description Remove a Database connection from an App instance and clear stored environment keys.
+         * @description Remove a Database connection from an Instance and clear stored environment keys.
          */
         delete: operations["instance-database-remove"];
         options?: never;
@@ -1058,8 +1058,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Deploy an App instance
-         * @description Deploy the configured branch of a production App instance.
+         * Deploy an Instance
+         * @description Deploy the configured branch of a production Instance.
          */
         post: operations["instance-deploy"];
         delete?: never;
@@ -1077,13 +1077,13 @@ export interface paths {
         };
         /**
          * List deploy steps
-         * @description List deploy steps on a production App instance.
+         * @description List deploy steps on a production Instance.
          */
         get: operations["instance-deploy-step-list"];
         put?: never;
         /**
          * Create a deploy step
-         * @description Create a named deploy step on a production App instance.
+         * @description Create a named deploy step on a production Instance.
          */
         post: operations["instance-deploy-step-create"];
         delete?: never;
@@ -1104,14 +1104,14 @@ export interface paths {
         post?: never;
         /**
          * Remove a deploy step
-         * @description Destroy a named deploy step on a production App instance.
+         * @description Destroy a named deploy step on a production Instance.
          */
         delete: operations["instance-deploy-step-destroy"];
         options?: never;
         head?: never;
         /**
          * Update a deploy step
-         * @description Update a named deploy step on a production App instance.
+         * @description Update a named deploy step on a production Instance.
          */
         patch: operations["instance-deploy-step-update"];
         trace?: never;
@@ -1125,7 +1125,7 @@ export interface paths {
         };
         /**
          * instance:deployment:list
-         * @description List recorded deployment history for a production App instance, newest first.
+         * @description List recorded deployment history for a production Instance, newest first.
          */
         get: operations["instance-deployment-list"];
         put?: never;
@@ -1147,7 +1147,7 @@ export interface paths {
         put?: never;
         /**
          * Import the environment file
-         * @description Import the workload environment file into stored App instance configuration.
+         * @description Import the workload environment file into stored Instance configuration.
          */
         post: operations["env-import"];
         delete?: never;
@@ -1167,7 +1167,7 @@ export interface paths {
         put?: never;
         /**
          * Synchronize the environment file
-         * @description Synchronize stored App instance configuration to the workload environment file.
+         * @description Synchronize stored Instance configuration to the workload environment file.
          */
         post: operations["env-sync"];
         delete?: never;
@@ -1186,7 +1186,7 @@ export interface paths {
         get?: never;
         /**
          * Update an environment value
-         * @description Update one stored App instance environment value without changing the workload file.
+         * @description Update one stored Instance environment value without changing the workload file.
          */
         put: operations["env-update"];
         post?: never;
@@ -1203,7 +1203,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read App instance logs */
+        /** Read Instance logs */
         get: operations["instance-logs"];
         put?: never;
         post?: never;
@@ -1220,7 +1220,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the App instance queue */
+        /** Read the Instance queue */
         get: operations["instance-queue"];
         put?: never;
         post?: never;
@@ -1239,7 +1239,7 @@ export interface paths {
         };
         /**
          * List retained releases
-         * @description List retained production App instance releases.
+         * @description List retained production Instance releases.
          */
         get: operations["instance-release-list"];
         put?: never;
@@ -1260,8 +1260,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Roll back an App instance
-         * @description Select one retained production App instance release.
+         * Roll back an Instance
+         * @description Select one retained production Instance release.
          */
         post: operations["instance-rollback"];
         delete?: never;
@@ -1280,10 +1280,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Transfer an App instance
-         * @description Transfer a development App instance to another app-dev Node.
+         * Transfer an Instance
+         * @description Transfer a development Instance to another app-dev Node.
          *
-         *     Transfer moves one active development App instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.
+         *     Transfer moves one active development Instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.
          *
          *     Orbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.
          *
@@ -1746,13 +1746,13 @@ export interface paths {
         };
         /**
          * List Processes
-         * @description List processes for one App instance or Node, or process definitions for one App.
+         * @description List processes for one Instance or Node, or process definitions for one Project.
          */
         get: operations["process-list"];
         put?: never;
         /**
          * Create a Process
-         * @description Create one systemd service, Docker container process, or App process definition.
+         * @description Create one systemd service, Docker container process, or Project process definition.
          */
         post: operations["process-create"];
         delete?: never;
@@ -1773,7 +1773,7 @@ export interface paths {
         post?: never;
         /**
          * Remove a Process
-         * @description Destroy one process or App process definition.
+         * @description Destroy one process or Project process definition.
          */
         delete: operations["process-destroy"];
         options?: never;
@@ -1942,15 +1942,15 @@ export interface paths {
         };
         /**
          * List process definitions
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        get: operations["app-project-process-definition-list-definition"];
+        get: operations["project-process-definition-list"];
         put?: never;
         /**
          * Create a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        post: operations["app-project-process-definition-create-definition"];
+        post: operations["project-process-definition-create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1966,20 +1966,20 @@ export interface paths {
         };
         /**
          * Show a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        get: operations["app-project-process-definition-show-definition"];
+        get: operations["project-process-definition-show"];
         /**
          * Replace a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        put: operations["app-project-process-definition-update-definition"];
+        put: operations["project-process-definition-update"];
         post?: never;
         /**
          * Remove a process definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        delete: operations["app-project-process-definition-destroy-definition"];
+        delete: operations["project-process-definition-destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1994,15 +1994,15 @@ export interface paths {
         };
         /**
          * List Schedule definitions
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        get: operations["app-project-schedule-definition-list-definition"];
+        get: operations["project-schedule-definition-list"];
         put?: never;
         /**
          * Create a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        post: operations["app-project-schedule-definition-create-definition"];
+        post: operations["project-schedule-definition-create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2018,20 +2018,20 @@ export interface paths {
         };
         /**
          * Show a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        get: operations["app-project-schedule-definition-show-definition"];
+        get: operations["project-schedule-definition-show"];
         /**
          * Replace a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        put: operations["app-project-schedule-definition-update-definition"];
+        put: operations["project-schedule-definition-update"];
         post?: never;
         /**
          * Remove a Schedule definition
-         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         * @description Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.
          */
-        delete: operations["app-project-schedule-definition-destroy-definition"];
+        delete: operations["project-schedule-definition-destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2229,8 +2229,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Wake an App instance
-         * @description Caddy on the App instance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.
+         * Wake an Instance
+         * @description Caddy on the Instance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.
          */
         get: operations["runtime-activation-app-instance"];
         put?: never;
@@ -2250,13 +2250,13 @@ export interface paths {
         };
         /**
          * List Schedules
-         * @description List authorized Schedules or App Schedule definitions.
+         * @description List authorized Schedules or Project Schedule definitions.
          */
         get: operations["schedule-list"];
         put?: never;
         /**
          * Create a Schedule
-         * @description Create one Node or App instance Schedule, or an App Schedule definition.
+         * @description Create one Node or Instance Schedule, or a Project Schedule definition.
          */
         post: operations["schedule-create"];
         delete?: never;
@@ -2274,14 +2274,14 @@ export interface paths {
         };
         /**
          * Show a Schedule
-         * @description Show one authorized Schedule or App Schedule definition.
+         * @description Show one authorized Schedule or Project Schedule definition.
          */
         get: operations["schedule-show"];
         put?: never;
         post?: never;
         /**
          * Remove a Schedule
-         * @description Destroy one Schedule or App Schedule definition through the Gateway.
+         * @description Destroy one Schedule or Project Schedule definition through the Gateway.
          */
         delete: operations["schedule-destroy"];
         options?: never;
@@ -2300,7 +2300,7 @@ export interface paths {
         put?: never;
         /**
          * Enable a Schedule
-         * @description Enable and start one installed App instance Schedule timer.
+         * @description Enable and start one installed Instance Schedule timer.
          */
         post: operations["schedule-enable"];
         delete?: never;
@@ -2424,7 +2424,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a Task group
-         * @description Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
+         * @description Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
          */
         post: operations["tasks-complete"];
         delete?: never;
@@ -3535,7 +3535,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -3579,7 +3579,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -3632,7 +3632,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -3705,7 +3705,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -3749,7 +3749,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -3849,9 +3849,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Process definition name, unique within the App. */
+                /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
             cookie?: never;
@@ -3895,9 +3895,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Process definition name, unique within the App. */
+                /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
             cookie?: never;
@@ -3985,9 +3985,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Process definition name, unique within the App. */
+                /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
             cookie?: never;
@@ -4040,7 +4040,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -4084,7 +4084,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -4171,9 +4171,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Schedule definition name, unique within the App. */
+                /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
             cookie?: never;
@@ -4217,9 +4217,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Schedule definition name, unique within the App. */
+                /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
             cookie?: never;
@@ -4294,9 +4294,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Schedule definition name, unique within the App. */
+                /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
             cookie?: never;
@@ -6298,7 +6298,7 @@ export interface operations {
                     app_id?: number;
                     project_id?: number;
                     node_id: number;
-                    /** @description AppInstance name; default is reserved for the default development source */
+                    /** @description Instance name; default is reserved for the default development source */
                     name: string;
                     /** @description Optional relative web-root override */
                     root?: string;
@@ -6380,14 +6380,14 @@ export interface operations {
                     include_worktrees?: boolean;
                     app_id?: number;
                     project_id?: number;
-                    /** @description Confirmed App display name */
+                    /** @description Confirmed Project display name */
                     app_name?: string;
-                    /** @description Confirmed App slug */
+                    /** @description Confirmed Project slug */
                     app_slug?: string;
-                    /** @description Confirmed App default branch */
+                    /** @description Confirmed Project default branch */
                     default_branch?: string;
                     instance_name?: string;
-                    /** @description Confirmed App root or existing-App root override */
+                    /** @description Confirmed Project root or existing-Project root override */
                     root?: string;
                     /** @description Optional explicit Route domain */
                     domain?: string;
@@ -6521,7 +6521,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric ID of the candidate App instance. */
+                /** @description Numeric ID of the candidate Instance. */
                 candidate: number;
             };
             cookie?: never;
@@ -6530,7 +6530,7 @@ export interface operations {
             content: {
                 "application/json": {
                     node_id: number;
-                    /** @description Target production AppInstance name */
+                    /** @description Target production Instance name */
                     name: string;
                     /** @description Required preview name to combine with the production Node TLD */
                     preview_name: string;
@@ -6609,7 +6609,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -6653,7 +6653,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -6722,7 +6722,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -6788,7 +6788,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -6804,7 +6804,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             instance_id?: number;
-                            /** @description True while the App instance publishes at least one tracking host. */
+                            /** @description True while the Instance publishes at least one tracking host. */
                             enabled?: boolean;
                             domain?: string | null;
                             /** @description The private Plausible dashboard, or null while no Node has an active analytics role. */
@@ -6814,7 +6814,7 @@ export interface operations {
                                 route_id?: number;
                                 status?: string;
                                 /**
-                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @description Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
                                  * @enum {string}
                                  */
                                 publication?: "private" | "public";
@@ -6822,14 +6822,14 @@ export interface operations {
                                 error_code?: string | null;
                                 script_url?: string;
                                 event_url?: string;
-                                /** @description The record to create, or null while the App instance has no domain. */
+                                /** @description The record to create, or null while the Instance has no domain. */
                                 dns?: {
                                     type?: string;
                                     name?: string;
                                     value?: string;
                                 } | null;
                             }[];
-                            /** @description The script tag for the App, using the first host. */
+                            /** @description The script tag for the Project, using the first host. */
                             snippet?: string | null;
                         };
                         meta: components["schemas"]["Meta"];
@@ -6861,7 +6861,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -6883,7 +6883,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             instance_id?: number;
-                            /** @description True while the App instance publishes at least one tracking host. */
+                            /** @description True while the Instance publishes at least one tracking host. */
                             enabled?: boolean;
                             domain?: string | null;
                             /** @description The private Plausible dashboard, or null while no Node has an active analytics role. */
@@ -6893,7 +6893,7 @@ export interface operations {
                                 route_id?: number;
                                 status?: string;
                                 /**
-                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @description Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
                                  * @enum {string}
                                  */
                                 publication?: "private" | "public";
@@ -6901,14 +6901,14 @@ export interface operations {
                                 error_code?: string | null;
                                 script_url?: string;
                                 event_url?: string;
-                                /** @description The record to create, or null while the App instance has no domain. */
+                                /** @description The record to create, or null while the Instance has no domain. */
                                 dns?: {
                                     type?: string;
                                     name?: string;
                                     value?: string;
                                 } | null;
                             }[];
-                            /** @description The script tag for the App, using the first host. */
+                            /** @description The script tag for the Project, using the first host. */
                             snippet?: string | null;
                         };
                         meta: components["schemas"]["Meta"];
@@ -6958,7 +6958,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -6974,7 +6974,7 @@ export interface operations {
                     "application/json": {
                         data: {
                             instance_id?: number;
-                            /** @description True while the App instance publishes at least one tracking host. */
+                            /** @description True while the Instance publishes at least one tracking host. */
                             enabled?: boolean;
                             domain?: string | null;
                             /** @description The private Plausible dashboard, or null while no Node has an active analytics role. */
@@ -6984,7 +6984,7 @@ export interface operations {
                                 route_id?: number;
                                 status?: string;
                                 /**
-                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @description Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
                                  * @enum {string}
                                  */
                                 publication?: "private" | "public";
@@ -6992,14 +6992,14 @@ export interface operations {
                                 error_code?: string | null;
                                 script_url?: string;
                                 event_url?: string;
-                                /** @description The record to create, or null while the App instance has no domain. */
+                                /** @description The record to create, or null while the Instance has no domain. */
                                 dns?: {
                                     type?: string;
                                     name?: string;
                                     value?: string;
                                 } | null;
                             }[];
-                            /** @description The script tag for the App, using the first host. */
+                            /** @description The script tag for the Project, using the first host. */
                             snippet?: string | null;
                         };
                         meta: components["schemas"]["Meta"];
@@ -7040,7 +7040,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7055,13 +7055,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            /** @description False when the analytics role is not active or the App instance publishes no tracking host. Every other field is then absent. */
+                            /** @description False when the analytics role is not active or the Instance publishes no tracking host. Every other field is then absent. */
                             available: boolean;
                             /** @description False when the panel may show but the driver could not obtain stats. Visitor fields are then absent. */
                             readable?: boolean;
                             /** @enum {string} */
                             driver?: "plausible_ce";
-                            /** @description The App instance's authoritative public domain, which is the Plausible site. */
+                            /** @description The Instance's authoritative public domain, which is the Plausible site. */
                             site_domain?: string | null;
                             live_visitors?: number;
                             visitors?: {
@@ -7107,7 +7107,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Positive App instance ID or the exact Route domain of the App instance. */
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
                 instance: string;
                 /** @description Database connection slug. */
                 database_connection: string;
@@ -7178,7 +7178,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Positive App instance ID or the exact Route domain of the App instance. */
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
                 instance: string;
                 /** @description Database connection slug. */
                 database_connection: string;
@@ -7249,7 +7249,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7293,7 +7293,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7359,7 +7359,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7425,7 +7425,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7509,7 +7509,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7553,7 +7553,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7631,7 +7631,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
                 /** @description Deploy step name. */
                 step: string;
@@ -7686,7 +7686,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
                 /** @description Deploy step name. */
                 step: string;
@@ -7754,7 +7754,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -7798,7 +7798,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Positive App instance ID or the exact Route domain of the App instance. */
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
                 instance: string;
             };
             cookie?: never;
@@ -7872,7 +7872,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Positive App instance ID or the exact Route domain of the App instance. */
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
                 instance: string;
             };
             cookie?: never;
@@ -7943,7 +7943,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Positive App instance ID or the exact Route domain of the App instance. */
+                /** @description Positive Instance ID or the exact Route domain of the Instance. */
                 instance: string;
                 /** @description Environment key. */
                 key: string;
@@ -8022,7 +8022,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -8040,7 +8040,7 @@ export interface operations {
                             id?: number;
                             name?: string;
                             lines?: number;
-                            /** @description The last `lines` lines of `storage/logs/laravel.log`, or of the newest `laravel-*.log`, as one newline-separated string with environment values redacted. Empty when the App instance has no such file. */
+                            /** @description The last `lines` lines of `storage/logs/laravel.log`, or of the newest `laravel-*.log`, as one newline-separated string with environment values redacted. Empty when the Instance has no such file. */
                             logs?: string;
                         };
                         meta: components["schemas"]["Meta"];
@@ -8075,7 +8075,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -8090,7 +8090,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            /** @description False when the App instance has no systemd Process that runs `artisan horizon`, or the application has no Horizon; every other field but `state` is then absent. */
+                            /** @description False when the Instance has no systemd Process that runs `artisan horizon`, or the application has no Horizon; every other field but `state` is then absent. */
                             available: boolean;
                             /** @description The Process that runs Horizon. */
                             process_id?: number;
@@ -8163,7 +8163,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -8207,7 +8207,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -8294,7 +8294,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
@@ -8303,7 +8303,7 @@ export interface operations {
             content: {
                 "application/json": {
                     node_id: number;
-                    /** @description Optional destination AppInstance name */
+                    /** @description Optional destination Instance name */
                     name?: string;
                     /** @description Optional SQLite database path on the source */
                     sqlite_source_path?: string;
@@ -10634,7 +10634,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -10678,7 +10678,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -10731,7 +10731,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -10805,12 +10805,12 @@ export interface operations {
             };
         };
     };
-    "app-project-process-definition-list-definition": {
+    "project-process-definition-list": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -10849,12 +10849,12 @@ export interface operations {
             };
         };
     };
-    "app-project-process-definition-create-definition": {
+    "project-process-definition-create": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -10948,14 +10948,14 @@ export interface operations {
             };
         };
     };
-    "app-project-process-definition-show-definition": {
+    "project-process-definition-show": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Process definition name, unique within the App. */
+                /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
             cookie?: never;
@@ -10994,14 +10994,14 @@ export interface operations {
             };
         };
     };
-    "app-project-process-definition-update-definition": {
+    "project-process-definition-update": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Process definition name, unique within the App. */
+                /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
             cookie?: never;
@@ -11083,14 +11083,14 @@ export interface operations {
             };
         };
     };
-    "app-project-process-definition-destroy-definition": {
+    "project-process-definition-destroy": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Process definition name, unique within the App. */
+                /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
             cookie?: never;
@@ -11138,12 +11138,12 @@ export interface operations {
             };
         };
     };
-    "app-project-schedule-definition-list-definition": {
+    "project-schedule-definition-list": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -11182,12 +11182,12 @@ export interface operations {
             };
         };
     };
-    "app-project-schedule-definition-create-definition": {
+    "project-schedule-definition-create": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
             };
             cookie?: never;
@@ -11268,14 +11268,14 @@ export interface operations {
             };
         };
     };
-    "app-project-schedule-definition-show-definition": {
+    "project-schedule-definition-show": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Schedule definition name, unique within the App. */
+                /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
             cookie?: never;
@@ -11314,14 +11314,14 @@ export interface operations {
             };
         };
     };
-    "app-project-schedule-definition-update-definition": {
+    "project-schedule-definition-update": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Schedule definition name, unique within the App. */
+                /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
             cookie?: never;
@@ -11390,14 +11390,14 @@ export interface operations {
             };
         };
     };
-    "app-project-schedule-definition-destroy-definition": {
+    "project-schedule-definition-destroy": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App ID. */
+                /** @description Numeric Project ID. */
                 app: number;
-                /** @description Schedule definition name, unique within the App. */
+                /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
             cookie?: never;
@@ -12210,14 +12210,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Numeric App instance ID. */
+                /** @description Numeric Instance ID. */
                 instance: number;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake App instance. */
+            /** @description Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake Instance. */
             200: {
                 headers: {
                     [name: string]: unknown;

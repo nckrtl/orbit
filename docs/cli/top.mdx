@@ -1,9 +1,9 @@
 ---
 title: "top"
-description: "Show the fleet as a live, sectioned screen: Dashboard, Nodes, Apps, Instances, Processes, Schedules, Databases, and Firewall."
+description: "Show the fleet as a live, sectioned screen: Dashboard, Nodes, Projects, Instances, Processes, Schedules, Databases, and Firewall."
 ---
 
-`orbit top` is one live screen. It loads every Node, App, App instance, Process, Schedule, Firewall rule, and Database connection once, then keeps that data current from realtime Gateway events or, when realtime is not available, by reloading on a fixed tick. Use it to watch the fleet, drill into one record, and run a small set of safe actions without leaving the screen.
+`orbit top` is one live screen. It loads every Node, Project, Instance, Process, Schedule, Firewall rule, and Database connection once, then keeps that data current from realtime Gateway events or, when realtime is not available, by reloading on a fixed tick. Use it to watch the fleet, drill into one record, and run a small set of safe actions without leaving the screen.
 
 ## Commands
 
@@ -27,11 +27,11 @@ orbit top [--tick=SECONDS]
 
 ## Sections and pages
 
-The sidebar lists eight sections: Dashboard, Nodes, Apps, Instances, Processes, Schedules, Databases, and Firewall. Each section's count for its own family sits right-aligned next to its label (yellow when something in it needs attention); Dashboard has no family of its own, so its row carries no count. Each record family's section is its list; Enter or a click on a row opens that record's page. Pages stack, so Esc or the `‹ back` link returns one step at a time. Instances, Processes, and Schedules carry a Node and App filter bar.
+The sidebar lists eight sections: Dashboard, Nodes, Projects, Instances, Processes, Schedules, Databases, and Firewall. Each section's count for its own family sits right-aligned next to its label (yellow when something in it needs attention); Dashboard has no family of its own, so its row carries no count. Each record family's section is its list; Enter or a click on a row opens that record's page. Pages stack, so Esc or the `‹ back` link returns one step at a time. Instances, Processes, and Schedules carry a Node and Project filter bar.
 
 - **Dashboard** shows a compact CPU/memory/disk line per Node and a "Needs attention" list gathering every row that is off across every family.
 - **Nodes** lists registered Nodes. `+ create` opens a form with the same fields `node:add` accepts (name, host, SSH port, user, roles, TLD); submitting it sends the same `AddNodeRequest` the command sends. A Node's own page adds its instances, its Node-owned processes, and its firewall rules to its properties.
-- **Apps**, **Instances**, **Processes**, **Schedules**, **Databases**, **Firewall** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployment history; a Database connection's tables and users). Enter or a click on a row in the Deployments pane opens that deployment's own record page: its properties (including a failed step, when it has one) and its recorded log. Firewall's fleet-wide list carries no filter bar or create link; the same rows and record page are also reachable from a Node's own Firewall pane.
+- **Projects**, **Instances**, **Processes**, **Schedules**, **Databases**, **Firewall** list their family and open a record page with that family's properties and related panes (an Instance's processes, schedules, deploy steps, and deployment history; a Database connection's tables and users). Enter or a click on a row in the Deployments pane opens that deployment's own record page: its properties (including a failed step, when it has one) and its recorded log. Firewall's fleet-wide list carries no filter bar or create link; the same rows and record page are also reachable from a Node's own Firewall pane.
 
 Every Processes pane carries a right-aligned `CPU/MEM` column, read from cAdvisor (see [Metrics role](/reference/metrics#per-process-cpu-and-memory-cadvisor)): whole-percent CPU over one core and memory in GiB, like `20%/1.2G`. A Process that is not running, or that cAdvisor has no series for, shows `—` instead.
 
@@ -44,7 +44,7 @@ Every Processes pane carries a right-aligned `CPU/MEM` column, read from cAdviso
 | `←` / `Esc` | Move focus back out, or go back one page. |
 | `1`-`8` | Jump straight to a section. |
 | `c` | On the Nodes list, open the create-Node form. |
-| `n` / `p` | On a list with a filter bar, cycle the Node or App filter. |
+| `n` / `p` | On a list with a filter bar, cycle the Node or Project filter. |
 | `a` | Open the actions menu for the focused or selected row. |
 | `q` | Leave `orbit top`. |
 
@@ -54,7 +54,7 @@ A click selects a row; clicking the already-selected row opens it. A right click
 
 The actions menu (`a` or a right click) lists what a record supports. Process start, stop, and restart; Schedule run and enable; Node doctor; Database connection destroy (with an inline confirmation); and Firewall rule removal (with an inline confirmation) run the same SDK request their matching command sends, and the row updates from the response.
 
-A few actions have no request to run synchronously inside a screen that must keep rendering, or no request at all yet: App instance deploy and rollback stream for minutes; `node:ssh`, `instance:profile`, and `database:query` need an interactive terminal of their own. Choosing one of these prints the equivalent command in the footer and returns to the screen instead of running anything.
+A few actions have no request to run synchronously inside a screen that must keep rendering, or no request at all yet: Instance deploy and rollback stream for minutes; `node:ssh`, `instance:profile`, and `database:query` need an interactive terminal of their own. Choosing one of these prints the equivalent command in the footer and returns to the screen instead of running anything.
 
 ## Realtime and polling
 
@@ -62,4 +62,4 @@ At startup, `orbit top` asks the Gateway for its realtime endpoint. When the Gat
 
 When realtime is not configured on the Gateway, `orbit top` falls back to the active profile's own `realtime_url`/`realtime_key`, or to `ORBIT_REALTIME_URL`/`ORBIT_REALTIME_KEY` (see [realtime](/cli/realtime)). When none of those resolve a socket, or the socket drops, `orbit top` reloads every list on the `--tick` interval instead. The header names the current mode: `live`, `reconnecting`, or `polling every Ns`.
 
-Deployment history on an App instance's page, the users recorded on a Database connection, and a Node's CPU/memory/disk metrics (outside of a `node.sample` realtime event) come from their own Gateway requests, independent of `--tick`, but never from inside a drawn frame: the screen only ever reads the last value fetched for what is currently visible, so a slow or unreachable Node cannot make a key press wait on its request. Node metrics refresh at most every 5 seconds per visible Node (every Node on the dashboard, or the one Node a Node page is open on); deployment history and Database users refresh at most every 15 seconds for whichever Instance or Database connection page is open. One request runs at a time, capped at a few seconds, and a Node whose metrics request fails or times out is not retried for 60 seconds. If a request fails or times out, its pane says so instead of rendering a table; every other pane on the same page still renders normally.
+Deployment history on an Instance's page, the users recorded on a Database connection, and a Node's CPU/memory/disk metrics (outside of a `node.sample` realtime event) come from their own Gateway requests, independent of `--tick`, but never from inside a drawn frame: the screen only ever reads the last value fetched for what is currently visible, so a slow or unreachable Node cannot make a key press wait on its request. Node metrics refresh at most every 5 seconds per visible Node (every Node on the dashboard, or the one Node a Node page is open on); deployment history and Database users refresh at most every 15 seconds for whichever Instance or Database connection page is open. One request runs at a time, capped at a few seconds, and a Node whose metrics request fails or times out is not retried for 60 seconds. If a request fails or times out, its pane says so instead of rendering a table; every other pane on the same page still renders normally.

@@ -110,7 +110,7 @@ final class Screen
         $rows = [];
 
         foreach (UiState::SECTIONS as $key => $title) {
-            $countCell = $key === 'dashboard' ? TableCell::fromString('') : $this->cell((string) $counts[ucfirst($key)][0], $counts[ucfirst($key)][1] > 0);
+            $countCell = $key === 'dashboard' ? TableCell::fromString('') : $this->cell((string) $counts[$title][0], $counts[$title][1] > 0);
             $rows[] = $this->alignLast(TableRow::fromCells(TableCell::fromString($title), $countCell), $lastWidth);
         }
 
@@ -152,7 +152,7 @@ final class Screen
         }
 
         if ($ui->hasFilters()) {
-            foreach (['node', 'app'] as $filter) {
+            foreach (['node', 'project'] as $filter) {
                 $text = "{$filter}: ".($ui->filters[$filter] ?? 'all').' ▾';
                 $spans[] = Span::fromString('   ');
                 $spans[] = Span::styled($text, $ui->filters[$filter] === null ? $dim : Style::default()->fg(AnsiColor::Cyan));
@@ -176,7 +176,7 @@ final class Screen
     /** @return array{list<string>, list<Constraint>, list<TableRow>} */
     private function listTable(State $state, UiState $ui): array
     {
-        $rows = $state->listRows($ui->section, $ui->filters['node'], $ui->filters['app']);
+        $rows = $state->listRows($ui->section, $ui->filters['node'], $ui->filters['project']);
 
         return match ($ui->section) {
             'nodes' => [
@@ -190,7 +190,7 @@ final class Screen
                 array_map(fn (array $a): TableRow => $this->row([$a['slug'], $a['name'], $a['default_branch'] ?? 'main'], (string) count($state->instancesForApp($a['slug'])), false), $rows),
             ],
             'instances' => [
-                ['App', 'Name', 'Environment', 'Node', 'Domain', 'Status'],
+                ['Project', 'Name', 'Environment', 'Node', 'Domain', 'Status'],
                 [Constraint::percentage(18), Constraint::percentage(14), Constraint::percentage(14), Constraint::percentage(12), Constraint::percentage(28), Constraint::percentage(10)],
                 array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $rows),
             ],
@@ -260,8 +260,8 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'apps', ' Apps ', ['Slug', 'Branch', 'Instances'], [Constraint::percentage(44), Constraint::percentage(30), Constraint::percentage(26)], array_map(fn (array $a): TableRow => $this->row([$a['slug'], $a['default_branch'] ?? 'main'], (string) count($state->instancesForApp($a['slug'])), false), $state->apps), 'No apps.'),
-                        $this->pane($ui, 'instances', ' Instances ', ['Name', 'App', 'Node', 'Status'], [Constraint::percentage(26), Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['app']['slug'], $i['node']['name']], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
+                        $this->pane($ui, 'apps', ' Projects ', ['Slug', 'Branch', 'Instances'], [Constraint::percentage(44), Constraint::percentage(30), Constraint::percentage(26)], array_map(fn (array $a): TableRow => $this->row([$a['slug'], $a['default_branch'] ?? 'main'], (string) count($state->instancesForApp($a['slug'])), false), $state->apps), 'No projects.'),
+                        $this->pane($ui, 'instances', ' Instances ', ['Name', 'Project', 'Node', 'Status'], [Constraint::percentage(26), Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['app']['slug'], $i['node']['name']], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
                     ),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
@@ -434,8 +434,8 @@ final class Screen
 
         $label = match ($kind) {
             'nodes' => 'Node',
-            'apps' => 'App',
-            'instances' => 'App instance',
+            'apps' => 'Project',
+            'instances' => 'Instance',
             'processes' => 'Process',
             'schedules' => 'Schedule',
             'databases' => 'Database',
@@ -455,7 +455,7 @@ final class Screen
         $index = 0;
 
         foreach ($this->properties($state, $kind, $row) as $name => [$value, $warn]) {
-            $link = in_array($name, ['App', 'Node'], true) && $value !== '—';
+            $link = in_array($name, ['Project', 'Node'], true) && $value !== '—';
 
             if ($link) {
                 $ui->drawn['link:'.str_replace(' ', '', strtolower($name))] = ['area' => Area::fromScalars($body->left() + 2, $body->top() + 1 + $index, max(10, $propertiesWidth - 4), 1), 'header' => false];
@@ -512,7 +512,7 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(40), Constraint::percentage(60))
                     ->widgets($properties, $this->nodeMetricsPanel($state, $node, $topColumns->get(1)->width)),
-                $this->pane($ui, 'instances', ' Instances on this node ', ['App', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $instances)),
+                $this->pane($ui, 'instances', ' Instances on this node ', ['Project', 'Name', 'Environment', 'Domain', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(32), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $instances)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
@@ -669,7 +669,7 @@ final class Screen
         $properties = match ($kind) {
             'nodes' => ['Name' => [$row['name'], false], 'Status' => [$row['status'], ! State::nodeHealthy($row)], 'Roles' => [$row['roles'], false], 'Platform' => [$row['platform'] ?? null, false], 'Architecture' => [$row['architecture'] ?? null, false], 'TLD' => [$row['tld'] ?? null, false], 'WireGuard IP' => [$row['wireguard_ip'] ?? null, false], 'SSH' => ["{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}", false]],
             'apps' => ['Name' => [$row['name'], false], 'Slug' => [$row['slug'], false], 'Repository' => [$row['repository_url'] ?? null, false], 'Default branch' => [$row['default_branch'] ?? null, false], 'Root' => [$row['root'] ?? null, false]],
-            'instances' => ['Name' => [$row['name'], false], 'App' => [$row['app']['slug'], false], 'Node' => [$row['node']['name'], false], 'Environment' => [$row['environment'], false], 'Domain' => [$row['domain'] ?? null, false], 'Status' => [$row['status'], ! State::instanceHealthy($row)], 'Checkout' => [$row['checkout_path'] ?? null, false], 'Selected branch' => [$row['selected_branch'] ?? null, false], 'Deploy steps' => [count($row['deploy_steps']).' steps', false]],
+            'instances' => ['Name' => [$row['name'], false], 'Project' => [$row['app']['slug'], false], 'Node' => [$row['node']['name'], false], 'Environment' => [$row['environment'], false], 'Domain' => [$row['domain'] ?? null, false], 'Status' => [$row['status'], ! State::instanceHealthy($row)], 'Checkout' => [$row['checkout_path'] ?? null, false], 'Selected branch' => [$row['selected_branch'] ?? null, false], 'Deploy steps' => [count($row['deploy_steps']).' steps', false]],
             'databases' => ['Slug' => [$row['slug'], false], 'Driver' => [$row['driver'], false], 'Node' => [$state->nodeName((int) ($row['node_id'] ?? 0)), false], 'Host' => [$row['host'] !== null ? "{$row['host']}:{$row['port']}" : null, false], 'Path' => [$row['path'] ?? null, false], 'Database' => [$row['database'] ?? null, false], 'Username' => [$row['username'] ?? null, false], 'Password' => [$row['has_password'] ? '••••••••' : null, false]],
             'processes' => ['Name' => [$row['name'], false], 'Owner' => [$state->processOwner($row), false], 'Node' => [$state->processNodeName($row), false], 'Runtime' => [$row['runtime'], false], 'Working directory' => [$row['working_directory'] ?? null, false], 'Restart policy' => [$row['restart_policy'] ?? null, false], 'Desired state' => [$row['desired_state'], false], 'Runtime status' => [$row['runtime_status'], ! State::processHealthy($row)], 'CPU/MEM' => [$this->processUsage($row), false]],
             'schedules' => ['Name' => [$row['name'], false], 'Instance' => [$state->instanceName($row['target_id']), false], 'Node' => [$state->instanceNodeName($row['target_id']), false], 'Calendar' => [$row['calendar'], false], 'Timeout' => ["{$row['timeout_seconds']} s", false], 'Desired timer' => [$row['desired_timer_state'], $row['desired_timer_state'] !== 'enabled'], 'Status' => [$row['status'], $row['status'] === 'failed'], 'Last run' => [$row['last_run_at'] ?? 'never', false], 'Last run status' => [$row['last_run_status'] ?? '—', false]],

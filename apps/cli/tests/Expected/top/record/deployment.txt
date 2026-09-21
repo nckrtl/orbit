@@ -2,7 +2,7 @@
 ╭──────────────────╮  ‹ back  Deployment: release 20260101000000                                                        
 │  Dashboard       │╭ Properties ──────────────────────────────────────────────────────────────────────────────────────╮
 │  Nodes         1 ││ Release            20260101000000                                                                │
-│  Apps          1 ││ Branch             main                                                                          │
+│  Projects      1 ││ Branch             main                                                                          │
 │› Instances     1 ││ Commit             aaaaaaa                                                                       │
 │  Processes     1 ││ Started            2026-01-01T00:00:00+00:00                                                     │
 │  Schedules     1 ││ Finished           2026-01-01T00:00:42+00:00                                                     │

@@ -1,9 +1,9 @@
 ---
 title: "Quickstart"
-description: "Hand this page to your coding agent and follow along. It installs a Gateway, adds a development Node, and opens your first App at its own private HTTPS address."
+description: "Hand this page to your coding agent and follow along. It installs a Gateway, adds a development Node, and opens your first Project at its own private HTTPS address."
 ---
 
-Orbit is built to be run by your coding agent. This page is written for both of you. Your agent reads it and does the work. You read it to know what happens, what your agent needs from you, and how to check the result. At the end you have a Gateway, one development Node, and an App at `https://hello.test`.
+Orbit is built to be run by your coding agent. This page is written for both of you. Your agent reads it and does the work. You read it to know what happens, what your agent needs from you, and how to check the result. At the end you have a Gateway, one development Node, and a Project at `https://hello.test`.
 
 ## Hand this page to your agent
 
@@ -214,8 +214,8 @@ Check each checkpoint before you continue to the next step.
     **Checkpoint:** `node:list` shows `dev` with an active `app-dev` role. Record its numeric ID.
   </Step>
 
-  <Step title="Create the App and its App instance" titleSize="h2">
-    An App records one repository. An App instance is a checkout of that App on one Node, with its own hostname. This guide uses MDN's public learning repository because its static page needs no dependencies, application key, or database. The user's own application comes after this page. For a private repository, keep credentials out of the URL and set up Git access on the Gateway and the Node first.
+  <Step title="Create the Project and its Instance" titleSize="h2">
+    A Project records one repository. An Instance is a checkout of that Project on one Node, with its own hostname. This guide uses MDN's public learning repository because its static page needs no dependencies, application key, or database. The user's own application comes after this page. For a private repository, keep credentials out of the URL and set up Git access on the Gateway and the Node first.
 
     ```bash Gateway machine · orbit
     orbit project:create hello laravel-app https://github.com/mdn/learning-area.git \
@@ -229,7 +229,7 @@ Check each checkpoint before you continue to the next step.
     Active means Orbit prepared the source, runtime, and Route. For a real application, `composer install`, an application key, and a database are the next step. The [Applications guide](/domains/applications) explains that boundary.
     </Note>
 
-    **Checkpoint:** `instance:create` returns `https://hello.test` and the App instance is active. Record the instance ID.
+    **Checkpoint:** `instance:create` returns `https://hello.test` and the Instance is active. Record the instance ID.
   </Step>
 
   <Step title="Open the page" titleSize="h2">
@@ -240,7 +240,7 @@ Check each checkpoint before you continue to the next step.
     curl --fail --cacert /home/orbit/.orbit/ca/root.pem https://hello.test
     ```
 
-    The first request can fail with HTTP 401 while Orbit wakes the App instance. Run the `curl` command again after a moment. See [runtime wake](/reference/app-dev-runtime-hibernation#wake).
+    The first request can fail with HTTP 401 while Orbit wakes the Instance. Run the `curl` command again after a moment. See [runtime wake](/reference/app-dev-runtime-hibernation#wake).
 
     Then check the fleet:
 
@@ -261,7 +261,7 @@ Check each checkpoint before you continue to the next step.
 
 Tell the user:
 
-- The URL, `https://hello.test`, and the App, Node, and App instance IDs.
+- The URL, `https://hello.test`, and the Project, Node, and Instance IDs.
 - The source commit from `git rev-parse HEAD`.
 - What their own machine needs to open the URL in a browser: a route to the private network, Orbit DNS, and the Gateway root certificate in its trust store. `orbit gateway:add` installs the certificate on any machine that runs the CLI. A Mac also needs a route to the Node; [`orbit dns:resolve`](/cli/dns) configures only its resolver.
 - That `orbit instance:destroy <INSTANCE_ID>` removes the example when they are done. The Node stays.
@@ -270,16 +270,16 @@ Tell the user:
 
 <CardGroup cols={2}>
   <Card title="Bring your own application" icon="boxes" href="/domains/applications">
-    Create an App instance from your repository, register an existing checkout, and finish the application setup.
+    Create an Instance from your repository, register an existing checkout, and finish the application setup.
   </Card>
   <Card title="Run a development server" icon="play" href="/cli/process">
     Record Vite or a queue worker as a Process. Idle Processes hibernate and wake on the next request.
   </Card>
   <Card title="Attach a database" icon="database" href="/cli/database">
-    Register a connection once and write its keys into any App instance.
+    Register a connection once and write its keys into any Instance.
   </Card>
   <Card title="Ship to production" icon="rocket" href="/reference/deployments">
-    Clone a candidate into a production App instance, configure deploy steps, and deploy.
+    Clone a candidate into a production Instance, configure deploy steps, and deploy.
   </Card>
   <Card title="Work from another machine" icon="laptop" href="/reference/node-provisioning">
     Provision a Linux operator Node from the Gateway and grant it access with `node:access:add`.

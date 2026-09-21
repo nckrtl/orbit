@@ -5,7 +5,7 @@ description: "A bounded trial, known limitations, release criteria, and feedback
 
 # Source alpha
 
-Early users can use this guide to choose a bounded Orbit trial and report useful feedback. The trial starts with source installation and ends with one development App instance serving a private HTTPS page. Use disposable machines and data you can replace.
+Early users can use this guide to choose a bounded Orbit trial and report useful feedback. The trial starts with source installation and ends with one development Instance serving a private HTTPS page. Use disposable machines and data you can replace.
 
 ## Trial path
 
@@ -34,7 +34,7 @@ The first trial has a deliberately small environment and workload. Orbit Ops can
 | Production | Production deployment commands exist, but this trial establishes no production readiness, availability guarantee, or application-data recovery guarantee. |
 | Updates | Review each release's instructions. Database migrations can prevent a code-only downgrade. |
 
-Private Route changes can require coordinated runtime and DNS work. Consult the refusal boundaries in [Routes](/reference/routes) before changing hostnames, membership, or routing. An active App instance means Orbit completed provisioning; it does not establish application health.
+Private Route changes can require coordinated runtime and DNS work. Consult the refusal boundaries in [Routes](/reference/routes) before changing hostnames, membership, or routing. An active Instance means Orbit completed provisioning; it does not establish application health.
 
 ## Release criteria
 

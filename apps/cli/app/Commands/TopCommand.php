@@ -32,7 +32,7 @@ use PhpTui\Term\Terminal;
 use PhpTui\Tui\DisplayBuilder;
 
 /**
- * `orbit top`: the fleet as a live, sectioned screen (Dashboard, Nodes, Apps, Instances,
+ * `orbit top`: the fleet as a live, sectioned screen (Dashboard, Nodes, Projects, Instances,
  * Processes, Schedules, Databases, Firewall). It is the real command the `design:top` sketch specified
  * (`apps/cli/design/README.md`); the rendering and interaction live in `App\Support\Tui\Screen`
  * and `App\Support\Tui\Interaction`, driven by fleet data in `App\Support\Tui\State`.

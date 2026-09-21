@@ -36,7 +36,7 @@ final readonly class UpdateRouteAction
         if (! $route->isApp()) {
             throw new ResourceOperationException(
                 errorCode: 'route.kind_unsupported',
-                message: 'Only an App Route can change domain or publication through Route update.',
+                message: 'Only a Project Route can change domain or publication through Route update.',
                 status: 409,
             );
         }
@@ -81,7 +81,7 @@ final readonly class UpdateRouteAction
         if ($currentTargetIds !== $expectedTargetIds) {
             throw new ResourceOperationException(
                 errorCode: 'env.owner_changed',
-                message: 'The AppInstance environment owner changed during the operation.',
+                message: 'The Instance environment owner changed during the operation.',
                 status: 409,
             );
         }

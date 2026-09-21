@@ -10,7 +10,7 @@ it("jumps to a section with its digit and walks the sidebar with the arrows", as
     await expect.poll(app.url).toBe("/nodes");
 
     await userEvent.keyboard("{ArrowDown}");
-    await expect.poll(app.url).toBe("/apps");
+    await expect.poll(app.url).toBe("/projects");
 
     await userEvent.keyboard("{ArrowUp}{ArrowUp}");
     await expect.poll(app.url).toBe("/");
@@ -43,7 +43,7 @@ it("moves between the dashboard panes by where they are on the screen", async ()
     await expect.element(pane("Worker nodes")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowDown}");
-    await expect.element(pane("Apps")).toHaveAttribute("data-state", "hovered");
+    await expect.element(pane("Projects")).toHaveAttribute("data-state", "hovered");
 
     await userEvent.keyboard("{ArrowRight}");
     await expect.element(pane("Instances")).toHaveAttribute("data-state", "hovered");
@@ -86,14 +86,14 @@ it("cycles the node filter with n and keeps it in the URL", async () => {
 });
 
 it("opens a record with one click and keeps the row selected for the way back", async () => {
-    const app = await openApp("/apps");
+    const app = await openApp("/projects");
 
-    await row("Apps", "charlie-shop").click();
-    await expect.poll(app.url).toBe("/apps/3");
+    await row("Projects", "charlie-shop").click();
+    await expect.poll(app.url).toBe("/projects/3");
 
     await userEvent.keyboard("{Escape}");
-    await expect.poll(app.url).toBe("/apps");
-    await expect.element(row("Apps", "charlie-shop")).toHaveAttribute("aria-selected", "true");
+    await expect.poll(app.url).toBe("/projects");
+    await expect.element(row("Projects", "charlie-shop")).toHaveAttribute("aria-selected", "true");
 });
 
 it("only selects a row that leads nowhere", async () => {
@@ -105,20 +105,22 @@ it("only selects a row that leads nowhere", async () => {
 });
 
 it("sorts a pane by a column header", async () => {
-    await openApp("/apps");
-    await expect.element(row("Apps", "charlie-shop")).toBeVisible();
+    await openApp("/projects");
+    await expect.element(row("Projects", "charlie-shop")).toBeVisible();
 
-    await pane("Apps").getByRole("columnheader", { name: "Slug" }).click();
-    await pane("Apps").getByRole("columnheader", { name: "Slug" }).click();
+    await pane("Projects").getByRole("columnheader", { name: "Slug" }).click();
+    await pane("Projects").getByRole("columnheader", { name: "Slug" }).click();
 
-    await expect.element(pane("Apps").getByRole("row").nth(1)).toHaveTextContent("charlie-shop");
+    await expect
+        .element(pane("Projects").getByRole("row").nth(1))
+        .toHaveTextContent("charlie-shop");
 });
 
 it("names the way to a record by what owns it", async () => {
     const app = await openApp("/processes/2");
     const crumbs = page.getByRole("navigation", { name: "Breadcrumb" });
 
-    await expect.element(crumbs).toHaveTextContent("Apps›charlie-shop›dev›vite");
+    await expect.element(crumbs).toHaveTextContent("Projects›charlie-shop›dev›vite");
 
     await crumbs.getByText("dev", { exact: true }).click();
     await expect.poll(app.url).toBe("/instances/1");

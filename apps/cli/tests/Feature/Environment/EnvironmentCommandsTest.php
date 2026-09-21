@@ -180,7 +180,7 @@ describe('environment output', function (): void {
         ]);
         $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
         expect($exit)->toBe(0);
-        expect($flat)->toContain('AppInstance ID 17');
+        expect($flat)->toContain('Instance ID 17');
         expect($flat)->toContain('Operation update');
         expect($flat)->toContain('Changed true');
         expect($flat)->toContain('Stored keys 3');
@@ -208,7 +208,7 @@ describe('environment output', function (): void {
         [$exit, $output] = environment_cli_display('env:sync', ['--instance' => 'app.com']);
         $flat = preg_replace('/[ \t]+/', ' ', $output) ?? $output;
         expect($exit)->toBe(0);
-        expect($flat)->toContain('AppInstance ID 17');
+        expect($flat)->toContain('Instance ID 17');
         expect($flat)->toContain('Operation sync');
         expect($flat)->toContain('Changed false');
         expect($flat)->toContain('Stored keys 3');
@@ -472,7 +472,7 @@ function environment_cli_error_json(
     array $details = [],
 ): string {
     $messages = [
-        'env.instance_required' => 'AppInstance ID or Route domain is required.',
+        'env.instance_required' => 'Instance ID or Route domain is required.',
         'env.key_required' => 'Environment key is required.',
         'env.value_required' => 'Environment value is required.',
     ];

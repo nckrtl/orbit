@@ -20,16 +20,16 @@ final class CloneInstanceCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:clone
-        {candidate : Numeric candidate AppInstance ID}
+        {candidate : Numeric candidate Instance ID}
         {node : Numeric destination Node ID}
-        {name : Target production AppInstance name}
+        {name : Target production Instance name}
         {--preview-name= : Required preview name to combine with the production Node TLD}
         {--branch= : Optional target branch; omission inherits the candidate branch}
         {--sqlite-source-path= : Optional SQLite database path on the candidate}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Clone a candidate into a prepared production AppInstance.';
+    protected $description = 'Clone a candidate into a prepared production Instance.';
 
     #[\Override]
     protected $help = <<<'HELP'
@@ -75,7 +75,7 @@ HELP;
             return self::FAILURE;
         }
 
-        $progress = $this->progressDisplay('Clone App instance');
+        $progress = $this->progressDisplay('Clone Instance');
         $progress->admit('clone', 'Clone source', 'Cloning source', 'Cloned source');
         $progress->admit('releases', 'Read selected release', 'Loading selected release', 'Loaded selected release');
         $instance = null;
@@ -101,7 +101,7 @@ HELP;
             ));
         } catch (GatewayApiException $exception) {
             if ($instance instanceof AppInstanceResponse) {
-                $this->writeHumanMessage("App instance [{$instance->name}] (#{$instance->id}) was cloned; the selected release could not be read. Clone request ID: {$instance->requestId}");
+                $this->writeHumanMessage("Instance [{$instance->name}] (#{$instance->id}) was cloned; the selected release could not be read. Clone request ID: {$instance->requestId}");
             }
 
             return $this->renderGatewayFailure(
@@ -113,7 +113,7 @@ HELP;
             return self::FAILURE;
         }
         $progress->complete('releases', ProgressState::Success);
-        $progress->finish('App instance cloned.');
+        $progress->finish('Instance cloned.');
 
         if ($this->option('json') === true) {
             $this->writeJson([
@@ -130,7 +130,7 @@ HELP;
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'Target ID' => $instance->id,
             'Configured branch' => $instance->selectedBranch,
             'Preview domain' => $instance->route->domain,

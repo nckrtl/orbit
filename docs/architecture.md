@@ -23,7 +23,7 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path from CLI control traffic. [Routes](/reference/routes) explains how a domain reaches its App instance target through the Node, Router, and Ingress roles.
+Web traffic follows a separate path from CLI control traffic. [Routes](/reference/routes) explains how a domain reaches its Instance target through the Node, Router, and Ingress roles.
 
 ## CLI
 
@@ -41,15 +41,15 @@ The Gateway manages Nodes over SSH. After setup, WireGuard provides the private 
 
 ## Applications and traffic
 
-An App stores shared source defaults and owns Routes. An App instance is one copy of that App on a Node, used for development or production. A Route gives it a domain. Related Nodes can share a Cluster, but this is optional.
+A Project stores shared source defaults and owns Routes. An Instance is one copy of that Project on a Node, used for development or production. A Route gives it a domain. Related Nodes can share a Cluster, but this is optional.
 
-A development App instance owns one Git checkout or worktree. A standalone production App instance has a dedicated user, home, deployment branch, and application steps. Orbit prepares and activates releases; the operator or agent starts deployments and chooses application commands. The Gateway selects any required PHP runtime and prepares one Route per active App instance.
+A development Instance owns one Git checkout or worktree. A standalone production Instance has a dedicated user, home, deployment branch, and application steps. Orbit prepares and activates releases; the operator or agent starts deployments and chooses application commands. The Gateway selects any required PHP runtime and prepares one Route per active Instance.
 
-When an App instance is idle on an active `app-dev` Node, it can [hibernate](/reference/app-dev-runtime-hibernation). Orbit stops processes configured to run unless they have keep-alive enabled. After a longer idle period, it removes dependencies that can be rebuilt from lockfiles. The next HTTP request restores those dependencies and starts the group configured to run.
+When an Instance is idle on an active `app-dev` Node, it can [hibernate](/reference/app-dev-runtime-hibernation). Orbit stops processes configured to run unless they have keep-alive enabled. After a longer idle period, it removes dependencies that can be rebuilt from lockfiles. The next HTTP request restores those dependencies and starts the group configured to run.
 
-See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and domain changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [App instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
+See [Applications](/domains/applications) for source, branch, and setup details; [Routes](/reference/routes) for traffic and domain changes; and [PHP runtime](/reference/php-runtime) for runtime settings. [Instance removal](/reference/appinstance-removal) explains cleanup and retained content. These pages link to the governing architecture decisions.
 
-App instance commands manage App instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use App instances and Routes only. Doctor inspects App instances and Routes.
+Instance commands manage Instances and Routes. Runtime publication, Caddy, DNS, certificates, PHP-FPM, and firewall intent use Instances and Routes only. Doctor inspects Instances and Routes.
 
 ## Herdr sessions
 
@@ -57,7 +57,7 @@ A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server 
 
 ## Tasks
 
-The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared App instance. After MCP create, the Gateway claims the group, provisions that instance on an `app-dev` Node, and starts T3 reviewer and implementer threads on the instance-owning Node. After the last sign-off it opens the pull request, fills settle metrics, and posts the opt-in Coder webhook. `tasks:complete` removes the instance after merge. Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the boundary.
+The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared Instance. After MCP create, the Gateway claims the group, provisions that instance on an `app-dev` Node, and starts T3 reviewer and implementer threads on the instance-owning Node. After the last sign-off it opens the pull request, fills settle metrics, and posts the opt-in Coder webhook. `tasks:complete` removes the instance after merge. Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the boundary.
 
 ## proxycli
 
@@ -65,7 +65,7 @@ The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI acco
 
 ## Database connections
 
-The Gateway stores named MySQL, PostgreSQL, SQLite, and Redis connections. Register a host or SQLite path, or create a MySQL user and database through a Node Docker Process and register that connection, then attach the connection to an App instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. Query, tables, schema, and describe use PDO for mysql, pgsql, and sqlite: mysql and pgsql on the Gateway, sqlite on the owning Node through a hidden Orbit CLI command. Redis has no PDO inspector, so those commands refuse a redis connection. See [Database connections](/reference/database-connections) and [ADR 0081](/decisions/0081-query-registered-databases-through-pdo).
+The Gateway stores named MySQL, PostgreSQL, SQLite, and Redis connections. Register a host or SQLite path, or create a MySQL user and database through a Node Docker Process and register that connection, then attach the connection to an Instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. Query, tables, schema, and describe use PDO for mysql, pgsql, and sqlite: mysql and pgsql on the Gateway, sqlite on the owning Node through a hidden Orbit CLI command. Redis has no PDO inspector, so those commands refuse a redis connection. See [Database connections](/reference/database-connections) and [ADR 0081](/decisions/0081-query-registered-databases-through-pdo).
 
 ## Doctor
 

@@ -24,7 +24,7 @@ final class ShowProcessCommand extends ProcessCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show one App process definition.';
+    protected $description = 'Show one Project process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,

@@ -81,7 +81,13 @@
                         "timeout_seconds": 120
                     }
                 ],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "project_id": 3,
+                "project": {
+                    "id": 3,
+                    "name": "Charlie shop",
+                    "slug": "charlie-shop"
+                }
             },
             {
                 "id": 2,
@@ -147,7 +153,13 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "project_id": 3,
+                "project": {
+                    "id": 3,
+                    "name": "Charlie shop",
+                    "slug": "charlie-shop"
+                }
             },
             {
                 "id": 3,
@@ -213,7 +225,13 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "project_id": 1,
+                "project": {
+                    "id": 1,
+                    "name": "Acme",
+                    "slug": "acme"
+                }
             },
             {
                 "id": 4,
@@ -279,7 +297,13 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "project_id": 1,
+                "project": {
+                    "id": 1,
+                    "name": "Acme",
+                    "slug": "acme"
+                }
             }
         ],
         "meta": {

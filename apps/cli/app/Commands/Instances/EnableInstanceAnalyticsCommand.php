@@ -18,7 +18,7 @@ final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Publish the analytics tracking hosts of an App instance.';
+    protected $description = 'Publish the analytics tracking hosts of an Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

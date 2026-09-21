@@ -61,7 +61,7 @@ Every event shares the same shape. The broadcast name equals `type`.
 
 ## Verbs
 
-Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and AppInstance runtime state changes are not currently broadcast; see [Limits](#limits).
+Most families broadcast `created`, `updated`, and `deleted`. Three families also broadcast `status`, reserved for a change to the Gateway's own recorded runtime state rather than to configuration: process start, stop, and restart. Node and Instance runtime state changes are not currently broadcast; see [Limits](#limits).
 
 ## Event catalogue
 
@@ -73,21 +73,21 @@ Most families broadcast `created`, `updated`, and `deleted`. Three families also
 | `node.updated` | An existing Node is reprovisioned, its settings change, it is retargeted to a new public SSH host, or a role is added or removed. | `NodeData` |
 | `node.deleted` | A Node is removed from the fleet. | `{ id, name }` |
 
-### App
+### Project
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `app.created` | A new App is created. | `AppData` |
-| `app.updated` | An App's slug, repository, default branch, or root changes. | `AppData` |
-| `app.deleted` | An App is removed. | `{ id, name, slug }` |
+| `app.created` | A new Project is created. | `AppData` |
+| `app.updated` | A Project's slug, repository, default branch, or root changes. | `AppData` |
+| `app.deleted` | A Project is removed. | `{ id, name, slug }` |
 
-### AppInstance (`instance`)
+### Instance (`instance`)
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `instance.created` | An AppInstance is created or registered for the first time. | `AppInstanceData` |
-| `instance.updated` | An AppInstance's deployment branch changes, or its removal begins but has not yet deleted the record. | `AppInstanceData` |
-| `instance.deleted` | An AppInstance is fully removed. | `{ id, name }` |
+| `instance.created` | An Instance is created or registered for the first time. | `AppInstanceData` |
+| `instance.updated` | An Instance's deployment branch changes, or its removal begins but has not yet deleted the record. | `AppInstanceData` |
+| `instance.deleted` | An Instance is fully removed. | `{ id, name }` |
 
 ### Process
 
@@ -130,17 +130,17 @@ There is no `firewall.updated`. Storing a rule under a name that already exists 
 | `route.updated` | A Route's domain or publication changes, or its target is set or cleared. | `RouteData` |
 | `route.deleted` | A Route is removed. | `{ id, domain }` |
 
-A Route that Orbit creates implicitly while provisioning an AppInstance does not emit its own `route.created`; only a Route created directly through the routes API does.
+A Route that Orbit creates implicitly while provisioning an Instance does not emit its own `route.created`; only a Route created directly through the routes API does.
 
 ### Deploy step (`deploy_step`)
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `deploy_step.created` | A deploy step is added to an AppInstance's deployment recipe. | `DeploymentStepData` |
+| `deploy_step.created` | A deploy step is added to an Instance's deployment recipe. | `DeploymentStepData` |
 | `deploy_step.updated` | A deploy step's command, phase, timeout, or position changes. | `DeploymentStepData` |
 | `deploy_step.deleted` | A deploy step is removed. | `DeploymentStepData` (the removed step's last known fields) |
 
-A deploy step has no numeric id in its API shape, so `id` carries the step's name instead. `data` matches the deploy-step list and show endpoints exactly, so it does not include the owning AppInstance's id.
+A deploy step has no numeric id in its API shape, so `id` carries the step's name instead. `data` matches the deploy-step list and show endpoints exactly, so it does not include the owning Instance's id.
 
 ## Limits
 
@@ -151,7 +151,7 @@ An idempotent create call, such as adding a Process, Schedule, or firewall rule 
 `node.status` and `instance.status` are not currently emitted, even though they exist for parity with `process.status`:
 
 - A Node's own recorded status only changes as a side effect of provisioning, removal, or a role change, and each of those is already covered by `node.created`, `node.updated`, or `node.deleted`. No Gateway action flips only a Node's status field.
-- AppInstance dev-runtime hibernation (wake and sleep) tracks "awake" and "asleep" through a marker store outside the AppInstance and Process rows. It never writes a field either record's list or show endpoint returns, so the Gateway has nothing on the record to broadcast.
+- Instance dev-runtime hibernation (wake and sleep) tracks "awake" and "asleep" through a marker store outside the Instance and Process rows. It never writes a field either record's list or show endpoint returns, so the Gateway has nothing on the record to broadcast.
 
 `process.status` carries the Process's own persisted lifecycle status and desired state, not the live runtime string its show endpoint also reports (the state a process manager observes right now, such as whether the OS process is currently running). That live string is polled at read time, not recorded anywhere, so a change in it alone cannot be broadcast.
 

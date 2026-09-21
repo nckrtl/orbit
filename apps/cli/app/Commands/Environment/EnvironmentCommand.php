@@ -17,7 +17,7 @@ abstract class EnvironmentCommand extends GatewayCommand
         if (! is_string($selector) || $selector === '') {
             $this->renderGatewayFailure(
                 'env.instance_required',
-                'AppInstance ID or Route domain is required.',
+                'Instance ID or Route domain is required.',
             );
 
             return null;
@@ -41,7 +41,7 @@ abstract class EnvironmentCommand extends GatewayCommand
         }
 
         $fields = [
-            'AppInstance ID' => $response->appInstanceId,
+            'Instance ID' => $response->appInstanceId,
             'Operation' => $response->operation,
             'Changed' => $response->changed ? 'true' : 'false',
             'Stored keys' => $response->keyCount,
@@ -52,7 +52,7 @@ abstract class EnvironmentCommand extends GatewayCommand
         }
 
         $fields['Request ID'] = $response->requestId;
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('App instance environment', $fields));
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Instance environment', $fields));
 
         return self::SUCCESS;
     }

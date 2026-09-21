@@ -27,7 +27,7 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Destroy one Schedule or App Schedule definition through the Gateway.';
+    protected $description = 'Destroy one Schedule or Project Schedule definition through the Gateway.';
 
     #[\Override]
     public function handle(

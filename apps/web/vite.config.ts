@@ -38,7 +38,7 @@ function orbitGateway(): Plugin {
                 server: {
                     proxy: {
                         "^/api/": { target: profile.url, changeOrigin: true, agent },
-                        // pusher-js connects to `/app/{key}`; `^/app/` keeps the `/apps` page out of the proxy.
+                        // pusher-js connects to `/app/{key}`; `^/app/` keeps the `/projects` page out of the proxy.
                         ...(realtime === null
                             ? {}
                             : {

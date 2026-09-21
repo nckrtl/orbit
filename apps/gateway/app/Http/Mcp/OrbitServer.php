@@ -35,7 +35,7 @@ class OrbitServer extends Server
         - Tool names follow `<family>-<verb>`, for example `node-list`, `instance-show`, `process-restart`. List or show a record before changing it, and pass numeric ids unless the schema says otherwise.
         - A failed call returns the API error envelope `{"status", "error": {"code", "message", "details"}}`. Use `error.code` to decide what to do next; validation failures list the offending fields in `details`.
         - `instance-deploy` and `instance-rollback` run to completion and return every progress event under `events`; the last event carries the result.
-        - Destructive tools are annotated as such. Confirm with the user before removing Nodes, App instances, databases, or Routes.
+        - Destructive tools are annotated as such. Confirm with the user before removing Nodes, Instances, databases, or Routes.
         MARKDOWN;
 
     #[\Override]

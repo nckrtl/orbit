@@ -1,7 +1,7 @@
 ╭─ Navigation
 │› Dashboard │
 │  Nodes │ 3
-│  Apps │ 3
+│  Projects │ 3
 │  Databases │ 2
 ╰─
 
@@ -16,7 +16,7 @@
 │ No client nodes.
 ╰─
 
-╭─ Apps
+╭─ Projects
 │  Slug │ Branch │ Instances
 │› acme │ main │ 2
 │  bravo-docs │ main │ 0
@@ -24,7 +24,7 @@
 ╰─
 
 ╭─ Instances
-│  Name │ App │ Node │ Status
+│  Name │ Project │ Node │ Status
 │› ●dev │ charlie-shop │ beast │ active
 │  ●staging │ charlie-shop │ beast │ active
 │  ●dev │ acme │ beast │ active

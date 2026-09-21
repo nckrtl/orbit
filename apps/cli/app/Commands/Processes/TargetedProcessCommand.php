@@ -74,7 +74,7 @@ abstract class TargetedProcessCommand extends ProcessCommand
             if (! is_int($id)) {
                 $this->renderGatewayFailure(
                     'process.target_id_invalid',
-                    'AppInstance ID must be a positive integer.',
+                    'Instance ID must be a positive integer.',
                 );
 
                 return null;

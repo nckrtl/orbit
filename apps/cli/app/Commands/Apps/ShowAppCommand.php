@@ -76,7 +76,7 @@ final class ShowAppCommand extends GatewayCommand
         }
 
         if ($this->consoleMode()->mayPrompt && $rows !== []) {
-            // The App's instances are the selector: Enter shows the highlighted App instance.
+            // The Project's instances are the selector: Enter shows the highlighted Instance.
             try {
                 $selected = $this->commandPrompts()->selectEntity('Instances', $headers, $rows);
             } catch (PromptAborted) {

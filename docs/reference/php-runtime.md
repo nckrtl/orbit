@@ -1,15 +1,15 @@
 ---
 title: "PHP runtimes"
-description: "How Orbit selects, installs, and tunes the PHP-FPM runtime for development and production App instances."
+description: "How Orbit selects, installs, and tunes the PHP-FPM runtime for development and production Instances."
 ---
 
 # PHP runtimes
 
 Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a Unix socket. This page tells an operator or deployer how development and production services differ, where generated identity and local tuning live on a Node, and how to verify each runtime. [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) owns the shared package source and role defaults, while [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) owns production service isolation and tuning ownership.
 
-## Select an App instance runtime
+## Select an Instance runtime
 
-For a development or standalone production App instance, the Gateway reads source metadata after initial source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](/decisions/0034-select-appinstance-php-from-composer-constraints) defines this source-driven selection boundary.
+For a development or standalone production Instance, the Gateway reads source metadata after initial source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](/decisions/0034-select-appinstance-php-from-composer-constraints) defines this source-driven selection boundary.
 
 Orbit tries PHP 8.5, then PHP 8.4, against the source's Composer constraint. It selects no other version, even if the constraint permits one.
 
@@ -23,21 +23,21 @@ Orbit tries PHP 8.5, then PHP 8.4, against the source's Composer constraint. It 
 
 Both failures happen before runtime or DNS publication. At its first provisioning checkpoint, the Gateway stores the selected version together with the Laravel classification as one complete source profile. A development retry at a retained checkpoint requires both values to match before Laravel URL configuration or runtime and Route projection. A changed development profile returns `app-dev.source_evidence_changed`. Production source changes after successful provisioning are operator-owned and an identical creation retry does not inspect them.
 
-A creation retry with `recover_source_profile` inspects the recorded source once, and only when the active App instance has no recorded profile. It stores the Laravel classification and keeps a recorded PHP version. When no PHP version is recorded, it stores the inspected version together with the dedicated production runtime identity derived from it, or refuses with `app-prod.php_runtime_identity_invalid` before it writes.
+A creation retry with `recover_source_profile` inspects the recorded source once, and only when the active Instance has no recorded profile. It stores the Laravel classification and keeps a recorded PHP version. When no PHP version is recorded, it stores the inspected version together with the dedicated production runtime identity derived from it, or refuses with `app-prod.php_runtime_identity_invalid` before it writes.
 
 The Gateway does not infer missing Laravel evidence for a legacy retained checkpoint. An ordinary retry fails closed. The explicit recovery contract, including URL-reconciliation consent, rollback refusal, active-state behavior, and unchanged removal boundaries, is described in [Applications](/domains/applications#provision-the-application-endpoint).
 
-App instance input, persisted App instance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
+Instance input, persisted Instance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
 
 ## Runtime ownership
 
-Development sites for one PHP version share the distribution PHP-FPM service. Each new production PHP App instance uses the service, pool, socket, and OPcache instance recorded for its production Unix user. Production users on the same Node share the installed PHP version packages but do not share a PHP-FPM master.
+Development sites for one PHP version share the distribution PHP-FPM service. Each new production PHP Instance uses the service, pool, socket, and OPcache instance recorded for its production Unix user. Production users on the same Node share the installed PHP version packages but do not share a PHP-FPM master.
 
 The production identity follows fixed names that an operator can inspect.
 
 | Projection | Name or path | Owner | Lifecycle |
 | --- | --- | --- | --- |
-| Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway | Created and activated for the recorded production user; removed with that App instance's runtime projection. |
+| Service | `orbit-<production-user>-php<version>-fpm.service` | Gateway | Created and activated for the recorded production user; removed with that Instance's runtime projection. |
 | Socket | `/run/php/<production-user>.sock` | Gateway | Created by the owning service and removed when that service stops. |
 | Generated identity | Generated PHP-FPM files below `/etc/orbit/php-fpm/<production-user>/generated/`, including the service-specific `master.ini` | Gateway | Replaced only after the complete candidate validates against the recorded user, service, pool, socket, version, home, source paths, and effective master settings. |
 | Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operating agent | Seeded with Orbit defaults for a new runtime and then preserved byte-for-byte by provisioning, retry, and cleanup. |
@@ -46,17 +46,17 @@ Production runtime convergence keeps the shared `/etc/orbit` directory owned by 
 
 The shared-parent repair does not relax its children. In particular, `/etc/orbit/php-fpm` and its protected runtime state remain inaccessible to application users. Convergence preserves sibling contents, generated runtime identity, and local operator tuning.
 
-The generated configuration establishes runtime identity and includes the separate local tuning file. Before activation or an Orbit-owned reload, the Gateway validates the effective configuration and refuses a local or conflicting file that changes the recorded user, service, pool, socket, PHP version, home, or application path. It does not adopt an existing user, service, socket, generated directory, or file whose identity or ownership conflicts with the App instance record.
+The generated configuration establishes runtime identity and includes the separate local tuning file. Before activation or an Orbit-owned reload, the Gateway validates the effective configuration and refuses a local or conflicting file that changes the recorded user, service, pool, socket, PHP version, home, or application path. It does not adopt an existing user, service, socket, generated directory, or file whose identity or ownership conflicts with the Instance record.
 
 An interrupted publication resumes from the recorded production identity. A failed candidate activation restores the exact generated files and service state captured before publication. It never replaces the local tuning file during recovery.
 
-Existing production placements without a dedicated service association remain on their recorded shared runtime until an operator explicitly converts the placement. Conversion copies supported local pool tuning into the dedicated runtime's `local.conf`, verifies the complete effective identity, and changes only that App instance's Caddy upstream. It does not reload, restart, or reset another production user's shared or dedicated service. The [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes the complete conversion and refusal boundary.
+Existing production placements without a dedicated service association remain on their recorded shared runtime until an operator explicitly converts the placement. Conversion copies supported local pool tuning into the dedicated runtime's `local.conf`, verifies the complete effective identity, and changes only that Instance's Caddy upstream. It does not reload, restart, or reset another production user's shared or dedicated service. The [production release-layout reference](/reference/deployments#convert-an-existing-production-home) describes the complete conversion and refusal boundary.
 
 New dedicated runtime preparation, retry, removal, and explicit conversion do not rewrite or adopt an unrelated placement. A Node can also run the Gateway or development PHP service; production runtime operations leave those service masters and caches unchanged.
 
-## App updates
+## Project updates
 
-A slug or web-root update may reproject the owning production PHP-FPM service so the effective document root matches the App instance. The Gateway validates the complete effective configuration before it activates or reloads that service. It preserves `/etc/orbit/php-fpm/<production-user>/local.conf` byte-for-byte and does not reload, restart, or reset another production user's service or OPcache. [Applications](/domains/applications#reconcile-an-app-update) describes when this reprojection runs.
+A slug or web-root update may reproject the owning production PHP-FPM service so the effective document root matches the Instance. The Gateway validates the complete effective configuration before it activates or reloads that service. It preserves `/etc/orbit/php-fpm/<production-user>/local.conf` byte-for-byte and does not reload, restart, or reset another production user's service or OPcache. [Applications](/domains/applications#reconcile-an-app-update) describes when this reprojection runs.
 
 ## Shared runtime module
 
@@ -99,11 +99,11 @@ opcache.validate_timestamps = 0
 
 Runtime provisioning establishes the dedicated master and its isolated OPcache instance. Production deployment and verified cache refresh are separate operations.
 
-The Gateway derives the production user's service, pool, socket, and OPcache from the App instance's recorded runtime identity. It verifies that the owning service is active and owns the expected socket before it requests a reset through that socket. The reset runs inside the owning FastCGI Process Manager (FPM) runtime. Running `opcache_reset()` from the PHP command line cannot establish this result.
+The Gateway derives the production user's service, pool, socket, and OPcache from the Instance's recorded runtime identity. It verifies that the owning service is active and owns the expected socket before it requests a reset through that socket. The reset runs inside the owning FastCGI Process Manager (FPM) runtime. Running `opcache_reset()` from the PHP command line cannot establish this result.
 
 The Gateway reports success only after a later FastCGI observation shows that the reset completed. A reset request that returns successfully is not completion evidence by itself. The operation has a bounded deadline and reports an unavailable socket, a wrong service association, a rejected reset, and a reset still pending at the deadline as distinct failures.
 
-Cache refresh never tries another App instance's socket and never reloads a service as a fallback. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime. Laravel's `php artisan optimize` caches remain application deployment work.
+Cache refresh never tries another Instance's socket and never reloads a service as a fallback. A generic reload of the distribution `php<version>-fpm` service does not target a dedicated production runtime. Laravel's `php artisan optimize` caches remain application deployment work.
 
 ## Proposed monitoring
 
@@ -129,9 +129,9 @@ Laravel's Vite plugin fingerprints every file under `public/build/assets`, so br
 
 ## Inspect production runtime with Doctor
 
-Doctor checks that each production PHP App instance has one dedicated service, pool, and socket association and that another App instance does not share them. It compares the current generated identity files and rejects a `local.conf` override of the recorded user, home, pool, socket, or application path.
+Doctor checks that each production PHP Instance has one dedicated service, pool, and socket association and that another Instance does not share them. It compares the current generated identity files and rejects a `local.conf` override of the recorded user, home, pool, socket, or application path.
 
-Doctor also checks the service's loaded `ExecStart` and `PHP_INI_SCAN_DIR`, the active master's executable and root identity, and the master's ownership of the expected service-owned socket. For each worker that exists during inspection, it checks the parent, user IDs, group IDs, and process root. An idle `ondemand` pool with no workers is valid. The workload Caddy check applies to standalone and Cluster-scoped Routes; it does not inspect the Router as a second App instance runtime.
+Doctor also checks the service's loaded `ExecStart` and `PHP_INI_SCAN_DIR`, the active master's executable and root identity, and the master's ownership of the expected service-owned socket. For each worker that exists during inspection, it checks the parent, user IDs, group IDs, and process root. An idle `ondemand` pool with no workers is valid. The workload Caddy check applies to standalone and Cluster-scoped Routes; it does not inspect the Router as a second Instance runtime.
 
 These observations establish the current configuration and the directly observable runtime association. They do not reconstruct every PHP-FPM directive loaded from an earlier configuration generation. Doctor does not compare an application's mutable working directory with the configured initial directory. It accepts an operating agent's `local.conf` changes when they preserve generated identity, does not compare allowed tuning with Orbit's seeded defaults, and does not require a tuning edit to be reloaded only to satisfy inspection.
 

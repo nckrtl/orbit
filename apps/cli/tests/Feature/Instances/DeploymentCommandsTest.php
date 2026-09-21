@@ -94,7 +94,7 @@ describe('deployment streams', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)
             ->toContain(
-                'Deploy AppInstance [17]',
+                'Deploy Instance [17]',
                 '● Resolved release',
                 '● Synced environment',
                 '● Ran migrate',
@@ -136,7 +136,7 @@ describe('deployment streams', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)
             ->toContain('stdout: "line one\\n"', 'stdout: "line two\\n"', 'stdout: "line three\\n"')
-            ->and(substr_count($output, 'Deploy AppInstance [17]'))->toBe(1)
+            ->and(substr_count($output, 'Deploy Instance [17]'))->toBe(1)
             ->and(substr_count($output, 'Deployment succeeded.'))->toBe(1)
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
@@ -237,7 +237,7 @@ describe('deployment streams', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)
             ->toContain(
-                'Roll back AppInstance [17]',
+                'Roll back Instance [17]',
                 '● Selected release',
                 'Rollback succeeded.',
                 'Selected release: release-a',
@@ -490,7 +490,7 @@ describe('deployment streams', function (): void {
         expect($exitCode)->toBe(1)
             ->and($output)
             ->toContain(
-                'Deploy AppInstance [17]',
+                'Deploy Instance [17]',
                 '● Resolving release',
                 'deployment_config.unavailable',
                 '● Sync environment',

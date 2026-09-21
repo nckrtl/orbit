@@ -25,7 +25,7 @@ Public product commands that return data support `--json`. Their existing final-
 
 Resolve and validate required fields before mutations. Validate a supplied value when it is read, and validate a prompted value when the user submits it. If a prompted value is invalid, ask again without an arbitrary retry cap. Stop on cancellation or end of input, using the command's failure status, before mutation begins.
 
-In a terminal, a command prompts for every required input the caller omitted, and it offers a default where one exists, such as `root` for a bootstrap user or the App default branch. A destructive target is selected through the interactive data list, never inferred. A noninteractive or machine call refuses an omitted required input with the command's documented error code. Read-only lookups needed to resolve a prompt may run before consent. A slow lookup needs visible waiting feedback.
+In a terminal, a command prompts for every required input the caller omitted, and it offers a default where one exists, such as `root` for a bootstrap user or the Project default branch. A destructive target is selected through the interactive data list, never inferred. A noninteractive or machine call refuses an omitted required input with the command's documented error code. Read-only lookups needed to resolve a prompt may run before consent. A slow lookup needs visible waiting feedback.
 
 ## Prompt selection
 
@@ -72,7 +72,7 @@ Select the display from the task the user is performing.
 | Short wait without meaningful substeps | Spinner |
 | Line-oriented logs or another continuous text output | The stream itself |
 
-Human output names a related record by its name or slug, such as the App `charlie-shop` or the Node `beast`, never by its numeric id alone. JSON output carries the id and, where the Gateway provides it, the name and slug beside it.
+Human output names a related record by its name or slug, such as the Project `charlie-shop` or the Node `beast`, never by its numeric id alone. JSON output carries the id and, where the Gateway provides it, the name and slug beside it.
 
 A list does not become interactive unless its command contract defines a selection and follow-up action. Tables use short uppercase headers. Data lists retain the exact documented column names. Empty lists state that no matching records were found. Missing display values use an em dash; JSON keeps its documented null or omission behavior. A property list uses a group heading, a primary item label, and indented labeled values.
 

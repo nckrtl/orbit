@@ -18,7 +18,7 @@ final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Remove the analytics tracking hosts of an App instance.';
+    protected $description = 'Remove the analytics tracking hosts of an Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -30,7 +30,7 @@ final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
 
         // Visits stop being counted the moment the hosts are gone, so this asks first.
         if (! $this->confirmAction(
-            "Remove every analytics tracking host of App instance #{$instanceId}?",
+            "Remove every analytics tracking host of Instance #{$instanceId}?",
             'Analytics tracking was not disabled.',
         )) {
             return self::FAILURE;

@@ -59,7 +59,7 @@ final readonly class Interaction
             $char === 'a' => $this->openMenu(),
             $char === 'c' && $this->ui->section === 'nodes' && $this->ui->pages === [] => $this->openForm(),
             $char === 'n' && $this->ui->hasFilters() => $this->cycleFilter('node'),
-            $char === 'p' && $this->ui->hasFilters() => $this->cycleFilter('app'),
+            $char === 'p' && $this->ui->hasFilters() => $this->cycleFilter('project'),
             ctype_digit($char) && isset($sections[(int) $char - 1]) => $this->ui->goTo($sections[(int) $char - 1]),
             default => null,
         };
@@ -236,7 +236,7 @@ final readonly class Interaction
                 return;
             }
 
-            foreach (['node', 'app'] as $filter) {
+            foreach (['node', 'project'] as $filter) {
                 if ($this->hitPoint("filter:{$filter}", $x, $y)) {
                     $this->cycleFilter($filter);
 
@@ -408,7 +408,7 @@ final readonly class Interaction
             }
         }
 
-        if ($link === 'link:app') {
+        if ($link === 'link:project') {
             $app = $this->state->appBySlug($row['app']['slug'] ?? '');
 
             if ($app !== null) {
@@ -440,7 +440,7 @@ final readonly class Interaction
         $row = $page['row'] ?? null;
 
         return match ($pane) {
-            'list' => $this->state->listRows($this->ui->section, $this->ui->filters['node'], $this->ui->filters['app']),
+            'list' => $this->state->listRows($this->ui->section, $this->ui->filters['node'], $this->ui->filters['project']),
             'attention' => $this->state->attentionRows(),
             'instances' => match ($kind) {
                 'nodes' => $this->state->instancesForNode($row['name']),

@@ -1,7 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { queryClient } from "../api/queryClient";
-import type { App, Node, Process, Schedule } from "../api/types";
+import type { Node, Process, Project, Schedule } from "../api/types";
 import { FILTERED_SECTIONS, navFor, type Section, useGo, useNav } from "./go";
 import { chooseAction, openMenu } from "./menu";
 import { paneBeside, paneOrder, panes, selectionKey, type Target, ui } from "./store";
@@ -143,13 +143,15 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                 onList &&
                 FILTERED_SECTIONS.includes(section)
             ) {
-                const name = event.key === "n" ? "node" : "app";
+                const name = event.key === "n" ? "node" : "project";
                 const values =
                     name === "node"
                         ? (queryClient.getQueryData<Node[]>(["nodes"]) ?? []).map(
                               (node) => node.name,
                           )
-                        : (queryClient.getQueryData<App[]>(["apps"]) ?? []).map((app) => app.slug);
+                        : (queryClient.getQueryData<Project[]>(["projects"]) ?? []).map(
+                              (project) => project.slug,
+                          );
                 const current = (search as Record<string, string | undefined>)[name];
                 go.filter(
                     section,

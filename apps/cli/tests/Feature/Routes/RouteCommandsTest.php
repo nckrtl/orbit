@@ -418,7 +418,7 @@ it('renders only the first invalid input as one JSON document', function (
             '--cluster' => 'invalid',
         ],
         'app.id_invalid',
-        'App ID must be a positive integer.',
+        'Project ID must be a positive integer.',
     ],
     'set Route target' => [
         'route:target:set',

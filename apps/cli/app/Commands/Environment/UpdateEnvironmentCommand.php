@@ -13,13 +13,13 @@ final class UpdateEnvironmentCommand extends EnvironmentCommand
 {
     #[\Override]
     protected $signature = 'env:update
-        {--instance= : Positive AppInstance ID or exact Route domain}
+        {--instance= : Positive Instance ID or exact Route domain}
         {--key= : Environment key to add or replace in stored configuration}
         {--value= : Exact string value; quote empty, multiline, or placeholder values for the shell}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update one stored AppInstance environment value without changing the workload file.';
+    protected $description = 'Update one stored Instance environment value without changing the workload file.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

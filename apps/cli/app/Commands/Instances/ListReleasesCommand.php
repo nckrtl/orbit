@@ -18,7 +18,7 @@ final class ListReleasesCommand extends DeploymentCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List retained production AppInstance releases.';
+    protected $description = 'List retained production Instance releases.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

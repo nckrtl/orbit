@@ -135,7 +135,7 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
         ?bool $mayHaveMutated = null,
     ): void {
         $fields = [
-            'App' => $appId,
+            'Project' => $appId,
             'Node' => $nodeId,
             'Environment' => $environment,
         ];

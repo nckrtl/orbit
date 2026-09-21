@@ -71,7 +71,7 @@ A role installs its packages from the Ubuntu archive, except for the two Orbit p
 
 Both sources work the same way. The Gateway downloads the publisher's signing key and refuses it unless it matches a pinned SHA-256 digest and a pinned primary fingerprint. It then publishes the keyring and a deb822 source file as `root:root` mode `0644`, and restores the previous pair when a step after that fails. It refuses to continue unless the package candidate comes from that exact origin. Orbit never uses `apt-key` or `add-apt-repository`, and never accepts a caller-supplied source.
 
-Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, which does not know `log_skip` — a directive an `app-dev` site renders for every hibernating App instance. A Node below **Caddy 2.8.0** fails the `caddy-package-source` step of role convergence with the installed and required release named. [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) records the decision. Roles that serve through Caddy are `router`, `app-dev`, `app-prod`, `websocket`, and `analytics`.
+Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, which does not know `log_skip` — a directive an `app-dev` site renders for every hibernating Instance. A Node below **Caddy 2.8.0** fails the `caddy-package-source` step of role convergence with the installed and required release named. [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) records the decision. Roles that serve through Caddy are `router`, `app-dev`, `app-prod`, `websocket`, and `analytics`.
 
 Converging a role on a Node that still carries the archive package upgrades it in place. Orbit owns `/etc/caddy/Caddyfile` as a symlink into its own versions directory, and the install keeps the existing file, so the live configuration survives the upgrade.
 
@@ -95,7 +95,7 @@ After [relocate](/solutions/relocate-gateway-role) splits `gateway` from `vpn`, 
 
 ## Remove a Node
 
-`orbit node:remove <node> [--offline] [--force]` removes the Node record and Gateway configuration. Online removal restores public SSH so you can recover or provision the machine again. First remove its App instances, Orbit firewall rules, roles, processes, and Herdr sessions. Orbit refuses to remove the caller's Node or one with the Gateway or VPN role. Other units, containers, and checkouts stay on the machine. See [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine).
+`orbit node:remove <node> [--offline] [--force]` removes the Node record and Gateway configuration. Online removal restores public SSH so you can recover or provision the machine again. First remove its Instances, Orbit firewall rules, roles, processes, and Herdr sessions. Orbit refuses to remove the caller's Node or one with the Gateway or VPN role. Other units, containers, and checkouts stay on the machine. See [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine).
 
 The online removal runs these steps in order and reports success only after the last step completes.
 

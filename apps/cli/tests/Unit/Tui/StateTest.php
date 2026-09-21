@@ -191,7 +191,7 @@ describe('State health vocabulary', function (): void {
             ->and(State::nodeHealthy(['status' => 'failed']))->toBeFalse();
     });
 
-    it('treats an App instance as healthy only at status active', function (): void {
+    it('treats an Instance as healthy only at status active', function (): void {
         expect(State::instanceHealthy(['status' => 'active']))->toBeTrue()
             ->and(State::instanceHealthy(['status' => 'reserved']))->toBeFalse()
             ->and(State::instanceHealthy(['status' => 'removing']))->toBeFalse();

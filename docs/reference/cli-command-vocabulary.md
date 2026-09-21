@@ -24,22 +24,22 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 
 | Family | Pair | What the command changes |
 | --- | --- | --- |
-| `app` | `create` and `destroy` | An [App](/reference/apps) record |
+| `app` | `create` and `destroy` | A [Project](/reference/apps) record |
 | `cluster` | `create` and `destroy` | A Cluster record |
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record |
 | `database:user` | `create` | A MySQL user and database on a Node Docker Process, then a connection record |
 | `gateway` | `add` and `remove` | A Gateway profile in the CLI configuration |
 | `herdr:session` | `create` and `destroy` | A [Herdr session](/reference/herdr-sessions) |
-| `instance` | `create` and `destroy` | An AppInstance |
-| `instance:database` | `add` and `remove` | A Database connection on an AppInstance |
+| `instance` | `create` and `destroy` | An Instance |
+| `instance:database` | `add` and `remove` | A Database connection on an Instance |
 | `instance:deploy-step` | `create` and `destroy` | A named [deploy step](/reference/deployments) |
 | `node` | `add` and `remove` | A Node in the fleet |
 | `node:access` | `add` and `remove` | An access grant between Nodes |
 | `node:role` | `add` and `remove` | A role on a Node |
-| `process` | `create` and `destroy` | A [Process](/reference/app-processes-and-schedules) or an App Process definition |
+| `process` | `create` and `destroy` | A [Process](/reference/app-processes-and-schedules) or a Project Process definition |
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
-| `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules) or an App Schedule definition |
+| `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules) or a Project Schedule definition |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
 `cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, `metrics:exporter`, and `proxycli` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
@@ -53,11 +53,11 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `database` | `describe`, `query`, `schema`, `tables` | The CLI inspects a registered [Database connection](/reference/database-connections). |
 | `dns` | `resolve` | The CLI writes a caller-local TLD or exact private Route resolver mapping. |
 | `doctor` | `doctor` | [Doctor](/concepts#doctor) compares Gateway intent with Node state. |
-| `env` | `import`, `sync` | The CLI imports or synchronizes AppInstance environment values. |
+| `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
-| `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an AppInstance, or scans its dependencies. |
+| `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, or scans its dependencies. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `status` | The CLI reports the fleet CLIProxyAPI quota collector. |
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
@@ -82,6 +82,6 @@ Three commands keep a noun as their last segment.
 
 ## Gateway route names
 
-`instance:dependencies:show` is a stored-inventory API and SDK operation without a CLI adapter. The CLI exposes `instance:dependencies:scan` for directory, domain, and `--all` fleet scans, and `instance:dependencies:update` for one development instance via directory or `--app`, as described in [App instance dependencies](/reference/instance-dependencies). Update rejects `--all` and `--latest`.
+`instance:dependencies:show` is a stored-inventory API and SDK operation without a CLI adapter. The CLI exposes `instance:dependencies:scan` for directory, domain, and `--all` fleet scans, and `instance:dependencies:update` for one development instance via directory or `--app`, as described in [Instance dependencies](/reference/instance-dependencies). Update rejects `--all` and `--latest`.
 
 A named Gateway API route whose prefix matches a CLI command family and whose last segment is a vocabulary verb, a family-specific action, or a noun-ending command carries the same name as the CLI command. The Gateway lives in `apps/gateway` and records that route name as the activity command.

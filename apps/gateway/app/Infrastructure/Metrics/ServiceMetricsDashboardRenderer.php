@@ -34,7 +34,7 @@ final readonly class ServiceMetricsDashboardRenderer
         foreach ($panels as $index => [$title, $expr, $unit]) {
             $rendered[] = [
                 'id' => $index + 1, 'title' => $title, 'type' => 'timeseries',
-                'description' => $kind === 'fpm' && $index === 1 ? 'Cbox can omit unavailable pools. Compare these series with the expected App instances; endpoint health alone does not prove every pool is healthy.' : '',
+                'description' => $kind === 'fpm' && $index === 1 ? 'Cbox can omit unavailable pools. Compare these series with the expected Instances; endpoint health alone does not prove every pool is healthy.' : '',
                 'datasource' => ['type' => 'prometheus', 'uid' => 'orbit-prometheus'],
                 'gridPos' => ['x' => ($index % 2) * 12, 'y' => intdiv($index, 2) * 8, 'w' => 12, 'h' => 8],
                 'targets' => [['refId' => 'A', 'expr' => $expr, 'legendFormat' => $index === 0 ? '{{node}}' : ($kind === 'fpm' ? '{{node}} / instance {{app_instance_id}} / {{pool}}' : '{{node}} {{host}}')]],

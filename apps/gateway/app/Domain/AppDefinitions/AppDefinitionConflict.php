@@ -12,7 +12,7 @@ final readonly class AppDefinitionConflict
     {
         throw new ResourceOperationException(
             errorCode: "{$kind}_definition.name_taken",
-            message: "An App {$kind} definition already uses this name.",
+            message: "A Project {$kind} definition already uses this name.",
             status: 409,
         );
     }

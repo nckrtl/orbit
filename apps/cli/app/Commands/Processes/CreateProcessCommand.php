@@ -20,7 +20,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
     #[\Override]
     protected $signature = 'process:create
         {name : Process name}
-        {--instance= : Positive AppInstance ID or exact development Route domain}
+        {--instance= : Positive Instance ID or exact development Route domain}
         {--preset= : Process preset: vp-dev, agentation-mcp, or antigravity-watch}
         {--node= : Node ID or registered name}
         {--project= : Numeric Project ID}
@@ -39,7 +39,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create one systemd service, Docker container process, or App process definition.';
+    protected $description = 'Create one systemd service, Docker container process, or Project process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -72,7 +72,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 }
             }
             if ($this->option('keep-alive') === true && in_array($preset, ['agentation-mcp', 'antigravity-watch'], true)) {
-                return $this->renderGatewayFailure('process.preset_keep_alive_invalid', 'The Agentation presets hibernate with the AppInstance and cannot keep-alive.');
+                return $this->renderGatewayFailure('process.preset_keep_alive_invalid', 'The Agentation presets hibernate with the Instance and cannot keep-alive.');
             }
         }
         $runtime = $this->stringOption('runtime');

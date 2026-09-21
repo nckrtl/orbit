@@ -43,7 +43,7 @@ final class ShowInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class, ['Show App instance', 'Fetching App instance', 'Fetched App instance'], dismiss: true);
+        $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class, ['Show Instance', 'Fetching Instance', 'Fetched Instance'], dismiss: true);
 
         if (! $instance instanceof AppInstanceResponse) {
             return self::FAILURE;

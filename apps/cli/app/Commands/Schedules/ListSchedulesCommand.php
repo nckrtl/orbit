@@ -26,7 +26,7 @@ final class ListSchedulesCommand extends ScheduleCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List authorized Schedules or App Schedule definitions.';
+    protected $description = 'List authorized Schedules or Project Schedule definitions.';
 
     public function handle(
         GatewayConfigRepository $repository,

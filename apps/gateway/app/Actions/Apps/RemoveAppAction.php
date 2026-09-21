@@ -22,7 +22,7 @@ final readonly class RemoveAppAction
         if ($app->appInstances()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_app_instances',
-                message: "App [{$app->slug}] still has AppInstances.",
+                message: "Project [{$app->slug}] still has Instances.",
                 status: 409,
             );
         }

@@ -1,6 +1,6 @@
 ---
 title: "Database connections"
-description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections and how an operator attaches one to an App instance."
+description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections and how an operator attaches one to an Instance."
 ---
 
 # Database connections
@@ -9,7 +9,7 @@ This page tells an operator how the Gateway stores named mysql, pgsql, sqlite, a
 
 A Database connection is a Gateway-owned registry record. The operator registers a remote host or a sqlite path without assigning the `database` role. Node Processes start and stop Docker database servers. The registry does not start or stop a database. The Gateway can create a MySQL user and database through an existing Node-targeted Docker MySQL Process and then register or refresh the connection. Query, tables, schema, and describe run against a registered connection only.
 
-The operator adds a connection on an App instance only. Add writes prefixed keys into the Gateway-owned stored App instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [App instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
+The operator adds a connection on an Instance only. Add writes prefixed keys into the Gateway-owned stored Instance environment under [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit). It does not write the workload `.env`. Run `orbit env:sync` after add or remove when the workload file must match stored configuration. [Instance environment variables](/reference/environment-variables) owns import, update, and synchronization.
 
 The CLI uses the shared table and detail tree, shows progress on Gateway calls, and never prints a password. Destroy and attachment removal require default-No confirmation or `--force`. Human query cells render SQL null as `NULL` and an empty string as `""` so those values stay distinct from each other and from a literal em dash. JSON query cells stay exact.
 
@@ -81,8 +81,8 @@ The CLI sends each operation through the Gateway.
 | `orbit database:tables SLUG` | List tables on the registered connection. |
 | `orbit database:schema SLUG` | Show columns for every table on the registered connection. |
 | `orbit database:describe SLUG TABLE` | Show columns for one table on the registered connection. |
-| `orbit instance:database:add SLUG --instance=SELECTOR` | Add the connection on one App instance and write prefixed stored environment keys. |
-| `orbit instance:database:remove SLUG --instance=SELECTOR --force` | Remove the connection from one App instance and clear the prefixed stored environment keys. |
+| `orbit instance:database:add SLUG --instance=SELECTOR` | Add the connection on one Instance and write prefixed stored environment keys. |
+| `orbit instance:database:remove SLUG --instance=SELECTOR --force` | Remove the connection from one Instance and clear the prefixed stored environment keys. |
 
 Every command also accepts `--json`. Human and JSON results include the Gateway request ID. `database:destroy` and `instance:database:remove` require interactive confirmation or `--force` before they send the delete request. `database:update` requires at least one field option. `database:query` is read-only unless `--write` is set.
 
@@ -142,7 +142,7 @@ The Gateway exposes the registry at `/api/v1/database-connections`. Access to th
 | `GET` | `/api/v1/database-connections/{slug}/schema` | Show every table's columns |
 | `GET` | `/api/v1/database-connections/{slug}/describe/{table}` | Show one table's columns |
 
-A duplicate slug on registry create returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. Managed user create returns HTTP 201 for a new mysql row and HTTP 200 when it refreshes an existing mysql slug. An unknown slug returns `http.404`. Destroying a record deletes that row when no App instance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
+A duplicate slug on registry create returns `database.slug_conflict` (HTTP 409) and leaves the existing record unchanged. Managed user create returns HTTP 201 for a new mysql row and HTTP 200 when it refreshes an existing mysql slug. An unknown slug returns `http.404`. Destroying a record deletes that row when no Instance attachment exists. The Gateway answers `database.connection_attached` (HTTP 409) when an attachment still exists. Recovery of a stored password depends on retaining the Gateway encryption key material.
 
 ## Inspect a registered connection
 
@@ -164,15 +164,15 @@ orbit database:schema app
 orbit database:describe app users
 ```
 
-## Add a connection on an App instance
+## Add a connection on an Instance
 
-Add writes stored environment keys for one App instance. The target is an App instance ID or exact Route domain. Orbit accepts no Workspace target.
+Add writes stored environment keys for one Instance. The target is an Instance ID or exact Route domain. Orbit accepts no Workspace target.
 
 ```text
 orbit instance:database:add app --instance=12
 ```
 
-The optional `--prefix` value defaults to `DB`. A prefix is an uppercase name that starts with a letter and then uses letters, digits, or underscores, at most 32 characters. Add replaces an existing mapping that already uses that prefix on the same App instance.
+The optional `--prefix` value defaults to `DB`. A prefix is an uppercase name that starts with a letter and then uses letters, digits, or underscores, at most 32 characters. Add replaces an existing mapping that already uses that prefix on the same Instance.
 
 The Gateway writes these keys for mysql and pgsql.
 
@@ -187,7 +187,7 @@ The Gateway writes these keys for mysql and pgsql.
 
 SQLite writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the Unix absolute path. It writes `DB_USERNAME` and `DB_PASSWORD` only when those values are stored. It does not write `DB_HOST` or `DB_PORT`, and it removes those keys when a previous mysql or pgsql attachment used the same prefix.
 
-Responses, activity records, errors, and debug output omit environment values and the password. The add result names the App instance, slug, prefix, written key names, resolved host and port, whether stored configuration changed, and the total stored key count.
+Responses, activity records, errors, and debug output omit environment values and the password. The add result names the Instance, slug, prefix, written key names, resolved host and port, whether stored configuration changed, and the total stored key count.
 
 Add changes stored configuration only. The workload `.env` stays unchanged until the operator runs `orbit env:sync`.
 
@@ -195,9 +195,9 @@ Add changes stored configuration only. The workload `.env` stays unchanged until
 
 A connection with a stored `node_id` can align with a Node-owned Docker Process on that Node. Alignment holds when one published port mapping on that Process uses the connection's port as the published host port or the container port.
 
-When the App instance lives on that same Node, the Gateway writes host `127.0.0.1` and the mapping's published host port. When the App instance lives on another Node, or the connection has no aligned Docker Process, the Gateway writes the registry host and port.
+When the Instance lives on that same Node, the Gateway writes host `127.0.0.1` and the mapping's published host port. When the Instance lives on another Node, or the connection has no aligned Docker Process, the Gateway writes the registry host and port.
 
-## Remove a connection from an App instance
+## Remove a connection from an Instance
 
 Remove deletes the mapping and the related stored keys for that prefix.
 
@@ -209,18 +209,18 @@ orbit instance:database:remove app --instance=12 --force
 
 ## Add and remove API
 
-The Gateway exposes add and remove on the App instance.
+The Gateway exposes add and remove on the Instance.
 
 | Method | Path | Result |
 | --- | --- | --- |
 | `PUT` | `/api/v1/instances/{instance}/database-connections/{slug}` | Add the connection and write stored environment keys |
 | `DELETE` | `/api/v1/instances/{instance}/database-connections/{slug}` | Remove the connection and clear the prefixed stored keys |
 
-The `{instance}` selector is a positive App instance ID or an exact Route domain, as [App instance environment variables](/reference/environment-variables) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the App instance owning Node.
+The `{instance}` selector is a positive Instance ID or an exact Route domain, as [Instance environment variables](/reference/environment-variables) describes. The optional JSON body accepts `prefix`. Omission uses `DB`. Access uses the Instance owning Node.
 
 ## Inspect attachments with Doctor
 
-Doctor inspects database connections as the explicit `database_connection` family. It compares Gateway registry records and App instance attachment mappings with stored App instance environment keys. It does not write stored environment, start a database, or change a Node.
+Doctor inspects database connections as the explicit `database_connection` family. It compares Gateway registry records and Instance attachment mappings with stored Instance environment keys. It does not write stored environment, start a database, or change a Node.
 
 | Code | Kind | Meaning |
 | --- | --- | --- |

@@ -1,11 +1,11 @@
-Fetching App instance...
+Fetching Instance...
 Fetching Processes...
 
-┌  App instance: dev
+┌  Instance: dev
 │
 ├  ID                   1
 │
-├  App                  charlie-shop
+├  Project              charlie-shop
 │
 ├  Node                 app-dev
 │

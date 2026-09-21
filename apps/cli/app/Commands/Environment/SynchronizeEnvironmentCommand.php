@@ -13,11 +13,11 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
 {
     #[\Override]
     protected $signature = 'env:sync
-        {--instance= : Positive AppInstance ID or exact Route domain}
+        {--instance= : Positive Instance ID or exact Route domain}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Synchronize stored AppInstance configuration to the workload environment file.';
+    protected $description = 'Synchronize stored Instance configuration to the workload environment file.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

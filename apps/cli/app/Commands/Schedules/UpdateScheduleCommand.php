@@ -29,7 +29,7 @@ final class UpdateScheduleCommand extends ScheduleCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Replace one App Schedule definition.';
+    protected $description = 'Replace one Project Schedule definition.';
 
     public function handle(
         GatewayConfigRepository $repository,

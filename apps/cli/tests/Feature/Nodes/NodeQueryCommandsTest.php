@@ -225,7 +225,7 @@ describe('node:show', function (): void {
             'Node: app-dev', 'Status active', 'Roles app-dev', 'SSH orbit@94.237.40.75:22',
             'Cluster 3', 'WireGuard 10.44.0.3', 'LAN 10.0.0.3', 'WireGuard public key app-dev-public-key',
             'WireGuard endpoint override 10.0.0.2:51820', 'DNS server override 10.0.0.2',
-            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Apps path —',
+            'TLD .app-dev.orbit', 'Platform linux (x86_64)', 'Projects path —',
             'Access to app-dev (#3), app-prod (#5)', 'Accessible by maintainer (#4)',
             'Request ID: '.request_id(),
         ] as $field) {

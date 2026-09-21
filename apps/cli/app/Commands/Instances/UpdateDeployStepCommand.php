@@ -25,7 +25,7 @@ final class UpdateDeployStepCommand extends DeploymentCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update a named deploy step on a production AppInstance.';
+    protected $description = 'Update a named deploy step on a production Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

@@ -226,7 +226,7 @@ it('refuses JSON attachment removal without --force', function (): void {
     expect(json_decode(trim($output), true, flags: JSON_THROW_ON_ERROR))->toBe([
         'error' => [
             'code' => 'database.confirmation_required',
-            'message' => 'Use --force to confirm Database connection removal from the AppInstance.',
+            'message' => 'Use --force to confirm Database connection removal from the Instance.',
             'request_id' => null,
         ],
     ]);

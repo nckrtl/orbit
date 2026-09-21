@@ -5,11 +5,11 @@ description: "Preferred Vite ports and the VitePlus Process preset."
 
 # Assigned Vite ports
 
-Orbit assigns each development App instance its own preferred Vite port. Use the `vp-dev` Process preset to connect that port to systemd, Caddy, and wake readiness. [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances) records the design.
+Orbit assigns each development Instance its own preferred Vite port. Use the `vp-dev` Process preset to connect that port to systemd, Caddy, and wake readiness. [ADR 0078](/decisions/0078-assign-vite-ports-to-development-appinstances) records the design.
 
 ## Assignment and startup
 
-Each development App instance has a stored preferred `vite_port`. Orbit assigns it automatically during creation or registration. Production instances have no Vite port assignment. Assigning a port does not create or start a Process.
+Each development Instance has a stored preferred `vite_port`. Orbit assigns it automatically during creation or registration. Production instances have no Vite port assignment. Assigning a port does not create or start a Process.
 
 Before starting Vite, the Gateway checks the preferred port on the owning Node. An already running owned Vite Process keeps its port. An unrelated listener triggers selection of the next candidate before startup. Initial allocation starts at `5173`; there is no fixed-size product range. Search uses valid unprivileged TCP ports and terminates at the TCP port limit with an exhaustion error.
 
@@ -19,7 +19,7 @@ Instance list and show output, the API, and the PHP SDK expose `vite_port`. Hibe
 
 ## Process preset
 
-The positional argument to `process:create` is a name. Generic processes use repeated `--command` values for their executable and arguments. The `--app` option selects a reusable App definition.
+The positional argument to `process:create` is a name. Generic processes use repeated `--command` values for their executable and arguments. The `--app` option selects a reusable Project definition.
 
 This command selects a preset explicitly:
 
@@ -27,7 +27,7 @@ This command selects a preset explicitly:
 orbit process:create vite --instance=commander.test --preset=vp-dev --start
 ```
 
-`process:create --instance` accepts a positive ID or an exact Route domain that resolves to one authorized development App instance. It preserves the meaning of `--app`. The supported preset is `vp-dev` for an instance-owned systemd Process. Naming an ordinary Process `vp-dev` has no special effect.
+`process:create --instance` accepts a positive ID or an exact Route domain that resolves to one authorized development Instance. It preserves the meaning of `--app`. The supported preset is `vp-dev` for an instance-owned systemd Process. Naming an ordinary Process `vp-dev` has no special effect.
 
 Preset creation checks the VitePlus executable, project manifest, and installed dependencies, prepares the assigned port, writes service configuration, and installs the Process. `--start` records the running desired state and starts it; omission keeps the current stopped-by-default contract. An identical create reuses the Process and preserves its desired state. One instance has at most one Vite preset Process. A same-name generic Process or unrelated listener is not adopted automatically.
 
@@ -57,7 +57,7 @@ The preset sets the Vite base to `/__orbit/vite/`; Caddy preserves that prefix f
 
 Agent setup guidance:
 
-> To configure VitePlus for an App instance, use the `vp-dev` Process preset. Let Orbit assign the port, apply strict binding, and prepare the service, proxy, and readiness check. Do not select a port manually or implement a separate allocator. Configure and verify the project's assets and HMR for the Orbit Route origin. Use `--start` when the Process should run on wake; do not add keep-alive merely to enable wake.
+> To configure VitePlus for an Instance, use the `vp-dev` Process preset. Let Orbit assign the port, apply strict binding, and prepare the service, proxy, and readiness check. Do not select a port manually or implement a separate allocator. Configure and verify the project's assets and HMR for the Orbit Route origin. Use `--start` when the Process should run on wake; do not add keep-alive merely to enable wake.
 
 ## Lifecycle and failure
 
@@ -85,7 +85,7 @@ Existing development instances need coordinated migration of Process identity, p
 
 The initial exclusion list covers common database, cache, messaging, HTTP administration, and development service ports: `3306`, `5432`, `5672`, `6379`, `8000`, `8080`, `8443`, `9000`, `9090`, `9200`, `11211`, `15672`, and `27017`. Actual socket checks remain authoritative. Startup permits at most three attempts within the wake deadline, and retries only when a fresh socket check confirms that another process claimed the selected port.
 
-The preset requires executable `/usr/local/bin/vp`, a readable project `package.json`, and installed project dependencies. It does not install dependencies or edit application code. App definition inheritance is deferred; this version accepts an explicit preset request for an existing development instance. Port assignment alone never installs a process.
+The preset requires executable `/usr/local/bin/vp`, a readable project `package.json`, and installed project dependencies. It does not install dependencies or edit application code. Project definition inheritance is deferred; this version accepts an explicit preset request for an existing development instance. Port assignment alone never installs a process.
 
 Existing instances retain their legacy endpoint until explicitly configured with the preset or reprovisioned. Orbit does not infer preset identity from existing commands. Allocation records retain both placements during transfer, and release the source only after confirmed source cleanup.
 

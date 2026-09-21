@@ -11,7 +11,7 @@ description: "Turn on realtime events with one node role, what its converge inst
 
 ## Cause
 
-Reverb itself must not become another Orbit-specific service baked into the monorepo. It is a plain Laravel app with no knowledge of Apps, App instances, Routes, or the CLI. Orbit installs and runs it itself, as the `websocket` node role, the same way the `metrics` role installs and runs Prometheus and Grafana.
+Reverb itself must not become another Orbit-specific service baked into the monorepo. It is a plain Laravel app with no knowledge of Projects, Instances, Routes, or the CLI. Orbit installs and runs it itself, as the `websocket` node role, the same way the `metrics` role installs and runs Prometheus and Grafana.
 
 ## Solution
 
@@ -21,7 +21,7 @@ Reverb itself must not become another Orbit-specific service baked into the mono
 orbit node:role:add gateway websocket --converge
 ```
 
-Today the `websocket` role has to go on the same node as the `gateway` role, because that is the only node reaching `reverb.orbit` needs to be pointed at; the role has no conflict with `gateway` or `vpn`. Nothing else is required: no App, no App instance, no deploy step, no custom proxy Route, and no `.env` edit on the Gateway.
+Today the `websocket` role has to go on the same node as the `gateway` role, because that is the only node reaching `reverb.orbit` needs to be pointed at; the role has no conflict with `gateway` or `vpn`. Nothing else is required: no Project, no Instance, no deploy step, no custom proxy Route, and no `.env` edit on the Gateway.
 
 ### What converge installs on the node
 

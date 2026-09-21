@@ -2,7 +2,7 @@
 ╭──────────────────╮  ‹ back  Database: charlie-shop                                                                    
 │  Dashboard       │╭ Properties ──────────────────────────────────────────────────────────────────────────────────────╮
 │  Nodes         1 ││ Slug               charlie-shop                                                                  │
-│  Apps          1 ││ Driver             pgsql                                                                         │
+│  Projects      1 ││ Driver             pgsql                                                                         │
 │  Instances     1 ││ Node               beast                                                                         │
 │  Processes     1 ││ Host               127.0.0.1:5432                                                                │
 │  Schedules     1 ││ Path               —                                                                             │

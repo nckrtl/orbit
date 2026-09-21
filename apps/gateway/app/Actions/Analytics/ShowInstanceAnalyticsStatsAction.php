@@ -30,7 +30,7 @@ final readonly class ShowInstanceAnalyticsStatsAction
                 'driver' => $this->driver->name(),
                 'site_domain' => null,
                 'error_code' => 'analytics.stats_domain_missing',
-                'error' => 'This App instance has no authoritative domain to map to a Plausible site.',
+                'error' => 'This Instance has no authoritative domain to map to a Plausible site.',
             ];
         }
 

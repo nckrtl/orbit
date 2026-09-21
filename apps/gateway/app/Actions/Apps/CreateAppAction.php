@@ -104,7 +104,7 @@ final readonly class CreateAppAction
     ): ResourceOperationException {
         return new ResourceOperationException(
             errorCode: 'app.repository_identity_conflict',
-            message: 'The repository is already owned by another App.',
+            message: 'The repository is already owned by another Project.',
             status: 409,
             previous: $previous,
         );
@@ -131,7 +131,7 @@ final readonly class CreateAppAction
 
         throw new ResourceOperationException(
             errorCode: 'app.identity_conflict',
-            message: "App [{$app->slug}] already exists with different creation identity.",
+            message: "Project [{$app->slug}] already exists with different creation identity.",
             status: 409,
         );
     }

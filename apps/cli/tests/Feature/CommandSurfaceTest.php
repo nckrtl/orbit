@@ -489,15 +489,15 @@ it('describes the environment lifecycle in command help', function (): void {
     $commands = app(Kernel::class)->all();
 
     expect($commands['env:import']->getDescription())
-        ->toBe('Import the workload environment file into stored AppInstance configuration.');
+        ->toBe('Import the workload environment file into stored Instance configuration.');
     expect($commands['env:import']->getDefinition()->getOption('replace')->getDescription())
         ->toBe('Replace stored-key conflicts while retaining other stored keys');
     expect($commands['env:update']->getDescription())
-        ->toBe('Update one stored AppInstance environment value without changing the workload file.');
+        ->toBe('Update one stored Instance environment value without changing the workload file.');
     expect($commands['env:update']->getDefinition()->getOption('value')->getDescription())
         ->toContain('quote empty, multiline, or placeholder values for the shell');
     expect($commands['env:sync']->getDescription())
-        ->toBe('Synchronize stored AppInstance configuration to the workload environment file.');
+        ->toBe('Synchronize stored Instance configuration to the workload environment file.');
 });
 
 it('keeps the exact approved arguments options and defaults', function (): void {
