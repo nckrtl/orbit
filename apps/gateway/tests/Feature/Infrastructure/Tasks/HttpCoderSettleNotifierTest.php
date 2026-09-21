@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskSessionDecision;
+use App\Domain\Tasks\TaskSessionNextAction;
+use App\Domain\Tasks\TaskSessionObservation;
+use App\Domain\Tasks\TaskThreadObservation;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Models\App as OrbitApp;
 use App\Models\TaskGroup;
@@ -61,6 +66,62 @@ it('posts an HMAC-signed settle body to Coder', function (): void {
                 'duration_ms' => 1500,
                 'pull_request_url' => 'https://github.com/nckrtl/orbit/pull/543',
             ]
+            && ! str_contains($body, 'coder-secret');
+    });
+});
+
+it('posts an HMAC-signed escalate body to Coder', function (): void {
+    $this->freezeTime();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://coder.example.test/hooks/settle' => Http::response(['ok' => true]),
+    ]);
+    config()->set('orbit.tasks.coder_webhook_url', 'https://coder.example.test/hooks/settle');
+    config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
+    $group = coder_settle_group();
+    $observation = new TaskSessionObservation(
+        groupId: $group->id,
+        groupStatus: $group->status->value,
+        title: $group->title,
+        brief: $group->brief,
+        hasPendingSubtasks: false,
+        prUrl: $group->pr_url,
+        ciSummary: null,
+        threads: [
+            new TaskThreadObservation(
+                threadId: 'implementer-1',
+                role: TaskThreadRole::Implementer,
+                sessState: 'idle',
+                idle: true,
+                pendingApprovalId: null,
+                pendingUserInputId: null,
+                lastAssistantText: 'Need a human.',
+                lastUserText: null,
+                hasNewCommitsSinceThreadStart: false,
+                prUrl: $group->pr_url,
+                ciSummary: null,
+            ),
+        ],
+    );
+    $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
+
+    app(HttpCoderSettleNotifier::class)->escalate($group, $observation, $decision);
+
+    Http::assertSent(function (Request $request) use ($group, $observation): bool {
+        $timestamp = (string) now()->timestamp;
+        $body = $request->body();
+        $expected = hash_hmac('sha256', $timestamp.'.'.$body, 'coder-secret');
+        $payload = $request->data();
+
+        return $request->url() === 'https://coder.example.test/hooks/settle'
+            && $request->hasHeader('X-Orbit-Timestamp', $timestamp)
+            && $request->hasHeader('X-Orbit-Signature', 'sha256='.$expected)
+            && ($payload['event'] ?? null) === 'task_group.escalated'
+            && ($payload['task_group_id'] ?? null) === $group->id
+            && ($payload['reason'] ?? null) === 'Choice confidence 0.2 is below 0.75.'
+            && ($payload['confidence'] ?? null) === 0.2
+            && ($payload['thread_id'] ?? null) === 'implementer-1'
+            && ($payload['observation'] ?? null) === $observation->toArray()
             && ! str_contains($body, 'coder-secret');
     });
 });

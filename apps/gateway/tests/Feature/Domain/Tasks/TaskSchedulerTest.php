@@ -28,6 +28,8 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSequenceException;
+use App\Domain\Tasks\TaskSessionDecision;
+use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
@@ -575,6 +577,8 @@ it('opens the pull request, writes settle metrics, and notifies Coder after the 
         {
             $this->notified = $group;
         }
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
     };
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning

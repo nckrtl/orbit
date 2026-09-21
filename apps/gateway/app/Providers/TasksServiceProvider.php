@@ -13,6 +13,7 @@ use App\Domain\Tasks\T3Dispatcher;
 use App\Domain\Tasks\T3ThreadReader;
 use App\Domain\Tasks\TaskAgentStream;
 use App\Domain\Tasks\TaskPullRequestOpener;
+use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -20,6 +21,7 @@ use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpGitHubTaskPullRequestOpener;
 use App\Infrastructure\Tasks\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\HttpT3ThreadReader;
+use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use App\Infrastructure\Tasks\RemoteTaskPullRequestOpener;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
@@ -42,6 +44,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskWorkspaceDiffReader::class => RemoteTaskWorkspaceDiffReader::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
+        TaskSessionClassifier::class => LaravelAiTaskSessionClassifier::class,
     ];
 
     #[\Override]

@@ -147,16 +147,8 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
     $reviewerCreate = $dispatcher->commands[1];
     $implementerProject = $dispatcher->commands[3];
     $implementerCreate = $dispatcher->commands[4];
-    $reviewerSelection = [
-        'instanceId' => TaskAgentDefaults::ReviewerModel,
-        'model' => TaskAgentDefaults::ReviewerModel,
-        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ReviewerEffort]],
-    ];
-    $implementerSelection = [
-        'instanceId' => TaskAgentDefaults::ImplementerModel,
-        'model' => TaskAgentDefaults::ImplementerModel,
-        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ImplementerEffort]],
-    ];
+    $reviewerSelection = TaskAgentDefaults::reviewerSelection();
+    $implementerSelection = TaskAgentDefaults::implementerSelection();
 
     expect($reviewerCreate['title'])->toStartWith('Orbit task #'.$group->id.' · Reviewer:')
         ->and($reviewerProject['defaultModelSelection'])->toBe($reviewerSelection)
@@ -165,8 +157,16 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
         ->and($implementerCreate['modelSelection'])->toBe($implementerSelection)
         ->and($reviewerCreate['worktreePath'])->toBe('/srv/orbit/apps/orbit/task-1')
         ->and($reviewerCreate['branch'])->toBe('task-1')
-        ->and($dispatcher->commands[2]['message'])->toContain('long-lived reviewer')
-        ->and($dispatcher->commands[5]['message'])->toContain('Implement this subtask');
+        ->and($dispatcher->commands[2]['message'])->toMatchArray([
+            'role' => 'user',
+            'attachments' => [],
+        ])
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('long-lived reviewer')
+        ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
+        ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
+        ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection)
+        ->and($implementerSelection['instanceId'])->toBe('codex')
+        ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'low']]);
 });
 
 it('posts T3 model options as id and value JSON objects', function (): void {
@@ -213,7 +213,9 @@ it('sends please review to the stored reviewer thread and commits on sign-off', 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
-        ->and($dispatcher->commands[0]['message'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe(TaskAgentDefaults::reviewerSelection())
         ->and($sha)->toBe(str_repeat('b', 40))
         ->and($signer->commits)->toBe(1);
 });

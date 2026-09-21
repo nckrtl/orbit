@@ -43,6 +43,7 @@ return [
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
         'github_token' => env('ORBIT_TASKS_GITHUB_TOKEN'),
+        'jev_confidence_threshold' => (float) env('ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD', 0.75),
     ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),

@@ -15,4 +15,6 @@ use App\Models\TaskGroup;
 interface CoderSettleNotifier
 {
     public function notify(TaskGroup $group): void;
+
+    public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void;
 }
