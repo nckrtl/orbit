@@ -27,6 +27,7 @@ use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
@@ -92,6 +93,71 @@ function queued_group(OrbitApp $app, string $title, ?AppInstance $instance = nul
     }
 
     return $group->fresh(['tasks', 'taskable']) ?? $group;
+}
+
+function scheduler_pending_task(TaskGroup $group, int $position, string $title): Task
+{
+    return Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => $position,
+        'title' => $title,
+        'brief' => "{$title} subtask",
+        'status' => TaskStatus::Pending,
+    ]);
+}
+
+function scheduler_recording_spawner(): AgentSpawner
+{
+    return new class implements AgentSpawner
+    {
+        /** @var list<string> */
+        public array $events = [];
+
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            $this->events[] = 'reviewer';
+
+            return 'reviewer-thread';
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            $this->events[] = 'implementer:'.$task->position;
+
+            return 'implementer-'.$task->position;
+        }
+
+        public function requestReview(Task $task): void
+        {
+            $this->events[] = 'review:'.$task->position;
+        }
+
+        public function signOff(Task $task): ?string
+        {
+            $this->events[] = 'signoff:'.$task->position;
+
+            return 'sha-'.$task->position;
+        }
+    };
+}
+
+function scheduler_bind_claim(AppInstance $instance, AgentSpawner $spawner): void
+{
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, $spawner);
+    app()->instance(TaskPullRequestOpener::class, new NullTaskPullRequestOpener);
+    app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
+        new TaskGroupMetricsRefresher(new NullT3ThreadReader, new NullTaskWorkspaceDiffReader),
+    ));
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 }
 
 it('reserves the oldest queued group that still fits the App ceiling', function (): void {
@@ -317,6 +383,73 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         ->and($claimed?->reviewer_thread_id)->not->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
         ->and($claimed?->tasks->first()?->implementer_thread_id)->not->toBeNull();
+});
+
+it('starts only the first pending subtask when a claimed group has later siblings', function (): void {
+    $app = scheduler_app('opening-order-app');
+    $node = scheduler_node('opening-order-node', '10.44.0.96');
+    $instance = scheduler_instance($app, $node, 'opening-order');
+    $group = queued_group($app, 'Opening order', $instance);
+    scheduler_pending_task($group, 2, 'Second');
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $tasks = $claimed?->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
+
+    expect($claimed?->status)->toBe(TaskGroupStatus::Running)
+        ->and($tasks?->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Pending])
+        ->and($tasks?->get(0)?->implementer_thread_id)->toBe('implementer-1')
+        ->and($tasks?->get(1)?->implementer_thread_id)->toBeNull()
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1']);
+});
+
+it('rejects starting a later subtask while a sibling is still running', function (): void {
+    $app = scheduler_app('second-running-app');
+    $node = scheduler_node('second-running-node', '10.44.0.97');
+    $instance = scheduler_instance($app, $node, 'second-running');
+    $group = queued_group($app, 'Second running', $instance);
+    scheduler_pending_task($group, 2, 'Second');
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $second = $claimed?->tasks
+        ->sortBy(fn (Task $task): array => [$task->position, $task->id])
+        ->values()
+        ->get(1);
+
+    expect(fn () => app(TaskScheduler::class)->startTask($second ?? $group->tasks->last()))
+        ->toThrow(TaskSequenceException::class);
+
+    $tasks = ($claimed?->fresh(['tasks']) ?? $group)->tasks
+        ->sortBy(fn (Task $task): array => [$task->position, $task->id])
+        ->values();
+
+    expect($tasks->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Pending])
+        ->and($tasks->get(1)?->implementer_thread_id)->toBeNull()
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1']);
+});
+
+it('starts the next pending subtask as the sole running task after review is accepted', function (): void {
+    $app = scheduler_app('accept-next-app');
+    $node = scheduler_node('accept-next-node', '10.44.0.98');
+    $instance = scheduler_instance($app, $node, 'accept-next');
+    $group = queued_group($app, 'Accept next', $instance);
+    scheduler_pending_task($group, 2, 'Second');
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
+    $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+    $tasks = $advanced->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
+
+    expect($advanced->status)->toBe(TaskGroupStatus::Running)
+        ->and($tasks->pluck('status')->all())->toBe([TaskStatus::Completed, TaskStatus::Running])
+        ->and($tasks->filter(fn (Task $task): bool => $task->status === TaskStatus::Running)->count())->toBe(1)
+        ->and($tasks->get(1)?->implementer_thread_id)->toBe('implementer-2')
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'signoff:1', 'implementer:2']);
 });
 
 it('hands a settled subtask to the reviewer and starts the next implementer after sign-off', function (): void {

@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 final readonly class TaskScheduler
@@ -118,6 +119,16 @@ final readonly class TaskScheduler
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
     }
 
+    public function startTask(Task $task): TaskGroup
+    {
+        $started = $this->activateRunningTask($task);
+        $this->assignImplementer($started);
+
+        $group = $started->taskGroup;
+
+        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+    }
+
     public function acceptReview(Task $task): TaskGroup
     {
         $this->spawner->signOff($task);
@@ -139,15 +150,19 @@ final readonly class TaskScheduler
             $locked->settled_at ??= now();
             $locked->save();
 
-            $next = $group->tasks
-                ->sortBy(static fn (Task $candidate): array => [$candidate->position, $candidate->id])
-                ->first(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Pending);
+            $tasks = $this->lockedTasks($group);
+            $next = $this->lowestPending($tasks);
 
             if ($next instanceof Task) {
-                $next->status = TaskStatus::Running;
-                $next->started_at ??= now();
-                $next->save();
-                $group->status = TaskGroupStatus::Running;
+                try {
+                    $this->markRunning($next, $tasks);
+                    $group->status = TaskGroupStatus::Running;
+                } catch (TaskSequenceException) {
+                    $next = null;
+                    $group->status = $this->runningSibling($tasks) instanceof Task
+                        ? TaskGroupStatus::Running
+                        : TaskGroupStatus::Reviewing;
+                }
             } else {
                 $group->status = TaskGroupStatus::Settling;
             }
@@ -158,12 +173,7 @@ final readonly class TaskScheduler
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
-            $threadId = $this->spawner->spawnImplementer($next->fresh() ?? $next);
-
-            if (is_string($threadId) && $threadId !== '') {
-                $next->implementer_thread_id = $threadId;
-                $next->save();
-            }
+            $this->assignImplementer($next);
         }
 
         if ($group->status === TaskGroupStatus::Settling) {
@@ -216,23 +226,124 @@ final readonly class TaskScheduler
             $group->save();
         }
 
-        $first = $group->tasks
-            ->sortBy(static fn (Task $task): array => [$task->position, $task->id])
-            ->first();
+        $first = $this->orderedTasks($group->tasks)->first();
 
-        if (! $first instanceof Task) {
+        if (! $first instanceof Task || $first->status !== TaskStatus::Pending) {
             return;
         }
 
-        $first->status = TaskStatus::Running;
-        $first->started_at ??= now();
-        $implementerThreadId = $this->spawner->spawnImplementer($first);
+        try {
+            $this->startTask($first);
+        } catch (TaskSequenceException) {
+        }
+    }
 
-        if (is_string($implementerThreadId) && $implementerThreadId !== '') {
-            $first->implementer_thread_id = $implementerThreadId;
+    /**
+     * @throws TaskSequenceException
+     */
+    private function activateRunningTask(Task $task): Task
+    {
+        return DB::transaction(function () use ($task): Task {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $group = TaskGroup::query()
+                ->lockForUpdate()
+                ->findOrFail($locked->task_group_id);
+            $tasks = $this->lockedTasks($group);
+
+            $this->markRunning($locked, $tasks);
+
+            return $locked->fresh(['taskGroup.tasks', 'taskGroup.app', 'taskGroup.taskable']) ?? $locked;
+        });
+    }
+
+    /**
+     * @param  Collection<int, Task>  $tasks
+     *
+     * @throws TaskSequenceException
+     */
+    private function markRunning(Task $task, Collection $tasks): void
+    {
+        $running = $this->runningSibling($tasks, $task);
+
+        if ($running instanceof Task) {
+            throw TaskSequenceException::siblingRunning($task->task_group_id, $running->id);
         }
 
-        $first->save();
+        $next = $this->lowestPending($tasks);
+
+        if (! $next instanceof Task || $next->id !== $task->id || ! $this->predecessorsCompleted($task, $tasks)) {
+            throw TaskSequenceException::notNext($task->id, $task->task_group_id);
+        }
+
+        $task->status = TaskStatus::Running;
+        $task->started_at ??= now();
+        $task->save();
+    }
+
+    private function assignImplementer(Task $task): void
+    {
+        if ($task->status !== TaskStatus::Running) {
+            return;
+        }
+
+        $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
+
+        if (is_string($threadId) && $threadId !== '') {
+            $task->implementer_thread_id = $threadId;
+            $task->save();
+        }
+    }
+
+    /** @return Collection<int, Task> */
+    private function lockedTasks(TaskGroup $group): Collection
+    {
+        $tasks = Task::query()
+            ->where('task_group_id', $group->id)
+            ->orderBy('position')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        $group->setRelation('tasks', $tasks);
+
+        return $tasks;
+    }
+
+    /**
+     * @param  Collection<int, Task>  $tasks
+     * @return Collection<int, Task>
+     */
+    private function orderedTasks(Collection $tasks): Collection
+    {
+        return $tasks
+            ->sortBy(static fn (Task $task): array => [$task->position, $task->id])
+            ->values();
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function lowestPending(Collection $tasks): ?Task
+    {
+        return $this->orderedTasks($tasks)->first(
+            static fn (Task $task): bool => $task->status === TaskStatus::Pending,
+        );
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function runningSibling(Collection $tasks, ?Task $except = null): ?Task
+    {
+        return $this->orderedTasks($tasks)->first(
+            static fn (Task $task): bool => $task->status === TaskStatus::Running
+                && ($except === null || $task->id !== $except->id),
+        );
+    }
+
+    /** @param  Collection<int, Task>  $tasks */
+    private function predecessorsCompleted(Task $task, Collection $tasks): bool
+    {
+        return $this->orderedTasks($tasks)
+            ->filter(static fn (Task $candidate): bool => $candidate->position < $task->position
+                || ($candidate->position === $task->position && $candidate->id < $task->id))
+            ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
     }
 
     private function visitable(TaskGroup $group): bool
