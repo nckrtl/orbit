@@ -163,7 +163,9 @@ it('starts an implementer turn with the T3 0.0.42 message struct', function (): 
             'attachments' => [],
         ])
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not expand scope.')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(TaskAgentDefaults::implementerSelection());
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe(TaskAgentDefaults::implementerSelection())
+        ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
+        ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
 });
 
 it('notifies Coder only when Jev escalates', function (): void {

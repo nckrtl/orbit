@@ -132,6 +132,8 @@ final readonly class TaskSessionActor
                 'attachments' => [],
             ],
             'modelSelection' => $selection,
+            'runtimeMode' => 'full-access',
+            'interactionMode' => 'default',
             'createdAt' => now()->toIso8601String(),
         ]);
     }
