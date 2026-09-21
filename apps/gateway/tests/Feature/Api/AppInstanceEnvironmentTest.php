@@ -7,9 +7,11 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -351,6 +353,59 @@ it('requires an active complete owner while keeping stored updates offline', fun
         ->assertJsonPath('error.code', 'env.owner_unavailable');
 });
 
+it('resolves a finished public Route while retaining its terminal replacement step', function (): void {
+    environment_api_make_public($this->route);
+    $this->route->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$this->instance->id}/environment/KEY", ['value' => 'value'])
+        ->assertOk();
+});
+
+it('returns 409 while a public Route is in an activation step', function (): void {
+    environment_api_make_public($this->route);
+    $this->route->update(['replacement_step' => RouteReplacementStep::IngressCaddy]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$this->instance->id}/environment/KEY", ['value' => 'value'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.owner_unavailable');
+});
+
+it('returns 409 when a retained terminal step carries failed activation evidence', function (): void {
+    environment_api_make_public($this->route);
+    $this->route->update([
+        'replacement_step' => RouteReplacementStep::IngressFirewall,
+        'failed_step' => 'ingress-firewall',
+        'error_code' => 'route.publication_failed',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$this->instance->id}/environment/KEY", ['value' => 'value'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.owner_unavailable');
+});
+
+it('synchronizes a finished public Route while retaining its terminal replacement step', function (): void {
+    environment_api_make_public($this->route);
+    $this->route->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
+    $this->instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'base64:stored-key']);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertOk()
+        ->assertJsonPath('data.operation', 'sync');
+});
+
 it('synchronizes by the existing selector with a narrow value-free result', function (): void {
     $this->instance
         ->environmentValues()
@@ -515,6 +570,38 @@ it('reports an unconfirmed synchronization without values or an unchanged claim'
 function request_id_from_test_response(): string
 {
     return request()->attributes->getString('orbit.request_id');
+}
+
+function environment_api_make_public(Route $route): void
+{
+    $cluster = Cluster::query()->create([
+        'name' => 'environment-public-cluster',
+        'state' => ClusterState::Active,
+    ]);
+
+    foreach ([RoleName::Router, RoleName::Ingress] as $role) {
+        $node = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => "environment-{$role->value}",
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => $role === RoleName::Router ? '192.0.2.210' : '192.0.2.211',
+            'wireguard_ip' => $role === RoleName::Router ? '10.44.0.210' : '10.44.0.211',
+            'user' => 'orbit',
+        ]);
+
+        $node->roles()->create([
+            'cluster_id' => $cluster->id,
+            'role' => $role,
+            'status' => LifecycleStatus::Active,
+        ]);
+    }
+
+    $route->update([
+        'node_id' => null,
+        'cluster_id' => $cluster->id,
+        'publication' => RoutePublication::Public,
+    ]);
 }
 
 /** @return array{Node, AppInstance, Route} */
