@@ -13,6 +13,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 final readonly class T3AgentSpawner implements AgentSpawner
@@ -140,12 +141,29 @@ final readonly class T3AgentSpawner implements AgentSpawner
                 'worktreePath' => $instance->checkout_path,
                 'createdAt' => $createdAt,
             ]);
-            $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
-            $this->startTurn($node, $resolvedThreadId, $message);
-
-            return $resolvedThreadId;
         } catch (T3DispatchException) {
             return null;
+        }
+
+        $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
+        $this->startOpeningTurn($node, $resolvedThreadId, $message);
+
+        return $resolvedThreadId;
+    }
+
+    private function startOpeningTurn(Node $node, string $threadId, string $message): void
+    {
+        try {
+            $this->startTurn($node, $threadId, $message);
+        } catch (T3DispatchException) {
+            try {
+                $this->startTurn($node, $threadId, $message);
+            } catch (T3DispatchException $exception) {
+                Log::warning('T3 thread.turn.start failed after the thread was created.', [
+                    'thread_id' => $threadId,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
         }
     }
 
