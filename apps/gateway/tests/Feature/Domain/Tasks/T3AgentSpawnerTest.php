@@ -148,14 +148,14 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
     $implementerProject = $dispatcher->commands[3];
     $implementerCreate = $dispatcher->commands[4];
     $reviewerSelection = [
-        'instanceId' => TaskAgentDefaults::ReviewerModel,
+        'instanceId' => TaskAgentDefaults::ReviewerInstanceId,
         'model' => TaskAgentDefaults::ReviewerModel,
-        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ReviewerEffort]],
+        'options' => [['id' => TaskAgentDefaults::ReviewerEffortKey, 'value' => TaskAgentDefaults::ReviewerEffort]],
     ];
     $implementerSelection = [
-        'instanceId' => TaskAgentDefaults::ImplementerModel,
+        'instanceId' => TaskAgentDefaults::ImplementerInstanceId,
         'model' => TaskAgentDefaults::ImplementerModel,
-        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ImplementerEffort]],
+        'options' => [['id' => TaskAgentDefaults::ImplementerEffortKey, 'value' => TaskAgentDefaults::ImplementerEffort]],
     ];
 
     expect($reviewerCreate['title'])->toStartWith('Orbit task #'.$group->id.' · Reviewer:')
@@ -164,9 +164,61 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
         ->and($implementerProject['defaultModelSelection'])->toBe($implementerSelection)
         ->and($implementerCreate['modelSelection'])->toBe($implementerSelection)
         ->and($reviewerCreate['worktreePath'])->toBe('/srv/orbit/apps/orbit/task-1')
-        ->and($reviewerCreate['branch'])->toBe('task-1')
-        ->and($dispatcher->commands[2]['message'])->toContain('long-lived reviewer')
-        ->and($dispatcher->commands[5]['message'])->toContain('Implement this subtask');
+        ->and($reviewerCreate['branch'])->toBe('task-1');
+});
+
+it('sends struct message with modelSelection in thread.turn.start', function (): void {
+    $group = t3_spawner_group();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+
+    $spawner->spawnReviewer($group);
+    $spawner->spawnImplementer($group->tasks->first());
+
+    $reviewerTurn = $dispatcher->commands[2];
+    $implementerTurn = $dispatcher->commands[5];
+
+    $reviewerSelection = [
+        'instanceId' => TaskAgentDefaults::ReviewerInstanceId,
+        'model' => TaskAgentDefaults::ReviewerModel,
+        'options' => [['id' => TaskAgentDefaults::ReviewerEffortKey, 'value' => TaskAgentDefaults::ReviewerEffort]],
+    ];
+    $implementerSelection = [
+        'instanceId' => TaskAgentDefaults::ImplementerInstanceId,
+        'model' => TaskAgentDefaults::ImplementerModel,
+        'options' => [['id' => TaskAgentDefaults::ImplementerEffortKey, 'value' => TaskAgentDefaults::ImplementerEffort]],
+    ];
+
+    expect($reviewerTurn)->toHaveKey('modelSelection')
+        ->and($reviewerTurn['modelSelection'])->toBe($reviewerSelection)
+        ->and($reviewerTurn['message'])->toBeArray()
+        ->and($reviewerTurn['message'])->toHaveKeys(['messageId', 'role', 'text', 'attachments'])
+        ->and($reviewerTurn['message']['role'])->toBe('user')
+        ->and($reviewerTurn['message']['text'])->toContain('long-lived reviewer')
+        ->and($reviewerTurn['message']['attachments'])->toBe([])
+        ->and($reviewerTurn['message']['messageId'])->toBeString()->not->toBe('')
+        ->and($reviewerTurn)->not->toHaveKey('messageId')
+        ->and($implementerTurn)->toHaveKey('modelSelection')
+        ->and($implementerTurn['modelSelection'])->toBe($implementerSelection)
+        ->and($implementerTurn['message'])->toBeArray()
+        ->and($implementerTurn['message']['role'])->toBe('user')
+        ->and($implementerTurn['message']['text'])->toContain('Implement this subtask')
+        ->and($implementerTurn['message']['attachments'])->toBe([]);
+});
+
+it('uses reasoningEffort for codex and effort for claudeAgent', function (): void {
+    $group = t3_spawner_group();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+
+    $spawner->spawnReviewer($group);
+    $spawner->spawnImplementer($group->tasks->first());
+
+    $reviewerTurn = $dispatcher->commands[2];
+    $implementerTurn = $dispatcher->commands[5];
+
+    expect($reviewerTurn['modelSelection']['instanceId'])->toBe('claudeAgent')
+        ->and($reviewerTurn['modelSelection']['options'][0]['id'])->toBe('effort')
+        ->and($implementerTurn['modelSelection']['instanceId'])->toBe('codex')
+        ->and($implementerTurn['modelSelection']['options'][0]['id'])->toBe('reasoningEffort');
 });
 
 it('posts T3 model options as id and value JSON objects', function (): void {
@@ -199,9 +251,26 @@ it('posts T3 model options as id and value JSON objects', function (): void {
                 ['id' => 'effort', 'value' => 'high'],
             ];
     });
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode($request->body(), true);
+
+        if (! is_array($payload) || ($payload['type'] ?? null) !== 'thread.turn.start') {
+            return false;
+        }
+
+        $message = $payload['message'] ?? null;
+
+        return is_array($message)
+            && ($message['role'] ?? null) === 'user'
+            && is_string($message['text'] ?? null)
+            && ($message['attachments'] ?? null) === []
+            && is_string($message['messageId'] ?? null)
+            && is_array($payload['modelSelection'] ?? null)
+            && ($payload['modelSelection']['instanceId'] ?? null) === 'claudeAgent';
+    });
 });
 
-it('sends please review to the stored reviewer thread and commits on sign-off', function (): void {
+it('sends please review with struct message to the stored reviewer thread and commits on sign-off', function (): void {
     $group = t3_spawner_group();
     $group->reviewer_thread_id = 'reviewer-existing';
     $group->save();
@@ -213,7 +282,12 @@ it('sends please review to the stored reviewer thread and commits on sign-off', 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
-        ->and($dispatcher->commands[0]['message'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message'])->toBeArray()
+        ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message']['attachments'])->toBe([])
+        ->and($dispatcher->commands[0])->toHaveKey('modelSelection')
+        ->and($dispatcher->commands[0]['modelSelection']['instanceId'])->toBe('claudeAgent')
         ->and($sha)->toBe(str_repeat('b', 40))
         ->and($signer->commits)->toBe(1);
 });
@@ -235,7 +309,7 @@ it('adopts the existing T3 project when workspace root already has one', functio
         ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
 });
 
-it('returns the created thread id when turn start fails after thread create', function (?string $adoptProjectId): void {
+it('returns null and cleans up session when opening turn fails after retries', function (?string $adoptProjectId): void {
     $group = t3_spawner_group();
     [$spawner, $dispatcher] = t3_spawner_stack();
     $dispatcher->adoptProjectId = $adoptProjectId;
@@ -243,7 +317,7 @@ it('returns the created thread id when turn start fails after thread create', fu
 
     Log::shouldReceive('warning')
         ->once()
-        ->with('T3 thread.turn.start failed after the thread was created.', Mockery::on(function (array $context): bool {
+        ->with('T3 opening turn failed — clearing session for fail-closed spawn.', Mockery::on(function (array $context): bool {
             expect($context['thread_id'])->toBeString()->not->toBe('')
                 ->and($context['exception'])->toBe('T3 turn start failed.');
 
@@ -252,16 +326,14 @@ it('returns the created thread id when turn start fails after thread create', fu
 
     $reviewerId = $spawner->spawnReviewer($group);
 
-    expect($reviewerId)->not->toBeNull()
-        ->and($reviewerId)->not->toBe('')
+    expect($reviewerId)->toBeNull()
         ->and(array_column($dispatcher->commands, 'type'))->toBe([
             'project.create',
             'thread.create',
             'thread.turn.start',
             'thread.turn.start',
         ])
-        ->and($dispatcher->commands[2]['threadId'])->toBe($reviewerId)
-        ->and($dispatcher->commands[3]['threadId'])->toBe($reviewerId);
+        ->and(TaskAgentSession::query()->where('task_group_id', $group->id)->count())->toBe(0);
 
     if (is_string($adoptProjectId)) {
         expect($dispatcher->commands[1]['projectId'])->toBe($adoptProjectId)
@@ -271,6 +343,23 @@ it('returns the created thread id when turn start fails after thread create', fu
     'fresh project' => [null],
     'adopted project' => ['550e8400-e29b-41d4-a716-446655440000'],
 ]);
+
+it('succeeds on retry when first turn start fails but second succeeds', function (): void {
+    $group = t3_spawner_group();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $dispatcher->failTurnStartRemaining = 1;
+
+    $reviewerId = $spawner->spawnReviewer($group);
+
+    expect($reviewerId)->not->toBeNull()
+        ->and(array_column($dispatcher->commands, 'type'))->toBe([
+            'project.create',
+            'thread.create',
+            'thread.turn.start',
+            'thread.turn.start',
+        ])
+        ->and(TaskAgentSession::query()->where('thread_id', $reviewerId)->count())->toBe(1);
+});
 
 it('returns null when T3 refuses the spawn', function (): void {
     $group = t3_spawner_group();
@@ -294,20 +383,41 @@ it('reuses persisted thread ids instead of spawning again', function (): void {
         ->and($dispatcher->commands)->toBe([]);
 });
 
-it('persists both role links before a refused opening turn and keeps them after workspace removal', function (): void {
+it('cleans up sessions for both roles when opening turns fail', function (): void {
     $group = t3_spawner_group();
     [$spawner, $dispatcher] = t3_spawner_stack();
     $dispatcher->failTurnStartRemaining = 4;
+
+    Log::shouldReceive('warning')->twice();
+
     $reviewer = $spawner->spawnReviewer($group);
     $implementer = $spawner->spawnImplementer($group->tasks->firstOrFail());
-    $group->taskable->delete();
-    $links = TaskAgentSession::query()->where('task_group_id', $group->id)->orderBy('id')->get();
-    expect($links)->toHaveCount(2)
-        ->and($links[0]->thread_id)->toBe($reviewer)
-        ->and($links[0]->task_id)->toBeNull()
-        ->and($links[1]->thread_id)->toBe($implementer)
-        ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
-        ->and($links[1]->node_id)->not->toBeNull();
+
+    expect($reviewer)->toBeNull()
+        ->and($implementer)->toBeNull()
+        ->and(TaskAgentSession::query()->where('task_group_id', $group->id)->count())->toBe(0);
+});
+
+it('surfaces HTTP 400 status and body through T3DispatchException', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.110:3773/api/orchestration/dispatch' => Http::sequence()
+            ->push(['sequence' => 1])
+            ->push(['sequence' => 2, 'threadId' => 'test-thread-id'])
+            ->push(['error' => 'Invalid message format'], 400)
+            ->push(['error' => 'Invalid message format'], 400),
+    ]);
+    $group = t3_spawner_group();
+    [, , $signer] = t3_spawner_stack();
+
+    Log::shouldReceive('warning')
+        ->once()
+        ->with('T3 opening turn failed — clearing session for fail-closed spawn.', Mockery::type('array'));
+
+    $threadId = (new T3AgentSpawner(app(HttpT3Dispatcher::class), $signer))->spawnReviewer($group);
+
+    expect($threadId)->toBeNull()
+        ->and(TaskAgentSession::query()->where('task_group_id', $group->id)->count())->toBe(0);
 });
 
 it('imports legacy thread links using the instance morph alias', function (): void {

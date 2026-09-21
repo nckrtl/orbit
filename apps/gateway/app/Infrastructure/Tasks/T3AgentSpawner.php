@@ -35,7 +35,9 @@ final readonly class T3AgentSpawner implements AgentSpawner
         return $this->spawnThread(
             $group,
             title: 'Orbit task #'.$group->id.' · Reviewer: '.$group->title,
+            instanceId: TaskAgentDefaults::ReviewerInstanceId,
             model: $group->reviewer_model !== '' ? $group->reviewer_model : TaskAgentDefaults::ReviewerModel,
+            effortKey: TaskAgentDefaults::ReviewerEffortKey,
             effort: TaskAgentDefaults::ReviewerEffort,
             message: $this->reviewerPrompt($group),
         );
@@ -54,7 +56,9 @@ final readonly class T3AgentSpawner implements AgentSpawner
         return $this->spawnThread(
             $group,
             title: 'Orbit task #'.$group->id.' / subtask #'.$task->id.' · Implementer: '.$task->title,
+            instanceId: TaskAgentDefaults::ImplementerInstanceId,
             model: $group->implementer_model !== '' ? $group->implementer_model : TaskAgentDefaults::ImplementerModel,
+            effortKey: TaskAgentDefaults::ImplementerEffortKey,
             effort: TaskAgentDefaults::ImplementerEffort,
             message: $this->implementerPrompt($group, $task),
             taskId: $task->id,
@@ -71,8 +75,15 @@ final readonly class T3AgentSpawner implements AgentSpawner
             return;
         }
 
+        $selection = $this->modelSelection(
+            TaskAgentDefaults::ReviewerInstanceId,
+            $group->reviewer_model !== '' ? $group->reviewer_model : TaskAgentDefaults::ReviewerModel,
+            TaskAgentDefaults::ReviewerEffortKey,
+            TaskAgentDefaults::ReviewerEffort,
+        );
+
         try {
-            $this->startTurn($node, $group->reviewer_thread_id, $this->reviewPrompt($task));
+            $this->startTurn($node, $group->reviewer_thread_id, $this->reviewPrompt($task), $selection);
         } catch (T3DispatchException) {
         }
     }
@@ -95,7 +106,9 @@ final readonly class T3AgentSpawner implements AgentSpawner
     private function spawnThread(
         TaskGroup $group,
         string $title,
+        string $instanceId,
         string $model,
+        string $effortKey,
         string $effort,
         string $message,
         ?int $taskId = null,
@@ -110,7 +123,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
         $threadId = (string) Str::uuid();
         $projectId = (string) Str::uuid();
         $createdAt = now()->toIso8601String();
-        $selection = $this->modelSelection($model, $effort);
+        $selection = $this->modelSelection($instanceId, $model, $effortKey, $effort);
 
         try {
             try {
@@ -155,35 +168,51 @@ final readonly class T3AgentSpawner implements AgentSpawner
             'node_id' => $node->id,
             'role' => $taskId === null ? 'reviewer' : 'implementer',
         ]);
-        $this->startOpeningTurn($node, $resolvedThreadId, $message);
+
+        try {
+            $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection);
+        } catch (T3DispatchException $exception) {
+            TaskAgentSession::query()->where('thread_id', $resolvedThreadId)->delete();
+
+            Log::warning('T3 opening turn failed — clearing session for fail-closed spawn.', [
+                'thread_id' => $resolvedThreadId,
+                'exception' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
 
         return $resolvedThreadId;
     }
 
-    private function startOpeningTurn(Node $node, string $threadId, string $message): void
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
+    private function startOpeningTurn(Node $node, string $threadId, string $message, array $selection): void
     {
         try {
-            $this->startTurn($node, $threadId, $message);
+            $this->startTurn($node, $threadId, $message, $selection);
         } catch (T3DispatchException) {
-            try {
-                $this->startTurn($node, $threadId, $message);
-            } catch (T3DispatchException $exception) {
-                Log::warning('T3 thread.turn.start failed after the thread was created.', [
-                    'thread_id' => $threadId,
-                    'exception' => $exception->getMessage(),
-                ]);
-            }
+            $this->startTurn($node, $threadId, $message, $selection);
         }
     }
 
-    private function startTurn(Node $node, string $threadId, string $message): void
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
+    private function startTurn(Node $node, string $threadId, string $message, array $selection): void
     {
         $this->dispatcher->dispatch($node, [
             'type' => 'thread.turn.start',
             'commandId' => (string) Str::uuid(),
             'threadId' => $threadId,
-            'messageId' => (string) Str::uuid(),
-            'message' => $message,
+            'message' => [
+                'messageId' => (string) Str::uuid(),
+                'role' => 'user',
+                'text' => $message,
+                'attachments' => [],
+            ],
+            'modelSelection' => $selection,
             'createdAt' => now()->toIso8601String(),
         ]);
     }
@@ -191,13 +220,13 @@ final readonly class T3AgentSpawner implements AgentSpawner
     /**
      * @return array{instanceId: string, model: string, options: list<array{id: string, value: string}>}
      */
-    private function modelSelection(string $model, string $effort): array
+    private function modelSelection(string $instanceId, string $model, string $effortKey, string $effort): array
     {
         return [
-            'instanceId' => $model,
+            'instanceId' => $instanceId,
             'model' => $model,
             'options' => [
-                ['id' => 'effort', 'value' => $effort],
+                ['id' => $effortKey, 'value' => $effort],
             ],
         ];
     }
