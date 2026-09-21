@@ -2773,6 +2773,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Task"
@@ -4112,6 +4113,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Task",

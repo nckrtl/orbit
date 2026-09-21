@@ -93,7 +93,11 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create`, `thread.create`, or the opening `thread.turn.start`, the group stays `reserved` or `running` without thread ids.
+A claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. The Node must own an active `t3-code` Process whose desired state is `running`, matching the managed T3 service. This recorded state is the placement signal, not an HTTP health probe. If no such Node fits the ceiling, provisioning returns no Instance and creates no workspace.
+
+When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the long-lived reviewer and first implementer, and the Gateway stores their thread ids. After a successful `thread.create`, a refused `thread.turn.start` is retried once and then leaves the thread id unset.
+
+A spawn that returns no thread id marks the group `failed` and logs which spawn refused. The failing subtask is marked `failed` too. This applies to both opening spawns and to the implementer of any later subtask, so no group stays `running` with a null thread id. Create answers with the failed group rather than raising, so one group cannot break an unrelated create.
 
 `tasks:tick` (`php artisan tasks:tick`) then observes those stored reviewer and implementer threads and routes them. It does not poll Nodes for capacity and it never includes non-task T3 threads.
 
