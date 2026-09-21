@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\TaskGroup;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -102,4 +105,73 @@ it('returns tasks.disabled when MCP create runs before enable', function (): voi
     expect($created['result']['isError'])->toBeTrue()
         ->and($error['status'])->toBe(409)
         ->and($error['error']['code'])->toBe('tasks.disabled');
+});
+
+it('cancels a running or queued group through MCP and removes its shared Instance', function (TaskGroupStatus $status): void {
+    app(TaskExtensionState::class)->enable();
+    $node = Node::query()->create([
+        'name' => 'tasks-mcp-instance-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.86',
+        'wireguard_ip' => '10.44.0.86',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $this->appRecord->id,
+        'node_id' => $node->id,
+        'name' => 'task-mcp-cancel',
+        'checkout_path' => '/srv/orbit/apps/mcp-demo/task-mcp-cancel',
+        'status' => 'source_resolved',
+    ]);
+    $group = TaskGroup::query()->create([
+        'app_id' => $this->appRecord->id,
+        'title' => 'MCP cancel',
+        'brief' => 'Cancel a stuck group.',
+        'status' => $status,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+
+    $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-cancel',
+        'arguments' => ['group' => $group->id],
+    ]));
+    $document = json_decode($cancelled['result']['content'][0]['text'], true);
+
+    expect($cancelled['result']['isError'] ?? true)->toBeFalse()
+        ->and($document['data']['status'])->toBe('cancelled')
+        ->and($document['data']['taskable_id'])->toBeNull()
+        ->and(AppInstance::query()->find($instance->id))->toBeNull();
+})->with([
+    'queued' => TaskGroupStatus::Queued,
+    'running' => TaskGroupStatus::Running,
+]);
+
+it('returns a structured MCP error for canceling a settling group and still completes it', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = TaskGroup::query()->create([
+        'app_id' => $this->appRecord->id,
+        'title' => 'MCP settle',
+        'brief' => 'Complete after review.',
+        'status' => TaskGroupStatus::Settling,
+    ]);
+
+    $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-cancel',
+        'arguments' => ['group' => $group->id],
+    ]));
+    $error = json_decode($cancelled['result']['content'][0]['text'], true);
+
+    expect($cancelled['result']['isError'])->toBeTrue()
+        ->and($error['status'])->toBe(409)
+        ->and($error['error']['code'])->toBe('tasks.not_cancellable');
+
+    $completed = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-complete',
+        'arguments' => ['group' => $group->id],
+    ]));
+    $document = json_decode($completed['result']['content'][0]['text'], true);
+
+    expect($completed['result']['isError'] ?? true)->toBeFalse()
+        ->and($document['data']['status'])->toBe('completed');
 });

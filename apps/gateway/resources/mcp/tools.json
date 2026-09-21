@@ -5642,6 +5642,22 @@
       }
     },
     {
+      "name": "tasks-cancel",
+      "title": "Cancel a Task group",
+      "description": "Cancels a queued, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/cancel",
+      "path_inputs": ["group"],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {"group": {"type": "integer", "minimum": 1, "description": "Numeric Task group ID."}},
+        "additionalProperties": false,
+        "required": ["group"]
+      }
+    },
+    {
       "name": "tasks-complete",
       "title": "Complete a Task group",
       "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
