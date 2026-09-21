@@ -11,6 +11,10 @@ final readonly class TaskSessionObservation
      */
     public function __construct(
         public int $groupId,
+        public int $taskId,
+        public string $taskStatus,
+        public string $taskTitle,
+        public string $taskBrief,
         public string $groupStatus,
         public string $title,
         public string $brief,
@@ -38,6 +42,10 @@ final readonly class TaskSessionObservation
         return [
             'group_id' => $this->groupId,
             'available' => $this->available,
+            'task_id' => $this->taskId,
+            'task_status' => $this->taskStatus,
+            'task_title' => $this->taskTitle,
+            'task_brief' => $this->taskBrief,
             'group_status' => $this->groupStatus,
             'title' => $this->title,
             'brief' => $this->brief,

@@ -23,7 +23,7 @@ final readonly class T3Projection
         if ($state === AgentThreadState::Idle && in_array($previous, [AgentThreadState::Done, AgentThreadState::Failed], true)) {
             $state = $previous;
         }
-        $requests = in_array($state, [AgentThreadState::Done, AgentThreadState::Failed], true)
+        $requests = in_array($state, [AgentThreadState::Working, AgentThreadState::Done, AgentThreadState::Failed], true)
             ? [] : $this->requests($thread, $turn);
         if ($requests !== []) {
             $state = AgentThreadState::AskingForInput;

@@ -11,7 +11,7 @@ it('normalizes runtime states without collapsing completion or failure into idle
 })->with([
     'idle' => [['session' => ['status' => 'idle']], AgentThreadState::Idle],
     'working' => [['session' => ['status' => 'running']], AgentThreadState::Working],
-    'input' => [['session' => ['status' => 'running'], 'pendingUserInputs' => [['requestId' => 'q']]], AgentThreadState::AskingForInput],
+    'input' => [['session' => ['status' => 'waiting'], 'pendingUserInputs' => [['requestId' => 'q']]], AgentThreadState::AskingForInput],
     'done' => [['session' => ['status' => 'done']], AgentThreadState::Done],
     'completed turn' => [['session' => ['status' => 'idle'], 'latestTurn' => ['state' => 'completed']], AgentThreadState::Done],
     'failed' => [['session' => ['status' => 'failed']], AgentThreadState::Failed],
@@ -21,7 +21,7 @@ it('normalizes runtime states without collapsing completion or failure into idle
 
 it('ignores resolved requests and requests belonging to older turns', function (): void {
     $thread = [
-        'session' => ['status' => 'running'], 'latestTurn' => ['id' => 'new', 'state' => 'running'],
+        'session' => ['status' => 'waiting'], 'latestTurn' => ['id' => 'new', 'state' => 'waiting'],
         'activities' => [
             ['kind' => 'user-input', 'payload' => ['requestId' => 'old', 'turnId' => 'old']],
             ['kind' => 'approval', 'payload' => ['requestId' => 'resolved', 'turnId' => 'new']],
@@ -81,3 +81,14 @@ it('appends T3 streaming message deltas and preserves text on an empty completio
     expect($observed->entries)->toHaveCount(1)
         ->and($observed->lastText('assistant'))->toBe('Hello world');
 });
+
+it('keeps an active session authoritative over stale completion and input fields', function (string $status): void {
+    $observation = new T3Projection()->observe(['thread' => [
+        'session' => ['status' => $status],
+        'latestTurn' => ['state' => 'completed'],
+        'pendingApprovals' => [['requestId' => 'old-approval']],
+        'pendingUserInputs' => [['requestId' => 'old-question']],
+    ]]);
+    expect($observation->state)->toBe(AgentThreadState::Working)
+        ->and($observation->inputRequests)->toBe([]);
+})->with(['starting', 'running']);

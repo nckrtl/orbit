@@ -22,6 +22,10 @@ function classifier_observation(
     ?string $prUrl = null,
 ): TaskSessionObservation {
     return new TaskSessionObservation(
+        taskId: 42,
+        taskStatus: 'running',
+        taskTitle: 'Models',
+        taskBrief: 'Implement the models.',
         groupId: 21,
         groupStatus: 'running',
         title: 'Route sessions',

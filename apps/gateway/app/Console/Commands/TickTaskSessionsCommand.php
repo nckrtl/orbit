@@ -25,7 +25,7 @@ final class TickTaskSessionsCommand extends Command
         }
 
         $decisions = $scheduler->tick();
-        $this->info('Routed ['.count($decisions).'] task groups.');
+        $this->info('Routed ['.count($decisions).'] tasks.');
 
         return self::SUCCESS;
     }

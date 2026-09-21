@@ -14,19 +14,29 @@ final readonly class TaskSessionObserver
 {
     public function __construct(private AgentThreadObserver $threads, private TaskWorkspaceDiffReader $diff) {}
 
-    public function observe(TaskGroup $group): TaskSessionObservation
+    public function observe(TaskGroup $group, Task $task): TaskSessionObservation
     {
         $group->loadMissing(['app', 'tasks', 'taskable']);
-        $current = $group->tasks->first(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true));
-        $wanted = array_filter([$group->reviewer_agent_thread_id, $current?->implementer_agent_thread_id]);
-        $threads = [];
-        $hasNewCommits = $this->hasNewCommits($group);
-        foreach (AgentThread::query()->where('task_group_id', $group->id)->whereIn('id', $wanted)->orderBy('id')->get() as $thread) {
+        $observations = [];
+        $hasActiveThread = false;
+        foreach (AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get() as $thread) {
             $role = TaskThreadRole::tryFrom($thread->role);
-            if ($role === null || ($role === TaskThreadRole::Reviewer && ($thread->id !== $group->reviewer_agent_thread_id || $thread->task_id !== null)) || ($role === TaskThreadRole::Implementer && ($thread->id !== $current?->implementer_agent_thread_id || $thread->task_id !== $current->id))) {
+            $belongsToTask = $thread->task_id === $task->id;
+            $sharedReviewer = $task->status === TaskStatus::Reviewing
+                && $thread->task_id === null && $role === TaskThreadRole::Reviewer;
+            if ($role === null || (! $belongsToTask && ! $sharedReviewer)) {
                 continue;
             }
             $observation = $this->threads->observe($thread);
+            $hasActiveThread = $hasActiveThread || $observation?->state === AgentThreadState::Working;
+            $observations[] = [$thread, $role, $observation];
+        }
+        if ($hasActiveThread) {
+            $observations = [];
+        }
+        $threads = [];
+        $hasNewCommits = $observations !== [] && $this->hasNewCommits($group);
+        foreach ($observations as [$thread, $role, $observation]) {
             $requests = $observation->inputRequests ?? [];
             $approval = $question = null;
             foreach ($requests as $request) {
@@ -39,7 +49,7 @@ final readonly class TaskSessionObserver
             $threads[] = new TaskThreadObservation(
                 threadId: $thread->id, role: $role,
                 sessState: $observation->state->value ?? $thread->state->value ?? 'unknown',
-                idle: $observation?->state === AgentThreadState::Idle,
+                idle: in_array($observation?->state, [AgentThreadState::Idle, AgentThreadState::Done], true),
                 pendingApprovalId: $approval, pendingUserInputId: $question,
                 lastAssistantText: $observation?->lastText('assistant'), lastUserText: $observation?->lastText('user'),
                 hasNewCommitsSinceThreadStart: $hasNewCommits, prUrl: $group->pr_url, ciSummary: null,
@@ -49,10 +59,11 @@ final readonly class TaskSessionObserver
         }
 
         return new TaskSessionObservation(
+            taskId: $task->id, taskStatus: $task->status->value, taskTitle: $task->title, taskBrief: $task->brief,
             groupId: $group->id, groupStatus: $group->status->value, title: $group->title, brief: $group->brief,
             hasPendingSubtasks: $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running, TaskStatus::Reviewing], true)),
             prUrl: $group->pr_url, ciSummary: null, threads: $threads,
-            available: count($threads) === ($current === null ? 1 : 2) && ! array_any($threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available),
+            available: ! array_any($threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available),
         );
     }
 

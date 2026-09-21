@@ -44,30 +44,44 @@ final readonly class TaskScheduler
         $decisions = [];
 
         foreach ($groups as $group) {
-            $observation = $this->observer->observe($group);
+            $tasks = $group->tasks
+                ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
+                ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
 
-            if ($observation->threads === [] && $observation->available) {
-                continue;
+            foreach ($tasks as $task) {
+                $task = $task->fresh();
+
+                if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
+                    continue;
+                }
+
+                $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                $observation = $this->observer->observe($group, $task);
+
+                if ($observation->threads === [] && $observation->available) {
+                    $this->clearUnavailable($group);
+
+                    continue;
+                }
+
+                try {
+                    $decision = ! $observation->available
+                        ? $this->unavailableDecision($group)
+                        : $this->classifyAvailable($group, $observation);
+                } catch (TaskSessionClassificationException $exception) {
+                    $decision = TaskSessionDecision::escalate($exception->getMessage());
+                }
+
+                try {
+                    $this->actor->execute($group, $observation, $decision);
+                    $this->advance($group, $task, $decision);
+                } catch (AgentDriverException $exception) {
+                    $decision = TaskSessionDecision::escalate($exception->getMessage());
+                    $this->actor->execute($group, $observation, $decision);
+                }
+
+                $decisions[] = $decision;
             }
-
-            try {
-                $unavailable = ! $observation->available || array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available);
-                $decision = $unavailable
-                    ? $this->unavailableDecision($group)
-                    : $this->classifyAvailable($group, $observation);
-            } catch (TaskSessionClassificationException $exception) {
-                $decision = TaskSessionDecision::escalate($exception->getMessage());
-            }
-
-            try {
-                $this->actor->execute($group, $observation, $decision);
-                $this->advance($group, $decision);
-            } catch (AgentDriverException $exception) {
-                $decision = TaskSessionDecision::escalate($exception->getMessage());
-                $this->actor->execute($group, $observation, $decision);
-            }
-
-            $decisions[] = $decision;
         }
 
         return $decisions;
@@ -75,11 +89,16 @@ final readonly class TaskScheduler
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
     {
+        $this->clearUnavailable($group);
+
+        return $this->classifier->classify($observation);
+    }
+
+    private function clearUnavailable(TaskGroup $group): void
+    {
         TaskGroup::query()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
             'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
         ]);
-
-        return $this->classifier->classify($observation);
     }
 
     private function unavailableDecision(TaskGroup $group): TaskSessionDecision
@@ -100,15 +119,10 @@ final readonly class TaskScheduler
         return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
     }
 
-    private function advance(TaskGroup $group, TaskSessionDecision $decision): void
+    private function advance(TaskGroup $group, Task $task, TaskSessionDecision $decision): void
     {
         $group = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-        $current = $group->tasks
-            ->sortBy(static fn (Task $task): array => [$task->position, $task->id])
-            ->first(static fn (Task $task): bool => in_array($task->status, [
-                TaskStatus::Running,
-                TaskStatus::Reviewing,
-            ], true));
+        $current = $task->fresh();
 
         if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
             if ($current->status === TaskStatus::Running) {

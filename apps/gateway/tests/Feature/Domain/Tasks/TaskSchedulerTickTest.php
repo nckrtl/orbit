@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -17,6 +18,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -321,6 +323,143 @@ it('runs the artisan tick while the extension is enabled', function (): void {
     app(TaskExtensionState::class)->enable();
 
     $this->artisan('tasks:tick')
-        ->expectsOutput('Routed [0] task groups.')
+        ->expectsOutput('Routed [0] tasks.')
         ->assertSuccessful();
 });
+
+it('does not classify or advance a task while its T3 thread is active', function (string $status): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class($status) implements T3ThreadReader
+    {
+        public function __construct(private string $status) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => $threadId === 'implementer-thread' ? $this->status : 'idle'],
+                'messages' => [['role' => 'assistant', 'text' => 'Done. Ready for review.']],
+            ]];
+        }
+    });
+    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
+    {
+        public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            throw new LogicException('Active tasks must not call Jev.');
+        }
+    });
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([])
+        ->and($dispatcher->commands)->toBe([])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->tasks()->first()?->status)->toBe(TaskStatus::Running);
+})->with(['starting', 'running']);
+
+it('ignores tasks that are not in progress even when they have a thread', function (TaskStatus $status): void {
+    $group = tick_group();
+    $task = $group->tasks->first();
+    $task->update(['status' => $status]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            throw new LogicException('Only in-progress tasks should be inspected.');
+        }
+    });
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([])
+        ->and($task->fresh()->status)->toBe($status);
+    Classification::assertNothingClassified();
+})->with([TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled]);
+
+it('does not classify an in-progress task without an attached session', function (): void {
+    $group = tick_group();
+    $group->tasks->first()->update(['implementer_agent_thread_id' => null]);
+    AgentThread::query()->where('task_id', $group->tasks->first()->id)->delete();
+    app(TaskExtensionState::class)->enable();
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([]);
+    Classification::assertNothingClassified();
+});
+
+it('targets the idle in-progress task while another task is working', function (TaskSessionNextAction $action): void {
+    $group = tick_group();
+    $workingTask = $group->tasks->first();
+    $workingTask->update(['status' => TaskStatus::Reviewing]);
+    $idleTask = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Second task',
+        'brief' => 'Finish the second task.',
+        'status' => TaskStatus::Running,
+    ]);
+    test_agent_thread($group, 'second-task-session', $idleTask);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(AgentSpawner::class, new NullAgentSpawner);
+    $reader = new class implements T3ThreadReader
+    {
+        /** @var list<string> */
+        public array $requested = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->requested[] = $threadId;
+
+            return ['thread' => [
+                'session' => ['status' => $threadId === 'implementer-thread' ? 'running' : 'idle'],
+                'messages' => [['role' => 'assistant', 'text' => 'Ready for the next step.']],
+            ]];
+        }
+    };
+    app()->instance(T3ThreadReader::class, $reader);
+    $classifier = new class($action) implements TaskSessionClassifier
+    {
+        /** @var list<TaskSessionObservation> */
+        public array $observations = [];
+
+        public function __construct(private TaskSessionNextAction $action) {}
+
+        public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            $this->observations[] = $observation;
+
+            return new TaskSessionDecision($this->action, 0.95, 'Route the observed task.');
+        }
+    };
+    app()->instance(TaskSessionClassifier::class, $classifier);
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toHaveCount(1)
+        ->and($classifier->observations)->toHaveCount(1)
+        ->and($classifier->observations[0]->taskId)->toBe($idleTask->id)
+        ->and($classifier->observations[0]->taskStatus)->toBe('running')
+        ->and($classifier->observations[0]->taskTitle)->toBe('Second task')
+        ->and($classifier->observations[0]->taskBrief)->toBe('Finish the second task.')
+        ->and($classifier->observations[0]->threads)->toHaveCount(1)
+        ->and($classifier->observations[0]->threads[0]->threadId)->toBe(test_agent_thread($group, 'second-task-session', $idleTask)->id)
+        ->and($reader->requested)->toBe(['reviewer-thread', 'implementer-thread', 'second-task-session'])
+        ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing);
+
+    if ($action === TaskSessionNextAction::ContinueImplementer) {
+        expect($dispatcher->commands)->toHaveCount(1)
+            ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
+            ->and($dispatcher->commands[0]['threadId'])->toBe('second-task-session')
+            ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
+    } else {
+        expect($dispatcher->commands)->toBe([])
+            ->and($idleTask->fresh()->status)->toBe(TaskStatus::Reviewing);
+    }
+})->with([TaskSessionNextAction::ContinueImplementer, TaskSessionNextAction::MarkSubtaskDone]);

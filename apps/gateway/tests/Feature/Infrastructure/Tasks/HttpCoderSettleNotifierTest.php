@@ -80,6 +80,10 @@ it('posts an HMAC-signed escalate body to Coder', function (): void {
     config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
     $group = coder_settle_group();
     $observation = new TaskSessionObservation(
+        taskId: 42,
+        taskStatus: 'running',
+        taskTitle: 'Models',
+        taskBrief: 'Store the records.',
         groupId: $group->id,
         groupStatus: $group->status->value,
         title: $group->title,

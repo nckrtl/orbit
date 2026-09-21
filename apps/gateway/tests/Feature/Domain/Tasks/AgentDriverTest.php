@@ -55,7 +55,7 @@ it('creates and resumes conversations through a second driver without T3', funct
     [$group, $task, $driver, $registry] = driver_group();
     $driver->observation = new AgentObservation(AgentThreadState::Done);
     $observer = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader);
-    $observation = $observer->observe($group);
+    $observation = $observer->observe($group, $group->tasks()->firstOrFail());
     new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 1.0, 'Continue.'));
 
     expect($task->implementerThread->driver)->toBe('example')
@@ -66,7 +66,7 @@ it('creates and resumes conversations through a second driver without T3', funct
 it('routes typed pending requests through the selected driver', function (): void {
     [$group, , $driver, $registry] = driver_group();
     $driver->observation = new AgentObservation(AgentThreadState::AskingForInput, [new AgentInputRequest('request-1', 'approval', ['command' => 'run tests'])]);
-    $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group);
+    $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
     new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.'));
 
     expect($driver->calls[2])->toMatchArray(['operation' => 'respond', 'request' => 'request-1', 'answers' => ['approve' => true]]);
@@ -120,13 +120,13 @@ it('leaves never observed state unknown and clears failure details after retry s
         ->and($thread->fresh()->observation_error)->toBeNull();
 });
 
-it('does not route an earlier implementer attempt', function (): void {
+it('observes every attached implementer thread', function (): void {
     [$group, $task, $driver, $registry] = driver_group();
     $driver->observation = new AgentObservation(AgentThreadState::Idle);
     $old = test_agent_thread($group, 'old-attempt', $task);
-    $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group);
+    $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
 
-    expect(array_column($observation->toArray()['threads'], 'thread_id'))->not->toContain($old->id)
+    expect(array_column($observation->toArray()['threads'], 'thread_id'))->toContain($old->id)
         ->toContain($task->implementer_agent_thread_id);
 });
 
@@ -151,11 +151,11 @@ it('scopes external identifiers to the driver and runtime', function (): void {
     expect(fn () => $duplicate->save())->toThrow(QueryException::class);
 });
 
-it('waits for an incomplete current conversation set without classification', function (): void {
+it('routes an attached conversation without a legacy pointer', function (): void {
     [$group, $task, $driver] = driver_group();
     $task->update(['implementer_agent_thread_id' => null]);
     $driver->observation = new AgentObservation(AgentThreadState::Done);
-    Classification::fake();
+    Classification::fake([['next_action' => new ChoiceAnswer('noop', [], 1.0)]]);
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
@@ -163,13 +163,13 @@ it('waits for an incomplete current conversation set without classification', fu
 
     expect($decisions[0]->action)->toBe(TaskSessionNextAction::Noop)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-    Classification::assertNothingClassified();
+    Classification::assertClassified(fn (): bool => true);
 });
 
 it('rejects a drain when the requested input is no longer available', function (): void {
     [$group, , $driver, $registry] = driver_group();
     $driver->observation = new AgentObservation(AgentThreadState::Done);
-    $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group);
+    $observation = new TaskSessionObserver(new AgentThreadObserver($registry), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks()->firstOrFail());
 
     expect(fn () => new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.')))
         ->toThrow(AgentDriverException::class, 'No matching agent input request');

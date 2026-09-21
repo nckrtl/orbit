@@ -72,6 +72,10 @@ function router_group(): TaskGroup
 function router_observation(TaskGroup $group, ?string $pendingApprovalId = null): TaskSessionObservation
 {
     return new TaskSessionObservation(
+        taskId: $group->tasks->first()->id,
+        taskStatus: 'running',
+        taskTitle: 'Models',
+        taskBrief: 'Store the records.',
         groupId: $group->id,
         groupStatus: $group->status->value,
         title: $group->title,

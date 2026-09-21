@@ -90,7 +90,8 @@ describe('task agent viewer', function (): void {
             ->and($events[2]['entry']['text'])->toBe('Visible progress appended')
             ->and($events[1])->not->toHaveKey('entries')
             ->and($events[3]['state'])->toBe('working')
-            ->and($events[4]['state'])->toBe('asking_for_input')
+            ->and($events[4]['state'])->toBe('working')
+            ->and($events[4]['input_requests'])->toBe([])
             ->and($events[5]['state'])->toBe('working')
             ->and($events[5]['input_requests'])->toBe([])
             ->and($events[6]['state'])->toBe('done');

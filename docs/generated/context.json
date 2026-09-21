@@ -3002,6 +3002,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0113-gate-task-completion-on-validation-and-review.md",
+            "title": "ADR 0113: Gate task completion on validation and review",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0103",
+                "0110",
+                "0112",
+                "0113"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3144,7 +3171,8 @@
                 "0108",
                 "0109",
                 "0110",
-                "0112"
+                "0112",
+                "0113"
             ]
         },
         {

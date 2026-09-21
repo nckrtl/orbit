@@ -156,7 +156,11 @@ When a subtask settles, the scheduler marks it `reviewing` and sends "please rev
 
 ## Session routing
 
-A scheduler tick builds one observation per current reviewer and active implementer thread and asks TypeSafe Jev for one `next_action`. Code gathers facts. Jev does not generate prose.
+A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. Pending, completed, failed, and cancelled tasks do not ask Jev for decisions.
+
+AgentThread state is authoritative. A `working` thread (including a starting T3 session) defers its task until a later tick. The Gateway does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
+
+For each eligible task with no active sessions, the tick builds an observation and asks TypeSafe Jev for one `next_action`. The observation identifies the task and includes its status, title, and brief alongside group context. Actions use that task's sessions, and completion advances that task rather than the first running task in the group. The shared group reviewer is included when the task is reviewing. Code gathers facts. Jev does not generate prose.
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
@@ -177,7 +181,7 @@ Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
-Run the tick with `php artisan tasks:tick` while the extension is enabled. Ordinary drains, continues, relays, and noops do not notify Coder. A refused drain, continue, or relay escalates to Coder instead of succeeding silently.
+Run the tick with `php artisan tasks:tick` while the extension is enabled. `Routed [N] tasks.` counts task decisions, including noops. Ordinary drains, continues, relays, and noops do not notify Coder. A refused drain, continue, or relay escalates to Coder instead of succeeding silently.
 
 ## Pull request and settle metrics
 
@@ -245,6 +249,7 @@ Complete is the documented cleanup path. The Gateway GitHub App receives no merg
 
 These items stay unimplemented here and need a later feature PR.
 
+- Include pending-task pickup in `tasks:tick` after checking implementation concurrency. Consider placing this after the current tasks have been checked. Define the ordering and concurrency rules in a follow-up; the current tick only routes in-progress tasks.
 - Commander data migration and retiring Commander
 - Creating or changing tasks through the web UI
 - Per-Project model overrides
