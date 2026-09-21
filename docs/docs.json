@@ -638,7 +638,8 @@
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
               "decisions/0105-name-applications-as-project-and-instance",
               "decisions/0106-derive-instance-capabilities-from-project-type",
-              "decisions/0107-key-isolation-and-releases-to-node-role"
+              "decisions/0107-key-isolation-and-releases-to-node-role",
+              "decisions/0108-persist-managed-environment-on-systemd-processes"
             ]
           }
         ]

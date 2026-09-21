@@ -37,7 +37,7 @@ final class RecordingProxyCliRuntimeLifecycle implements ProxyCliRuntimeLifecycl
                 'runtime' => 'systemd',
                 'working_directory' => '/var/lib/orbit/proxycli',
                 'runtime_config' => [
-                    'command' => ['python3', '/var/lib/orbit/proxycli/server.py'],
+                    'command' => [ProxyCliProcess::EXECUTABLE, '/var/lib/orbit/proxycli/server.py'],
                     'environment' => $environment,
                     'ports' => ['127.0.0.1:'.$port.':'.$port.'/tcp'],
                 ],

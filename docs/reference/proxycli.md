@@ -58,7 +58,9 @@ Enable places these four pieces on the chosen Node and in Gateway settings. The 
 
 `proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it.
 
-The Process runs the Orbit collector: it takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch when another poll already holds the lock.
+The Process command is `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search an operator `PATH`, so a bare `python3` does not start. Enable persists `PROXYCLI_*` on the Process specification and the unit receives those values as `Environment=` directives. The map includes the CLIProxyAPI URL and management key, the CodexBar read and control tokens, the loopback port, and the Valkey host, port, username, and password. [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes) owns that projection. HTTP `process:create` still accepts environment only for Docker.
+
+The collector takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch when another poll already holds the lock. HTTP reads, including authenticated `GET /v1/quota-stats`, load that snapshot through one RESP stream and never fetch upstream.
 
 ## Disable
 

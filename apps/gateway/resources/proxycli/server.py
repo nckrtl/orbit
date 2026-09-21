@@ -47,16 +47,18 @@ class Valkey:
             encoded = part.encode()
             payload += f"${len(encoded)}\r\n".encode() + encoded + b"\r\n"
         sock = socket.create_connection((self.host, self.port), timeout=3)
+        reader = sock.makefile("rb")
         try:
             if self.password:
                 if self.username:
                     sock.sendall(self._encode("AUTH", self.username, self.password))
                 else:
                     sock.sendall(self._encode("AUTH", self.password))
-                self._decode(sock)
+                self._read_reply(reader)
             sock.sendall(payload)
-            return self._decode(sock)
+            return self._read_reply(reader)
         finally:
+            reader.close()
             sock.close()
 
     def _encode(self, *parts: str) -> bytes:
@@ -66,8 +68,12 @@ class Valkey:
             payload += f"${len(encoded)}\r\n".encode() + encoded + b"\r\n"
         return payload
 
-    def _decode(self, sock: socket.socket) -> object:
-        line = sock.makefile("rwb").readline()
+    def _decode(self, source: socket.socket) -> object:
+        reader = source if hasattr(source, "readline") else source.makefile("rb")
+        return self._read_reply(reader)
+
+    def _read_reply(self, reader: object) -> object:
+        line = reader.readline()
         if not line:
             return None
         kind, payload = line[:1], line[1:-2]
@@ -79,7 +85,9 @@ class Valkey:
             length = int(payload)
             if length < 0:
                 return None
-            data = sock.recv(length + 2)
+            data = reader.read(length + 2)
+            if len(data) < length + 2:
+                raise RuntimeError("valkey bulk truncated")
             return data[:length].decode()
         if kind == b"-":
             raise RuntimeError("valkey error")

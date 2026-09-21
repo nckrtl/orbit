@@ -201,6 +201,89 @@ it('systemd-escapes accepted working and environment file paths with spaces', fu
         ->toContain('EnvironmentFile=-/home/orbit/Work\\x20Trees/docs/.env');
 });
 
+it('projects a persisted systemd environment map after the environment file', function (): void {
+    $process = new Process([
+        'name' => 'proxycli',
+        'runtime_config' => [
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'environment_file' => '',
+            'environment' => [
+                'PROXYCLI_CACHE_HOST' => '10.44.0.8',
+                'PROXYCLI_MANAGEMENT_KEY' => 'management key',
+                'PROXYCLI_READ_TOKEN' => 'read-token',
+            ],
+        ],
+        'working_directory' => '/var/lib/orbit/proxycli',
+        'restart_policy' => 'unless-stopped',
+    ]);
+    $process->id = 14;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'beast']),
+        user: 'orbit',
+        checkoutPath: '/home/orbit',
+        environmentFile: '',
+    );
+
+    $unit = new SystemdProcessRenderer()->render($process, $target);
+
+    expect($unit)
+        ->toContain('Environment=PROXYCLI_CACHE_HOST=10.44.0.8')
+        ->toContain('Environment=PROXYCLI_MANAGEMENT_KEY=management\\x20key')
+        ->toContain('Environment=PROXYCLI_READ_TOKEN=read-token')
+        ->toContain('ExecStart="/usr/bin/python3" "/var/lib/orbit/proxycli/server.py"')
+        ->not->toContain('EnvironmentFile=')
+        ->not->toContain('/usr/bin/env')
+        ->not->toContain('PROXYCLI_MANAGEMENT_KEY=management key');
+
+    expect(strpos(haystack: $unit, needle: 'Environment=NODE_USE_SYSTEM_CA=1'))
+        ->toBeLessThan(strpos(haystack: $unit, needle: 'Environment=PROXYCLI_CACHE_HOST='));
+});
+
+it('rejects unsafe systemd environment input from persisted configuration', function (array $environment): void {
+    $process = new Process([
+        'name' => 'proxycli',
+        'runtime_config' => [
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'environment' => $environment,
+        ],
+        'working_directory' => '/var/lib/orbit/proxycli',
+        'restart_policy' => 'never',
+    ]);
+    $process->id = 15;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'beast']),
+        user: 'orbit',
+        checkoutPath: '/home/orbit',
+    );
+
+    expect(fn () => new SystemdProcessRenderer()->render($process, $target))
+        ->toThrow(InvalidArgumentException::class, 'environment');
+})->with([
+    'unsafe name' => [['BAD-NAME' => 'value']],
+    'line feed' => [['PROXYCLI_READ_TOKEN' => "first\nsecond"]],
+]);
+
+it('rejects a non-map systemd environment from persisted configuration', function (): void {
+    $process = new Process([
+        'name' => 'proxycli',
+        'runtime_config' => [
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'environment' => 'PROXYCLI_READ_TOKEN=unsafe-shape',
+        ],
+        'working_directory' => '/var/lib/orbit/proxycli',
+        'restart_policy' => 'never',
+    ]);
+    $process->id = 16;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'beast']),
+        user: 'orbit',
+        checkoutPath: '/home/orbit',
+    );
+
+    expect(fn () => new SystemdProcessRenderer()->render($process, $target))
+        ->toThrow(InvalidArgumentException::class, 'environment');
+});
+
 it('rejects a non-absolute executable from persisted runtime configuration', function (): void {
     $process = new Process([
         'name' => 'worker',

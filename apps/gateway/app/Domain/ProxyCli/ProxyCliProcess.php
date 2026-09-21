@@ -15,6 +15,8 @@ final readonly class ProxyCliProcess
 
     public const int PORT = 8787;
 
+    public const string EXECUTABLE = '/usr/bin/python3';
+
     /**
      * @param  array<string, string>  $environment
      */
@@ -25,7 +27,7 @@ final readonly class ProxyCliProcess
             targetId: $node->id,
             name: self::NAME,
             runtime: ProcessRuntime::Systemd,
-            command: ['python3', '/var/lib/orbit/proxycli/server.py'],
+            command: [self::EXECUTABLE, '/var/lib/orbit/proxycli/server.py'],
             image: null,
             workingDirectory: '/var/lib/orbit/proxycli',
             environment: $environment,

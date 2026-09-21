@@ -128,7 +128,7 @@ orbit process:create queue \
   --keep-alive
 ```
 
-A development systemd Process runs as the Node's managed runtime user, reads the `.env` file in the recorded checkout, and receives `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, and the `ORBIT_DEV_SERVER_*` values for the App instance Route domain. A production Process runs as the dedicated production user from the `current` release. A Node Process receives no App instance environment.
+A development systemd Process runs as the Node's managed runtime user, reads the `.env` file in the recorded checkout, and receives `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, and the `ORBIT_DEV_SERVER_*` values for the App instance Route domain. A production Process runs as the dedicated production user from the `current` release. A Node Process receives no App instance environment. A systemd Process may still persist a managed environment map that the unit receives as `Environment=` directives; `process:create` accepts `--environment` only for Docker. See [App processes and schedules](/reference/app-processes-and-schedules).
 
 Repeating an identical create returns the same Process and keeps its desired state. A changed specification with the same owner and name returns `process.name_taken` without changing the record or the runtime; destroy the Process and create it again to change it.
 
