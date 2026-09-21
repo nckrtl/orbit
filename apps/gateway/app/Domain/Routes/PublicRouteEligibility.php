@@ -76,6 +76,18 @@ final readonly class PublicRouteEligibility
         return $step !== null && ! $this->publicActivationReached($step);
     }
 
+    /**
+     * Env ownership treats a Route as idle when replacement is not in flight and
+     * the Route has no failure evidence. A retained terminal public-edge step
+     * with failed_step or error_code is a failed activation.
+     */
+    public function isIdleForEnvironmentOwner(Route $route): bool
+    {
+        return ! $this->isInFlightReplacementStep($route->replacement_step)
+            && $route->failed_step === null
+            && $route->error_code === null;
+    }
+
     public function publicActivationReached(?RouteReplacementStep $step): bool
     {
         return $this->publicActivationRank($step) >= $this->publicActivationRank(RouteReplacementStep::PublicActivated);

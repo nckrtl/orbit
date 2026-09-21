@@ -294,7 +294,7 @@ The Gateway publishes the public edge only when the Route is Cluster-scoped, the
 
 A public edge is live when `publication` is `public`, the Route is `active` or `activating`, the Cluster is eligible, and `replacement_step` ranks at `public-activated` or after. A finished public Route keeps that completed step. A public Route with an empty replacement step has not finished public activation and has no live Ingress listener. When the Gateway drops `public_publication`, it writes `replacement_step=ingress-firewall` on public Routes that were `public_publication=active` and `active` or `activating`, so those hosts stay on the public edge.
 
-Environment import, update, and synchronization use the same terminal public-edge ranking. A finished public Route that keeps `public-activated` or `ingress-firewall` remains an available environment owner. A Route that is still activating or replacing returns `env.owner_unavailable`.
+Environment import, update, and synchronization use the same terminal public-edge ranking. A finished public Route that keeps `public-activated` or `ingress-firewall` remains an available environment owner when `failed_step` and `error_code` are empty. A Route that is still activating or replacing, or that records failure evidence, returns `env.owner_unavailable`.
 
 The Ingress artifact names the public domain and the Router upstream. It does not name an Instance, workload Node, or backend pool. Router Caddy keeps backend selection. Workload Caddy stays private.
 

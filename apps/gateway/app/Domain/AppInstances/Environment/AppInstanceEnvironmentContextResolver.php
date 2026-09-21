@@ -70,7 +70,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             ! $route->isAuthoritative()
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
-            || $this->publicRoutes->isInFlightReplacementStep($route->replacement_step)
+            || ! $this->publicRoutes->isIdleForEnvironmentOwner($route)
         ) {
             $this->conflict();
         }

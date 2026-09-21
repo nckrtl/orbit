@@ -55,7 +55,7 @@ This decision supersedes ADR 0011 only where that record says Orbit marks a sepa
 - There is a window after cutover where Caddy has published the public site and Let's Encrypt has not yet issued. Doctor reports that as public TLS drift until the certificate exists.
 - API, SDK, CLI, OpenAPI, and analytics host payloads lose `public_publication`.
 - The drop-column migration writes `replacement_step=ingress-firewall` on rows that were `publication=public`, `public_publication=active`, and `status` `active` or `activating`. Existing live public hosts therefore stay live after the twin field disappears.
-- Environment ownership uses the same public-activation ranking as a live public edge. A finished public Route that keeps `public-activated`, `ingress-firewall`, or `cleanup` remains an available environment owner. A Route that is still activating or replacing returns `env.owner_unavailable`.
+- Environment ownership uses the same public-activation ranking as a live public edge. A finished public Route that keeps `public-activated`, `ingress-firewall`, or `cleanup` remains an available environment owner when `failed_step` and `error_code` are empty. A Route that is still activating or replacing, or that records failure evidence, returns `env.owner_unavailable`.
 - Private Route and custom-proxy certificate handling does not change.
 
 ## Affects

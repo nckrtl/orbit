@@ -32,6 +32,28 @@ it('resolves env context when a finished public Route keeps a terminal public-ed
     'ingress-firewall' => RouteReplacementStep::IngressFirewall,
 ]);
 
+it('refuses env context when a public Route keeps a terminal public-edge step with failure evidence', function (RouteStatus $status): void {
+    [$instance, $route] = env_context_owner_fixture();
+    $route->update([
+        'publication' => RoutePublication::Public,
+        'status' => $status,
+        'replacement_step' => RouteReplacementStep::IngressFirewall,
+        'failed_step' => 'ingress-firewall',
+        'error_code' => 'route.public_edge_failed',
+    ]);
+
+    expect(fn () => new AppInstanceEnvironmentContextResolver()->resolve($instance, true))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('env.owner_unavailable')
+                ->and($exception->status)
+                ->toBe(409);
+        });
+})->with([
+    'active' => RouteStatus::Active,
+    'activating' => RouteStatus::Activating,
+]);
+
 it('refuses env context when a public Route is mid-activation', function (RouteReplacementStep $step): void {
     [$instance, $route] = env_context_owner_fixture();
     $route->update([
