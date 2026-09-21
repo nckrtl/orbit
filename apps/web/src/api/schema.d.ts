@@ -3153,6 +3153,8 @@ export interface components {
             node_id?: number | null;
             role?: string;
             thread_id?: string;
+            /** @enum {string|null} */
+            state?: "idle" | "pending" | "finished" | null;
         };
         ToolManager: {
             id?: number | null;
