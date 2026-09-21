@@ -205,6 +205,23 @@ it('refuses a nested or unsuccessful T3 response without leaking the bearer', fu
     ]))->toThrow(function (T3DispatchException $exception): void {
         expect($exception->getMessage())->toBe('T3 dispatch failed.')
             ->and($exception->existingProjectId)->toBeNull()
+            ->and($exception->httpStatus)->toBe(400)
+            ->and($exception->httpBody)->toBe('{"code":"command_rejected","reason":"bearer-secret must not leak"}')
             ->and($exception->getMessage())->not->toContain('bearer-secret');
+    });
+});
+
+it('surfaces the HTTP status and body when turn start fails', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.120:3773/api/orchestration/dispatch' => Http::response('turn rejected', 422),
+    ]);
+
+    expect(fn () => app(HttpT3Dispatcher::class)->dispatch(t3_node(), [
+        'type' => 'thread.turn.start',
+        'threadId' => 'thread-1',
+    ]))->toThrow(function (T3DispatchException $exception): void {
+        expect($exception->httpStatus)->toBe(422)
+            ->and($exception->httpBody)->toBe('turn rejected');
     });
 });

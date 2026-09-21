@@ -171,6 +171,8 @@ final readonly class T3AgentSpawner implements AgentSpawner
                 Log::warning('T3 thread.turn.start failed after the thread was created.', [
                     'thread_id' => $threadId,
                     'exception' => $exception->getMessage(),
+                    'http_status' => $exception->httpStatus,
+                    'http_body' => $exception->httpBody,
                 ]);
             }
         }

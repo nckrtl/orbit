@@ -14,6 +14,8 @@ final class T3DispatchException extends RuntimeException
     public function __construct(
         string $message = 'T3 dispatch failed.',
         public readonly ?string $existingProjectId = null,
+        public readonly ?int $httpStatus = null,
+        public readonly ?string $httpBody = null,
     ) {
         parent::__construct($message);
     }

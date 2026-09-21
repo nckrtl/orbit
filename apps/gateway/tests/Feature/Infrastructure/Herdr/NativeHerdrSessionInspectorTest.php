@@ -66,6 +66,8 @@ it('rejects malformed Herdr session snapshots', function (string $output): void 
     'invalid JSON' => '{',
     'wrong response type' => '{"result":{"type":"other","snapshot":{}}}',
     'missing snapshot' => '{"result":{"type":"session_snapshot"}}',
+    'empty panes' => '{"result":{"type":"session_snapshot","snapshot":{"panes":[]}}}',
+    'invalid panes' => '{"result":{"type":"session_snapshot","snapshot":{"panes":[{"pane_id":"wH:p3"}]}}}',
 ]);
 
 function herdr_inspector_node(): Node

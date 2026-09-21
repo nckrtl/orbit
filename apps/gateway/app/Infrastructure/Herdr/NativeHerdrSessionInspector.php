@@ -33,11 +33,17 @@ final readonly class NativeHerdrSessionInspector implements HerdrSessionInspecto
             throw $this->invalidSnapshot();
         }
 
+        $panes = $this->panes($snapshot['panes'] ?? null);
+
+        if ($panes === []) {
+            throw $this->invalidSnapshot();
+        }
+
         return new HerdrSessionInspection(
             version: is_string($snapshot['version'] ?? null) ? $snapshot['version'] : null,
             protocol: is_int($snapshot['protocol'] ?? null) ? $snapshot['protocol'] : null,
             handoffSupported: false,
-            panes: $this->panes($snapshot['panes'] ?? []),
+            panes: $panes,
         );
     }
 

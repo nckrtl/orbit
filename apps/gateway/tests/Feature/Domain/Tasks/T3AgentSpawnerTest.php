@@ -245,7 +245,9 @@ it('returns the created thread id when turn start fails after thread create', fu
         ->once()
         ->with('T3 thread.turn.start failed after the thread was created.', Mockery::on(function (array $context): bool {
             expect($context['thread_id'])->toBeString()->not->toBe('')
-                ->and($context['exception'])->toBe('T3 turn start failed.');
+                ->and($context['exception'])->toBe('T3 turn start failed.')
+                ->and($context['http_status'])->toBeNull()
+                ->and($context['http_body'])->toBeNull();
 
             return true;
         }));

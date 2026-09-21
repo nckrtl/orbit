@@ -40,6 +40,8 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         if (! $response->successful()) {
             throw new T3DispatchException(
                 existingProjectId: $this->existingProjectId($host, $command, $response),
+                httpStatus: $response->status(),
+                httpBody: $response->body(),
             );
         }
 
