@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { transportLabel } from "../api/client";
 import { queryClient } from "../api/queryClient";
 import { POLL_SECONDS, useFleet } from "../api/queries";
@@ -98,8 +98,18 @@ export function Shell() {
         ? (first as Section)
         : "dashboard";
     const message = useUi((state) => state.message);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const go = useGo();
+    const fleet = useFleet();
+    const totals = counts(fleet);
+    const activeNav = navFor(section, second, fleet);
+
     useUi((state) => `${state.focus}|${state.menu === null}|${state.menu?.confirm}`);
     useKeyboard(pageTarget);
+
+    useEffect(() => {
+        setMobileMenuOpen(false);
+    }, [pathname]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -120,10 +130,127 @@ export function Shell() {
               : `Not connected to the WebSocket${pollingReason === null ? "" : ` (${pollingReason})`}; refreshing every ${POLL_SECONDS}s.`;
 
     return (
-        <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[14px] pb-[4px]">
-            <div className="grid min-h-0 grid-cols-[auto_minmax(0,1fr)] gap-x-[1ch]">
-                <Sidebar section={section} id={second} />
-                <main className="min-h-0 min-w-0">
+        <div className="grid h-full min-w-0 max-w-full overflow-x-hidden grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[10px] md:pt-[14px] pb-[4px]">
+            {/* Mobile Header Bar */}
+            <header className="flex items-center justify-between gap-2 px-[0.5ch] py-[2px] md:hidden">
+                <button
+                    type="button"
+                    className="cursor-pointer border border-line px-[1.5ch] py-[2px] font-bold text-fg hover:border-fg active:bg-fg active:text-bg"
+                    onClick={() => setMobileMenuOpen((open) => !open)}
+                    aria-label="Toggle navigation menu"
+                >
+                    [ ☰ Menu ]
+                </button>
+                <span className="font-bold tracking-wider uppercase text-cyan">
+                    {SECTION_TITLES[section] ?? "Orbit"}
+                </span>
+                <span className="flex items-center gap-[1ch] text-xs text-dim">
+                    <span
+                        role="status"
+                        aria-label={status}
+                        title={status}
+                        className={`inline-block size-[8px] rounded-full ${
+                            liveness === "live"
+                                ? "bg-green"
+                                : liveness === "reconnecting"
+                                  ? "animate-pulse bg-yellow"
+                                  : "border border-dim"
+                        }`}
+                    />
+                    <span className="max-w-[100px] truncate">{gateway}</span>
+                </span>
+            </header>
+
+            {/* Mobile Navigation Drawer Overlay */}
+            {mobileMenuOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex flex-col bg-bg/95 p-[2ch] backdrop-blur-xs md:hidden"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setMobileMenuOpen(false);
+                    }}
+                >
+                    <Frame
+                        title="Navigation"
+                        topRight={
+                            <button
+                                type="button"
+                                className="cursor-pointer text-dim hover:text-fg"
+                                onClick={() => setMobileMenuOpen(false)}
+                            >
+                                [× close]
+                            </button>
+                        }
+                        className="max-h-[90vh] w-full"
+                    >
+                        <div className="flex flex-col gap-y-[4px]">
+                            <div className="pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
+                                Main
+                            </div>
+                            {NAV.map((key) => {
+                                const [count, warn] = key === "dashboard" ? [null, 0] : totals[key];
+                                const isSelected = key === activeNav;
+
+                                return (
+                                    <div
+                                        key={key}
+                                        className="row"
+                                        data-link=""
+                                        data-selected={isSelected ? "" : undefined}
+                                        onClick={() => {
+                                            go.section(key);
+                                            setMobileMenuOpen(false);
+                                        }}
+                                        style={{ gridTemplateColumns: "minmax(0, 1fr) 4ch" }}
+                                    >
+                                        <span className={isSelected ? "font-bold text-cyan" : ""}>
+                                            {SECTION_TITLES[key]}
+                                        </span>
+                                        <span
+                                            className={`text-right ${warn > 0 ? "text-yellow" : "text-dim"}`}
+                                        >
+                                            {count ?? ""}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+
+                            <div className="mt-[12px] border-t border-line pt-[8px] pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
+                                Other Sections
+                            </div>
+                            {SECTIONS.filter((s) => !NAV.includes(s as (typeof NAV)[number])).map(
+                                (sec) => {
+                                    const isSelected = sec === section;
+
+                                    return (
+                                        <div
+                                            key={sec}
+                                            className="row"
+                                            data-link=""
+                                            data-selected={isSelected ? "" : undefined}
+                                            onClick={() => {
+                                                go.section(sec);
+                                                setMobileMenuOpen(false);
+                                            }}
+                                        >
+                                            <span
+                                                className={isSelected ? "font-bold text-cyan" : ""}
+                                            >
+                                                {SECTION_TITLES[sec] ?? sec}
+                                            </span>
+                                        </div>
+                                    );
+                                },
+                            )}
+                        </div>
+                    </Frame>
+                </div>
+            )}
+
+            <div className="grid min-h-0 min-w-0 max-w-full grid-cols-[minmax(0,1fr)] md:grid-cols-[auto_minmax(0,1fr)] md:gap-x-[1ch]">
+                <div className="hidden md:block">
+                    <Sidebar section={section} id={second} />
+                </div>
+                <main className="min-h-0 min-w-0 flex-1 overflow-y-auto md:overflow-visible">
                     <Outlet />
                 </main>
             </div>

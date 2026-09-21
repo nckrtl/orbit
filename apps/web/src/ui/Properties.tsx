@@ -30,7 +30,7 @@ export function Properties({
     title?: string;
 }) {
     return (
-        <Frame title={title} className={className}>
+        <Frame title={title} className={`w-full ${className ?? ""}`.trim()}>
             {properties.map((property) => {
                 const value = text(property.value);
 
@@ -38,7 +38,7 @@ export function Properties({
                     <div
                         key={property.name}
                         className="row"
-                        style={{ gridTemplateColumns: "18ch minmax(0, 1fr)" }}
+                        style={{ gridTemplateColumns: "minmax(12ch, 18ch) minmax(0, 1fr)" }}
                     >
                         <span className="text-dim">{property.name}</span>
                         {property.onOpen !== undefined && value !== "—" ? (

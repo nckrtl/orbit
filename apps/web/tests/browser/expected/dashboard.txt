@@ -6,10 +6,10 @@
 ╰─
 
 ╭─ Worker nodes
-│  Name │ Status │ CPU │ Mem │ Disk │ Uptime
-│› gateway │ online │ 19% │ 3.2G/8G │ / 6G/80G │ 12:04:43
-│  beast │ online │ 33% │ 70.0G/128G │ / 1440G/1760G │ 12:04:43
-│  app-prod │ failed │ — │ — │ — │ — !
+│  Name │ CPU │ Mem │ Disk │ Uptime
+│› ●gateway │ 19% │ 40% │ 8% │ 12:04:43
+│  ●beast │ 33% │ 55% │ 82% │ 12:04:43
+│  ●app-prod │ — │ — │ — │ — !
 ╰─
 
 ╭─ Client nodes
@@ -25,18 +25,18 @@
 
 ╭─ Instances
 │  Name │ App │ Node │ Status
-│› dev │ charlie-shop │ beast │ active
-│  staging │ charlie-shop │ beast │ active
-│  dev │ acme │ beast │ active
-│  production │ acme │ app-prod │ reserved !
+│› ●dev │ charlie-shop │ beast │ active
+│  ●staging │ charlie-shop │ beast │ active
+│  ●dev │ acme │ beast │ active
+│  ●production │ acme │ app-prod │ reserved !
 ╰─
 
 ╭─ Processes
-│  Name │ Where │ Status │ CPU/MEM
-│› horizon │ charlie-shop/dev │ active │ 20%/1.2G
-│  vite │ charlie-shop/dev │ inactive │ — !
-│  queue │ charlie-shop/staging │ inactive │ —
-│  valkey │ node beast │ running │ 1%/0.1G
+│  Name │ Where │ Status │ CPU │ MEM
+│› horizon │ charlie-shop/dev │ active │ 20% │ 1.2G
+│  vite │ charlie-shop/dev │ inactive │ — │ — !
+│  queue │ charlie-shop/staging │ inactive │ — │ —
+│  valkey │ node beast │ running │ 1% │ 0.1G
 ╰─
 
 ╭─ Schedules

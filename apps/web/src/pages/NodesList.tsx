@@ -13,7 +13,7 @@ export function NodesList() {
     const empty = fleet.loading ? "Loading…" : "None.";
 
     return (
-        <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-y-[16px]">
+        <div className="flex flex-col gap-y-[16px] md:grid md:h-full md:grid-rows-[auto_auto_minmax(0,1fr)]">
             <PageHeader trail={[{ label: "Nodes" }]}>
                 <span className="cursor-pointer text-dim hover:text-fg" onClick={() => go.create()}>
                     + create
@@ -24,7 +24,7 @@ export function NodesList() {
                 order={1}
                 title="Worker nodes"
                 // As tall as its rows, up to most of the page; the client nodes take what is left.
-                className="max-h-[60vh]"
+                className="w-full max-h-[50vh] md:max-h-[60vh]"
                 columns={workerColumns}
                 rows={workers}
                 rowId={(n) => String(n.id)}
@@ -36,6 +36,7 @@ export function NodesList() {
                 name="clients"
                 order={2}
                 title="Client nodes"
+                className="w-full max-h-[40vh] md:max-h-none"
                 columns={clientColumns}
                 rows={clients}
                 rowId={(n) => String(n.id)}

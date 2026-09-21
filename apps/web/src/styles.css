@@ -83,6 +83,7 @@ body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    max-width: 100%;
     min-height: 0;
     /* A frame's state shows in its border and in the title in it. At rest the title sits a step darker than the border, so it stays legible while grayed out. */
     --frame: var(--line);
@@ -126,6 +127,10 @@ body {
 }
 
 .frame-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 1ch;
+    height: var(--lh);
     padding: 0 var(--inset);
     background: var(--bg);
     color: var(--dim);
@@ -136,6 +141,7 @@ body {
 
 .frame-label[data-role="title"] {
     color: var(--frame-title);
+    /* The small capitals btop and lazygit draw in their frames. */
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.08em;
@@ -152,8 +158,10 @@ body {
 .frame-body {
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    max-width: 100%;
     overflow: auto;
-    padding: calc(var(--lh) / 2) calc(1ch + var(--inset));
+    padding: calc(var(--lh) / 2) 1ch;
 }
 
 /* ---- rows ---- */
@@ -172,8 +180,17 @@ body {
 /* A table's columns belong to the table, so a column sized to its content is as wide in every row, and the gap between two columns is the same everywhere. */
 .table-grid {
     display: grid;
-    --gap: 3ch;
+    --gap: 1.5ch;
     column-gap: var(--gap);
+    min-width: 100%;
+    grid-template-columns: var(--grid-cols-mobile, var(--grid-cols-desktop));
+}
+
+@media (min-width: 768px) {
+    .table-grid {
+        --gap: 3ch;
+        grid-template-columns: var(--grid-cols-desktop);
+    }
 }
 
 .table-grid > .row,
@@ -300,7 +317,6 @@ body {
     left: 1ch;
     padding: 0 0.5ch;
     background: var(--bg);
-    color: var(--dim);
 }
 
 .field:focus-within > .field-label {

@@ -99,7 +99,7 @@ export function RecordLayout({
     }, [kind, row]);
 
     return (
-        <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-y-[16px]">
+        <div className="flex min-w-0 max-w-full flex-col gap-y-[16px] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
             <PageHeader trail={trail}>
                 {kind !== "deployments" && (
                     <span

@@ -132,16 +132,16 @@ export function NodeCreate() {
     };
 
     return (
-        <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-y-[16px]">
+        <div className="flex flex-col gap-y-[16px] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
             <PageHeader
                 trail={[
                     { label: "Nodes", open: () => go.section("nodes") },
                     { label: "Create node" },
                 ]}
             />
-            <Frame title="New node" state="focused">
+            <Frame title="New node" state="focused" className="w-full">
                 <form
-                    className="mx-[2ch] flex flex-col gap-y-[10px] pt-[30px] pb-[20px]"
+                    className="mx-[1ch] flex flex-col gap-y-[10px] pt-[30px] pb-[20px] md:mx-[2ch]"
                     onSubmit={(event) => void submit(event)}
                 >
                     <Field label="Node name" error={errors.name}>
@@ -197,7 +197,7 @@ export function NodeCreate() {
                                     />
                                     <span className="pointer">›</span>{" "}
                                     <span className={on ? "text-cyan" : "text-dim"}>
-                                        {on ? "◼" : "◻"}
+                                        {on ? "■" : "□"}
                                     </span>{" "}
                                     {role} <span className="text-dim">· {does}</span>
                                 </label>

@@ -1,4 +1,4 @@
-type StatusProps = {
+export type StatusProps = {
     value: string;
     /** For a node: whether it answered its last metrics scrape, or null when nothing scrapes it. */
     reach?: boolean | null;
@@ -21,4 +21,25 @@ export function Status(props: StatusProps) {
                 : "text-yellow";
 
     return <span className={colour}>{text}</span>;
+}
+
+/** A compact status dot (green, red, yellow) to place before a name. */
+export function StatusDot(props: StatusProps) {
+    const text = statusText(props);
+    const colour =
+        text === "online" || (text === "active" && props.reach === undefined)
+            ? "text-green"
+            : text === "offline" || text === "failed"
+              ? "text-red"
+              : "text-yellow";
+
+    return (
+        <span
+            className={`${colour} inline-block select-none mr-[1ch]`}
+            title={text}
+            aria-label={text}
+        >
+            ●
+        </span>
+    );
 }

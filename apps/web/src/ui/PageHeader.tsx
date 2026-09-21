@@ -8,13 +8,13 @@ export type Crumb = { label: string; open?: () => void };
  */
 export function PageHeader({ trail, children }: { trail: Crumb[]; children?: ReactNode }) {
     return (
-        <div className="flex gap-[2ch] px-[1ch]">
-            <nav aria-label="Breadcrumb" className="flex min-w-0 gap-[1ch]">
+        <div className="flex flex-wrap items-center gap-[1ch] px-[1ch] md:gap-[2ch]">
+            <nav aria-label="Breadcrumb" className="flex min-w-0 flex-wrap items-center gap-[1ch]">
                 {trail.map((crumb, index) => {
                     const last = index === trail.length - 1;
 
                     return (
-                        <span key={index} className="flex min-w-0 gap-[1ch]">
+                        <span key={index} className="flex min-w-0 items-center gap-[1ch]">
                             {index > 0 && <span className="text-dim">›</span>}
                             {last || crumb.open === undefined ? (
                                 <span
@@ -35,7 +35,11 @@ export function PageHeader({ trail, children }: { trail: Crumb[]; children?: Rea
                     );
                 })}
             </nav>
-            {children !== undefined && <span className="ml-auto flex gap-[2ch]">{children}</span>}
+            {children !== undefined && (
+                <span className="ml-auto flex flex-wrap items-center gap-[1.5ch] md:gap-[2ch]">
+                    {children}
+                </span>
+            )}
         </div>
     );
 }

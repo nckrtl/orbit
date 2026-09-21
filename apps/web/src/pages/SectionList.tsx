@@ -150,7 +150,7 @@ function RecordList() {
         : undefined;
 
     return (
-        <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-y-[16px]">
+        <div className="flex flex-col gap-y-[16px] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
             <PageHeader trail={[{ label: SECTION_TITLES[section as Section] }]}>
                 {filters}
             </PageHeader>
@@ -158,6 +158,7 @@ function RecordList() {
                 name="list"
                 order={1}
                 title={SECTION_TITLES[section as Section]}
+                className="w-full flex-1 min-h-[300px] md:min-h-0"
                 columns={columns}
                 rows={rows}
                 rowId={(row) => String(row.id)}

@@ -12,7 +12,7 @@ import {
 } from "../fleet/fleet";
 import { Frame, Note } from "../ui/Frame";
 import { type Column, Pane } from "../ui/Pane";
-import { Status } from "../ui/Status";
+import { Status, StatusDot } from "../ui/Status";
 import { processDashboardColumns, scheduleColumns } from "./columns";
 import { useNodeTables } from "./nodeTables";
 
@@ -28,7 +28,12 @@ export function Dashboard() {
     const appColumns = useMemo<Column<App>[]>(
         () => [
             { header: "Slug", width: 44, value: (a) => a.slug },
-            { header: "Branch", width: 30, value: (a) => a.default_branch ?? "main" },
+            {
+                header: "Branch",
+                width: 30,
+                hideOnMobile: true,
+                value: (a) => a.default_branch ?? "main",
+            },
             {
                 header: "Instances",
                 width: 26,
@@ -40,12 +45,23 @@ export function Dashboard() {
     );
     const instanceColumns = useMemo<Column<Instance>[]>(
         () => [
-            { header: "Name", width: 26, value: (i) => i.name },
+            {
+                header: "Name",
+                width: 26,
+                value: (i) => i.name,
+                cell: (i) => (
+                    <span className="flex items-center">
+                        <StatusDot value={i.status} />
+                        <span>{i.name}</span>
+                    </span>
+                ),
+            },
             { header: "App", width: 26, value: (i) => i.app.slug },
             { header: "Node", width: 24, value: (i) => i.node.name },
             {
                 header: "Status",
                 width: 24,
+                hideOnMobile: true,
                 value: (i) => i.status,
                 cell: (i) => <Status value={i.status} />,
             },
@@ -73,12 +89,12 @@ export function Dashboard() {
     }
 
     return (
-        <div className="grid h-full grid-cols-6 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-[1ch] gap-y-[16px]">
+        <div className="flex flex-col gap-y-[16px] md:grid md:h-full md:grid-cols-6 md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-[1ch]">
             <Pane
                 name="nodes"
                 order={0}
                 title="Worker nodes"
-                className="col-span-4 max-h-[34vh]"
+                className="w-full min-h-[160px] max-h-[40vh] md:col-span-4 md:max-h-[34vh]"
                 columns={workerColumns}
                 rows={workers}
                 rowId={(n) => String(n.id)}
@@ -90,7 +106,7 @@ export function Dashboard() {
                 name="clients"
                 order={1}
                 title="Client nodes"
-                className="col-span-2 max-h-[34vh]"
+                className="w-full min-h-[140px] max-h-[35vh] md:col-span-2 md:max-h-[34vh]"
                 columns={clientColumns}
                 rows={clients}
                 rowId={(n) => String(n.id)}
@@ -100,7 +116,7 @@ export function Dashboard() {
             />
             <Pane
                 name="apps"
-                className="col-span-3"
+                className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={2}
                 title="Apps"
                 columns={appColumns}
@@ -111,7 +127,7 @@ export function Dashboard() {
             />
             <Pane
                 name="instances"
-                className="col-span-3"
+                className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={3}
                 title="Instances"
                 columns={instanceColumns}
@@ -123,7 +139,7 @@ export function Dashboard() {
             />
             <Pane
                 name="processes"
-                className="col-span-3"
+                className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={4}
                 title="Processes"
                 columns={processColumns}
@@ -135,7 +151,7 @@ export function Dashboard() {
             />
             <Pane
                 name="schedules"
-                className="col-span-3"
+                className="w-full min-h-[140px] max-h-[35vh] md:col-span-3 md:max-h-none"
                 order={5}
                 title="Schedules"
                 columns={scheduleCols}
@@ -149,7 +165,7 @@ export function Dashboard() {
                 name="attention"
                 order={6}
                 title="Needs attention"
-                className="col-span-6"
+                className="w-full min-h-[140px] max-h-[35vh] md:col-span-6 md:max-h-none"
                 columns={attentionColumns}
                 rows={attention}
                 rowId={(a) => a.id}

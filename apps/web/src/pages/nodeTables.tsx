@@ -5,7 +5,7 @@ import { useFleetMetrics, useFleetReach } from "../metrics/grafana";
 import type { NodeMetrics } from "../metrics/prometheus";
 import { Bar } from "../ui/Bar";
 import type { Column } from "../ui/Pane";
-import { Status, statusText } from "../ui/Status";
+import { Status, StatusDot } from "../ui/Status";
 
 /**
  * The two node tables, for the dashboard and the Nodes page. A node with a role serves the fleet and
@@ -64,13 +64,17 @@ export function useNodeTables(wide = false) {
         });
 
         return [
-            { header: "Name", width: 14, fit: true, value: (n) => n.name },
             {
-                header: "Status",
-                width: 9,
+                header: "Name",
+                width: 14,
                 fit: true,
-                value: (n) => statusText({ value: n.status, reach: reachOf(n) }),
-                cell: (n) => <Status value={n.status} reach={reachOf(n)} />,
+                value: (n) => n.name,
+                cell: (n) => (
+                    <span className="flex items-center">
+                        <StatusDot value={n.status} reach={reachOf(n)} />
+                        <span>{n.name}</span>
+                    </span>
+                ),
             },
             ...(wide
                 ? ([
@@ -93,34 +97,26 @@ export function useNodeTables(wide = false) {
                 : []),
             {
                 header: "CPU",
-                width: 17,
+                width: 16,
                 ...meter((m) => `${(cpu(m) * 100).toFixed(0).padStart(3)}%`, cpu),
             },
             {
                 header: "Mem",
-                width: 25,
-                ...meter(
-                    (m) => `${m.mem[0].toFixed(1)}G/${m.mem[1].toFixed(0)}G`.padStart(10),
-                    mem,
-                ),
+                width: 16,
+                ...meter((m) => `${(mem(m) * 100).toFixed(0).padStart(3)}%`, mem),
             },
             {
                 header: "Disk",
-                width: 25,
-                ...meter(
-                    (m) => {
-                        const [, used, total] = m.disks[0] ?? ["/", 0, 0];
-
-                        return `${used.toFixed(0)}G/${total.toFixed(0)}G`.padStart(10);
-                    },
-                    disk,
-                    { label: (m) => m.disks[0]?.[0] ?? "/", thresholds: [80, 90] },
-                ),
+                width: 16,
+                ...meter((m) => `${(disk(m) * 100).toFixed(0).padStart(3)}%`, disk, {
+                    thresholds: [80, 90],
+                }),
             },
             {
                 header: "Uptime",
                 width: 10,
                 fit: true,
+                hideOnMobile: true,
                 value: (n) => of(n)?.uptime ?? "—",
                 cell: (n) => <span className="text-dim">{of(n)?.uptime ?? "—"}</span>,
             },
@@ -137,7 +133,6 @@ export function useNodeTables(wide = false) {
                 value: (n) => n.status,
                 cell: (n) => <Status value={n.status} reach={null} />,
             },
-            { header: "User", width: 20, fit: true, value: (n) => n.user ?? "—" },
             ...(wide
                 ? ([
                       {

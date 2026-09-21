@@ -87,7 +87,7 @@ function NodeMetricsPanel({ node }: { node: Node }) {
             state={state}
             bottomRight={`up ${metrics.uptime}`}
         >
-            <div className="grid grid-cols-2 gap-x-[2ch]">
+            <div className="grid grid-cols-1 gap-x-[2ch] sm:grid-cols-2">
                 {metrics.cores.map((load, core) => (
                     <Bar
                         key={core}
@@ -97,7 +97,7 @@ function NodeMetricsPanel({ node }: { node: Node }) {
                     />
                 ))}
             </div>
-            <div className="mt-[20px] grid grid-cols-2 gap-x-[2ch]">
+            <div className="mt-[20px] grid grid-cols-1 gap-x-[2ch] sm:grid-cols-2">
                 <Bar
                     label="Mem"
                     ratio={metrics.mem[1] > 0 ? metrics.mem[0] / metrics.mem[1] : 0}
@@ -164,7 +164,15 @@ const firewallLineColumns: Column<FirewallLine>[] = [
  * A node's firewall: live UFW first, then desired rules that are missing from live. Drift is red.
  * When live UFW cannot be read, the page falls back to operator rules and the desired catalog.
  */
-function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
+function NodeFirewall({
+    fleet,
+    node,
+    className,
+}: {
+    fleet: Fleet;
+    node: Node;
+    className?: string;
+}) {
     const managed = useQuery(managedFirewallQuery(node.id)).data;
     const live = useQuery(liveFirewallQuery(node.id)).data;
     const operator = useMemo(
@@ -181,7 +189,7 @@ function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
 
         return [
             ...operator.map((rule) => ({
-                key: `rule-${rule.id}`,
+                key: `operator-${rule.id}`,
                 name: rule.name,
                 port: firewallPort(rule.port, rule.protocol),
                 action: rule.action,
@@ -205,6 +213,7 @@ function NodeFirewall({ fleet, node }: { fleet: Fleet; node: Node }) {
             name="firewall"
             order={3}
             title="Firewall"
+            className={className}
             columns={firewallLineColumns}
             rows={lines}
             rowId={(line) => line.key}
@@ -258,9 +267,11 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
 
     return (
         <div
-            className={`grid h-full grid-cols-2 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-cols-2 md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
         >
-            <div className={`col-span-2 grid grid-cols-[2fr_3fr] ${GAPS}`}>
+            <div
+                className={`w-full min-w-0 max-w-full col-span-1 flex flex-col md:col-span-2 md:grid md:grid-cols-[2fr_3fr] ${GAPS}`}
+            >
                 <Properties
                     properties={[
                         { name: "Name", value: node.name },
@@ -283,7 +294,7 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                 name="instances"
                 order={1}
                 title="Instances on this node"
-                className="col-span-2"
+                className="w-full col-span-1 min-h-[160px] max-h-[40vh] md:col-span-2 md:max-h-none"
                 columns={columns}
                 rows={instancesForNode(fleet, node.name)}
                 rowId={(i) => String(i.id)}
@@ -294,13 +305,18 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
                 name="processes"
                 order={2}
                 title="Node processes"
+                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={processColumns}
                 rows={processesFor(fleet, "node", node.id)}
                 rowId={(p) => String(p.id)}
                 warn={(p) => !processHealthy(p)}
                 target={(row) => ({ kind: "processes", row })}
             />
-            <NodeFirewall fleet={fleet} node={node} />
+            <NodeFirewall
+                fleet={fleet}
+                node={node}
+                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
+            />
         </div>
     );
 }
@@ -310,7 +326,9 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
     const schedules = useMemo(() => scheduleColumns(fleet, "instance"), [fleet]);
 
     return (
-        <div className={`grid h-full grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}>
+        <div
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
+        >
             <Properties
                 properties={[
                     { name: "Name", value: app.name },
@@ -324,6 +342,7 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
                 name="instances"
                 order={1}
                 title="Instances"
+                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={columns}
                 rows={instancesForApp(fleet, app.slug)}
                 rowId={(i) => String(i.id)}
@@ -334,6 +353,7 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
                 name="schedules"
                 order={2}
                 title="Schedules"
+                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={schedules}
                 rows={schedulesForApp(fleet, app.slug)}
                 rowId={(s) => String(s.id)}
@@ -400,10 +420,10 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
 
     return (
         // A column, not a grid: the queue panel is only there for an instance with Horizon, and the log takes what is left either way.
-        <div className={`flex h-full flex-col ${GAPS}`}>
+        <div className={`w-full min-w-0 max-w-full flex flex-col md:h-full ${GAPS}`}>
             {/* The deployment history sits beside the properties, and only once there is one. */}
             <div
-                className={`grid max-h-[40vh] ${hasDeployments ? "grid-cols-2" : "grid-cols-1"} ${GAPS}`}
+                className={`w-full min-w-0 max-w-full flex flex-col md:grid md:max-h-[40vh] ${hasDeployments ? "md:grid-cols-2" : "md:grid-cols-1"} ${GAPS}`}
             >
                 <Properties
                     properties={[
@@ -441,6 +461,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                         name="deployments"
                         order={0}
                         title="Deployments"
+                        className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                         columns={deploymentColumns}
                         rows={deployments.data ?? []}
                         rowId={(d) => String(d.id)}
@@ -449,11 +470,14 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     />
                 )}
             </div>
-            <div className={`grid max-h-[30vh] grid-cols-2 ${GAPS}`}>
+            <div
+                className={`w-full min-w-0 max-w-full flex flex-col md:grid md:max-h-[30vh] md:grid-cols-2 ${GAPS}`}
+            >
                 <Pane
                     name="processes"
                     order={1}
                     title="Processes"
+                    className="w-full min-h-[160px] max-h-[35vh] md:max-h-none"
                     columns={processColumns}
                     rows={processesFor(fleet, "instance", instance.id)}
                     rowId={(p) => String(p.id)}
@@ -464,6 +488,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     name="schedules"
                     order={2}
                     title="Schedules"
+                    className="w-full min-h-[160px] max-h-[35vh] md:max-h-none"
                     columns={schedules}
                     rows={schedulesForInstance(fleet, instance.id)}
                     rowId={(s) => String(s.id)}
@@ -474,7 +499,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
             <QueuePanel instance={instance} />
             <LogPane
                 title="Application log"
-                className="min-h-0 flex-1"
+                className="min-h-[220px] flex-1 md:min-h-0"
                 lines={logs.data}
                 loading={logs.isPending}
             />
@@ -498,9 +523,11 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
     const tableRows = useMemo(() => (tables.data ?? []).map((name) => ({ name })), [tables.data]);
 
     return (
-        <div className={`grid h-full grid-cols-[45fr_55fr] grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}>
+        <div
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-cols-[45fr_55fr] md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
+        >
             <Properties
-                className="col-span-2"
+                className="w-full col-span-1 md:col-span-2"
                 properties={[
                     { name: "Slug", value: database.slug },
                     { name: "Driver", value: database.driver },
@@ -519,6 +546,7 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
                 name="tables"
                 order={1}
                 title="Tables"
+                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={tableColumns}
                 rows={tableRows}
                 rowId={(table) => table.name}
@@ -533,6 +561,7 @@ function DatabasePage({ fleet, database }: { fleet: Fleet; database: Database })
                     name="users"
                     order={2}
                     title="Users"
+                    className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                     columns={userColumns}
                     rows={users.data ?? []}
                     rowId={(u) => u.username}
@@ -557,7 +586,9 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
     const logs = useQuery(processLogsQuery(process.id));
 
     return (
-        <div className={`grid h-full grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}>
+        <div
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
+        >
             <Properties
                 properties={[
                     { name: "Name", value: process.name },
@@ -577,7 +608,12 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
                     { name: "Memory", value: processMemory(process) },
                 ]}
             />
-            <LogPane title="Log" lines={logs.data} loading={logs.isPending} />
+            <LogPane
+                title="Log"
+                className="min-h-[220px] flex-1 md:min-h-0"
+                lines={logs.data}
+                loading={logs.isPending}
+            />
         </div>
     );
 }
@@ -586,7 +622,9 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
     const logs = useQuery(scheduleLogsQuery(schedule.id));
 
     return (
-        <div className={`grid h-full grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}>
+        <div
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
+        >
             <Properties
                 properties={[
                     { name: "Name", value: schedule.name },
@@ -604,14 +642,19 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
                     { name: "Last run status", value: schedule.last_run_status },
                 ]}
             />
-            <LogPane title="Log" lines={logs.data} loading={logs.isPending} />
+            <LogPane
+                title="Log"
+                className="min-h-[220px] flex-1 md:min-h-0"
+                lines={logs.data}
+                loading={logs.isPending}
+            />
         </div>
     );
 }
 
 function FirewallPage({ rule }: { rule: FirewallRule }) {
     return (
-        <div className="grid h-full grid-rows-[auto]">
+        <div className="w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto]">
             <Properties
                 properties={[
                     { name: "Name", value: rule.name },
@@ -748,7 +791,9 @@ export function DeploymentPage() {
 
     return (
         <RecordLayout kind="deployments" row={deployment}>
-            <div className={`grid h-full grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}>
+            <div
+                className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)] ${GAPS}`}
+            >
                 <Properties
                     properties={[
                         { name: "Release", value: deployment.release },
@@ -774,7 +819,12 @@ export function DeploymentPage() {
                         { name: "Triggered by", value: deployment.triggered_by },
                     ]}
                 />
-                <LogPane title="Log" lines={log.data} loading={log.isPending} />
+                <LogPane
+                    title="Log"
+                    className="min-h-[220px] flex-1 md:min-h-0"
+                    lines={log.data}
+                    loading={log.isPending}
+                />
             </div>
         </RecordLayout>
     );

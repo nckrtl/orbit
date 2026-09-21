@@ -6,7 +6,7 @@ import {
     tableFeatures,
     useTable,
 } from "@tanstack/react-table";
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, Fragment, useEffect, useMemo, useRef } from "react";
 import { Frame, Note } from "./Frame";
 import { useGo } from "./go";
 import { openMenu } from "./menu";
@@ -31,6 +31,8 @@ export type Column<T> = {
     cell?: (row: T) => React.ReactNode;
     /** What the column sorts by, when that is not the text it shows. */
     sort?: (row: T) => string | number;
+    /** Hide this column on mobile screens (< 768px). */
+    hideOnMobile?: boolean;
 };
 
 type PaneProps<T> = {
@@ -107,9 +109,15 @@ export function Pane<T extends Record<string, any>>({
     const sorted = [...above, ...model.filter((row) => !above.includes(row))];
     const dividerAt = above.length > 0 && above.length < sorted.length ? above.length : -1;
     const selected = Math.min(selectedIndex, Math.max(0, sorted.length - 1));
-    const template = columns
+
+    const desktopTemplate = columns
         .map((column) => (column.fit ? "max-content" : `minmax(0, ${column.width}fr)`))
         .join(" ");
+    const mobileColumns = columns.filter((column) => !column.hideOnMobile);
+    const mobileTemplate = mobileColumns
+        .map((column) => (column.fit ? "max-content" : `minmax(0, ${column.width}fr)`))
+        .join(" ");
+    const lastMobileIndex = columns.findLastIndex((column) => !column.hideOnMobile);
 
     useEffect(() => {
         panes.set(name, {
@@ -175,22 +183,40 @@ export function Pane<T extends Record<string, any>>({
                     role="table"
                     aria-label={title}
                     className="table-grid"
-                    style={{ gridTemplateColumns: template }}
+                    style={
+                        {
+                            "--grid-cols-mobile": mobileTemplate,
+                            "--grid-cols-desktop": desktopTemplate,
+                        } as CSSProperties
+                    }
                 >
                     <div className="row" role="row" data-head>
-                        {table.getHeaderGroups()[0]?.headers.map((header, index) => (
-                            <span
-                                key={header.id}
-                                role="columnheader"
-                                className={`cursor-pointer hover:text-fg ${columns[index]?.align === "right" || index === columns.length - 1 ? "text-right" : ""}`}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={header.column.getToggleSortingHandler()}
-                            >
-                                {columns[index]?.header}
-                                {{ asc: " ▴", desc: " ▾" }[header.column.getIsSorted() as string] ??
-                                    ""}
-                            </span>
-                        ))}
+                        {table.getHeaderGroups()[0]?.headers.map((header, index) => {
+                            const column = columns[index];
+                            const isLast = index === columns.length - 1;
+                            const isMobileLast = index === lastMobileIndex;
+
+                            return (
+                                <span
+                                    key={header.id}
+                                    role="columnheader"
+                                    className={`cursor-pointer hover:text-fg ${
+                                        column?.align === "right" || isLast
+                                            ? "text-right"
+                                            : isMobileLast
+                                              ? "text-right md:text-left"
+                                              : ""
+                                    } ${column?.hideOnMobile ? "hidden md:block" : ""}`}
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={header.column.getToggleSortingHandler()}
+                                >
+                                    {column?.header}
+                                    {{ asc: " ▴", desc: " ▾" }[
+                                        header.column.getIsSorted() as string
+                                    ] ?? ""}
+                                </span>
+                            );
+                        })}
                     </div>
                     {sorted.map((row, index) => (
                         <Fragment key={row.id}>
@@ -228,15 +254,27 @@ export function Pane<T extends Record<string, any>>({
                                 }}
                                 onContextMenu={(event) => context(index, row.original, event)}
                             >
-                                {columns.map((column, cell) => (
-                                    <span
-                                        key={cell}
-                                        role="cell"
-                                        className={`min-w-0 ${column.align === "right" || cell === columns.length - 1 ? "text-right" : ""}`}
-                                    >
-                                        {column.cell?.(row.original) ?? column.value(row.original)}
-                                    </span>
-                                ))}
+                                {columns.map((column, cell) => {
+                                    const isLast = cell === columns.length - 1;
+                                    const isMobileLast = cell === lastMobileIndex;
+
+                                    return (
+                                        <span
+                                            key={cell}
+                                            role="cell"
+                                            className={`min-w-0 ${
+                                                column.align === "right" || isLast
+                                                    ? "text-right"
+                                                    : isMobileLast
+                                                      ? "text-right md:text-left"
+                                                      : ""
+                                            } ${column.hideOnMobile ? "hidden md:block" : ""}`}
+                                        >
+                                            {column.cell?.(row.original) ??
+                                                column.value(row.original)}
+                                        </span>
+                                    );
+                                })}
                             </div>
                         </Fragment>
                     ))}
