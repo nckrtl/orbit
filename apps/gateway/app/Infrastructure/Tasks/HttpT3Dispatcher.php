@@ -27,19 +27,21 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
             throw new T3DispatchException('The Node has no WireGuard address.');
         }
 
+        $credentials = $this->credentials($node);
+
         $threadId = $this->string($command['threadId'] ?? $command['thread_id'] ?? null) ?? '';
         $payload = $command;
         $payload['headers'] = [];
 
         try {
-            $response = $this->request()->post($this->url($host), $payload);
+            $response = $this->request($credentials['token'])->post($this->url($host, $credentials['base_url']), $payload);
         } catch (ConnectionException) {
             throw new T3DispatchException;
         }
 
         if (! $response->successful()) {
             throw new T3DispatchException(
-                existingProjectId: $this->existingProjectId($host, $command, $response),
+                existingProjectId: $this->existingProjectId($host, $command, $response, $credentials),
             );
         }
 
@@ -59,7 +61,10 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
     /**
      * @param  array<string, mixed>  $command
      */
-    private function existingProjectId(string $host, array $command, Response $response): ?string
+    /**
+     * @param  array{token: string|null, base_url: string|null}  $credentials
+     */
+    private function existingProjectId(string $host, array $command, Response $response, array $credentials): ?string
     {
         $existingProjectId = T3DispatchException::existingProjectId($this->errorHaystack($response));
 
@@ -69,7 +74,7 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
 
         $workspaceRoot = $this->string($command['workspaceRoot'] ?? $command['workspace_root'] ?? null);
 
-        return $workspaceRoot === null ? null : $this->existingProjectIdFromSnapshot($host, $workspaceRoot);
+        return $workspaceRoot === null ? null : $this->existingProjectIdFromSnapshot($host, $workspaceRoot, $credentials);
     }
 
     private function errorHaystack(Response $response): string
@@ -91,10 +96,13 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         return implode("\n", $parts);
     }
 
-    private function existingProjectIdFromSnapshot(string $host, string $workspaceRoot): ?string
+    /**
+     * @param  array{token: string|null, base_url: string|null}  $credentials
+     */
+    private function existingProjectIdFromSnapshot(string $host, string $workspaceRoot, array $credentials): ?string
     {
         try {
-            $response = $this->request()->get($this->url($host, '/api/orchestration/snapshot'));
+            $response = $this->request($credentials['token'])->get($this->url($host, $credentials['base_url'], '/api/orchestration/snapshot'));
         } catch (ConnectionException) {
             return null;
         }
@@ -150,24 +158,53 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         return rtrim($normalized, '/');
     }
 
-    private function request(): PendingRequest
+    /**
+     * @return array{token: string|null, base_url: string|null}
+     */
+    private function credentials(Node $node): array
+    {
+        $settings = $node->settings;
+        $t3 = is_array($settings) && array_key_exists('t3', $settings) ? $settings['t3'] : null;
+
+        if ($t3 !== null) {
+            $token = is_array($t3) ? $this->string($t3['token'] ?? null) : null;
+
+            if ($token === null) {
+                throw new T3DispatchException('The Node has no T3 token configured.');
+            }
+
+            return [
+                'token' => $token,
+                'base_url' => is_array($t3) ? $this->string($t3['url'] ?? $t3['base_url'] ?? null) : null,
+            ];
+        }
+
+        return [
+            'token' => $this->string(config('orbit.t3.token')),
+            'base_url' => null,
+        ];
+    }
+
+    private function request(?string $token): PendingRequest
     {
         $request = Http::connectTimeout(self::CONNECT_TIMEOUT)
             ->timeout(self::TIMEOUT)
             ->acceptJson()
             ->asJson();
 
-        $token = config('orbit.t3.token');
-
-        if (is_string($token) && $token !== '') {
+        if ($token !== null) {
             $request = $request->withToken($token);
         }
 
         return $request;
     }
 
-    private function url(string $host, string $path = '/api/orchestration/dispatch'): string
+    private function url(string $host, ?string $baseUrl = null, string $path = '/api/orchestration/dispatch'): string
     {
+        if ($baseUrl !== null) {
+            return rtrim($baseUrl, '/').$path;
+        }
+
         $port = (int) config('orbit.t3.port', 3773);
 
         if ($port < 1 || $port > 65535) {

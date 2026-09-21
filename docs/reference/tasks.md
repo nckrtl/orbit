@@ -188,6 +188,8 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_TASKS_GITHUB_TOKEN` | Optional GitHub token with pull-request write access when `gh` on the Node cannot open the PR |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
+| `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |
+| `nodes.settings.t3.url` | Optional full base URL for that node's T3 server. When absent, the node's WireGuard address and `ORBIT_T3_PORT` are used. |
 | `TYPESAFE_API_KEY` | TypeSafe Jev key for task-session Classification. Missing key fails closed |
 | `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`. Below this, the tick escalates |
 
