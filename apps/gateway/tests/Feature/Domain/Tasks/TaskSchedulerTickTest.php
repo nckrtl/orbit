@@ -7,6 +7,7 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullT3ThreadReader;
 use App\Domain\Tasks\T3Dispatcher;
+use App\Domain\Tasks\T3DispatchException;
 use App\Domain\Tasks\T3ThreadReader;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -125,6 +126,64 @@ it('drains a pending approval chosen by the faked Choice', function (): void {
         ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
         ->and($dispatcher->commands[0]['requestId'])->toBe('approval-tick')
         ->and($dispatcher->commands[0]['decision'])->toBe('acceptForSession')
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+});
+
+it('escalates to Coder when a drain dispatch fails', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = new class implements T3Dispatcher
+    {
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $this->commands[] = $command;
+
+            throw new T3DispatchException('T3 approval respond failed.');
+        }
+    };
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public ?string $reason = null;
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        {
+            $this->reason = $decision->reason;
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            if ($threadId !== 'implementer-thread') {
+                return ['thread' => ['session' => ['status' => 'idle']]];
+            }
+
+            return [
+                'thread' => [
+                    'session' => ['status' => 'waiting'],
+                    'pendingApprovals' => [['requestId' => 'approval-tick']],
+                ],
+            ];
+        }
+    });
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    Classification::fake([
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, 0.9),
+    ]);
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+        ->and($decisions[0]->reason)->toBe('T3 approval respond failed.')
+        ->and($notifier->reason)->toBe('T3 approval respond failed.')
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 

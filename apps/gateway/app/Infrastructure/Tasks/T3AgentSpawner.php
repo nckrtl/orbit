@@ -159,13 +159,21 @@ final readonly class T3AgentSpawner implements AgentSpawner
         }
 
         $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
+
+        try {
+            $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection);
+        } catch (T3DispatchException) {
+            TaskAgentSession::query()->where('thread_id', $resolvedThreadId)->delete();
+
+            return null;
+        }
+
         TaskAgentSession::query()->firstOrCreate(['thread_id' => $resolvedThreadId], [
             'task_group_id' => $group->id,
             'task_id' => $taskId,
             'node_id' => $node->id,
             'role' => $taskId === null ? 'reviewer' : 'implementer',
         ]);
-        $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection);
 
         return $resolvedThreadId;
     }
@@ -181,10 +189,12 @@ final readonly class T3AgentSpawner implements AgentSpawner
             try {
                 $this->startTurn($node, $threadId, $message, $selection);
             } catch (T3DispatchException $exception) {
-                Log::warning('T3 thread.turn.start failed after the thread was created.', [
+                Log::error('T3 thread.turn.start failed after the thread was created.', [
                     'thread_id' => $threadId,
                     'exception' => $exception->getMessage(),
                 ]);
+
+                throw $exception;
             }
         }
     }

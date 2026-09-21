@@ -55,7 +55,13 @@ final readonly class TaskScheduler
                 $decision = TaskSessionDecision::escalate($exception->getMessage());
             }
 
-            $this->actor->execute($group, $observation, $decision);
+            try {
+                $this->actor->execute($group, $observation, $decision);
+            } catch (T3DispatchException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+                $this->actor->execute($group, $observation, $decision);
+            }
+
             $this->advance($group, $decision);
             $decisions[] = $decision;
         }

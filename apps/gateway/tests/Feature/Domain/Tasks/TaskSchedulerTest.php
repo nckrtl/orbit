@@ -162,7 +162,7 @@ function scheduler_bind_claim(AppInstance $instance, AgentSpawner $spawner): voi
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 }
 
-it('reserves the oldest queued group that still fits the App ceiling', function (): void {
+it('reserves queued groups without a per-Project ceiling', function (): void {
     $app = scheduler_app('ceiling-app');
     $first = queued_group($app, 'One');
     $second = queued_group($app, 'Two');
@@ -175,9 +175,9 @@ it('reserves the oldest queued group that still fits the App ceiling', function 
         ->and($first->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
         ->and($scheduler->claimNext()?->id)->toBe($second->id)
         ->and($scheduler->claimNext()?->id)->toBe($third->id)
-        ->and($scheduler->claimNext())->toBeNull()
-        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Queued)
-        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(TaskCeilings::PerApp);
+        ->and($scheduler->claimNext()?->id)->toBe($fourth->id)
+        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
+        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(4);
 });
 
 it('does not count completed groups toward the App ceiling', function (): void {
@@ -194,7 +194,7 @@ it('does not count completed groups toward the App ceiling', function (): void {
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
 });
 
-it('keeps a fourth group queued when three reserved groups already occupy the App', function (): void {
+it('claims another group when three reserved groups already occupy the App', function (): void {
     $app = scheduler_app('full-app');
     foreach (['A', 'B', 'C'] as $title) {
         TaskGroup::query()->create([
@@ -206,8 +206,8 @@ it('keeps a fourth group queued when three reserved groups already occupy the Ap
     }
     $queued = queued_group($app, 'Overflow');
 
-    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
+    expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($queued->id)
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
 });
 
 it('applies the Node ceiling only after an App instance is assigned', function (): void {

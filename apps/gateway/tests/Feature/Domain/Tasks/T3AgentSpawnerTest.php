@@ -237,13 +237,13 @@ it('adopts the existing T3 project when workspace root already has one', functio
         ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
 });
 
-it('returns the created thread id when turn start fails after thread create', function (?string $adoptProjectId): void {
+it('stores no thread id when turn start fails after thread create', function (?string $adoptProjectId): void {
     $group = t3_spawner_group();
     [$spawner, $dispatcher] = t3_spawner_stack();
     $dispatcher->adoptProjectId = $adoptProjectId;
     $dispatcher->failTurnStartRemaining = 2;
 
-    Log::shouldReceive('warning')
+    Log::shouldReceive('error')
         ->once()
         ->with('T3 thread.turn.start failed after the thread was created.', Mockery::on(function (array $context): bool {
             expect($context['thread_id'])->toBeString()->not->toBe('')
@@ -254,16 +254,15 @@ it('returns the created thread id when turn start fails after thread create', fu
 
     $reviewerId = $spawner->spawnReviewer($group);
 
-    expect($reviewerId)->not->toBeNull()
-        ->and($reviewerId)->not->toBe('')
+    expect($reviewerId)->toBeNull()
+        ->and($group->fresh()?->reviewer_thread_id)->toBeNull()
+        ->and(TaskAgentSession::query()->where('task_group_id', $group->id)->count())->toBe(0)
         ->and(array_column($dispatcher->commands, 'type'))->toBe([
             'project.create',
             'thread.create',
             'thread.turn.start',
             'thread.turn.start',
-        ])
-        ->and($dispatcher->commands[2]['threadId'])->toBe($reviewerId)
-        ->and($dispatcher->commands[3]['threadId'])->toBe($reviewerId);
+        ]);
 
     if (is_string($adoptProjectId)) {
         expect($dispatcher->commands[1]['projectId'])->toBe($adoptProjectId)
@@ -296,15 +295,16 @@ it('reuses persisted thread ids instead of spawning again', function (): void {
         ->and($dispatcher->commands)->toBe([]);
 });
 
-it('persists both role links before a refused opening turn and keeps them after workspace removal', function (): void {
+it('keeps persisted role links after workspace removal', function (): void {
     $group = t3_spawner_group();
-    [$spawner, $dispatcher] = t3_spawner_stack();
-    $dispatcher->failTurnStartRemaining = 4;
+    [$spawner] = t3_spawner_stack();
     $reviewer = $spawner->spawnReviewer($group);
     $implementer = $spawner->spawnImplementer($group->tasks->firstOrFail());
     $group->taskable->delete();
     $links = TaskAgentSession::query()->where('task_group_id', $group->id)->orderBy('id')->get();
-    expect($links)->toHaveCount(2)
+    expect($reviewer)->not->toBeNull()
+        ->and($implementer)->not->toBeNull()
+        ->and($links)->toHaveCount(2)
         ->and($links[0]->thread_id)->toBe($reviewer)
         ->and($links[0]->task_id)->toBeNull()
         ->and($links[1]->thread_id)->toBe($implementer)

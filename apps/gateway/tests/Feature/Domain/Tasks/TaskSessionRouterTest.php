@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\T3Dispatcher;
+use App\Domain\Tasks\T3DispatchException;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionActor;
@@ -126,6 +127,23 @@ it('dispatches acceptForSession for a pending approval', function (): void {
         ->and($dispatcher->commands[0]['threadId'])->toBe('implementer-thread')
         ->and($dispatcher->commands[0]['requestId'])->toBe('approval-3')
         ->and($dispatcher->commands[0]['decision'])->toBe('acceptForSession');
+});
+
+it('surfaces a refused drain instead of swallowing the dispatch', function (): void {
+    $group = router_group();
+    $dispatcher = new class implements T3Dispatcher
+    {
+        public function dispatch(Node $node, array $command): array
+        {
+            throw new T3DispatchException('T3 approval respond failed.');
+        }
+    };
+
+    expect(fn () => new TaskSessionActor($dispatcher, new NullCoderSettleNotifier)->execute(
+        $group,
+        router_observation($group, 'approval-3'),
+        new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
+    ))->toThrow(T3DispatchException::class, 'T3 approval respond failed.');
 });
 
 it('starts an implementer turn with the T3 0.0.42 message struct', function (): void {

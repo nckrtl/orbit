@@ -83,18 +83,17 @@ When the parent task is open, Tokens is the total of every T3 session attached t
 
 ## Scheduler and ceilings
 
-After a successful create, the Gateway scheduler claims the oldest queued group that still fits the ceilings. It does not poll Nodes.
+After a successful create, the Gateway scheduler claims the oldest queued group that still fits the Node ceiling. It does not poll Nodes and it does not apply a per-Project ceiling.
 
 Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 | Ceiling | Limit |
 | --- | --- |
-| Active groups per Project | 3 |
 | Active groups per Node | 10 |
 
-A group without an Instance counts toward the Project ceiling only. The Node ceiling applies once `taskable` points at an Instance on that Node.
+The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create` or `thread.create`, the group stays `reserved` or `running` without thread ids. After a successful `thread.create`, a refused `thread.turn.start` still stores the thread id.
+A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create`, `thread.create`, or the opening `thread.turn.start`, the group stays `reserved` or `running` without thread ids.
 
 `tasks:tick` (`php artisan tasks:tick`) then observes those stored reviewer and implementer threads and routes them. It does not poll Nodes for capacity and it never includes non-task T3 threads.
 
@@ -121,7 +120,7 @@ The Gateway stores each session's group, optional subtask, role, Node, and T3 th
 
 Agents run on the T3 server of the Node that owns that Instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server. A successful dispatch needs a sequence. Commands that have no thread, including `project.create`, may omit `threadId`. `project.create` `defaultModelSelection` and `thread.create` `modelSelection` send options as `{id, value}` objects, never a bare map such as `{effort: high}`.
 
-When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged. The spawn still returns the created thread id.
+When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged at error. The spawn then returns null and stores no thread id.
 
 Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The driver is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first pending subtask. The next pending subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 

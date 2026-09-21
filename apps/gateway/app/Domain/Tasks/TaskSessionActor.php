@@ -144,13 +144,10 @@ final readonly class TaskSessionActor
         $node = $this->node($group);
 
         if (! $node instanceof Node) {
-            return;
+            throw new T3DispatchException('Task workspace Node is missing.');
         }
 
-        try {
-            $this->dispatcher->dispatch($node, $command);
-        } catch (T3DispatchException) {
-        }
+        $this->dispatcher->dispatch($node, $command);
     }
 
     private function node(TaskGroup $group): ?Node
