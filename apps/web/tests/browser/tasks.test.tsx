@@ -75,6 +75,8 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     expect(document.querySelector(".navigation-page-header")?.textContent?.trim()).toBe("Tasks");
     expect(pane("In progress").getByRole("link").all()).toHaveLength(4);
     expect(pane("Done").getByRole("link").all()).toHaveLength(3);
+    await expect.element(pane("In progress")).toHaveTextContent("0/1");
+    await expect.element(pane("In progress")).not.toHaveTextContent("Running");
     await expect.element(pane("Done")).toHaveTextContent("Failed");
     await expect.element(pane("Done")).toHaveTextContent("Cancelled");
     await expect.element(pane("Todo")).toHaveTextContent("EXA-1");
@@ -117,6 +119,33 @@ it("shows missing task errors on a direct detail URL", async () => {
     }));
     await app.router.navigate({ to: "/tasks/$id", params: { id: "999" } });
     await expect.element(page.getByRole("alert")).toHaveTextContent("Task not found");
+});
+
+it("shows completed subtask counts on in-progress cards instead of a running label", async () => {
+    const task = group(1, "running");
+    const statusAt = (id: number, status: TaskGroup["tasks"][number]["status"]) => ({
+        ...task.tasks[0]!,
+        id,
+        position: id,
+        title: `Step ${id}`,
+        status,
+    });
+    task.tasks = [
+        statusAt(1, "completed"),
+        statusAt(2, "completed"),
+        statusAt(3, "running"),
+        statusAt(4, "pending"),
+        statusAt(5, "failed"),
+    ];
+    await openTasks(async (_, path) => ({
+        status: 200,
+        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+    }));
+    await expect.element(pane("In progress")).toHaveTextContent("2/5");
+    await expect.element(pane("In progress")).not.toHaveTextContent("Running");
+    await expect
+        .element(pane("In progress").getByLabelText("2 of 5 subtasks completed"))
+        .toBeVisible();
 });
 
 it("lets the keyboard activate a focused card", async () => {
@@ -175,9 +204,9 @@ it("groups subtasks by status and keeps their sequence within columns", async ()
 it("shows card identity, separate line changes and elapsed time, with tokens in details", async () => {
     const task = group(1, "running");
     task.tokens = 1500;
-    task.line_diff = 22;
-    task.lines_added = 16;
-    task.lines_deleted = 6;
+    task.line_diff = 13_998;
+    task.lines_added = 23_320;
+    task.lines_deleted = 9_322;
     task.duration_ms = 5000;
     task.tasks = [
         {
@@ -192,23 +221,29 @@ it("shows card identity, separate line changes and elapsed time, with tokens in 
         payload: { data: path === "/api/v1/task-groups" ? [task] : task },
     }));
     await expect.element(pane("In progress")).toHaveTextContent("EXA-1");
-    await expect.element(pane("In progress")).toHaveTextContent("+16");
-    await expect.element(pane("In progress")).toHaveTextContent("−6");
+    await expect.element(pane("In progress")).toHaveTextContent("+23.32K");
+    await expect.element(pane("In progress")).toHaveTextContent("−9.322K");
+    await expect.element(pane("In progress")).toHaveTextContent("1.5K");
+    await expect.element(pane("In progress")).toHaveTextContent("0/1");
     await expect.element(pane("In progress")).toHaveTextContent("<1m");
+    await expect.element(pane("In progress")).not.toHaveTextContent("Running");
     await expect.element(pane("In progress")).not.toHaveTextContent("tokens");
     await pane("In progress").getByRole("link").click();
     await expect.element(pane("Task")).toHaveTextContent("Tokens");
-    await expect.element(pane("Task")).toHaveTextContent("1,500");
+    await expect.element(pane("Task")).toHaveTextContent("1.5K");
+    await expect.element(pane("Task").getByTitle("1,500")).toBeVisible();
     await expect.element(pane("Task")).toHaveTextContent("Line diff");
-    await expect.element(pane("Task")).toHaveTextContent("22");
+    await expect.element(pane("Task")).toHaveTextContent("+23.32K −9.322K");
+    await expect.element(pane("Task").getByTitle("+23,320 −9,322")).toBeVisible();
     await expect.element(pane("Task")).toHaveTextContent("5s");
     await expect.element(pane("Todo")).toHaveTextContent("First step");
+    await expect.element(pane("Todo")).toHaveTextContent("1.2K");
     await expect.element(pane("Todo")).not.toHaveTextContent("tokens");
     await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
     await expect.element(pane("Task")).toHaveTextContent("First step");
-    await expect.element(pane("Task")).toHaveTextContent("1,200");
+    await expect.element(pane("Task")).toHaveTextContent("1.2K");
     await expect.element(pane("Task")).toHaveTextContent("5");
-    await expect.element(pane("Task")).not.toHaveTextContent("1,500");
+    await expect.element(pane("Task")).not.toHaveTextContent("1.5K");
     expect(app.url()).toBe("/tasks/1/subtasks/1");
 });
 

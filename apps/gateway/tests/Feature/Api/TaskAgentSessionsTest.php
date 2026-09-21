@@ -17,7 +17,7 @@ function agent_viewer_fixture(): array
     test()->postJson('/api/v1/tasks/enable')->assertOk();
     $app = OrbitApp::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
     $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
-    $session = TaskAgentSession::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'thread_id' => 'thread-one']);
+    $session = TaskAgentSession::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'thread_id' => 'thread-one']);
 
     return [$group, $session];
 }
@@ -27,7 +27,8 @@ describe('task agent viewer', function (): void {
         [$group, $session] = agent_viewer_fixture();
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.thread_id', 'thread-one')
-            ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id);
+            ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id)
+            ->assertJsonPath('data.0.model', 'claude-opus')->assertJsonPath('data.0.effort', 'high');
         $this->postJson('/api/v1/tasks/disable')->assertOk();
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertStatus(409)->assertJsonPath('error.code', 'tasks.disabled');
     });

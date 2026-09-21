@@ -4,8 +4,11 @@ import { Frame } from "./Frame";
 export type Property = {
     name: string;
     value: string | number | boolean | string[] | null | undefined;
+    title?: string;
     warn?: boolean;
     onOpen?: () => void;
+    /** Rich value rendered instead of the plain text when set. */
+    node?: ReactNode;
 };
 
 const text = (value: Property["value"]): string => {
@@ -44,14 +47,18 @@ export function Properties({
                         style={{ gridTemplateColumns: "minmax(12ch, 18ch) minmax(0, 1fr)" }}
                     >
                         <span className="text-dim">{property.name}</span>
-                        {property.onOpen !== undefined && value !== "—" ? (
+                        {property.node !== undefined ? (
+                            <span className="selectable" title={property.title ?? value}>
+                                {property.node}
+                            </span>
+                        ) : property.onOpen !== undefined && value !== "—" ? (
                             <span className="link" onClick={property.onOpen}>
                                 {value}
                             </span>
                         ) : (
                             <span
                                 className={`selectable ${property.warn ? "text-yellow" : ""}`}
-                                title={value}
+                                title={property.title ?? value}
                             >
                                 {value}
                             </span>

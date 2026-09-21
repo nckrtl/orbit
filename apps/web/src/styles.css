@@ -213,6 +213,7 @@ body {
 
 .kanban-card {
     padding: var(--panel-padding);
+    border-radius: 2px;
     background: color-mix(in srgb, var(--bg) 95%, var(--fg));
 }
 
@@ -223,6 +224,8 @@ body {
 /* Agent sessions share the board's inset cards and continuous column divider. */
 .agent-sessions-body {
     padding: 0;
+    /* The thread viewport scrolls, not the frame body. */
+    overflow: hidden;
 }
 
 .agent-session-list {
@@ -353,6 +356,12 @@ body {
 .row[data-selected][data-focused] {
     background: var(--fg);
     color: var(--bg);
+}
+
+/* The highlighted navigation item is a small chip: white, with the same slight radius as a kanban card. */
+.nav-row[data-selected][data-focused] {
+    border-radius: 2px;
+    background: #fff;
 }
 
 .row[data-selected][data-focused][data-warn] {

@@ -3,14 +3,39 @@ import { useQuery } from "@tanstack/react-query";
 import { get } from "../api/client";
 import { formatLineDiff, formatTokens } from "../api/tasks";
 import { Frame } from "../ui/Frame";
+import { taskIdentity } from "../api/tasks";
 import {
+    agentProvider,
     applyAgentEvent,
     emptyConversation,
     type AgentSession,
     type Conversation,
 } from "./agent-stream";
 
-export function AgentSessions({ groupId, subtaskId }: { groupId: number; subtaskId?: string }) {
+const sessionMetaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
+
+function ProviderMark({ model }: { model?: string | null }) {
+    const provider = agentProvider(model);
+    if (!provider) return null;
+    return (
+        <span className="text-dim">
+            <span className={provider.color} aria-hidden>
+                ●
+            </span>{" "}
+            {provider.name}
+        </span>
+    );
+}
+
+export function AgentSessions({
+    groupId,
+    subtaskId,
+    projectCode,
+}: {
+    groupId: number;
+    subtaskId?: string;
+    projectCode?: string;
+}) {
     const query = useQuery({
         queryKey: ["task-agents", groupId],
         queryFn: () => get<AgentSession[]>(`/api/v1/task-groups/${groupId}/agents`),
@@ -31,7 +56,7 @@ export function AgentSessions({ groupId, subtaskId }: { groupId: number; subtask
     return (
         <Frame
             title="Agents"
-            className="shrink-0"
+            className="shrink-0 md:min-h-0 md:flex-1"
             topRight={sessions.length}
             bodyClassName={selected ? "agent-sessions-body" : undefined}
         >
@@ -48,12 +73,12 @@ export function AgentSessions({ groupId, subtaskId }: { groupId: number; subtask
                 <p className="text-dim">No agent sessions are linked to this task.</p>
             )}
             {selected && (
-                <div className="grid min-w-0 grid-cols-1 md:grid-cols-[26ch_minmax(0,1fr)]">
+                <div className="grid min-w-0 grid-cols-1 md:h-full md:min-h-0 md:grid-cols-[26ch_minmax(0,1fr)]">
                     <div
                         role="tablist"
                         aria-label="Agent sessions"
                         aria-orientation="vertical"
-                        className="agent-session-list flex flex-col gap-[var(--panel-padding)]"
+                        className="agent-session-list flex flex-col gap-[var(--panel-padding)] md:min-h-0 md:overflow-y-auto"
                     >
                         {sessions.map((session, index) => (
                             <button
@@ -91,15 +116,17 @@ export function AgentSessions({ groupId, subtaskId }: { groupId: number; subtask
                                     }
                                 }}
                             >
+                                <span className={`block text-dim ${sessionMetaClassName}`}>
+                                    {taskIdentity(session.task_id ?? groupId, projectCode)}
+                                </span>
                                 <strong className="block">
                                     {session.role === "reviewer" ? "Reviewer" : "Implementer"}
                                 </strong>
-                                <span className="block text-dim">
-                                    {session.task_id === null
-                                        ? "Shared across subtasks"
-                                        : `Subtask #${session.task_id}`}
-                                </span>
-                                <span className="block text-dim">Session #{session.id}</span>
+                                {session.model != null && (
+                                    <span className="block">
+                                        <ProviderMark model={session.model} />
+                                    </span>
+                                )}
                             </button>
                         ))}
                     </div>
@@ -149,38 +176,44 @@ function SessionViewer({ session }: { session: AgentSession }) {
             role="tabpanel"
             id={`agent-panel-${session.id}`}
             aria-labelledby={`agent-tab-${session.id}`}
-            className="min-w-0 p-[var(--panel-padding)]"
+            className="flex min-h-0 min-w-0 flex-col p-[var(--panel-padding)] md:h-full"
         >
-            <div className="mb-[10px] flex flex-wrap items-center gap-x-[2ch] gap-y-[8px]">
-                <strong>{conversation.status}</strong>
-                <span role="status" className="text-dim">
-                    {session.node_id === null ? "Original node unavailable" : connection}
-                </span>
-                <button
-                    className="ml-auto text-cyan underline"
-                    onClick={() => setFollowing(!following)}
-                >
-                    {following ? "Pause scrolling" : "Follow latest"}
-                </button>
-            </div>
-            <p className="mb-[12px] break-all text-dim">T3 · {session.thread_id}</p>
-            {(conversation.tokens !== null || conversation.lineDiff !== null) && (
-                <p className="mb-[12px] text-dim">
-                    {[
-                        conversation.tokens === null
-                            ? null
-                            : `${formatTokens(conversation.tokens)} tokens`,
-                        conversation.lineDiff === null
-                            ? null
-                            : `${formatLineDiff(conversation.lineDiff)} lines`,
-                    ]
-                        .filter((part): part is string => part !== null)
-                        .join(" · ")}
+            <div className="mb-[12px] flex flex-col gap-[10px] border-b border-line pb-[12px]">
+                <div className="flex flex-wrap items-center gap-x-[2ch] gap-y-[8px]">
+                    <strong>{conversation.status}</strong>
+                    <span role="status" className="text-dim">
+                        {session.node_id === null ? "Original node unavailable" : connection}
+                    </span>
+                    <button
+                        className="ml-auto text-cyan underline"
+                        onClick={() => setFollowing(!following)}
+                    >
+                        {following ? "Pause scrolling" : "Follow latest"}
+                    </button>
+                </div>
+                <p className="break-all text-dim">
+                    <ProviderMark model={session.model} /> T3
+                    {session.model ? ` · ${session.model}` : ""}
+                    {session.effort ? ` · ${session.effort} effort` : ""} · {session.thread_id}
                 </p>
-            )}
+                {(conversation.tokens !== null || conversation.lineDiff !== null) && (
+                    <p className="text-dim">
+                        {[
+                            conversation.tokens === null
+                                ? null
+                                : `${formatTokens(conversation.tokens)} tokens`,
+                            conversation.lineDiff === null
+                                ? null
+                                : `${formatLineDiff(conversation.lineDiff)} lines`,
+                        ]
+                            .filter((part): part is string => part !== null)
+                            .join(" · ")}
+                    </p>
+                )}
+            </div>
             <div
                 ref={viewport}
-                className="selectable max-h-[560px] min-h-[180px] overflow-auto"
+                className="selectable max-h-[560px] min-h-[180px] overflow-auto md:max-h-none md:min-h-0 md:flex-1"
                 onScroll={() => {
                     const el = viewport.current;
                     if (el && el.scrollHeight - el.scrollTop - el.clientHeight > 60)

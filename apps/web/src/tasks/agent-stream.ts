@@ -5,7 +5,22 @@ export type AgentSession = {
     node_id: number | null;
     role: "reviewer" | "implementer";
     thread_id: string;
+    model?: string | null;
+    effort?: string | null;
 };
+
+/** The provider a model id belongs to, with the theme color that marks it. */
+export function agentProvider(
+    model: string | null | undefined,
+): { name: string; color: string } | null {
+    if (!model) return null;
+    const id = model.toLowerCase();
+    if (id.includes("claude")) return { name: "Claude", color: "text-yellow" };
+    if (id.includes("codex") || id.includes("gpt")) return { name: "Codex", color: "text-green" };
+    if (id.includes("grok")) return { name: "Grok", color: "text-cyan" };
+    if (id.includes("kimi")) return { name: "Kimi", color: "text-cyan" };
+    return { name: model, color: "text-dim" };
+}
 export type Entry = {
     id: string;
     label: string;

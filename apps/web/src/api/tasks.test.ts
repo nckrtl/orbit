@@ -1,8 +1,11 @@
 import { expect, it } from "vite-plus/test";
 import {
+    completedSubtaskProgress,
     formatCardDuration,
+    formatCompactCount,
     formatDurationMs,
     formatLineDiff,
+    formatSignedLineChanges,
     formatTokens,
     taskColumn,
     type Task,
@@ -28,12 +31,63 @@ it("formats tokens and line diffs with grouping", () => {
     expect(formatLineDiff(16)).toBe("16");
 });
 
+it("formats signed line changes with compact counts", () => {
+    expect(formatSignedLineChanges(null, 6)).toBeNull();
+    expect(formatSignedLineChanges(16, 6)).toBe("+16 −6");
+    expect(formatSignedLineChanges(23_320, 9_322)).toBe("+23.32K −9.322K");
+    expect(formatSignedLineChanges(23_320, 9_322, formatLineDiff)).toBe("+23,320 −9,322");
+});
+
+it("compacts counts into a 5-character significand plus a unit", () => {
+    expect(formatCompactCount(null)).toBeNull();
+    expect(formatCompactCount(-1)).toBeNull();
+    expect(formatCompactCount(0)).toBe("0");
+    expect(formatCompactCount(300)).toBe("300");
+    expect(formatCompactCount(999)).toBe("999");
+    expect(formatCompactCount(1000)).toBe("1K");
+    expect(formatCompactCount(1500)).toBe("1.5K");
+    expect(formatCompactCount(10_210)).toBe("10.21K");
+    expect(formatCompactCount(10_100)).toBe("10.1K");
+    expect(formatCompactCount(99_830)).toBe("99.83K");
+    expect(formatCompactCount(100_100)).toBe("100.1K");
+    expect(formatCompactCount(303_100)).toBe("303.1K");
+    expect(formatCompactCount(3_212_000)).toBe("3.212M");
+    expect(formatCompactCount(10_310_000)).toBe("10.31M");
+    expect(formatCompactCount(999_950)).toBe("1M");
+});
+
 it("formats duration from milliseconds", () => {
     expect(formatDurationMs(null)).toBeNull();
     expect(formatDurationMs(400)).toBe("400ms");
     expect(formatDurationMs(5000)).toBe("5s");
     expect(formatDurationMs(65_000)).toBe("1m 5s");
     expect(formatDurationMs(3_600_000)).toBe("1h");
+});
+
+it("counts completed nested tasks against the group total", () => {
+    const task = (id: number, status: Task["status"]): Task => ({
+        id,
+        task_group_id: 1,
+        position: id,
+        title: `Step ${id}`,
+        brief: "",
+        status,
+        implementer_thread_id: null,
+        tokens: null,
+        line_diff: null,
+        duration_ms: null,
+    });
+
+    expect(
+        completedSubtaskProgress([
+            task(1, "completed"),
+            task(2, "completed"),
+            task(3, "running"),
+            task(4, "pending"),
+            task(5, "failed"),
+        ]),
+    ).toEqual({ completed: 2, total: 5 });
+    expect(completedSubtaskProgress([])).toEqual({ completed: 0, total: 0 });
 });
 
 it("formats card durations in minutes and hours without counting unknown time", () => {

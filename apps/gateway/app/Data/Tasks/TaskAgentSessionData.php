@@ -18,11 +18,13 @@ final class TaskAgentSessionData extends Data
         public ?int $taskId,
         public ?int $nodeId,
         public string $role,
+        public ?string $model,
+        public ?string $effort,
         public string $threadId,
     ) {}
 
     public static function fromModel(TaskAgentSession $session): self
     {
-        return new self($session->id, $session->task_group_id, $session->task_id, $session->node_id, $session->role, $session->thread_id);
+        return new self($session->id, $session->task_group_id, $session->task_id, $session->node_id, $session->role, $session->model, $session->effort, $session->thread_id);
     }
 }

@@ -4,13 +4,17 @@ import { Link, useParams, useRouter } from "@tanstack/react-router";
 import { GatewayError } from "../api/client";
 import { lists } from "../api/queries";
 import {
+    completedSubtaskProgress,
+    formatCompactCount,
     formatDurationMs,
     formatCardDuration,
     formatLineDiff,
+    formatSignedLineChanges,
     formatTokens,
     taskColumn,
     taskGroupQuery,
     taskGroupsQuery,
+    taskIdentity,
     taskStatusLabels,
     type Task,
     type TaskGroup,
@@ -35,10 +39,6 @@ function TaskStatus({ status }: { status: TaskGroup["status"] | "pending" }) {
     return <span className={color}>{taskStatusLabels[status]}</span>;
 }
 
-function taskIdentity(id: number, projectCode?: string): string {
-    return projectCode ? `${projectCode}-${id}` : `#${id}`;
-}
-
 function taskProperties(
     group: TaskGroup,
     detail: TaskGroup | Task,
@@ -50,7 +50,9 @@ function taskProperties(
         { name: "Title", value: detail.title },
         {
             name: "Status",
-            value: `${taskColumn(detail.status)} · ${taskStatusLabels[detail.status]}`,
+            value: taskColumn(detail.status),
+            title: `${taskColumn(detail.status)} · ${taskStatusLabels[detail.status]}`,
+            warn: taskColumn(detail.status) === "In progress",
         },
         {
             name: "Project",
@@ -66,8 +68,32 @@ function taskProperties(
                   },
               ]
             : []),
-        { name: "Tokens", value: formatTokens(detail.tokens) },
-        { name: "Line diff", value: formatLineDiff(detail.line_diff) },
+        {
+            name: "Tokens",
+            value: formatCompactCount(detail.tokens),
+            title: formatTokens(detail.tokens) ?? undefined,
+        },
+        {
+            name: "Line diff",
+            value:
+                formatSignedLineChanges(detail.lines_added, detail.lines_deleted) ??
+                formatLineDiff(detail.line_diff),
+            title:
+                formatSignedLineChanges(detail.lines_added, detail.lines_deleted, formatLineDiff) ??
+                formatLineDiff(detail.line_diff) ??
+                undefined,
+            node:
+                detail.lines_added != null && detail.lines_deleted != null ? (
+                    <span aria-label="Line changes">
+                        <span className="text-green">
+                            +{formatCompactCount(detail.lines_added)}
+                        </span>{" "}
+                        <span className="text-red">
+                            −{formatCompactCount(detail.lines_deleted)}
+                        </span>
+                    </span>
+                ) : undefined,
+        },
         { name: "Duration", value: formatDurationMs(detail.duration_ms) },
     ];
 }
@@ -89,42 +115,89 @@ function TaskError({ error, retry }: { error: Error; retry: () => void }) {
 }
 
 function CardDiff({ task }: { task: TaskGroup | Task }) {
-    if (task.lines_added == null || task.lines_deleted == null) return null;
+    const hasDiff = task.lines_added != null && task.lines_deleted != null;
+    const tokens = formatCompactCount(task.tokens);
+    if (!hasDiff && tokens === null) return null;
+
     return (
-        <span className="flex gap-[1ch] whitespace-nowrap" aria-label="Line changes">
-            <span className="text-green">+{formatLineDiff(task.lines_added)}</span>
-            <span className="text-red">−{formatLineDiff(task.lines_deleted)}</span>
+        <span className="flex gap-[1ch] whitespace-nowrap">
+            {hasDiff && (
+                <span className="flex gap-[1ch]" aria-label="Line changes">
+                    <span className="text-green">+{formatCompactCount(task.lines_added)}</span>
+                    <span className="text-red">−{formatCompactCount(task.lines_deleted)}</span>
+                </span>
+            )}
+            {hasDiff && tokens !== null && <span>/</span>}
+            {tokens !== null && (
+                <span aria-label={`${formatTokens(task.tokens)} tokens`}>{tokens}</span>
+            )}
         </span>
     );
 }
 
-function CardFooter({ task }: { task: TaskGroup | Task }) {
-    if (taskColumn(task.status) === "Todo") return null;
+const cardMetaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
+
+function CardFooter({
+    task,
+    progress,
+}: {
+    task: TaskGroup | Task;
+    progress?: { completed: number; total: number };
+}) {
+    const column = taskColumn(task.status);
+    if (column === "Todo") return null;
+
+    const duration = formatCardDuration(task.duration_ms);
+    const progressLabel =
+        column === "In progress" && progress !== undefined && progress.total > 0
+            ? `${progress.completed}/${progress.total}`
+            : null;
+    const showStatus = column === "Done";
+    if (progressLabel === null && !showStatus && duration === null) return null;
+
     return (
-        <div className="mt-[10px] flex items-center justify-between gap-[1ch] text-[11px] uppercase tracking-[0.08em]">
-            <TaskStatus status={task.status} />
-            <span className="shrink-0 text-dim normal-case tracking-normal">
-                {formatCardDuration(task.duration_ms)}
-            </span>
+        <div
+            className={`mt-[10px] flex items-center justify-between gap-[1ch] ${cardMetaClassName}`}
+        >
+            {progressLabel !== null && progress !== undefined && (
+                <span
+                    className="text-dim"
+                    aria-label={`${progress.completed} of ${progress.total} subtasks completed`}
+                >
+                    {progressLabel}
+                </span>
+            )}
+            {showStatus && <TaskStatus status={task.status} />}
+            <span className="ml-auto shrink-0 text-dim">{duration}</span>
         </div>
     );
 }
 
-function KanbanCardBody({ identity, task }: { identity: string; task: TaskGroup | Task }) {
+function KanbanCardBody({
+    identity,
+    task,
+    progress,
+}: {
+    identity: string;
+    task: TaskGroup | Task;
+    progress?: { completed: number; total: number };
+}) {
     return (
         <>
-            <div className="mb-[6px] flex justify-between gap-[1ch] text-dim">
+            <div
+                className={`mb-[6px] flex justify-between gap-[1ch] text-dim ${cardMetaClassName}`}
+            >
                 <span className="break-words">{identity}</span>
                 <CardDiff task={task} />
             </div>
             <h2 className="break-words font-bold">{task.title}</h2>
-            <CardFooter task={task} />
+            <CardFooter task={task} progress={progress} />
         </>
     );
 }
 
 const kanbanCardClassName =
-    "kanban-card block rounded focus-visible:outline-2 focus-visible:outline-cyan";
+    "kanban-card block rounded-[2px] focus-visible:outline-2 focus-visible:outline-cyan";
 
 export function TasksBoard() {
     const groups = useQuery(taskGroupsQuery);
@@ -167,6 +240,7 @@ export function TasksBoard() {
                                         <KanbanCardBody
                                             identity={taskIdentity(group.id, group.project_code)}
                                             task={group}
+                                            progress={completedSubtaskProgress(group.tasks)}
                                         />
                                     </Link>
                                 ))}
@@ -224,7 +298,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
             )}
             {task && detail && (
                 <>
-                    <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:h-[320px] lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                    <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:h-[320px] lg:grid-cols-2">
                         <Properties
                             title="Task"
                             className="min-h-0"
@@ -305,6 +379,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                         key={`${id}:${subtaskId ?? "group"}`}
                         groupId={task.id}
                         subtaskId={subtaskId}
+                        projectCode={task.project_code}
                     />
                 </>
             )}

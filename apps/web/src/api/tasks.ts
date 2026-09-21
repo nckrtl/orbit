@@ -15,10 +15,25 @@ export type TaskGroup = Omit<
     };
 export type TaskColumn = "Todo" | "In progress" | "Done";
 
+export function taskIdentity(id: number, projectCode?: string): string {
+    return projectCode ? `${projectCode}-${id}` : `#${id}`;
+}
+
 export function taskColumn(status: TaskGroup["status"] | Task["status"]): TaskColumn {
     if (status === "queued" || status === "pending") return "Todo";
     if (["completed", "failed", "cancelled"].includes(status)) return "Done";
     return "In progress";
+}
+
+/** How many nested tasks have finished successfully, of the group's total. */
+export function completedSubtaskProgress(tasks: readonly Task[]): {
+    completed: number;
+    total: number;
+} {
+    return {
+        completed: tasks.filter((task) => task.status === "completed").length,
+        total: tasks.length,
+    };
 }
 
 export function formatTokens(value: number | null | undefined): string | null {
@@ -27,10 +42,56 @@ export function formatTokens(value: number | null | undefined): string | null {
     return value.toLocaleString("en-US");
 }
 
+const compactUnits = ["", "K", "M", "B", "T"] as const;
+
+/** Compact count for card chrome: significand at most 5 characters, then K/M/B. */
+export function formatCompactCount(value: number | null | undefined): string | null {
+    if (value == null || !Number.isFinite(value) || value < 0) return null;
+
+    let scaled = value;
+    let unit = 0;
+    while (scaled >= 1000 && unit < compactUnits.length - 1) {
+        scaled /= 1000;
+        unit += 1;
+    }
+
+    if (unit === 0) return String(Math.round(value));
+
+    const decimalsFor = (amount: number) => (amount < 10 ? 3 : amount < 100 ? 2 : 1);
+    let decimals = decimalsFor(scaled);
+    let rounded = Number(scaled.toFixed(decimals));
+    if (rounded >= 1000 && unit < compactUnits.length - 1) {
+        unit += 1;
+        rounded /= 1000;
+        decimals = decimalsFor(rounded);
+        rounded = Number(rounded.toFixed(decimals));
+    }
+
+    const significand = rounded
+        .toFixed(decimals)
+        .replace(/(\.\d*?)0+$/, "$1")
+        .replace(/\.$/, "");
+
+    return `${significand}${compactUnits[unit]}`;
+}
+
 export function formatLineDiff(value: number | null | undefined): string | null {
     if (value === null || value === undefined) return null;
 
     return value.toLocaleString("en-US");
+}
+
+/** Signed added/deleted line changes, compact by default. */
+export function formatSignedLineChanges(
+    added: number | null | undefined,
+    deleted: number | null | undefined,
+    format: (value: number | null | undefined) => string | null = formatCompactCount,
+): string | null {
+    const plus = format(added);
+    const minus = format(deleted);
+    if (plus === null || minus === null) return null;
+
+    return `+${plus} −${minus}`;
 }
 
 export function formatDurationMs(value: number | null | undefined): string | null {

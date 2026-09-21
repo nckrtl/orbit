@@ -305,8 +305,12 @@ it('persists both role links before a refused opening turn and keeps them after 
     expect($links)->toHaveCount(2)
         ->and($links[0]->thread_id)->toBe($reviewer)
         ->and($links[0]->task_id)->toBeNull()
+        ->and($links[0]->model)->toBe(TaskAgentDefaults::ReviewerModel)
+        ->and($links[0]->effort)->toBe(TaskAgentDefaults::ReviewerEffort)
         ->and($links[1]->thread_id)->toBe($implementer)
         ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
+        ->and($links[1]->model)->toBe(TaskAgentDefaults::ImplementerModel)
+        ->and($links[1]->effort)->toBe(TaskAgentDefaults::ImplementerEffort)
         ->and($links[1]->node_id)->not->toBeNull();
 });
 

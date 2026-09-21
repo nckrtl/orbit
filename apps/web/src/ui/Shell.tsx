@@ -78,7 +78,7 @@ function Navigation({
                         return (
                             <div
                                 key={key}
-                                className="row"
+                                className="row nav-row"
                                 data-link=""
                                 style={{ gridTemplateColumns: "auto auto", columnGap: "1ch" }}
                                 data-selected={key === active ? "" : undefined}

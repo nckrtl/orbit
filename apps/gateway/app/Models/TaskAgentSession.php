@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $task_id
  * @property int|null $node_id
  * @property string $role
+ * @property string|null $model
+ * @property string|null $effort
  * @property string $thread_id
  * @property-read Node|null $node
  */
@@ -20,7 +22,7 @@ final class TaskAgentSession extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'role', 'thread_id'];
+    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'role', 'model', 'effort', 'thread_id'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo

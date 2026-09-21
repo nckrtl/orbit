@@ -154,6 +154,8 @@ final readonly class T3AgentSpawner implements AgentSpawner
             'task_id' => $taskId,
             'node_id' => $node->id,
             'role' => $taskId === null ? 'reviewer' : 'implementer',
+            'model' => $model,
+            'effort' => $effort,
         ]);
         $this->startOpeningTurn($node, $resolvedThreadId, $message);
 
