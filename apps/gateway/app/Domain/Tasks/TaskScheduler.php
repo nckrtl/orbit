@@ -18,7 +18,17 @@ final readonly class TaskScheduler
         private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
         private CoderSettleNotifier $coder,
+        private TaskSessionObserver $observer,
     ) {}
+
+    /**
+     * Reads the current state of the group's task threads and shared
+     * workspace. A tick observes before it decides anything.
+     */
+    public function observe(TaskGroup $group): TaskSessionObservation
+    {
+        return $this->observer->observe($group);
+    }
 
     public function claimNext(): ?TaskGroup
     {

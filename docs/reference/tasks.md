@@ -123,6 +123,30 @@ When `project.create` collides on an occupied workspace root, T3's receipt is `A
 
 Each subtask gets a fresh implementer (`codex-luna-lite`, low effort). The group keeps one reviewer thread (`claude-opus`, high effort). When a subtask settles, the scheduler marks it `reviewing` and sends "please review" to the reviewer thread. After the reviewer signs off, the Gateway commits in the shared checkout when git can create a commit, completes that subtask, and starts the next implementer. After the last subtask, the group moves to `settling`.
 
+## Session observation
+
+Before the scheduler decides anything about a live group, it can observe that group's T3 sessions. `TaskScheduler::observe()` returns one structured observation for a group. It reads only threads Orbit started: the recorded agent sessions, the group reviewer thread, and each subtask implementer thread. Any other thread on that T3 server is ignored.
+
+Each observed thread carries these facts.
+
+| Fact | Source |
+| --- | --- |
+| `role` | Recorded session role, `implementer` or `reviewer` |
+| `task_id` | Subtask that owns an implementer thread. Null for the reviewer |
+| `session_state` | `thread.session.status` in the T3 snapshot, such as `ready`, `running`, or `stopped` |
+| `idle` | True when nothing is pending and the session waits or its last turn finished |
+| `pending_approval_id` | Request id of the unresolved approval when T3 reports one |
+| `pending_user_input_id` | Request id of the unresolved user-input question when T3 reports one |
+| `last_assistant_text`, `last_user_text` | Last message with that role, trimmed to 400 characters |
+| `new_commits` | Commits in the shared checkout after that thread started. Null when git cannot run |
+| `pr_url`, `ci_summary` | Pull request T3 links to the thread and its checks state |
+
+A thread is idle when it holds no pending approval and no pending user-input request, and either its session is `ready` or `stopped`, or its latest turn is `completed`, `error`, or `interrupted`. A thread whose turn still runs is not idle.
+
+The group level adds the group id and status, the subtask that is running or reviewing, the stored `pr_url`, and the first checks state any thread reports.
+
+A refused T3 snapshot keeps the thread in the observation with an unknown session state, no excerpts, and no pending ids. A refused git read leaves `new_commits` empty. Observation reads facts only. It never dispatches to T3, notifies Coder, or changes a stored row.
+
 ## Pull request and settle metrics
 
 After the last reviewer sign-off the Gateway opens the GitHub pull request and stores `pr_url`.
