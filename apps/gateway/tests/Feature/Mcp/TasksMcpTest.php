@@ -175,3 +175,23 @@ it('returns a structured MCP error for canceling a settling group and still comp
     expect($completed['result']['isError'] ?? true)->toBeFalse()
         ->and($document['data']['status'])->toBe('completed');
 });
+
+it('returns a structured MCP error for canceling a completed group', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = TaskGroup::query()->create([
+        'app_id' => $this->appRecord->id,
+        'title' => 'MCP completed',
+        'brief' => 'Already complete.',
+        'status' => TaskGroupStatus::Completed,
+    ]);
+
+    $cancelled = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-cancel',
+        'arguments' => ['group' => $group->id],
+    ]));
+    $error = json_decode($cancelled['result']['content'][0]['text'], true);
+
+    expect($cancelled['result']['isError'])->toBeTrue()
+        ->and($error['status'])->toBe(409)
+        ->and($error['error']['code'])->toBe('tasks.not_cancellable');
+});
