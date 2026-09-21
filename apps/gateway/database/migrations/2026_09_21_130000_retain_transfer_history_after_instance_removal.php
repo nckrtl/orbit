@@ -13,7 +13,7 @@ return new class extends Migration
         Schema::table('app_instance_transfers', static function (Blueprint $table): void {
             $table->dropForeign(['app_instance_id']);
             $table->foreignId('app_instance_id')->nullable()->change();
-            $table->foreign('app_instance_id')->references('id')->on('app_instances')->nullOnDelete();
+            $table->foreign('app_instance_id')->references('id')->on('app_instances')->restrictOnDelete();
         });
     }
 
