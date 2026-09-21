@@ -68,6 +68,13 @@ export function LogPane({
                 <div ref={scroller} className="selectable min-h-0 flex-1 overflow-auto">
                     {count === 0 ? (
                         <Note>{loading ? "Loading…" : "No log lines yet."}</Note>
+                    ) : virtual.getVirtualItems().length === 0 ? (
+                        // Scrollport height 0 before layout — paint anyway so the body is not blank.
+                        lines!.map((line, index) => (
+                            <div key={index} className="whitespace-pre" style={{ height: ROW }}>
+                                {line}
+                            </div>
+                        ))
                     ) : (
                         <div className="relative" style={{ height: virtual.getTotalSize() }}>
                             {virtual.getVirtualItems().map((item) => (

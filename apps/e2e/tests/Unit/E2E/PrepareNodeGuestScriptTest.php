@@ -80,6 +80,7 @@ describe('prepare node guest script', function () {
                     FILE_IGNORE_NEW_LINES,
                 ))))
                 ->toBe([
+                    'systemctl is-active --quiet systemd-resolved',
                     'userdel --remove ubuntu',
                     'groupmod --gid 1000 orbit',
                     'usermod --uid 1000 --gid 1000 orbit',
@@ -104,7 +105,9 @@ describe('prepare node guest script', function () {
                     '/^(userdel|groupmod|usermod|systemctl) /',
                     file("{$root}/commands", FILE_IGNORE_NEW_LINES),
                 )))
-                ->toBe([])
+                ->toBe([
+                    'systemctl is-active --quiet systemd-resolved',
+                ])
                 ->and(file_get_contents("{$root}/commands"))
                 ->toContain('find /home/orbit ( -nouser -o -nogroup ) -exec python3 -c');
         } finally {
