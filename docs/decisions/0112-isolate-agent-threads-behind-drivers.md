@@ -10,7 +10,7 @@ Orbit represents a persistent agent conversation as an `AgentThread`. An `AgentD
 
 ## Status
 
-Proposed. Implemented on this feature branch; pending review.
+Proposed.
 
 This amends the T3 integration boundary in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) and the observation and execution boundary in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev). Task scheduling, review policy, and Jev classification remain Gateway responsibilities.
 
@@ -54,7 +54,7 @@ Pending input for the active turn takes precedence over working or idle signals.
 
 Thread state does not decide Task status. `Done` does not complete a Task or count as reviewer sign-off, and `Failed` does not by itself fail the TaskGroup. The scheduler applies the workflow policy to the observed outcome. Failure details accompany `Failed` so the scheduler and operator can understand the error.
 
-Observation freshness and connection health are separate from these five states. A failed read preserves the last known state and marks it stale or unavailable; it does not establish `Failed`. A thread with no successful observation has no known state. The scheduler must not infer idle, completion, or execution failure from a missing observation.
+Observation freshness and connection health are separate from these five states. A failed read preserves the last known state and marks it stale or unavailable; it does not establish `Failed`. A thread with no successful observation has no known state. The scheduler must not infer idle, completion, or execution failure from a missing observation. It waits through a configurable grace period, then sends one escalation per continuous outage. A successful observation of the complete current thread set resets that episode. Unknown activity from a successful read does not establish a transport error; routing waits until activity is known.
 
 ### Driver boundary
 
@@ -66,7 +66,7 @@ Drivers return normalized Orbit observations, input requests, conversation event
 
 Orbit chooses the next action and decides whether an input request may be answered. The driver translates and executes that action. Existing Gateway access checks, server-side credentials, bounded streaming, and reconnect behavior remain requirements across drivers.
 
-T3 streaming starts each connection with a complete snapshot, then projects ordered runtime events into normalized snapshots. The browser replaces its transcript from each snapshot. Cursors are opaque outside the driver; a T3 reconnect obtains a fresh baseline instead of replaying deltas without their original state.
+T3 streaming starts each connection with a complete snapshot, then sends normalized entry, state, and metric changes. Browser streams do not write persisted observations. Polling writes use an optimistic version check so a slower read cannot overwrite a newer completed read. The browser replaces its transcript only when it receives a snapshot. Cursors are opaque outside the driver; a T3 reconnect obtains a fresh baseline instead of replaying deltas without their original state.
 
 ### Laravel AI and additional drivers
 

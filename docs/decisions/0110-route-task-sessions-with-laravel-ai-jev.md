@@ -14,7 +14,7 @@ Proposed.
 
 This extends [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension). Persistence, ceilings, MCP create, shared Instance provisioning, T3 spawn, pull-request open, and complete stay. Commander is not the task runner.
 
-[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) proposes normalized agent observations and actions behind an `AgentDriver` boundary. Jev classification stays in Laravel AI. That boundary is implemented on the ADR 0112 feature branch.
+[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) proposes normalized agent observations and actions behind an `AgentDriver` boundary. Jev classification stays in Laravel AI. ADR 0112 defines the current driver boundary.
 
 ## Context
 

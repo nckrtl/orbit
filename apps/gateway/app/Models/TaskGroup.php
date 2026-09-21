@@ -15,6 +15,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property-read AgentThread|null $reviewerThread
+ * @property Carbon|null $agent_unavailable_since
+ * @property Carbon|null $agent_unavailable_notified_at
  * @property string $agent_driver
  * @property int $id
  * @property int $app_id
@@ -55,6 +57,8 @@ final class TaskGroup extends Model
     #[\Override]
     protected $fillable = [
         'agent_driver',
+        'agent_unavailable_since',
+        'agent_unavailable_notified_at',
         'app_id',
         'taskable_type',
         'taskable_id',
@@ -104,6 +108,8 @@ final class TaskGroup extends Model
     {
         return [
             'notify_coder' => 'boolean',
+            'agent_unavailable_since' => 'datetime',
+            'agent_unavailable_notified_at' => 'datetime',
             'status' => TaskGroupStatus::class,
             'tokens' => 'integer',
             'line_diff' => 'integer',

@@ -15,19 +15,17 @@ final readonly class AgentThreadObserver
         try {
             $observation = $this->drivers->get($thread->driver)->observe($thread);
         } catch (AgentDriverException) {
-            $thread->update(['observation_error' => 'Agent observation unavailable.']);
+            $this->persist($thread, ['observation_error' => 'Agent observation unavailable.']);
 
             return null;
         }
 
-        $this->record($thread, $observation);
-
-        return $observation;
+        return $this->record($thread, $observation) ? $observation : null;
     }
 
-    public function record(AgentThread $thread, AgentObservation $observation): void
+    public function record(AgentThread $thread, AgentObservation $observation): bool
     {
-        $values = ['observed_at' => now(), 'observation_error' => $observation->state === null ? 'Agent state unavailable.' : null];
+        $values = ['observed_at' => now(), 'observation_error' => null];
         if ($observation->state !== null) {
             $values['state'] = $observation->state;
             $values['error'] = $observation->error;
@@ -37,6 +35,19 @@ final readonly class AgentThreadObserver
                 $values[$key] = $value;
             }
         }
-        $thread->update($values);
+
+        return $this->persist($thread, $values);
+    }
+
+    /** @param array<string, mixed> $values */
+    private function persist(AgentThread $thread, array $values): bool
+    {
+        $version = $thread->observation_version ?? 0;
+        $updated = AgentThread::query()->whereKey($thread->id)->where('observation_version', $version)->update([
+            ...$values, 'observation_version' => $version + 1,
+        ]);
+        $thread->refresh();
+
+        return $updated === 1;
     }
 }

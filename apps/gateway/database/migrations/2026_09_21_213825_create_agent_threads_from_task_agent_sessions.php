@@ -11,6 +11,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        $this->validateOwnership();
         Schema::rename('task_agent_sessions', 'agent_threads');
         Schema::table('agent_threads', static function (Blueprint $table): void {
             $table->dropUnique('task_agent_sessions_thread_id_unique');
@@ -19,6 +20,7 @@ return new class extends Migration
             $table->string('runtime_key')->nullable();
             $table->string('state')->nullable();
             $table->timestamp('observed_at')->nullable();
+            $table->unsignedBigInteger('observation_version')->default(0);
             $table->text('observation_error')->nullable();
             $table->text('error')->nullable();
             $table->unsignedBigInteger('tokens')->nullable();
@@ -36,6 +38,8 @@ return new class extends Migration
         });
         Schema::table('task_groups', static function (Blueprint $table): void {
             $table->string('agent_driver')->default('t3');
+            $table->timestamp('agent_unavailable_since')->nullable();
+            $table->timestamp('agent_unavailable_notified_at')->nullable();
             $table->foreignId('reviewer_agent_thread_id')->nullable()->constrained('agent_threads')->nullOnDelete();
         });
         Schema::table('tasks', static function (Blueprint $table): void {
@@ -66,9 +70,34 @@ return new class extends Migration
             'task_group_id' => $groupId, 'task_id' => $taskId, 'node_id' => $nodeId,
             'driver' => 't3', 'runtime_key' => $nodeId === null ? 'legacy:'.$table.':'.$id : 'node:'.$nodeId,
             'external_id' => $externalId, 'role' => $role, 'model' => $model,
+            'effort' => $role === 'reviewer' ? 'high' : 'low',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table($table)->where('id', $id)->update([$role.'_agent_thread_id' => $threadId]);
+    }
+
+    private function validateOwnership(): void
+    {
+        $owners = [];
+        foreach (DB::table('task_agent_sessions')->orderBy('id')->cursor() as $thread) {
+            $owners[$thread->thread_id] = [$thread->task_group_id, $thread->task_id, $thread->role];
+        }
+        foreach (DB::table('task_groups')->orderBy('id')->cursor() as $group) {
+            $links = [[$group->reviewer_thread_id, null, 'reviewer']];
+            foreach (DB::table('tasks')->where('task_group_id', $group->id)->orderBy('id')->cursor() as $task) {
+                $links[] = [$task->implementer_thread_id, $task->id, 'implementer'];
+            }
+            foreach ($links as [$externalId, $taskId, $role]) {
+                if ($externalId === null || $externalId === '') {
+                    continue;
+                }
+                $owner = [$group->id, $taskId, $role];
+                if (isset($owners[$externalId]) && $owners[$externalId] !== $owner) {
+                    throw new RuntimeException('Agent conversation ownership is ambiguous.');
+                }
+                $owners[$externalId] = $owner;
+            }
+        }
     }
 
     public function down(): void

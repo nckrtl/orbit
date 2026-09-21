@@ -12,7 +12,7 @@ Commander feature work moves into Orbit as the enable-gated Gateway extension `t
 
 Proposed. Amended on 2026-09-21 for T3-capable placement and fail-closed spawns. The original record let a refused `project.create`, `thread.create`, or opening `thread.turn.start` leave the group `running` without thread ids. That is withdrawn below.
 
-[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) proposes an `AgentThread` and `AgentDriver` boundary to replace this record's direct T3 integration. That boundary is implemented on the ADR 0112 feature branch.
+[ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) proposes an `AgentThread` and `AgentDriver` boundary to replace this record's direct T3 integration. ADR 0112 defines the current driver boundary.
 
 ## Context
 

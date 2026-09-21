@@ -11,7 +11,7 @@ use App\Domain\Tasks\AgentThreadState;
 final readonly class T3Projection
 {
     /** @param array<string, mixed> $snapshot */
-    public function observe(array $snapshot, ?AgentThreadState $previous = null, ?string $previousError = null): AgentObservation
+    public function observe(array $snapshot, ?AgentThreadState $previous = null, ?string $previousError = null, bool $includeEntries = true): AgentObservation
     {
         $thread = $this->map($snapshot['thread'] ?? $snapshot);
         $session = $this->map($thread['session'] ?? $thread['sess'] ?? []);
@@ -29,7 +29,7 @@ final readonly class T3Projection
             $state = AgentThreadState::AskingForInput;
         }
         $entries = [];
-        foreach (['messages' => 'message', 'activities' => 'activity'] as $key => $kind) {
+        foreach ($includeEntries ? ['messages' => 'message', 'activities' => 'activity'] : [] as $key => $kind) {
             foreach ($this->rows($thread[$key] ?? []) as $row) {
                 $payload = $this->map($row['payload'] ?? []);
                 $id = $this->text($row['id'] ?? $row['messageId'] ?? '');

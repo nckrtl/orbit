@@ -53,8 +53,8 @@ final readonly class TaskScheduler
             try {
                 $unavailable = ! $observation->available || array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available);
                 $decision = $unavailable
-                    ? TaskSessionDecision::escalate('Agent observation unavailable.')
-                    : $this->classifier->classify($observation);
+                    ? $this->unavailableDecision($group)
+                    : $this->classifyAvailable($group, $observation);
             } catch (TaskSessionClassificationException $exception) {
                 $decision = TaskSessionDecision::escalate($exception->getMessage());
             }
@@ -71,6 +71,33 @@ final readonly class TaskScheduler
         }
 
         return $decisions;
+    }
+
+    private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
+    {
+        TaskGroup::query()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
+            'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
+        ]);
+
+        return $this->classifier->classify($observation);
+    }
+
+    private function unavailableDecision(TaskGroup $group): TaskSessionDecision
+    {
+        TaskGroup::query()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
+        $group->refresh();
+        $grace = max(0, (int) config('orbit.tasks.observation_grace_seconds', 120));
+        if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
+            $claimed = TaskGroup::query()->whereKey($group->id)
+                ->where('agent_unavailable_since', $group->agent_unavailable_since)
+                ->whereNull('agent_unavailable_notified_at')
+                ->update(['agent_unavailable_notified_at' => now()]);
+            if ($claimed === 1) {
+                return TaskSessionDecision::escalate('Agent observation unavailable beyond the grace period.');
+            }
+        }
+
+        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
     }
 
     private function advance(TaskGroup $group, TaskSessionDecision $decision): void

@@ -41,6 +41,7 @@ return [
     ],
     'tasks' => [
         'agent_driver' => env('ORBIT_TASKS_AGENT_DRIVER', 't3'),
+        'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
         'github_token' => env('ORBIT_TASKS_GITHUB_TOKEN'),

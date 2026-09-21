@@ -11,6 +11,7 @@ use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
+use App\Domain\Tasks\TaskAgentDefaults;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AgentThread;
 use App\Models\Node;
@@ -44,7 +45,7 @@ final readonly class T3Driver implements AgentDriver
 
     public function send(AgentThread $thread, string $message): void
     {
-        $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? 'low'));
+        $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)));
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void
@@ -89,10 +90,12 @@ final readonly class T3Driver implements AgentDriver
         }
         $node = $this->node($thread);
         $raw = [];
+        $messages = [];
+        $metadata = [];
         $sequence = -1;
         $previous = $thread->state;
         $previousError = $thread->error;
-        // Each subscription supplies a complete baseline so resumed deltas can be normalized.
+        // Each connection starts with a baseline; cursors never imply a delta-only subscription.
         foreach ($this->stream->events($node, $thread->external_id, null) as $item) {
             $kind = $item['kind'] ?? null;
             if ($kind === 'heartbeat') {
@@ -107,22 +110,84 @@ final readonly class T3Driver implements AgentDriver
                 }
                 $raw = $snapshot['thread'];
                 $sequence = is_int($snapshot['snapshotSequence'] ?? null) ? $snapshot['snapshotSequence'] : -1;
-            } elseif ($kind === 'event') {
-                $event = $item['event'] ?? null;
-                if (! is_array($event) || ($event['aggregateId'] ?? null) !== $thread->external_id || ! is_int($event['sequence'] ?? null) || $event['sequence'] <= $sequence || $raw === []) {
-                    continue;
+                $observed = $this->projection->observe($this->redact($snapshot, $node), $previous, $previousError);
+                $previous = $observed->state;
+                $previousError = $observed->error;
+                $metadata = $observed->toArray();
+                unset($metadata['entries']);
+                $messages = [];
+                foreach ($raw['messages'] ?? [] as $message) {
+                    if (is_array($message) && is_string($message['id'] ?? $message['messageId'] ?? null)) {
+                        $messages[$message['id'] ?? $message['messageId']] = $message;
+                    }
                 }
-                $raw = $this->projection->apply($raw, $event);
-                $sequence = $event['sequence'];
-            } else {
+                $raw = $this->streamMetadata($raw, $observed);
+                yield new AgentThreadEvent($thread->id, 'snapshot', $observed->toArray(), $sequence >= 0 ? (string) $sequence : null);
+
                 continue;
             }
-            $observation = $this->projection->observe($this->redact(['thread' => $raw, 'snapshotSequence' => $sequence], $node), $previous, $previousError);
-            $previous = $observation->state;
-            $previousError = $observation->error;
-            $data = $observation->toArray();
-            yield new AgentThreadEvent($thread->id, 'snapshot', $data, $sequence >= 0 ? (string) $sequence : null);
+            $event = $item['event'] ?? null;
+            if ($kind !== 'event' || ! is_array($event) || ($event['aggregateId'] ?? null) !== $thread->external_id || ! is_int($event['sequence'] ?? null) || $event['sequence'] <= $sequence || $raw === []) {
+                continue;
+            }
+            $sequence = $event['sequence'];
+            $type = $event['type'] ?? null;
+            if ($type === 'thread.message-sent') {
+                $id = data_get($event, 'payload.messageId') ?? data_get($event, 'payload.id');
+                if (! is_string($id) || $id === '') {
+                    continue;
+                }
+                $single = $this->projection->apply(['messages' => isset($messages[$id]) ? [$messages[$id]] : []], $event);
+                $messages[$id] = $single['messages'][0];
+                $entry = $this->projection->observe($this->redact($single, $node))->entries[0] ?? null;
+                if ($entry !== null) {
+                    yield new AgentThreadEvent($thread->id, 'entry', ['entry' => $entry], (string) $sequence);
+                }
+
+                continue;
+            }
+            if (! in_array($type, ['thread.activity-appended', 'thread.session-set', 'thread.turn-start-requested', 'thread.turn-diff-completed'], true)) {
+                continue;
+            }
+            $raw = $this->projection->apply($raw, $event);
+            $observed = $this->projection->observe($this->redact(['thread' => $raw], $node), $previous, $previousError, includeEntries: false);
+            $raw = $this->streamMetadata($raw, $observed);
+            $previous = $observed->state;
+            $previousError = $observed->error;
+            $next = $observed->toArray();
+            unset($next['entries']);
+            if ($type === 'thread.activity-appended') {
+                $single = $this->projection->apply([], $event);
+                $entry = $this->projection->observe($this->redact($single, $node))->entries[0] ?? null;
+                if ($entry !== null) {
+                    yield new AgentThreadEvent($thread->id, 'entry', [...$next, 'entry' => $entry], (string) $sequence);
+                }
+            } elseif ($next !== $metadata) {
+                yield new AgentThreadEvent($thread->id, 'state', $next, (string) $sequence);
+            }
+            $metadata = $next;
         }
+    }
+
+    /**
+     * Keep only state, checkpoints, unresolved requests, and cumulative usage between events.
+     * Transcript entries are emitted once and message fragments are indexed separately.
+     *
+     * @param  array<string, mixed>  $raw
+     * @return array<string, mixed>
+     */
+    private function streamMetadata(array $raw, AgentObservation $observed): array
+    {
+        $pending = ['approval' => [], 'question' => []];
+        foreach ($observed->inputRequests as $request) {
+            $pending[$request->kind][] = [...$request->details, 'requestId' => $request->id];
+        }
+
+        return [
+            ...array_intersect_key($raw, array_flip(['id', 'session', 'sess', 'latestTurn', 'latest_turn', 'error', 'checkpoints'])),
+            'pendingApprovals' => $pending['approval'], 'pendingUserInputs' => $pending['question'],
+            'usage' => ['totalProcessedTokens' => $observed->tokens, 'usedTokens' => $observed->tokens],
+        ];
     }
 
     /** @param array<string, mixed> $data

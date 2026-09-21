@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionActor;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
+use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
@@ -27,12 +28,13 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 use Tests\Support\FakeAgentDriver;
 
 /** @return array{TaskGroup, Task, FakeAgentDriver, AgentDriverRegistry} */
 function driver_group(): array
 {
-    $app = OrbitApp::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'default_branch' => 'main']);
+    $app = OrbitApp::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'agent-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.5', 'public_ssh_host' => '10.44.0.5']);
     $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
     $group = TaskGroup::query()->create(['app_id' => $app->id, 'agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
@@ -82,7 +84,7 @@ it('persists each generic state and failure details without completing the Task'
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 })->with(AgentThreadState::cases());
 
-it('retains state and metrics on an unavailable observation and escalates without classification', function (): void {
+it('retains state and metrics on an unavailable observation and waits without classification', function (): void {
     [$group, $task, $driver, $registry] = driver_group();
     $thread = $task->implementerThread;
     $thread->update(['state' => AgentThreadState::Done, 'tokens' => 900, 'observed_at' => now()->subMinute()]);
@@ -98,7 +100,7 @@ it('retains state and metrics on an unavailable observation and escalates withou
         ->and($thread->fresh()->tokens)->toBe(900)
         ->and($thread->fresh()->observed_at->equalTo($observedAt))->toBeTrue()
         ->and($thread->fresh()->observation_error)->toBe('Agent observation unavailable.')
-        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::Noop)
         ->and($driver->calls)->toHaveCount(2);
     Classification::assertNothingClassified();
 });
@@ -149,7 +151,7 @@ it('scopes external identifiers to the driver and runtime', function (): void {
     expect(fn () => $duplicate->save())->toThrow(QueryException::class);
 });
 
-it('escalates an incomplete current conversation set without classification', function (): void {
+it('waits for an incomplete current conversation set without classification', function (): void {
     [$group, $task, $driver] = driver_group();
     $task->update(['implementer_agent_thread_id' => null]);
     $driver->observation = new AgentObservation(AgentThreadState::Done);
@@ -159,7 +161,7 @@ it('escalates an incomplete current conversation set without classification', fu
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::Noop)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
     Classification::assertNothingClassified();
 });
@@ -172,4 +174,67 @@ it('rejects a drain when the requested input is no longer available', function (
     expect(fn () => new TaskSessionActor($registry, new NullCoderSettleNotifier)->execute($group, $observation, new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 1.0, 'Approve.')))
         ->toThrow(AgentDriverException::class, 'No matching agent input request');
     expect($driver->calls)->toHaveCount(2);
+});
+
+it('alerts once after a continuous observation outage and rearms after recovery', function (): void {
+    $this->freezeTime();
+    [$group, , $driver] = driver_group();
+    config()->set('orbit.tasks.observation_grace_seconds', 120);
+    app(TaskExtensionState::class)->enable();
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public int $alerts = 0;
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        {
+            $this->alerts++;
+        }
+    };
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    Classification::fake([['next_action' => new ChoiceAnswer('noop', [], 1.0)]]);
+    $scheduler = app(TaskScheduler::class);
+
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
+    $this->travel(119)->seconds();
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
+    Classification::assertNothingClassified();
+    $this->travel(1)->seconds();
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::EscalateCoder);
+    $this->travel(10)->minutes();
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop)
+        ->and($notifier->alerts)->toBe(1);
+
+    $driver->observation = new AgentObservation(AgentThreadState::Working);
+    $scheduler->tick();
+    expect($group->fresh()->agent_unavailable_since)->toBeNull()
+        ->and($group->fresh()->agent_unavailable_notified_at)->toBeNull();
+    $driver->observation = null;
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
+    $this->travel(120)->seconds();
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+        ->and($notifier->alerts)->toBe(2);
+});
+
+it('keeps unknown activity separate from failed transport', function (): void {
+    [, $task, $driver, $registry] = driver_group();
+    $driver->observation = new AgentObservation(null);
+    $observed = new AgentThreadObserver($registry)->observe($task->implementerThread);
+
+    expect($observed)->not->toBeNull()
+        ->and($task->implementerThread->fresh()->state)->toBeNull()
+        ->and($task->implementerThread->fresh()->observation_error)->toBeNull()
+        ->and($task->implementerThread->fresh()->observed_at)->not->toBeNull();
+});
+
+it('rejects an older in-flight read after another reader records a new outcome', function (): void {
+    [, $task, , $registry] = driver_group();
+    $older = $task->implementerThread;
+    $newer = $older->fresh();
+    $observer = new AgentThreadObserver($registry);
+    expect($observer->record($newer, new AgentObservation(AgentThreadState::Done, tokens: 500)))->toBeTrue();
+    expect($observer->record($older, new AgentObservation(AgentThreadState::Working, tokens: 10)))->toBeFalse();
+    expect($older->fresh()->state)->toBe(AgentThreadState::Done)
+        ->and($older->fresh()->tokens)->toBe(500);
 });

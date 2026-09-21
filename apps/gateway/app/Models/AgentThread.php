@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $model
  * @property string|null $effort
  * @property AgentThreadState|null $state
+ * @property int $observation_version
  * @property Carbon|null $observed_at
  * @property string|null $observation_error
  * @property string|null $error
@@ -33,7 +34,7 @@ final class AgentThread extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observed_at', 'observation_error', 'error', 'tokens', 'lines_added', 'lines_deleted'];
+    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'state', 'observation_version', 'observed_at', 'observation_error', 'error', 'tokens', 'lines_added', 'lines_deleted'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -44,6 +45,6 @@ final class AgentThread extends Model
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['state' => AgentThreadState::class, 'observed_at' => 'datetime', 'tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer'];
+        return ['state' => AgentThreadState::class, 'observation_version' => 'integer', 'observed_at' => 'datetime', 'tokens' => 'integer', 'lines_added' => 'integer', 'lines_deleted' => 'integer'];
     }
 }

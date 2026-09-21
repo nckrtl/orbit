@@ -401,7 +401,7 @@ it('fails the group when a later implementer spawn returns no thread id', functi
 
         public function spawnImplementer(Task $task): ?int
         {
-            return $task->position === 1 ? 'implementer-1' : null;
+            return $task->position === 1 ? test_agent_thread($task->taskGroup, 'implementer-1', $task)->id : null;
         }
 
         public function requestReview(Task $task): void {}

@@ -53,6 +53,7 @@ describe('task agent viewer', function (): void {
 
     it('relays scoped snapshots and events with resume IDs and redacts secrets', function (): void {
         [$group, $session] = agent_viewer_fixture();
+        $session->update(['state' => 'done', 'tokens' => 500, 'observation_version' => 7]);
         config()->set('orbit.t3.token', 'private-t3-bearer');
         $fake = new class implements TaskAgentStream
         {
@@ -64,6 +65,11 @@ describe('task agent viewer', function (): void {
                 yield ['kind' => 'snapshot', 'snapshot' => ['snapshotSequence' => 8, 'thread' => ['id' => $threadId, 'session' => ['status' => 'failed', 'lastError' => 'Turn failed.'], 'messages' => [['text' => 'TOKEN=hidden private-t3-bearer']]]]];
                 yield ['kind' => 'event', 'event' => ['sequence' => 9, 'aggregateId' => 'unrelated', 'payload' => ['text' => 'must-not-leak']]];
                 yield ['kind' => 'event', 'event' => ['sequence' => 10, 'aggregateId' => $threadId, 'type' => 'thread.message-sent', 'payload' => ['id' => 'm2', 'role' => 'assistant', 'text' => 'Visible progress']]];
+                yield ['kind' => 'event', 'event' => ['sequence' => 11, 'aggregateId' => $threadId, 'type' => 'thread.message-sent', 'payload' => ['messageId' => 'm2', 'role' => 'assistant', 'text' => ' appended', 'streaming' => true]]];
+                yield ['kind' => 'event', 'event' => ['sequence' => 12, 'aggregateId' => $threadId, 'type' => 'thread.turn-start-requested', 'payload' => []]];
+                yield ['kind' => 'event', 'event' => ['sequence' => 13, 'aggregateId' => $threadId, 'type' => 'thread.activity-appended', 'payload' => ['activity' => ['id' => 'a1', 'kind' => 'approval', 'payload' => ['requestId' => 'request-1']]]]];
+                yield ['kind' => 'event', 'event' => ['sequence' => 14, 'aggregateId' => $threadId, 'type' => 'thread.activity-appended', 'payload' => ['activity' => ['id' => 'a2', 'kind' => 'approval.resolved', 'payload' => ['requestId' => 'request-1']]]]];
+                yield ['kind' => 'event', 'event' => ['sequence' => 15, 'aggregateId' => $threadId, 'type' => 'thread.session-set', 'payload' => ['session' => ['status' => 'ready']]]];
                 throw new RuntimeException('private-t3-bearer secret error');
             }
         };
@@ -74,8 +80,24 @@ describe('task agent viewer', function (): void {
         expect($output)->toContain('id: 8', 'id: 10', 'Visible progress', '[REDACTED]', 'event: unavailable')
             ->not->toContain('hidden', 'private-t3-bearer', 'must-not-leak', 'secret error');
         expect($fake->cursor)->toBeNull();
-        expect($session->fresh()->state->value)->toBe('failed')
-            ->and($session->fresh()->error)->toBe('Turn failed.')
-            ->and($session->fresh()->observation_error)->toBe('Agent stream unavailable.');
+        $events = [];
+        foreach (explode("\n", $output) as $line) {
+            if (str_starts_with($line, 'data: ')) {
+                $events[] = json_decode(substr($line, 6), true, 512, JSON_THROW_ON_ERROR);
+            }
+        }
+        expect(array_column($events, 'kind'))->toBe(['snapshot', 'entry', 'entry', 'state', 'entry', 'entry', 'state'])
+            ->and($events[2]['entry']['text'])->toBe('Visible progress appended')
+            ->and($events[1])->not->toHaveKey('entries')
+            ->and($events[3]['state'])->toBe('working')
+            ->and($events[4]['state'])->toBe('asking_for_input')
+            ->and($events[5]['state'])->toBe('working')
+            ->and($events[5]['input_requests'])->toBe([])
+            ->and($events[6]['state'])->toBe('done');
+        expect($session->fresh()->state->value)->toBe('done')
+            ->and($session->fresh()->tokens)->toBe(500)
+            ->and($session->fresh()->observation_version)->toBe(7)
+            ->and($session->fresh()->error)->toBeNull()
+            ->and($session->fresh()->observation_error)->toBeNull();
     });
 });
