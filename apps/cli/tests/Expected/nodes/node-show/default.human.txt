@@ -33,7 +33,7 @@ Loading Node...
 │
 ├  Platform                      linux (x86_64)
 │
-├  Projects path                     —
+├  Projects path                 —
 │
 ├  Access to                     —
 │

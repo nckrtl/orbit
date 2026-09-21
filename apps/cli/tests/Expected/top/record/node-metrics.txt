@@ -2,7 +2,7 @@
 ╭──────────────────╮  ‹ back  Node: beast                                                                               
 │  Dashboard       │╭ Properties ──────────────────────────╮╭ beast · active · metrics ────────────────────────────────╮
 │› Nodes         1 ││ Name               beast             ││ 0  [||               ]  10%  1  [|||              ]  20% │
-│  Apps          1 ││ Status             active            ││ Mem[||            ] 1.0G/8G  /  [||            ] 10G/80G │
+│  Projects      1 ││ Status             active            ││ Mem[||            ] 1.0G/8G  /  [||            ] 10G/80G │
 │  Instances     1 ││ Roles              app-dev           ││ Swp[              ] 0.0G/2G  Up 1d 2h 3m                 │
 │  Processes     1 ││ Platform           —                 ││                                                          │
 │  Schedules     1 ││ Architecture       —                 ││                                                          │
@@ -11,7 +11,7 @@
 │                  ││ SSH                root@10.0.0.1:22  ││                                                          │
 │                  │╰──────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
 │                  │╭ Instances on this node ──────────────────────────────────────────────────────────────────────────╮
-│                  ││  App                   Name             Environment     Domain                            Status │
+│                  ││  Project               Name             Environment     Domain                            Status │
 │                  ││› charlie-shop          dev              production      charlie-shop.test                 active │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Node processes ────────────────────────────────╮╭ Firewall ──────────────────────────────────────╮

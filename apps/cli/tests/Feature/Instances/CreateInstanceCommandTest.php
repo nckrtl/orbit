@@ -61,7 +61,7 @@ describe('instance:create production refusal', function (): void {
             CreateAppInstanceRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'instance.candidate_required',
-                    'message' => 'New production AppInstances require a candidate. Use instance:clone.',
+                    'message' => 'New production Instances require a candidate. Use instance:clone.',
                 ],
             ], 409, ['X-Orbit-Request-Id' => instance_request_id()]),
         ]);
@@ -81,7 +81,7 @@ describe('instance:create production refusal', function (): void {
             ->toBe(json_encode([
                 'error' => [
                     'code' => 'instance.candidate_required',
-                    'message' => 'New production AppInstances require a candidate. Use instance:clone.',
+                    'message' => 'New production Instances require a candidate. Use instance:clone.',
                     'request_id' => instance_request_id(),
                 ],
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
@@ -94,7 +94,7 @@ describe('instance:create production refusal', function (): void {
                 'node' => '4',
                 'name' => 'production',
             ])
-            ->expectsOutputToContain('New production AppInstances require a candidate. Use instance:clone.')
+            ->expectsOutputToContain('New production Instances require a candidate. Use instance:clone.')
             ->assertExitCode(1);
     });
 
@@ -104,8 +104,8 @@ describe('instance:create production refusal', function (): void {
         expect($commands['instance:create'])
             ->toBeInstanceOf(CreateInstanceCommand::class)
             ->and($commands['instance:create']->getDescription())
-            ->toBe('Create a development AppInstance on an app-dev Node.')
+            ->toBe('Create a development Instance on an app-dev Node.')
             ->and($commands['instance:create']->getHelp())
-            ->toContain('New production AppInstances require a candidate. Use instance:clone.');
+            ->toContain('New production Instances require a candidate. Use instance:clone.');
     });
 });

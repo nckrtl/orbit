@@ -110,7 +110,7 @@ final class Screen
         $rows = [];
 
         foreach (UiState::SECTIONS as $key => $title) {
-            $countCell = $key === 'dashboard' ? TableCell::fromString('') : $this->cell((string) $counts[ucfirst($key)][0], $counts[ucfirst($key)][1] > 0);
+            $countCell = $key === 'dashboard' ? TableCell::fromString('') : $this->cell((string) $counts[$title][0], $counts[$title][1] > 0);
             $rows[] = $this->alignLast(TableRow::fromCells(TableCell::fromString($title), $countCell), $lastWidth);
         }
 

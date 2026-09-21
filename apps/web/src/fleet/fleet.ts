@@ -46,7 +46,9 @@ export const nodeName = (fleet: Fleet, id: number): string =>
 export function instanceName(fleet: Fleet, id: number): string {
     const instance = fleet.instances.find((candidate) => candidate.id === id);
 
-    return instance === undefined ? "—" : `${(instance.project ?? instance.app).slug}/${instance.name}`;
+    return instance === undefined
+        ? "—"
+        : `${(instance.project ?? instance.app).slug}/${instance.name}`;
 }
 
 export const instanceNodeName = (fleet: Fleet, id: number): string =>

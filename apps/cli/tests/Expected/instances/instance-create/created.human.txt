@@ -11,7 +11,7 @@ Creating Instance...
 │
 ├  ID                   1
 │
-├  App                  acme
+├  Project              acme
 │
 ├  Node                 app-dev
 │

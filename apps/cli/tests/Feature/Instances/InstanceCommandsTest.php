@@ -319,9 +319,9 @@ describe('instance:create', function (): void {
     it('documents the development contract and directs production to instance:clone', function (): void {
         $this
             ->artisan('help', ['command_name' => 'instance:create'])
-            ->expectsOutputToContain('Create a development AppInstance on an app-dev Node.')
+            ->expectsOutputToContain('Create a development Instance on an app-dev Node.')
             ->expectsOutputToContain('default is reserved for the default development source')
-            ->expectsOutputToContain('New production AppInstances require a candidate. Use instance:clone.')
+            ->expectsOutputToContain('New production Instances require a candidate. Use instance:clone.')
             ->assertExitCode(0);
     });
 
@@ -538,7 +538,7 @@ describe('instance:list', function (): void {
 
         expect(Artisan::call('instance:list'))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'ID APP NODE VITE PORT NAME ENVIRONMENT SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE MIGRATION REQUIRED ROUTE DOMAIN URL STATUS REMOVAL',
+            'ID PROJECT NODE VITE PORT NAME ENVIRONMENT SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE MIGRATION REQUIRED ROUTE DOMAIN URL STATUS REMOVAL',
             '5 3 2 — dev development checkout public dev — no dev.orbit.test https://dev.orbit.test active —',
             'Request ID: '.instance_request_id(),
         );
@@ -615,8 +615,8 @@ describe('instance:show', function (): void {
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'Instance: dev ID 5 App orbit-docs Node beast Status active',
-            'App orbit-docs',
+            'Instance: dev ID 5 Project orbit-docs Node beast Status active',
+            'Project orbit-docs',
             'Node beast',
             'Source layout checkout',
             'Checkout /home/orbit/apps/orbit-docs/dev',
@@ -657,7 +657,7 @@ describe('instance:show', function (): void {
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'Instance: dev ID 5 App orbit-docs Node beast Status removing',
+            'Instance: dev ID 5 Project orbit-docs Node beast Status removing',
             'Removal mode forced',
             'Removal progress 0/1 completed; 1 remaining',
             'Removal step runtime_cleanup',

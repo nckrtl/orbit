@@ -305,7 +305,7 @@
             ]
           },
           {
-            "group": "Projects",
+            "group": "Apps",
             "openapi": "/openapi.json",
             "pages": [
               "GET /api/v1/apps",

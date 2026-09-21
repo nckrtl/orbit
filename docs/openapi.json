@@ -59,11 +59,11 @@
     },
     {
       "name": "Environment",
-      "description": "Stored App instance environment configuration and its .env projection."
+      "description": "Stored Instance environment configuration and its .env projection."
     },
     {
       "name": "Routes",
-      "description": "Domains that reach an App instance."
+      "description": "Domains that reach an Instance."
     },
     {
       "name": "Database connections",
@@ -71,7 +71,7 @@
     },
     {
       "name": "Processes",
-      "description": "systemd services and Docker containers owned by an App instance, a Node, or an App definition."
+      "description": "systemd services and Docker containers owned by an Instance, a Node, or a Project definition."
     },
     {
       "name": "Schedules",
@@ -635,7 +635,7 @@
     "/api/v1/apps": {
       "get": {
         "operationId": "app-list",
-        "summary": "List Apps",
+        "summary": "List Apps (Projects)",
         "tags": [
           "Apps"
         ],
@@ -686,7 +686,7 @@
       },
       "post": {
         "operationId": "app-create",
-        "summary": "Create an App",
+        "summary": "Create an App (Project)",
         "tags": [
           "Apps"
         ],
@@ -832,7 +832,7 @@
     "/api/v1/apps/{app}": {
       "delete": {
         "operationId": "app-destroy",
-        "summary": "Remove an App",
+        "summary": "Remove an App (Project)",
         "tags": [
           "Apps"
         ],
@@ -845,7 +845,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
         "responses": {
@@ -912,7 +912,7 @@
       },
       "get": {
         "operationId": "app-show",
-        "summary": "Show an App",
+        "summary": "Show an App (Project)",
         "tags": [
           "Apps"
         ],
@@ -925,7 +925,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
         "responses": {
@@ -982,7 +982,7 @@
       },
       "patch": {
         "operationId": "app-update",
-        "summary": "Update an App",
+        "summary": "Update an App (Project)",
         "tags": [
           "Apps"
         ],
@@ -995,7 +995,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
         "requestBody": {
@@ -1132,10 +1132,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -1206,10 +1206,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1450,7 +1450,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "process_definition",
@@ -1459,10 +1459,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Process definition name, unique within the App."
+            "description": "Process definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -1540,7 +1540,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "process_definition",
@@ -1549,10 +1549,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Process definition name, unique within the App."
+            "description": "Process definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -1620,7 +1620,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "process_definition",
@@ -1629,10 +1629,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Process definition name, unique within the App."
+            "description": "Process definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1851,10 +1851,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -1925,10 +1925,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2100,7 +2100,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "schedule_definition",
@@ -2109,10 +2109,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Schedule definition name, unique within the App."
+            "description": "Schedule definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -2190,7 +2190,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "schedule_definition",
@@ -2199,10 +2199,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Schedule definition name, unique within the App."
+            "description": "Schedule definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -2270,7 +2270,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "schedule_definition",
@@ -2279,10 +2279,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Schedule definition name, unique within the App."
+            "description": "Schedule definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5822,7 +5822,7 @@
     "/api/v1/instances": {
       "get": {
         "operationId": "instance-list",
-        "summary": "List App instances",
+        "summary": "List Instances",
         "tags": [
           "Instances"
         ],
@@ -5879,11 +5879,11 @@
       },
       "post": {
         "operationId": "instance-create",
-        "summary": "Create an App instance",
+        "summary": "Create an Instance",
         "tags": [
           "Instances"
         ],
-        "description": "Create a development App instance on an app-dev Node.\n\nCreates a development App instance. New production App instances require a candidate. Use instance:clone.",
+        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5904,7 +5904,7 @@
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
                     "maxLength": 63,
-                    "description": "AppInstance name; default is reserved for the default development source"
+                    "description": "Instance name; default is reserved for the default development source"
                   },
                   "root": {
                     "type": "string",
@@ -6015,12 +6015,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"example\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"default\"}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(appId: 4, nodeId: 7, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(appId: 4, nodeId: 7, name: 'default'))->dto();\n"
           }
         ]
       }
@@ -6028,11 +6028,11 @@
     "/api/v1/instances/register": {
       "post": {
         "operationId": "instance-register",
-        "summary": "Register an App instance",
+        "summary": "Register an Instance",
         "tags": [
           "Instances"
         ],
-        "description": "Adopt the current Git source as a managed App instance.",
+        "description": "Adopt the current Git source as a managed Instance.",
         "requestBody": {
           "required": true,
           "content": {
@@ -6058,18 +6058,18 @@
                   "app_name": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Confirmed App display name"
+                    "description": "Confirmed Project display name"
                   },
                   "app_slug": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]+$",
                     "maxLength": 63,
-                    "description": "Confirmed App slug"
+                    "description": "Confirmed Project slug"
                   },
                   "default_branch": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Confirmed App default branch"
+                    "description": "Confirmed Project default branch"
                   },
                   "instance_name": {
                     "type": "string",
@@ -6078,7 +6078,7 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Confirmed App root or existing-App root override"
+                    "description": "Confirmed Project root or existing-Project root override"
                   },
                   "domain": {
                     "type": "string",
@@ -6319,7 +6319,7 @@
     "/api/v1/instances/{candidate}/clone": {
       "post": {
         "operationId": "instance-clone",
-        "summary": "Clone an App instance",
+        "summary": "Clone an Instance",
         "tags": [
           "Instances"
         ],
@@ -6332,10 +6332,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric ID of the candidate App instance."
+            "description": "Numeric ID of the candidate Instance."
           }
         ],
-        "description": "Clone a candidate into a prepared production App instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
+        "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
         "requestBody": {
           "required": true,
           "content": {
@@ -6351,7 +6351,7 @@
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
                     "maxLength": 63,
-                    "description": "Target production AppInstance name"
+                    "description": "Target production Instance name"
                   },
                   "preview_name": {
                     "type": "string",
@@ -6470,12 +6470,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/clone\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"example\", \"preview_name\": \"shop.com\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/clone\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"default\", \"preview_name\": \"shop.com\"}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CloneAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CloneAppInstanceRequest(\n    candidateId: 12,\n    nodeId: 7,\n    name: 'example',\n    previewName: 'shop.com',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CloneAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CloneAppInstanceRequest(\n    candidateId: 12,\n    nodeId: 7,\n    name: 'default',\n    previewName: 'shop.com',\n))->dto();\n"
           }
         ]
       }
@@ -6483,7 +6483,7 @@
     "/api/v1/instances/{instance}": {
       "delete": {
         "operationId": "instance-destroy",
-        "summary": "Remove an App instance",
+        "summary": "Remove an Instance",
         "tags": [
           "Instances"
         ],
@@ -6496,10 +6496,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Destroy an App instance.",
+        "description": "Destroy an Instance.",
         "requestBody": {
           "required": false,
           "content": {
@@ -6596,7 +6596,7 @@
       },
       "get": {
         "operationId": "instance-show",
-        "summary": "Show an App instance",
+        "summary": "Show an Instance",
         "tags": [
           "Instances"
         ],
@@ -6609,7 +6609,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
         "description": "Show an instance.",
@@ -6685,10 +6685,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Update a production App instance deployment branch.",
+        "description": "Update a production Instance deployment branch.",
         "requestBody": {
           "required": false,
           "content": {
@@ -6781,7 +6781,7 @@
     "/api/v1/instances/{instance}/analytics": {
       "delete": {
         "operationId": "instance-analytics-disable",
-        "summary": "Remove App instance tracking hosts",
+        "summary": "Remove Instance tracking hosts",
         "tags": [
           "Instances"
         ],
@@ -6794,10 +6794,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Remove the analytics tracking hosts of an App instance.",
+        "description": "Remove the analytics tracking hosts of an Instance.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -6814,7 +6814,7 @@
                         },
                         "enabled": {
                           "type": "boolean",
-                          "description": "True while the App instance publishes at least one tracking host."
+                          "description": "True while the Instance publishes at least one tracking host."
                         },
                         "domain": {
                           "type": [
@@ -6849,7 +6849,7 @@
                                   "private",
                                   "public"
                                 ],
-                                "description": "Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
+                                "description": "Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
                               },
                               "failed_step": {
                                 "type": [
@@ -6874,7 +6874,7 @@
                                   "object",
                                   "null"
                                 ],
-                                "description": "The record to create, or null while the App instance has no domain.",
+                                "description": "The record to create, or null while the Instance has no domain.",
                                 "properties": {
                                   "type": {
                                     "type": "string"
@@ -6895,7 +6895,7 @@
                             "string",
                             "null"
                           ],
-                          "description": "The script tag for the App, using the first host."
+                          "description": "The script tag for the Project, using the first host."
                         }
                       }
                     },
@@ -6957,7 +6957,7 @@
       },
       "get": {
         "operationId": "instance-analytics-show",
-        "summary": "Show App instance analytics",
+        "summary": "Show Instance analytics",
         "tags": [
           "Instances"
         ],
@@ -6970,10 +6970,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Show the analytics tracking hosts of an App instance.",
+        "description": "Show the analytics tracking hosts of an Instance.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -6990,7 +6990,7 @@
                         },
                         "enabled": {
                           "type": "boolean",
-                          "description": "True while the App instance publishes at least one tracking host."
+                          "description": "True while the Instance publishes at least one tracking host."
                         },
                         "domain": {
                           "type": [
@@ -7025,7 +7025,7 @@
                                   "private",
                                   "public"
                                 ],
-                                "description": "Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
+                                "description": "Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
                               },
                               "failed_step": {
                                 "type": [
@@ -7050,7 +7050,7 @@
                                   "object",
                                   "null"
                                 ],
-                                "description": "The record to create, or null while the App instance has no domain.",
+                                "description": "The record to create, or null while the Instance has no domain.",
                                 "properties": {
                                   "type": {
                                     "type": "string"
@@ -7071,7 +7071,7 @@
                             "string",
                             "null"
                           ],
-                          "description": "The script tag for the App, using the first host."
+                          "description": "The script tag for the Project, using the first host."
                         }
                       }
                     },
@@ -7123,7 +7123,7 @@
       },
       "post": {
         "operationId": "instance-analytics-enable",
-        "summary": "Publish App instance tracking hosts",
+        "summary": "Publish Instance tracking hosts",
         "tags": [
           "Instances"
         ],
@@ -7136,10 +7136,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Publish the analytics tracking hosts of an App instance.",
+        "description": "Publish the analytics tracking hosts of an Instance.",
         "requestBody": {
           "required": false,
           "content": {
@@ -7176,7 +7176,7 @@
                         },
                         "enabled": {
                           "type": "boolean",
-                          "description": "True while the App instance publishes at least one tracking host."
+                          "description": "True while the Instance publishes at least one tracking host."
                         },
                         "domain": {
                           "type": [
@@ -7211,7 +7211,7 @@
                                   "private",
                                   "public"
                                 ],
-                                "description": "Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
+                                "description": "Mirrors the Instance Route publication. Public-edge readiness is status, failed_step, and Doctor."
                               },
                               "failed_step": {
                                 "type": [
@@ -7236,7 +7236,7 @@
                                   "object",
                                   "null"
                                 ],
-                                "description": "The record to create, or null while the App instance has no domain.",
+                                "description": "The record to create, or null while the Instance has no domain.",
                                 "properties": {
                                   "type": {
                                     "type": "string"
@@ -7257,7 +7257,7 @@
                             "string",
                             "null"
                           ],
-                          "description": "The script tag for the App, using the first host."
+                          "description": "The script tag for the Project, using the first host."
                         }
                       }
                     },
@@ -7331,7 +7331,7 @@
     "/api/v1/instances/{instance}/analytics/stats": {
       "get": {
         "operationId": "instance-analytics-stats",
-        "summary": "Read App instance analytics stats",
+        "summary": "Read Instance analytics stats",
         "tags": [
           "Instances"
         ],
@@ -7344,10 +7344,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the App instance's tracked site. `available` is false when the analytics role is not active or the App instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.",
+        "description": "Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the Instance's tracked site. `available` is false when the analytics role is not active or the Instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -7364,7 +7364,7 @@
                       "properties": {
                         "available": {
                           "type": "boolean",
-                          "description": "False when the analytics role is not active or the App instance publishes no tracking host. Every other field is then absent."
+                          "description": "False when the analytics role is not active or the Instance publishes no tracking host. Every other field is then absent."
                         },
                         "readable": {
                           "type": "boolean",
@@ -7381,7 +7381,7 @@
                             "string",
                             "null"
                           ],
-                          "description": "The App instance's authoritative public domain, which is the Plausible site."
+                          "description": "The Instance's authoritative public domain, which is the Plausible site."
                         },
                         "live_visitors": {
                           "type": "integer"
@@ -7487,7 +7487,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive App instance ID or the exact Route domain of the App instance."
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
           },
           {
             "name": "database_connection",
@@ -7500,7 +7500,7 @@
             "description": "Database connection slug."
           }
         ],
-        "description": "Remove a Database connection from an App instance and clear stored environment keys.",
+        "description": "Remove a Database connection from an Instance and clear stored environment keys.",
         "requestBody": {
           "required": false,
           "content": {
@@ -7610,7 +7610,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive App instance ID or the exact Route domain of the App instance."
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
           },
           {
             "name": "database_connection",
@@ -7623,7 +7623,7 @@
             "description": "Database connection slug."
           }
         ],
-        "description": "Add a Database connection on an App instance and write stored environment keys.",
+        "description": "Add a Database connection on an Instance and write stored environment keys.",
         "requestBody": {
           "required": false,
           "content": {
@@ -7736,7 +7736,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
         "responses": {
@@ -7813,7 +7813,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
         "description": "Scan root dependency manifests and lockfiles for one instance or every authorized instance.",
@@ -7922,7 +7922,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
         "description": "Update development root packages within declared constraints and refresh inventory.",
@@ -8018,7 +8018,7 @@
     "/api/v1/instances/{instance}/deploy": {
       "post": {
         "operationId": "instance-deploy",
-        "summary": "Deploy an App instance",
+        "summary": "Deploy an Instance",
         "tags": [
           "Instances"
         ],
@@ -8031,10 +8031,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Deploy the configured branch of a production App instance.",
+        "description": "Deploy the configured branch of a production Instance.",
         "requestBody": {
           "required": false,
           "content": {
@@ -8249,10 +8249,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "List deploy steps on a production App instance.",
+        "description": "List deploy steps on a production Instance.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -8328,10 +8328,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Create a named deploy step on a production App instance.",
+        "description": "Create a named deploy step on a production Instance.",
         "requestBody": {
           "required": false,
           "content": {
@@ -8438,7 +8438,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\CreateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateInstanceDeployStepRequest(\n    appInstanceId: 12,\n    name: 'example',\n    command: 'php artisan report:send',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\CreateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateInstanceDeployStepRequest(\n    appInstanceId: 12,\n    name: 'default',\n    command: 'php artisan report:send',\n))->dto();\n"
           }
         ]
       }
@@ -8459,7 +8459,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           },
           {
             "name": "step",
@@ -8472,7 +8472,7 @@
             "description": "Deploy step name."
           }
         ],
-        "description": "Destroy a named deploy step on a production App instance.",
+        "description": "Destroy a named deploy step on a production Instance.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -8536,7 +8536,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DestroyInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyInstanceDeployStepRequest(appInstanceId: 12, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DestroyInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyInstanceDeployStepRequest(appInstanceId: 12, name: 'default'))->dto();\n"
           }
         ]
       },
@@ -8555,7 +8555,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           },
           {
             "name": "step",
@@ -8568,7 +8568,7 @@
             "description": "Deploy step name."
           }
         ],
-        "description": "Update a named deploy step on a production App instance.",
+        "description": "Update a named deploy step on a production Instance.",
         "requestBody": {
           "required": false,
           "content": {
@@ -8653,7 +8653,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\UpdateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceDeployStepRequest(appInstanceId: 12, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\UpdateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceDeployStepRequest(appInstanceId: 12, name: 'default'))->dto();\n"
           }
         ]
       }
@@ -8674,10 +8674,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "List recorded deployment history for a production App instance, newest first.",
+        "description": "List recorded deployment history for a production Instance, newest first.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -8754,10 +8754,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive App instance ID or the exact Route domain of the App instance."
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
           }
         ],
-        "description": "Import the workload environment file into stored App instance configuration.",
+        "description": "Import the workload environment file into stored Instance configuration.",
         "requestBody": {
           "required": false,
           "content": {
@@ -8882,10 +8882,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive App instance ID or the exact Route domain of the App instance."
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
           }
         ],
-        "description": "Synchronize stored App instance configuration to the workload environment file.",
+        "description": "Synchronize stored Instance configuration to the workload environment file.",
         "requestBody": {
           "required": false,
           "content": {
@@ -9004,7 +9004,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Positive App instance ID or the exact Route domain of the App instance."
+            "description": "Positive Instance ID or the exact Route domain of the Instance."
           },
           {
             "name": "key",
@@ -9017,7 +9017,7 @@
             "description": "Environment key."
           }
         ],
-        "description": "Update one stored App instance environment value without changing the workload file.",
+        "description": "Update one stored Instance environment value without changing the workload file.",
         "requestBody": {
           "required": false,
           "content": {
@@ -9130,7 +9130,7 @@
     "/api/v1/instances/{instance}/logs": {
       "get": {
         "operationId": "instance-logs",
-        "summary": "Read App instance logs",
+        "summary": "Read Instance logs",
         "tags": [
           "Instances"
         ],
@@ -9143,7 +9143,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           },
           {
             "name": "lines",
@@ -9187,7 +9187,7 @@
                         },
                         "logs": {
                           "type": "string",
-                          "description": "The last `lines` lines of `storage/logs/laravel.log`, or of the newest `laravel-*.log`, as one newline-separated string with environment values redacted. Empty when the App instance has no such file."
+                          "description": "The last `lines` lines of `storage/logs/laravel.log`, or of the newest `laravel-*.log`, as one newline-separated string with environment values redacted. Empty when the Instance has no such file."
                         }
                       }
                     },
@@ -9236,7 +9236,7 @@
     "/api/v1/instances/{instance}/queue": {
       "get": {
         "operationId": "instance-queue",
-        "summary": "Read the App instance queue",
+        "summary": "Read the Instance queue",
         "tags": [
           "Instances"
         ],
@@ -9249,7 +9249,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           },
           {
             "name": "state",
@@ -9292,7 +9292,7 @@
                       "properties": {
                         "available": {
                           "type": "boolean",
-                          "description": "False when the App instance has no systemd Process that runs `artisan horizon`, or the application has no Horizon; every other field but `state` is then absent."
+                          "description": "False when the Instance has no systemd Process that runs `artisan horizon`, or the application has no Horizon; every other field but `state` is then absent."
                         },
                         "process_id": {
                           "type": "integer",
@@ -9484,10 +9484,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "List retained production App instance releases.",
+        "description": "List retained production Instance releases.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -9552,7 +9552,7 @@
     "/api/v1/instances/{instance}/rollback": {
       "post": {
         "operationId": "instance-rollback",
-        "summary": "Roll back an App instance",
+        "summary": "Roll back an Instance",
         "tags": [
           "Instances"
         ],
@@ -9565,10 +9565,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Select one retained production App instance release.",
+        "description": "Select one retained production Instance release.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9779,7 +9779,7 @@
     "/api/v1/instances/{instance}/transfer": {
       "post": {
         "operationId": "instance-transfer",
-        "summary": "Transfer an App instance",
+        "summary": "Transfer an Instance",
         "tags": [
           "Instances"
         ],
@@ -9792,10 +9792,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Transfer a development App instance to another app-dev Node.\n\nTransfer moves one active development App instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.\n\nOrbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.\n\nUse --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.",
+        "description": "Transfer a development Instance to another app-dev Node.\n\nTransfer moves one active development Instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.\n\nOrbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.\n\nUse --name when the destination path or generated domain must change. --json disables prompts and requires --force for transfer consent.",
         "requestBody": {
           "required": true,
           "content": {
@@ -9811,7 +9811,7 @@
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
                     "maxLength": 63,
-                    "description": "Optional destination AppInstance name"
+                    "description": "Optional destination Instance name"
                   },
                   "sqlite_source_path": {
                     "type": "string",
@@ -9918,7 +9918,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/transfer\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"example\", \"sqlite_source_path\": \"/home/acme/database/database.sqlite\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/transfer\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"name\": \"default\", \"sqlite_source_path\": \"/home/acme/database/database.sqlite\"}'\n"
           },
           {
             "lang": "php",
@@ -12978,7 +12978,7 @@
             }
           }
         ],
-        "description": "List processes for one App instance or Node, or process definitions for one App.",
+        "description": "List processes for one Instance or Node, or process definitions for one Project.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -13035,7 +13035,7 @@
         "tags": [
           "Processes"
         ],
-        "description": "Create one systemd service, Docker container process, or App process definition.",
+        "description": "Create one systemd service, Docker container process, or Project process definition.",
         "requestBody": {
           "required": true,
           "content": {
@@ -13279,7 +13279,7 @@
             "description": "Numeric Process ID."
           }
         ],
-        "description": "Destroy one process or App process definition.",
+        "description": "Destroy one process or Project process definition.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -14116,7 +14116,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
         "description": "Remove a project.",
@@ -14202,7 +14202,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
         "description": "Show a project.",
@@ -14278,7 +14278,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
         "description": "Update a project.",
@@ -14411,7 +14411,7 @@
     },
     "/api/v1/projects/{app}/process-definitions": {
       "get": {
-        "operationId": "app-project-process-definition-list-definition",
+        "operationId": "project-process-definition-list",
         "summary": "List process definitions",
         "tags": [
           "Projects"
@@ -14425,10 +14425,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -14490,7 +14490,7 @@
         ]
       },
       "post": {
-        "operationId": "app-project-process-definition-create-definition",
+        "operationId": "project-process-definition-create",
         "summary": "Create a process definition",
         "tags": [
           "Projects"
@@ -14504,10 +14504,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -14738,7 +14738,7 @@
     },
     "/api/v1/projects/{app}/process-definitions/{process_definition}": {
       "delete": {
-        "operationId": "app-project-process-definition-destroy-definition",
+        "operationId": "project-process-definition-destroy",
         "summary": "Remove a process definition",
         "tags": [
           "Projects"
@@ -14752,7 +14752,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "process_definition",
@@ -14761,10 +14761,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Process definition name, unique within the App."
+            "description": "Process definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -14833,7 +14833,7 @@
         ]
       },
       "get": {
-        "operationId": "app-project-process-definition-show-definition",
+        "operationId": "project-process-definition-show",
         "summary": "Show a process definition",
         "tags": [
           "Projects"
@@ -14847,7 +14847,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "process_definition",
@@ -14856,10 +14856,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Process definition name, unique within the App."
+            "description": "Process definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -14918,7 +14918,7 @@
         ]
       },
       "put": {
-        "operationId": "app-project-process-definition-update-definition",
+        "operationId": "project-process-definition-update",
         "summary": "Replace a process definition",
         "tags": [
           "Projects"
@@ -14932,7 +14932,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "process_definition",
@@ -14941,10 +14941,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Process definition name, unique within the App."
+            "description": "Process definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15153,7 +15153,7 @@
     },
     "/api/v1/projects/{app}/schedule-definitions": {
       "get": {
-        "operationId": "app-project-schedule-definition-list-definition",
+        "operationId": "project-schedule-definition-list",
         "summary": "List Schedule definitions",
         "tags": [
           "Projects"
@@ -15167,10 +15167,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -15232,7 +15232,7 @@
         ]
       },
       "post": {
-        "operationId": "app-project-schedule-definition-create-definition",
+        "operationId": "project-schedule-definition-create",
         "summary": "Create a Schedule definition",
         "tags": [
           "Projects"
@@ -15246,10 +15246,10 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15411,7 +15411,7 @@
     },
     "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}": {
       "delete": {
-        "operationId": "app-project-schedule-definition-destroy-definition",
+        "operationId": "project-schedule-definition-destroy",
         "summary": "Remove a Schedule definition",
         "tags": [
           "Projects"
@@ -15425,7 +15425,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "schedule_definition",
@@ -15434,10 +15434,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Schedule definition name, unique within the App."
+            "description": "Schedule definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -15506,7 +15506,7 @@
         ]
       },
       "get": {
-        "operationId": "app-project-schedule-definition-show-definition",
+        "operationId": "project-schedule-definition-show",
         "summary": "Show a Schedule definition",
         "tags": [
           "Projects"
@@ -15520,7 +15520,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "schedule_definition",
@@ -15529,10 +15529,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Schedule definition name, unique within the App."
+            "description": "Schedule definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -15591,7 +15591,7 @@
         ]
       },
       "put": {
-        "operationId": "app-project-schedule-definition-update-definition",
+        "operationId": "project-schedule-definition-update",
         "summary": "Replace a Schedule definition",
         "tags": [
           "Projects"
@@ -15605,7 +15605,7 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App ID."
+            "description": "Numeric Project ID."
           },
           {
             "name": "schedule_definition",
@@ -15614,10 +15614,10 @@
             "schema": {
               "type": "string"
             },
-            "description": "Schedule definition name, unique within the App."
+            "description": "Schedule definition name, unique within the Project."
           }
         ],
-        "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+        "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -17078,7 +17078,7 @@
     "/api/v1/runtime-activations/app-instance/{instance}": {
       "get": {
         "operationId": "runtime-activation-app-instance",
-        "summary": "Wake an App instance",
+        "summary": "Wake an Instance",
         "tags": [
           "Node callbacks"
         ],
@@ -17091,13 +17091,13 @@
               "type": "integer",
               "minimum": 1
             },
-            "description": "Numeric App instance ID."
+            "description": "Numeric Instance ID."
           }
         ],
-        "description": "Caddy on the App instance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.",
+        "description": "Caddy on the Instance Node calls this endpoint when the awake marker is absent. The Gateway returns an HTML progress page and starts the desired-running Processes.",
         "responses": {
           "200": {
-            "description": "Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake App instance."
+            "description": "Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake Instance."
           },
           "401": {
             "description": "An HTML progress page with a two-second refresh while the Gateway starts the desired-running Processes.",
@@ -17146,7 +17146,7 @@
         "tags": [
           "Schedules"
         ],
-        "description": "List authorized Schedules or App Schedule definitions.",
+        "description": "List authorized Schedules or Project Schedule definitions.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -17203,7 +17203,7 @@
         "tags": [
           "Schedules"
         ],
-        "description": "Create one Node or App instance Schedule, or an App Schedule definition.",
+        "description": "Create one Node or Instance Schedule, or a Project Schedule definition.",
         "requestBody": {
           "required": true,
           "content": {
@@ -17369,7 +17369,7 @@
             "description": "Schedule UUID."
           }
         ],
-        "description": "Destroy one Schedule or App Schedule definition through the Gateway.",
+        "description": "Destroy one Schedule or Project Schedule definition through the Gateway.",
         "requestBody": {
           "required": false,
           "content": {
@@ -17476,7 +17476,7 @@
             "description": "Schedule UUID."
           }
         ],
-        "description": "Show one authorized Schedule or App Schedule definition.",
+        "description": "Show one authorized Schedule or Project Schedule definition.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -17554,7 +17554,7 @@
             "description": "Schedule UUID."
           }
         ],
-        "description": "Enable and start one installed App instance Schedule timer.",
+        "description": "Enable and start one installed Instance Schedule timer.",
         "requestBody": {
           "required": false,
           "content": {
@@ -18266,7 +18266,7 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+        "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
         "requestBody": {
           "required": false,
           "content": {

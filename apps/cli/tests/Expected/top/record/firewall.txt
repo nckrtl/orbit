@@ -2,7 +2,7 @@
 ╭──────────────────╮  ‹ back  Firewall rule: 22/tcp allow 10.44.0.0/16                                                  
 │  Dashboard       │╭ Properties ──────────────────────────────────────────────────────────────────────────────────────╮
 │  Nodes         1 ││ Name               ssh                                                                           │
-│  Apps          1 ││ Port               22                                                                            │
+│  Projects      1 ││ Port               22                                                                            │
 │  Instances     1 ││ Protocol           tcp                                                                           │
 │  Processes     1 ││ Action             allow                                                                         │
 │  Schedules     1 ││ Source             10.44.0.0/16                                                                  │

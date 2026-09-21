@@ -156,7 +156,7 @@ describe('shared progress', function (): void {
 
     it('inserts a revealed step at its real position on a decorated terminal', function (): void {
         $output = new BufferedOutput;
-        $display = new ProgressDisplay(new ConsoleMode(false, false, true, true, 80), $output, 'Deploy AppInstance [17]');
+        $display = new ProgressDisplay(new ConsoleMode(false, false, true, true, 80), $output, 'Deploy Instance [17]');
         $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
         $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
         $display->during('source_preparation', fn (): int => 0);
@@ -178,7 +178,7 @@ describe('shared progress', function (): void {
 
     it('inserts a revealed step at its real position on plain output', function (): void {
         $output = new BufferedOutput;
-        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy Instance [17]');
         $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
         $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
         $display->during('source_preparation', fn (): int => 0);
@@ -199,7 +199,7 @@ describe('shared progress', function (): void {
 
     it('fails loudly when the anchor step for admitBefore does not exist', function (): void {
         $output = new BufferedOutput;
-        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy Instance [17]');
         $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
 
         expect(fn () => $display->admitBefore('activation', 'before_activation:migrate', 'Run migrate', 'Running migrate', 'Ran migrate'))
@@ -208,7 +208,7 @@ describe('shared progress', function (): void {
 
     it('fails loudly when the admitBefore anchor has already left Waiting (M12)', function (): void {
         $output = new BufferedOutput;
-        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy AppInstance [17]');
+        $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Deploy Instance [17]');
         $display->admit('source_preparation', 'Resolve release', 'Resolving release', 'Resolved release');
         $display->admit('activation', 'Activate release', 'Activating release', 'Activated release');
         $display->during('source_preparation', fn (): int => 0);

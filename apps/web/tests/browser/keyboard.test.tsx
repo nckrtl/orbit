@@ -111,7 +111,9 @@ it("sorts a pane by a column header", async () => {
     await pane("Projects").getByRole("columnheader", { name: "Slug" }).click();
     await pane("Projects").getByRole("columnheader", { name: "Slug" }).click();
 
-    await expect.element(pane("Projects").getByRole("row").nth(1)).toHaveTextContent("charlie-shop");
+    await expect
+        .element(pane("Projects").getByRole("row").nth(1))
+        .toHaveTextContent("charlie-shop");
 });
 
 it("names the way to a record by what owns it", async () => {

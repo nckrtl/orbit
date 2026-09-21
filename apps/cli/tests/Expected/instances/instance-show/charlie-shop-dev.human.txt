@@ -5,7 +5,7 @@ Fetching Processes...
 │
 ├  ID                   1
 │
-├  App                  charlie-shop
+├  Project              charlie-shop
 │
 ├  Node                 app-dev
 │
