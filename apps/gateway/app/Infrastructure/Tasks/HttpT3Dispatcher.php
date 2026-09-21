@@ -60,8 +60,6 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
 
     /**
      * @param  array<string, mixed>  $command
-     */
-    /**
      * @param  array{token: string|null, base_url: string|null}  $credentials
      */
     private function existingProjectId(string $host, array $command, Response $response, array $credentials): ?string
@@ -167,7 +165,11 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         $t3 = is_array($settings) && array_key_exists('t3', $settings) ? $settings['t3'] : null;
 
         if ($t3 !== null) {
-            $token = is_array($t3) ? $this->string($t3['token'] ?? null) : null;
+            if (! is_array($t3)) {
+                throw new T3DispatchException('The Node has no T3 token configured.');
+            }
+
+            $token = $this->string($t3['token'] ?? null);
 
             if ($token === null) {
                 throw new T3DispatchException('The Node has no T3 token configured.');
@@ -175,7 +177,7 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
 
             return [
                 'token' => $token,
-                'base_url' => is_array($t3) ? $this->string($t3['url'] ?? $t3['base_url'] ?? null) : null,
+                'base_url' => $this->string($t3['url'] ?? $t3['base_url'] ?? null),
             ];
         }
 
