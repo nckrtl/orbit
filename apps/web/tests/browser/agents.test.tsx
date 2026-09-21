@@ -137,7 +137,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
         },
     });
     await expect
-        .poll(() => document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"))
+        .poll(() =>
+            document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"),
+        )
         .toBe("active");
     await expect.element(page.getByRole("tabpanel")).toHaveTextContent("edited file");
     implementer.send({
@@ -150,7 +152,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
         },
     });
     await expect
-        .poll(() => document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"))
+        .poll(() =>
+            document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"),
+        )
         .toBe("complete");
     await expect.element(page.getByRole("tabpanel")).toHaveTextContent("2 steps");
     implementer.send({
@@ -179,7 +183,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
     );
     reviewer.onerror?.();
     await expect
-        .poll(() => document.querySelector('[role="tabpanel"] [role="status"]')?.getAttribute("aria-label"))
+        .poll(() =>
+            document.querySelector('[role="tabpanel"] [role="status"]')?.getAttribute("aria-label"),
+        )
         .toBe("Not live");
     await app.router.navigate({ to: "/" });
     expect(reviewer.closed).toBe(true);
