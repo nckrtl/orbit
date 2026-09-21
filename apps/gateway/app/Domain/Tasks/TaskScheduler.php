@@ -306,7 +306,8 @@ final readonly class TaskScheduler
         $reviewerThreadId = $this->spawner->spawnReviewer($group);
 
         if (! is_string($reviewerThreadId) || $reviewerThreadId === '') {
-            $this->failOpeningSpawn($group, null, 'reviewer');
+            $this->failSpawn($group, null, 'reviewer');
+
             return;
         }
 
@@ -320,15 +321,8 @@ final readonly class TaskScheduler
         }
 
         try {
-            $started = $this->startTask($first);
-            $first = $started->tasks->first(
-                static fn (Task $task): bool => $task->id === $first->id,
-            ) ?? $first;
+            $this->startTask($first);
         } catch (TaskSequenceException) {
-        }
-
-        if (! is_string($first->implementer_thread_id) || $first->implementer_thread_id === '') {
-            $this->failOpeningSpawn($group, $first, 'implementer');
         }
     }
 
@@ -383,18 +377,10 @@ final readonly class TaskScheduler
         $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
 
         if (! is_string($threadId) || $threadId === '') {
-            $task->status = TaskStatus::Failed;
-            $task->save();
             $group = $task->taskGroup()->first();
-            if ($group instanceof TaskGroup) {
-                $group->status = TaskGroupStatus::Failed;
-                $group->save();
-                Log::error('A task group agent spawn returned no thread id.', [
-                    'task_group_id' => $group->id,
-                    'task_id' => $task->id,
-                    'agent' => 'implementer',
-                ]);
-            }
+
+            $this->failSpawn($group instanceof TaskGroup ? $group : null, $task, 'implementer');
+
             return;
         }
 
@@ -454,18 +440,20 @@ final readonly class TaskScheduler
             ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
     }
 
-    private function failOpeningSpawn(TaskGroup $group, ?Task $task, string $agent): void
+    private function failSpawn(?TaskGroup $group, ?Task $task, string $agent): void
     {
         if ($task instanceof Task) {
             $task->status = TaskStatus::Failed;
             $task->save();
         }
 
-        $group->status = TaskGroupStatus::Failed;
-        $group->save();
+        if ($group instanceof TaskGroup) {
+            $group->status = TaskGroupStatus::Failed;
+            $group->save();
+        }
 
         Log::error('A task group agent spawn returned no thread id.', [
-            'task_group_id' => $group->id,
+            'task_group_id' => $group?->id,
             'task_id' => $task?->id,
             'agent' => $agent,
         ]);
