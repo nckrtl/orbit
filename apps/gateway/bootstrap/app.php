@@ -15,7 +15,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskSchedule;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Controllers\Api\JwksController;
 use App\Http\Middleware\EnsureRequestId;
@@ -57,9 +57,7 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withSchedule(function (Schedule $schedule): void {
-        $schedule->command('tasks:tick')
-            ->everyTenSeconds()
-            ->when(static fn (): bool => app(TaskExtensionState::class)->enabled());
+        app(TaskSchedule::class)->register($schedule);
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
