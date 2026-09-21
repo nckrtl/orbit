@@ -20,6 +20,7 @@ final readonly class ProcessSpecification
             ? [
                 'command' => $data->command,
                 'environment_file' => $target->environmentFile,
+                ...($data->environment === [] ? [] : ['environment' => $data->environment]),
                 ...($data->preset === null ? [] : ['preset' => $data->preset]),
             ]
             : [
@@ -33,7 +34,7 @@ final readonly class ProcessSpecification
         return [
             'runtime' => $data->runtime,
             'working_directory' => $workingDirectory,
-            'runtime_config' => $this->canonicalRuntimeConfig($data->runtime, $runtimeConfig),
+            'runtime_config' => $this->canonicalRuntimeConfig($runtimeConfig),
             'restart_policy' => $data->restartPolicy,
             'keep_alive' => $data->keepAlive,
         ];
@@ -49,7 +50,7 @@ final readonly class ProcessSpecification
         return
             $process->runtime === $attributes['runtime']
             && $process->working_directory === $attributes['working_directory']
-            && $this->canonicalRuntimeConfig($process->runtime, $process->runtime_config)
+            && $this->canonicalRuntimeConfig($process->runtime_config)
             === $attributes['runtime_config']
             && $process->restart_policy === $attributes['restart_policy']
             && $process->keep_alive === $attributes['keep_alive'];
@@ -60,15 +61,14 @@ final readonly class ProcessSpecification
      * @return array<string, mixed>
      */
     private function canonicalRuntimeConfig(
-        ProcessRuntime $runtime,
         #[SensitiveParameter]
         array $runtimeConfig,
     ): array {
-        if ($runtime !== ProcessRuntime::Docker) {
+        if (! array_key_exists('environment', $runtimeConfig)) {
             return $runtimeConfig;
         }
 
-        $environment = $runtimeConfig['environment'] ?? [];
+        $environment = $runtimeConfig['environment'];
 
         if (! is_array($environment)) {
             return $runtimeConfig;

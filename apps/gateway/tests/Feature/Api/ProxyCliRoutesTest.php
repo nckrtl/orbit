@@ -110,7 +110,16 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
 
     $environment = app(RecordingProxyCliRuntimeLifecycle::class)->environment;
 
-    expect(Process::query()->where('name', ProxyCliProcess::NAME)->exists())->toBeTrue()
+    $process = Process::query()->where('name', ProxyCliProcess::NAME)->first();
+
+    expect($process)->not->toBeNull()
+        ->and($process->runtime_config['command'])->toBe([
+            ProxyCliProcess::EXECUTABLE,
+            '/var/lib/orbit/proxycli/server.py',
+        ])
+        ->and($process->runtime_config['environment']['PROXYCLI_CACHE_HOST'])->toBe('10.44.0.8')
+        ->and($process->runtime_config['environment']['PROXYCLI_CACHE_PORT'])->toBe('6379')
+        ->and($process->runtime_config['environment']['PROXYCLI_CLIPROXY_URL'])->toBe('http://127.0.0.1:8317')
         ->and(app(RecordingProxyCliRuntimeLifecycle::class)->converged)->toBeTrue()
         ->and(app(RecordingProxyCliPublicationManager::class)->converged)->toBeTrue()
         ->and($environment['PROXYCLI_CACHE_HOST'])->toBe('10.44.0.8')

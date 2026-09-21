@@ -187,6 +187,56 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
         ->toBe(1);
 });
 
+it('canonicalizes systemd environment maps before persistence and idempotency comparison', function (): void {
+    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $first = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'proxycli',
+        runtime: ProcessRuntime::Systemd,
+        command: ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        image: null,
+        workingDirectory: '/var/lib/orbit/proxycli',
+        environment: ['ZEBRA' => 'last', 'PROXYCLI_READ_TOKEN' => 'secret', 'ALPHA' => 'first'],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'unless-stopped',
+        start: false,
+    );
+    $sameWithDifferentOrder = new AddProcessData(
+        targetType: ProcessTargetType::AppInstance,
+        targetId: $this->instance->id,
+        name: 'proxycli',
+        runtime: ProcessRuntime::Systemd,
+        command: ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+        image: null,
+        workingDirectory: '/var/lib/orbit/proxycli',
+        environment: ['ALPHA' => 'first', 'ZEBRA' => 'last', 'PROXYCLI_READ_TOKEN' => 'secret'],
+        ports: [],
+        volumes: [],
+        restartPolicy: 'unless-stopped',
+        start: false,
+    );
+
+    $created = $action->execute($first);
+    $readded = $action->execute($sameWithDifferentOrder);
+
+    expect($created['process']->runtime_config)
+        ->toBe([
+            'command' => ['/usr/bin/python3', '/var/lib/orbit/proxycli/server.py'],
+            'environment_file' => '/home/orbit/apps/docs/.env',
+            'environment' => [
+                'ALPHA' => 'first',
+                'PROXYCLI_READ_TOKEN' => 'secret',
+                'ZEBRA' => 'last',
+            ],
+        ])
+        ->and($readded['created'])
+        ->toBeFalse()
+        ->and(Process::query()->count())
+        ->toBe(1);
+});
+
 it('keeps Docker environment values out of action exception traces', function (): void {
     $sensitiveValue = 'action-boundary-secret';
     $data = new AddProcessData(

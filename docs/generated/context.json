@@ -2801,7 +2801,8 @@
                 "0069",
                 "0070",
                 "0080",
-                "0104"
+                "0104",
+                "0108"
             ]
         },
         {
@@ -2892,6 +2893,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0108-persist-managed-environment-on-systemd-processes.md",
+            "title": "ADR 0108: Persist managed environment on systemd Processes",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0069",
+                "0104",
+                "0108"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -2922,7 +2944,8 @@
                 "Router",
                 "Schedule",
                 "Task",
-                "Tool"
+                "Tool",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0001",
@@ -3026,9 +3049,11 @@
                 "0101",
                 "0102",
                 "0103",
+                "0104",
                 "0105",
                 "0106",
-                "0107"
+                "0107",
+                "0108"
             ]
         },
         {
@@ -3208,13 +3233,15 @@
                 "Node",
                 "Process",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0036",
                 "0038",
                 "0048",
                 "0069",
+                "0108",
                 "3600"
             ]
         },
@@ -3915,7 +3942,8 @@
                 "proxycli"
             ],
             "governing_adrs": [
-                "0104"
+                "0104",
+                "0108"
             ]
         },
         {

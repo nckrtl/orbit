@@ -100,7 +100,7 @@ The two runtimes accept these values.
 
 | Runtime | Required values | Optional values | Default working directory |
 | --- | --- | --- | --- |
-| systemd | Process name and absolute executable with argv | Absolute working directory, restart policy, keep-alive, and initial start | The App instance development checkout, the production home's `current` path, or `/home/{user}` on a Node target |
+| systemd | Process name and absolute executable with argv | Absolute working directory, a managed environment map, restart policy, keep-alive, and initial start | The App instance development checkout, the production home's `current` path, or `/home/{user}` on a Node target |
 | Docker | Process name, image, and command argv | Container working directory, environment, published ports, volumes, restart policy, keep-alive, and initial start | `/app` |
 
 A development systemd Process on a Node with the active `app-dev` role installs without host-boot start intent. The Gateway starts it with `systemctl start` and does not `systemctl enable` the unit. After host reboot the Process stays down until `process:start` or the next HTTP wake. `--keep-alive` stores `keep_alive=true` and does not change restart policy. The [hibernation page](/reference/app-dev-runtime-hibernation) states idle halt, keep-alive exemption, cold dependency prune, wake, and Doctor reporting.
@@ -114,6 +114,8 @@ A generic development systemd Process runs as the Node's managed runtime user. I
 A production systemd Process runs as the App instance's dedicated production user. It reads the persistent environment file in the recorded production home and uses the `current` path as its default working directory. Orbit resolves the recorded Node, user, home, and current release when it performs an operation, independent of Node role co-location or certificate mode.
 
 A prepared production home without `current` accepts a stopped Process installation for either runtime. An initial start requested by `process:create` and a later `process:start` both fail before the Process record or runtime changes until a release is selected. A later explicit start uses the release then selected by `current`. Changing `current` does not restart an already running Process.
+
+A systemd Process may persist a managed environment map in its specification. The renderer writes those values as `Environment=` directives after the optional environment file. Derived `PATH`, `NODE_USE_SYSTEM_CA`, development-server, certificate, and Agentation values still win for their keys. Stored values never enter `ExecStart` argv. HTTP Process create still accepts environment only for Docker. Gateway-owned enable paths such as [proxycli](/reference/proxycli) persist the map through the specification. See [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes).
 
 A Node systemd Process runs as the Node's managed runtime user. It uses `/home/{user}` as the default working directory and does not read an App instance environment file or receive development-server certificate or origin values. Creating or starting it requires an active Linux Node with a recorded WireGuard address. Shared infrastructure such as a Docker database uses this target. The [Database role](/reference/database-role) can converge Docker on that Node, and a Node Process does not require that role. A managed Herdr session uses a Node Process; an adopted external session does not. [Herdr sessions](/reference/herdr-sessions) owns that integration:
 
