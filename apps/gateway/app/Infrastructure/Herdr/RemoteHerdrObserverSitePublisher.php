@@ -8,6 +8,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Herdr\HerdrObserveContract;
 use App\Domain\Herdr\ObservationGrantSigner;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\HerdrSession;
@@ -399,12 +400,14 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
                     mv -f -- "\$unit.new" "\$unit"
                 fi
 
-                printf 'import %s/fragments/*.caddy\n' "\$candidate" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/fragments/*.caddy\n' "\$candidate" >> "\$candidate/Caddyfile"
                 chown -R "\$root_owner:\$caddy_group" "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
                 "\$caddy" validate --config "\$candidate/Caddyfile" --adapter caddyfile
-                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
+                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
+                printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mutation_started=1
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
@@ -475,5 +478,10 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
     private function encode(string $value): string
     {
         return base64_encode($value);
+    }
+
+    private function encodedGlobalOptions(): string
+    {
+        return base64_encode(CaddyGlobalOptions::render());
     }
 }
