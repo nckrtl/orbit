@@ -102,6 +102,7 @@ export function createDemoGateway() {
         },
     ];
     let proxycliEnabled = false;
+    let tasksEnabled = true;
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
     const nodeById = (id: string): Node | undefined =>
@@ -198,6 +199,7 @@ export function createDemoGateway() {
                         collected_at: proxycliEnabled ? "2026-09-20T12:00:00Z" : null,
                     }),
             ],
+            ["GET", /^\/api\/v1\/tasks\/status$/, () => ok({ enabled: tasksEnabled })],
             [
                 "GET",
                 /^\/api\/v1\/proxycli\/providers$/,
@@ -596,6 +598,9 @@ export function createDemoGateway() {
         requests,
         enableProxyCli(): void {
             proxycliEnabled = true;
+        },
+        disableTasks(): void {
+            tasksEnabled = false;
         },
     };
 }

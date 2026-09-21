@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import { proxycliProviderQuery, proxycliProvidersQuery, proxycliStatusQuery } from "../api/queries";
+import {
+    proxycliProviderQuery,
+    proxycliProvidersQuery,
+    proxycliStatusQuery,
+    tasksStatusQuery,
+} from "../api/queries";
 import { queryClient } from "../api/queryClient";
 import type { QuotaAccount, QuotaProvider, QuotaWindow } from "../api/types";
 import { quotaPace } from "../quota/pace";
@@ -172,6 +177,12 @@ const providerColumns: Column<QuotaProvider>[] = [
         value: (row) => row.windows.map(windowRemaining).join("  ") || "—",
         cell: (row) => <QuotaWindows windows={row.windows} accounts={row.accounts} />,
     },
+    {
+        header: "Token spend",
+        width: 24,
+        value: () => "Unavailable",
+        cell: () => <span className="text-dim">Not reported by Gateway</span>,
+    },
     { header: "Accounts", width: 14, align: "right", value: (row) => String(row.accounts.length) },
     {
         header: "Resets in",
@@ -186,16 +197,18 @@ const providerColumns: Column<QuotaProvider>[] = [
 export function QuotaList() {
     const go = useGo();
     const status = useQuery(proxycliStatusQuery);
+    const tasks = useQuery(tasksStatusQuery);
     const providers = useQuery({
         ...proxycliProvidersQuery,
-        enabled: status.data?.enabled === true,
+        enabled: status.data?.enabled === true && tasks.data?.enabled === true,
     });
 
-    if (status.data?.enabled !== true) {
+    if (status.data?.enabled !== true || tasks.data?.enabled !== true) {
         return (
             <Frame title="Quota" state="warn">
                 <Note>
-                    The CLIProxyAPI collector is disabled. Enable it to collect provider quota.
+                    Provider quota and token spend require both the CLIProxyAPI collector and the
+                    tasks extension. Enable both to view this data.
                 </Note>
             </Frame>
         );
@@ -237,9 +250,10 @@ export function QuotaList() {
 export function QuotaProviderPage() {
     const { id } = useParams({ from: "/$section/$id" });
     const status = useQuery(proxycliStatusQuery);
+    const tasks = useQuery(tasksStatusQuery);
     const provider = useQuery({
         ...proxycliProviderQuery(id),
-        enabled: status.data?.enabled === true,
+        enabled: status.data?.enabled === true && tasks.data?.enabled === true,
     });
     const accountColumns = useMemo<Column<QuotaAccount>[]>(
         () => [
@@ -296,10 +310,13 @@ export function QuotaProviderPage() {
         [],
     );
 
-    if (status.data?.enabled !== true) {
+    if (status.data?.enabled !== true || tasks.data?.enabled !== true) {
         return (
             <Frame title="Quota" state="warn">
-                <Note>The CLIProxyAPI collector is disabled.</Note>
+                <Note>
+                    Provider quota and token spend require both the CLIProxyAPI collector and the
+                    tasks extension.
+                </Note>
             </Frame>
         );
     }
