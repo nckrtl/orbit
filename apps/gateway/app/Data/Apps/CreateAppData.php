@@ -19,5 +19,6 @@ final readonly class CreateAppData
         public ?string $defaultBranch,
         public string $root,
         public ?array $defaults,
+        public ?string $code = null,
     ) {}
 }

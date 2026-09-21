@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskAgentSession;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -33,7 +34,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
 
         return $this->spawnThread(
             $group,
-            title: 'Reviewer: '.$group->title,
+            title: 'Orbit task #'.$group->id.' · Reviewer: '.$group->title,
             model: $group->reviewer_model !== '' ? $group->reviewer_model : TaskAgentDefaults::ReviewerModel,
             effort: TaskAgentDefaults::ReviewerEffort,
             message: $this->reviewerPrompt($group),
@@ -52,10 +53,11 @@ final readonly class T3AgentSpawner implements AgentSpawner
 
         return $this->spawnThread(
             $group,
-            title: 'Implementer: '.$task->title,
+            title: 'Orbit task #'.$group->id.' / subtask #'.$task->id.' · Implementer: '.$task->title,
             model: $group->implementer_model !== '' ? $group->implementer_model : TaskAgentDefaults::ImplementerModel,
             effort: TaskAgentDefaults::ImplementerEffort,
             message: $this->implementerPrompt($group, $task),
+            taskId: $task->id,
         );
     }
 
@@ -96,6 +98,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
         string $model,
         string $effort,
         string $message,
+        ?int $taskId = null,
     ): ?string {
         $node = $this->node($group);
         $instance = $group->taskable;
@@ -146,6 +149,12 @@ final readonly class T3AgentSpawner implements AgentSpawner
         }
 
         $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
+        TaskAgentSession::query()->firstOrCreate(['thread_id' => $resolvedThreadId], [
+            'task_group_id' => $group->id,
+            'task_id' => $taskId,
+            'node_id' => $node->id,
+            'role' => $taskId === null ? 'reviewer' : 'implementer',
+        ]);
         $this->startOpeningTurn($node, $resolvedThreadId, $message);
 
         return $resolvedThreadId;
@@ -210,6 +219,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
     {
         return implode("\n\n", [
             'You are the long-lived reviewer for this feature group.',
+            'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             $group->brief,
             'Wait for subtask review handoffs. After you accept a subtask, create the sign-off commit in this workspace.',
@@ -220,7 +230,9 @@ final readonly class T3AgentSpawner implements AgentSpawner
     {
         return implode("\n\n", [
             'Implement this subtask in the shared workspace, then stop so the reviewer can inspect it.',
+            'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
+            'Orbit subtask #'.$task->id,
             'Subtask: '.$task->title,
             $task->brief,
         ]);
@@ -230,6 +242,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
     {
         return implode("\n\n", [
             'please review',
+            'Orbit task group #'.$task->task_group_id.' / subtask #'.$task->id,
             'Subtask '.$task->title.' is done.',
             $task->brief,
         ]);

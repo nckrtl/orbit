@@ -228,7 +228,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@processIndex': 'List process definitions',
     'AppRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -280,6 +280,7 @@ SUMMARIES = {
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
     'tasks:enable': 'Enable Tasks', 'tasks:disable': 'Disable Tasks', 'tasks:status': 'Show Tasks status',
+    'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
     'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:add': 'Add a Task',
     'tasks:complete': 'Complete a Task group',
 }
@@ -323,6 +324,8 @@ DESCRIPTIONS = {
 
 
 def tag_for(route):
+    if route['name'] in ('tasks:agents', 'tasks:agent-stream'):
+        return 'Tasks'
     if route['name'] in INTERNAL:
         return 'Node callbacks'
     return TAG_BY_PREFIX[route['name'].split(':')[0]]
@@ -969,6 +972,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     env_route = '/environment/' in path or ('/database-connections/' in path and '/instances/' in path)
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
+        if p == 'session' and route['name'] == 'tasks:agent-stream':
+            desc = 'Numeric task agent session ID within this group.'
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
         op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
@@ -1018,6 +1023,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             if route['name'] == 'instance:rollback':
                 body = {'type': 'object', 'properties': {'release': {'type': 'string', 'description': 'Retained release name to select.'}}, 'required': ['release'], 'additionalProperties': False}
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': body}}}
+    elif route['name'] == 'tasks:agent-stream':
+        responses['200'] = {'description': 'Read-only T3 thread snapshots and events. Resume with Last-Event-ID. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'schedule:complete':
         responses['204'] = {'description': 'The Gateway recorded the latest run.'}
     elif route['name'] == 'metrics:grafana:authorize':
@@ -1044,7 +1051,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['404'] = error_response('No record matches the path parameters.')
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
-    if route['name'] in ('tasks:list', 'tasks:show'):
+    if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`).')
     if route['name'] == 'tasks:complete':
         responses['409'] = error_response('The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).')

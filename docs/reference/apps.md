@@ -77,6 +77,12 @@ Repeating `project:create` with the same name, slug, type, repository access URL
 
 A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
+## Project codes
+
+Each Project has a unique code of three uppercase letters. Existing Projects receive a code during migration; Orbit receives `ORB`. New Projects receive a code at creation, or accept an explicit `code` in `POST /api/v1/projects`. Codes stay unchanged when the Project name or slug changes.
+
+Edit the code in the web Project properties, or send `PATCH /api/v1/projects/{project}` with `{"code":"ORB"}`. Send code changes separately from source settings. Invalid codes return 422; codes already in use return 409. Changing a code updates task card labels without changing task IDs or URLs.
+
 ## Update a Project
 
 Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, or relative web root. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.

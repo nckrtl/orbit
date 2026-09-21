@@ -155,6 +155,7 @@ function app_instance_identity_legacy_graph(): array
     ]);
     $app = DB::table('apps')->insertGetId([
         'name' => 'Legacy',
+        'code' => 'LEG',
         'slug' => 'legacy',
         'repository_url' => 'https://github.com/acme/legacy.git',
         'repository_identity' => 'github.com/acme/legacy',

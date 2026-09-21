@@ -13,5 +13,8 @@ use App\Models\AppInstance;
  */
 interface TaskWorkspaceDiffReader
 {
+    /** @return array{additions: int, deletions: int}|null */
+    public function lineChanges(AppInstance $instance, string $baseBranch): ?array;
+
     public function lineDiff(AppInstance $instance, string $baseBranch): int;
 }

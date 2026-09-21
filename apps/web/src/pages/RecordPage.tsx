@@ -1,3 +1,4 @@
+import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
@@ -66,7 +67,7 @@ import { QueuePanel } from "./QueuePanel";
 import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
 
-const GAPS = "gap-x-[1ch] gap-y-[16px]";
+const GAPS = "gap-x-[1ch] gap-y-[var(--panel-gap)]";
 
 /** The node page's htop-like block: cores in two columns, then memory and swap beside the root disk and uptime. */
 function NodeMetricsPanel({ node }: { node: Node }) {
@@ -339,7 +340,9 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
                     { name: "Default branch", value: project.default_branch },
                     { name: "Root", value: project.root },
                 ]}
-            />
+            >
+                <ProjectCodeEditor key={project.id} project={project} />
+            </Properties>
             <Pane
                 name="instances"
                 order={1}

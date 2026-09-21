@@ -49,7 +49,7 @@ function enable_tasks(): void
     test()->postJson('/api/v1/tasks/enable')->assertOk()->assertJsonPath('data.enabled', true);
 }
 
-it('exposes the eight tasks routes with stable methods', function (): void {
+it('exposes the tasks routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(static fn (Route $route): bool => str_starts_with((string) $route->getName(), 'tasks:'))
         ->mapWithKeys(static fn (Route $route): array => [
@@ -58,6 +58,8 @@ it('exposes the eight tasks routes with stable methods', function (): void {
         ->all();
 
     expect($routes)->toBe([
+        'tasks:agents' => ['api/v1/task-groups/{group}/agents', ['GET', 'HEAD']],
+        'tasks:agent-stream' => ['api/v1/task-groups/{group}/agents/{session}/stream', ['GET', 'HEAD']],
         'tasks:enable' => ['api/v1/tasks/enable', ['POST']],
         'tasks:disable' => ['api/v1/tasks/disable', ['POST']],
         'tasks:status' => ['api/v1/tasks/status', ['GET', 'HEAD']],

@@ -19,11 +19,13 @@ final readonly class UpdateAppData
         public ?string $defaultBranch,
         public bool $rootProvided,
         public ?string $root,
+        public ?string $code = null,
     ) {}
 
     public function hasChanges(): bool
     {
-        return $this->typeProvided
+        return $this->code !== null
+            || $this->typeProvided
             || $this->slugProvided
             || $this->repositoryUrlProvided
             || $this->defaultBranchProvided
@@ -41,6 +43,7 @@ final readonly class UpdateAppData
     public function fingerprint(): string
     {
         return hash('sha256', json_encode([
+            'code' => $this->code,
             'type' => $this->typeProvided ? $this->type?->value : null,
             'slug' => $this->slugProvided ? $this->slug : null,
             'repository_url' => $this->repositoryUrlProvided ? $this->repositoryUrl : null,

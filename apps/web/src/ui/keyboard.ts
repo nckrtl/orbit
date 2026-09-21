@@ -31,6 +31,10 @@ export function useKeyboard(pageTarget: () => Target | null): void {
                 return;
             }
 
+            if (element?.closest("a, button") && (event.key === "Enter" || event.key === " ")) {
+                return;
+            }
+
             const state = ui.get();
             const { pathname, search } = router.state.location;
             const [first, second] = pathname.split("/").filter(Boolean);

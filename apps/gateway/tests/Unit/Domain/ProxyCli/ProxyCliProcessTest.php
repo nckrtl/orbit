@@ -26,7 +26,7 @@ it('uses the absolute python interpreter and persists PROXYCLI environment', fun
 
     expect($data->targetType)->toBe(ProcessTargetType::Node)
         ->and($data->targetId)->toBe(8)
-        ->and($data->name)->toBe('proxycli')
+        ->and($data->name)->toBe('cli-proxy-api-collector')
         ->and($data->runtime)->toBe(ProcessRuntime::Systemd)
         ->and($data->command)->toBe([ProxyCliProcess::EXECUTABLE, '/var/lib/orbit/proxycli/server.py'])
         ->and($data->command[0])->toStartWith('/')

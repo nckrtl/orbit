@@ -23,6 +23,7 @@ final class StoreAppRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'string', 'max:255'],
+            'code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/D'],
             'slug' => ['required', 'string', 'alpha_dash:ascii', 'max:63'],
             'type' => [
                 str_starts_with((string) $this->route()?->getName(), 'project:') ? 'required' : 'sometimes',
@@ -42,7 +43,7 @@ final class StoreAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -78,6 +79,7 @@ final class StoreAppRequest extends FormRequest
         $defaults = is_array($validated['defaults'] ?? null) ? $validated['defaults'] : null;
 
         return new CreateAppData(
+            code: is_string($validated['code'] ?? null) ? $validated['code'] : null,
             name: is_string($validated['name'] ?? null) ? $validated['name'] : $slug,
             slug: $slug,
             type: ProjectType::tryFrom((string) ($validated['type'] ?? '')) ?? ProjectType::LaravelApp,

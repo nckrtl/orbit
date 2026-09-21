@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Frame } from "./Frame";
 
 export type Property = {
@@ -22,10 +23,12 @@ const text = (value: Property["value"]): string => {
 /** The properties a page lists, named as the show commands name them. */
 export function Properties({
     properties,
+    children,
     className,
     title = "Properties",
 }: {
     properties: Property[];
+    children?: ReactNode;
     className?: string;
     title?: string;
 }) {
@@ -56,6 +59,7 @@ export function Properties({
                     </div>
                 );
             })}
+            {children}
         </Frame>
     );
 }

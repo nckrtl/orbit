@@ -89,7 +89,7 @@ export function Dashboard() {
     }
 
     return (
-        <div className="flex flex-col gap-y-[16px] md:grid md:h-full md:grid-cols-6 md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-[1ch]">
+        <div className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-cols-6 md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-[1ch]">
             <Pane
                 name="nodes"
                 order={0}

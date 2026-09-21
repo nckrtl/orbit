@@ -10,6 +10,8 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\SequentialTaskPullRequestOpener;
 use App\Domain\Tasks\T3Dispatcher;
+use App\Domain\Tasks\T3ThreadReader;
+use App\Domain\Tasks\TaskAgentStream;
 use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
@@ -17,10 +19,12 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpGitHubTaskPullRequestOpener;
 use App\Infrastructure\Tasks\HttpT3Dispatcher;
+use App\Infrastructure\Tasks\HttpT3ThreadReader;
 use App\Infrastructure\Tasks\RemoteTaskPullRequestOpener;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\T3AgentSpawner;
+use App\Infrastructure\Tasks\T3TaskAgentStream;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
@@ -32,6 +36,8 @@ final class TasksServiceProvider extends ServiceProvider
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         AgentSpawner::class => T3AgentSpawner::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,
+        T3ThreadReader::class => HttpT3ThreadReader::class,
+        TaskAgentStream::class => T3TaskAgentStream::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
         TaskWorkspaceDiffReader::class => RemoteTaskWorkspaceDiffReader::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,

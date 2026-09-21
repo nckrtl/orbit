@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
+use App\Domain\Tasks\NullT3ThreadReader;
+use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
@@ -62,6 +64,11 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
     ]);
     $reader = new class implements TaskWorkspaceDiffReader
     {
+        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        {
+            return ['additions' => $this->lineDiff($instance, $baseBranch), 'deletions' => 0];
+        }
+
         public function lineDiff(AppInstance $instance, string $baseBranch): int
         {
             expect($baseBranch)->toBe('main');
@@ -70,7 +77,9 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
         }
     };
 
-    $metrics = new LocalTaskSettleMetricsCollector($reader)->collect($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
+    $metrics = new LocalTaskSettleMetricsCollector(
+        new TaskGroupMetricsRefresher(new NullT3ThreadReader, $reader),
+    )->collect($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
 
     expect($metrics->tokens)->toBe(40)
         ->and($metrics->lineDiff)->toBe(18)

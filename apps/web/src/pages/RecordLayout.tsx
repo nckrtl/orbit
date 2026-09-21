@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect } from "react";
+import { EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
 import { type Fleet, useFleet } from "../api/queries";
 import type {
     AnyRecord,
@@ -101,21 +102,27 @@ export function RecordLayout({
     }, [kind, row]);
 
     return (
-        <div className="flex min-w-0 max-w-full flex-col gap-y-[16px] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
-            <PageHeader trail={trail}>
-                {kind !== "deployments" && (
-                    <span
-                        className="cursor-pointer text-dim hover:text-fg"
-                        onClick={(event) => {
-                            const button = event.currentTarget.getBoundingClientRect();
+        <div className="flex min-w-0 max-w-full flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[minmax(0,1fr)]">
+            <PageHeader
+                trail={trail}
+                actions={
+                    kind !== "deployments" && (
+                        <button
+                            type="button"
+                            aria-label="Actions"
+                            title="Actions"
+                            className="flex cursor-pointer items-center justify-center text-dim hover:text-fg"
+                            onClick={(event) => {
+                                const button = event.currentTarget.getBoundingClientRect();
 
-                            openMenu({ kind, row }, [button.right, button.bottom + 4], true);
-                        }}
-                    >
-                        actions ▾
-                    </span>
-                )}
-            </PageHeader>
+                                openMenu({ kind, row }, [button.right, button.bottom + 4], true);
+                            }}
+                        >
+                            <EllipsisHorizontalIcon className="size-[20px]" aria-hidden="true" />
+                        </button>
+                    )
+                }
+            />
             {children}
         </div>
     );

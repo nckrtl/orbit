@@ -3,6 +3,7 @@
 │› Nodes │ 3
 │  Projects │ 3
 │  Databases │ 2
+│  Tasks │ 0
 ╰─
 
 ╭─ Properties
@@ -49,4 +50,4 @@
 │  orbit:wireguard-members │ any │ allow │ any on orbit │ live
 ╰─
 
-←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    demo fleet
+←→ navigation or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    demo fleet

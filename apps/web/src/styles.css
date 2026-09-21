@@ -10,6 +10,9 @@
 :root {
     --lh: 20px;
     --inset: 4px;
+    --panel-gap: 16px;
+    --panel-padding: calc(1ch + var(--inset));
+    --selected-line: #fff;
     --bg: #0d0f12;
     --fg: #d4d7dc;
     --dim: #6b7280;
@@ -22,6 +25,7 @@
 
 /* Dark is the theme. Light is there for whoever sets `data-theme="light"` on the root element; the system setting does not pick it. */
 :root[data-theme="light"] {
+    --selected-line: #000;
     --bg: #fbfbfa;
     --fg: #24292f;
     --dim: #8b929b;
@@ -78,6 +82,12 @@ body {
 
 /* ---- frame: a box whose labels sit in its border, as btop and lazygit draw them ---- */
 
+/* Let border labels extend into the panel gap without moving the panels apart. */
+.page-content {
+    margin-top: calc(var(--lh) / -2);
+    padding-top: calc(var(--lh) / 2);
+}
+
 .frame {
     position: relative;
     display: flex;
@@ -95,7 +105,7 @@ body {
 /* Hovered and focused frames share the highlight; a focused pane also shows its selected row. */
 .frame[data-state="hovered"],
 .frame[data-state="focused"] {
-    --frame: var(--fg);
+    --frame: var(--selected-line);
     --frame-title: var(--fg);
 }
 
@@ -141,6 +151,10 @@ body {
 
 .frame-label[data-role="title"] {
     color: var(--frame-title);
+}
+
+.frame-label[data-role="title"],
+.breadcrumb {
     /* The small capitals btop and lazygit draw in their frames. */
     font-size: 11px;
     font-weight: 500;
@@ -161,7 +175,75 @@ body {
     min-width: 0;
     max-width: 100%;
     overflow: auto;
-    padding: calc(var(--lh) / 2) 1ch;
+    padding: var(--panel-padding);
+}
+
+.navigation-page-header {
+    margin: 8px calc(-1 * var(--panel-padding)) 0;
+    border-top: 1px solid var(--line);
+    padding: 8px var(--panel-padding) 0;
+}
+
+.navigation-actions {
+    margin: calc(-1 * var(--panel-padding)) calc(-1 * var(--panel-padding)) -8px 0;
+    border-left: 1px solid var(--line);
+    padding: var(--panel-padding) var(--panel-padding) 8px;
+}
+
+.kanban-board {
+    border: 1px solid var(--line);
+    border-radius: 5px;
+}
+
+.kanban-board > .frame {
+    border: 0;
+    border-radius: 0;
+}
+
+.kanban-board > .frame + .frame {
+    border-top: 1px solid var(--line);
+}
+
+@media (min-width: 1024px) {
+    .kanban-board > .frame + .frame {
+        border-top: 0;
+        border-left: 1px solid var(--line);
+    }
+}
+
+.kanban-card {
+    padding: var(--panel-padding);
+    background: color-mix(in srgb, var(--bg) 95%, var(--fg));
+}
+
+.kanban-card:hover {
+    background: color-mix(in srgb, var(--bg) 91%, var(--fg));
+}
+
+/* Agent sessions share the board's inset cards and continuous column divider. */
+.agent-sessions-body {
+    padding: 0;
+}
+
+.agent-session-list {
+    padding: var(--panel-padding);
+    border-bottom: 1px solid var(--line);
+}
+
+.agent-session-tab[aria-selected="true"] {
+    background: var(--selected-line);
+    color: var(--bg);
+}
+
+.agent-session-tab[aria-selected="true"] .text-dim {
+    color: inherit;
+}
+
+@media (min-width: 768px) {
+    .agent-session-list {
+        border-bottom: 0;
+        border-right: 1px solid var(--line);
+    }
 }
 
 /* ---- rows ---- */
@@ -207,6 +289,19 @@ body {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Quota rows show every reported window without clipping the next provider. */
+.quota-pane .row:not([data-head]) {
+    height: auto;
+    min-height: calc(var(--lh) * 2);
+    align-items: start;
+}
+
+.quota-pane .row:not([data-head]) > * {
+    white-space: normal;
+    padding-top: calc(var(--lh) / 2);
+    padding-bottom: calc(var(--lh) / 2);
 }
 
 .row[data-head] {

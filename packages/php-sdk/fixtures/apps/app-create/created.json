@@ -8,6 +8,7 @@
             "id": 1,
             "name": "acme",
             "slug": "acme",
+            "code": "ACM",
             "type": "laravel-app",
             "repository_url": "git@github.com:acme/site.git",
             "default_branch": "main",

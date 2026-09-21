@@ -78,6 +78,7 @@ it('backfills required unique identities and rolls back only the added boundary'
             ->toBe(1)
             ->and(fn () => DB::table('apps')->insert([
                 'name' => 'Duplicate',
+                'code' => 'DUP',
                 'slug' => 'duplicate',
                 'repository_url' => 'ssh://git@github.com/acme/site.git',
                 'repository_identity' => 'github.com/acme/site',
@@ -110,6 +111,7 @@ function app_repository_identity_legacy_app(string $slug, string $repository): i
 {
     return DB::table('apps')->insertGetId([
         'name' => ucfirst($slug),
+        'code' => strtoupper(substr($slug, 0, 3)),
         'slug' => $slug,
         'repository_url' => $repository,
         'default_branch' => 'main',

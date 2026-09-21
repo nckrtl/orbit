@@ -8,6 +8,7 @@
             "id": 3,
             "name": "Charlie shop",
             "slug": "charlie-shop",
+            "code": "CHA",
             "type": "laravel-app",
             "repository_url": "git@github.com:charlie/shop.git",
             "default_branch": "release",

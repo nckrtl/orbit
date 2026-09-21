@@ -22,6 +22,7 @@ final class UpdateAppRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'code' => ['sometimes', 'required', 'string', 'regex:/\A[A-Z]{3}\z/D'],
             'type' => ['sometimes', 'required', 'string', Rule::enum(ProjectType::class)],
             'slug' => ['sometimes', 'required', 'string', 'alpha_dash:ascii', 'max:63'],
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
@@ -36,7 +37,7 @@ final class UpdateAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['type', 'slug', 'repository_url', 'default_branch', 'root'],
+                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -48,7 +49,8 @@ final class UpdateAppRequest extends FormRequest
     {
         return [function (Validator $validator): void {
             if (
-                ! $this->exists('type')
+                ! $this->exists('code')
+                && ! $this->exists('type')
                 && ! $this->exists('slug')
                 && ! $this->exists('repository_url')
                 && ! $this->exists('default_branch')
@@ -86,6 +88,7 @@ final class UpdateAppRequest extends FormRequest
         $validated = $this->validated();
 
         return new UpdateAppData(
+            code: is_string($validated['code'] ?? null) ? $validated['code'] : null,
             typeProvided: array_key_exists('type', $validated),
             type: ProjectType::tryFrom((string) ($validated['type'] ?? '')),
             slugProvided: array_key_exists('slug', $validated),

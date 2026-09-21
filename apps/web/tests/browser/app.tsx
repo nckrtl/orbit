@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-react";
+import { setTransport, type Transport } from "../../src/api/client";
 import { queryClient } from "../../src/api/queryClient";
 import { configureCommander } from "../../src/annotation/commander";
 import { ensureAnnotationRuntime, teardownAnnotationRuntime } from "../../src/annotation/runtime";
@@ -14,7 +15,10 @@ import "../../src/styles.css";
  * Mounts the whole app at a URL against a fresh demo Gateway. Each test gets its own fleet, its
  * own URL history, and an empty query cache, so no test sees what another one changed.
  */
-export async function openApp(path = "/", options: { proxycli?: boolean } = {}) {
+export async function openApp(
+    path = "/",
+    options: { proxycli?: boolean; wrapTransport?: (inner: Transport) => Transport } = {},
+) {
     document.getElementById("app")?.remove();
     queryClient.clear();
     ui.reset();
@@ -32,6 +36,10 @@ export async function openApp(path = "/", options: { proxycli?: boolean } = {}) 
 
     if (options.proxycli === true) {
         gateway.enableProxyCli();
+    }
+
+    if (options.wrapTransport !== undefined) {
+        setTransport(options.wrapTransport(gateway.transport), "demo fleet");
     }
 
     const container = document.createElement("div");

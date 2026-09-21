@@ -11,7 +11,7 @@ use App\Models\Node;
 
 final readonly class ProxyCliProcess
 {
-    public const string NAME = 'proxycli';
+    public const string NAME = 'cli-proxy-api-collector';
 
     public const int PORT = 8787;
 

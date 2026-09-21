@@ -74,12 +74,12 @@ it('sums insertions and deletions from git numstat', function (): void {
         new CommandResult(0, "10\t2\tapp/Models/Task.php\n-\t-\tlogo.png\n3\t1\tdocs/reference/tasks.md\n", '', 1, false),
     ]);
 
-    $diff = new RemoteTaskWorkspaceDiffReader(remote_diff_ssh($transport))->lineDiff(
+    $diff = new RemoteTaskWorkspaceDiffReader(remote_diff_ssh($transport))->lineChanges(
         remote_diff_instance(),
         'main',
     );
 
-    expect($diff)->toBe(16)
+    expect($diff)->toBe(['additions' => 13, 'deletions' => 3])
         ->and($transport->commands[0]->arguments)->toBe([
             'bash',
             '-seu',

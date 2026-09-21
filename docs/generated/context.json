@@ -3370,6 +3370,7 @@
                 "Project",
                 "Repository identity",
                 "Route",
+                "Task",
                 "Web root"
             ],
             "governing_adrs": [
@@ -3984,6 +3985,7 @@
                 "Node",
                 "Process",
                 "Route",
+                "Schedule",
                 "proxycli"
             ],
             "governing_adrs": [
@@ -4090,6 +4092,7 @@
                 "Project",
                 "Route",
                 "Task",
+                "Task group",
                 "Tool"
             ],
             "governing_adrs": [

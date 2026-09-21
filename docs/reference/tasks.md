@@ -37,7 +37,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `pr_url` | TaskGroup | Pull request opened after the last sign-off |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
 | `implementer_model` / `reviewer_model` | TaskGroup | Defaults: `codex-luna-lite` and `claude-opus` |
-| `tokens`, `line_diff`, `duration_ms` | both | Filled on settle |
+| `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
 
 Group statuses: `queued`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `pending`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
 
@@ -60,6 +60,26 @@ Use these operations after the extension is enabled. Create, add, and complete r
 Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects and either `notify_coder` or `notify_on_settle`. Add appends one subtask at the next position. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
 
 MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-add`, `tasks-list`, `tasks-show`, `tasks-complete`, `tasks-enable`, `tasks-disable`, and `tasks-status`.
+
+## Web task board
+
+Open **Tasks** in the web navigation to see all tracked task groups. Each card shows its title and the Project’s saved code of three capital letters, followed by the task number, such as `ORB-13`.
+
+Codes are unique across Projects. Edit a code in the Project properties; changing it updates card labels without changing task IDs or URLs.
+
+Cards show separate added and deleted line counts when available, an uppercase status outside Todo, and elapsed duration in minutes and hours.
+
+Select a card to read the task brief, its status, tokens, line diff, duration, and its subtasks. Subtasks use their own Todo, In progress, and Done board. Pending subtasks appear in Todo; reserved, running, and reviewing subtasks appear in In progress. Completed, failed, and cancelled subtasks appear in Done with their outcomes visible. Cards retain their sequence numbers and briefs. Subtask cards show that subtask's tokens and line diff when the Gateway has observed them.
+
+Select a subtask to open its own detail page with its title, brief, status, Project, shared Instance, tokens, line diff, and duration. The subtask detail omits the subtasks board. Use the parent task breadcrumb to return to the board.
+
+The board refreshes every ten seconds. Todo contains queued groups waiting for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
+
+The board is read-only. The Gateway still owns scheduling and concurrency. When the extension is disabled, the page explains that tasks are unavailable. Request errors remain visible instead of appearing as an empty board.
+
+### Tokens and line diff
+
+When the parent task is open, Tokens is the total of every T3 session attached to the group: each implementer thread plus the long-lived reviewer thread. Line diff is the whole feature branch against the Project default branch. When a subtask is open, Tokens and Line diff are that implementer's T3 session only. If the group is still active, showing it refreshes those numbers from T3 thread snapshots and the shared checkout.
 
 ## Scheduler and ceilings
 
@@ -87,6 +107,14 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
+## Agent sessions
+
+The task group page shows an Agents section below Subtasks. Vertical tabs select the shared reviewer or an implementer. A subtask page shows its implementer sessions and the group reviewer. Finished sessions stay available. A thread with no runtime session is shown as not started, even when the task is marked running.
+
+The Gateway stores each session's group, optional subtask, role, Node, and T3 thread ID independently of the workspace. Existing thread links are imported when the session table is created. If the original Node cannot be resolved, the link remains visible but cannot stream. New T3 thread titles and opening prompts include Orbit task identifiers.
+
+`GET /api/v1/task-groups/{group}/agents` lists recorded sessions. `GET /api/v1/task-groups/{group}/agents/{session}/stream` relays the selected thread from T3's `orchestration.subscribeThread` WebSocket as server-sent events. Both require Gateway access and an enabled tasks extension. T3 credentials stay server-side. The browser reconnects using the last event sequence; snapshots replace local state. Connections rotate periodically and close when the viewer is left. T3 remains the transcript store, so deleted T3 threads cannot be recovered from Orbit.
+
 ## T3 agents
 
 Agents run on the T3 server of the Node that owns that Instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server. A successful dispatch needs a sequence. Commands that have no thread, including `project.create`, may omit `threadId`. `project.create` `defaultModelSelection` and `thread.create` `modelSelection` send options as `{id, value}` objects, never a bare map such as `{effort: high}`.
@@ -104,13 +132,20 @@ After the last reviewer sign-off the Gateway opens the GitHub pull request and s
 
 The head branch is the instance branch (`task-{group id}`). The base branch is the Project default branch. A refused open leaves `pr_url` empty and keeps the group `settling`.
 
-The Gateway then writes settle metrics on the group:
+The Gateway then writes settle metrics. Active groups also refresh these fields when an authorized caller shows the group.
 
-| Field | Source |
-| --- | --- |
-| `tokens` | Sum of Task `tokens` values, or `0` when none are stored |
-| `line_diff` | Insertions plus deletions of `git diff --numstat {default_branch}...HEAD` in the shared checkout, or `0` when git cannot run |
-| `duration_ms` | Elapsed milliseconds from `started_at` to settle, or `0` when `started_at` is empty |
+| Field | Record | Source |
+| --- | --- | --- |
+| `tokens` | Task | Cumulative T3 session tokens for that subtask's implementer thread (`totalProcessedTokens` when present, otherwise `usedTokens`), from `GET /api/orchestration/threads/{threadId}` on the instance-owning Node. Unchanged when T3 refuses the snapshot |
+| `line_diff` | Task | Insertions plus deletions on that implementer thread's T3 checkpoints. Unchanged when T3 refuses the snapshot |
+| `lines_added`, `lines_deleted` | Task | Separate checkpoint insertion and deletion counts; null before observation |
+| `duration_ms` | Task | Elapsed milliseconds from `started_at` to `settled_at`, or to now while the subtask is still open |
+| `tokens` | TaskGroup | Sum of Task `tokens` values plus the reviewer thread's T3 session tokens, or `0` at settle when none are stored |
+| `line_diff` | TaskGroup | Insertions plus deletions of `git diff --numstat {default_branch}...HEAD` in the shared checkout, or `0` when git cannot run. This is the whole feature branch, not the sum of subtask session diffs |
+| `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
+| `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
+
+Commander collected the same session totals from Codex App Server. T3 replaces that observer: each stored thread id is one T3 session.
 
 ## Coder settle webhook
 
@@ -147,5 +182,5 @@ Complete is the documented cleanup path. The Gateway GitHub App receives no merg
 These items stay unimplemented here and need a later feature PR.
 
 - Commander data migration and retiring Commander
-- A web UI for tasks
+- Creating or changing tasks through the web UI
 - Per-Project model overrides

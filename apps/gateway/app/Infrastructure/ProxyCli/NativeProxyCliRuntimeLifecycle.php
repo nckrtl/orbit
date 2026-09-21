@@ -35,6 +35,17 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
         array $environment,
         int $port = ProxyCliProcess::PORT,
     ): void {
+        // Retire the old name before admitting a collector on the same port.
+        $legacy = Process::query()
+            ->where('owner_type', Node::class)
+            ->where('owner_id', $node->id)
+            ->where('name', 'proxycli')
+            ->first();
+
+        if ($legacy instanceof Process) {
+            $this->remove->execute($legacy, removedByOwningRole: true);
+        }
+
         $this->publishSource($node);
         $data = ProxyCliProcess::data($node, $environment, $port);
 
@@ -53,13 +64,13 @@ final readonly class NativeProxyCliRuntimeLifecycle implements ProxyCliRuntimeLi
 
     public function remove(Node $node): void
     {
-        $process = Process::query()
+        $processes = Process::query()
             ->where('owner_type', Node::class)
             ->where('owner_id', $node->id)
-            ->where('name', ProxyCliProcess::NAME)
-            ->first();
+            ->whereIn('name', [ProxyCliProcess::NAME, 'proxycli'])
+            ->get();
 
-        if ($process instanceof Process) {
+        foreach ($processes as $process) {
             $this->remove->execute($process, removedByOwningRole: true);
         }
 

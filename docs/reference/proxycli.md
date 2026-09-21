@@ -43,7 +43,7 @@ orbit proxycli:enable --node=beast --cache-connection=valkey --cliproxy-url=http
 
 `cliproxy-url` is the CLIProxyAPI Management API origin. The collector Process uses that URL from the chosen Node, so `http://127.0.0.1:8317` is correct when CLIProxyAPI already listens on that Node. The management key stays on the Gateway and in the Process environment. The API never returns it.
 
-Enable is idempotent. A second enable on the same Node and cache connection converges the Process and `collector.proxycli.orbit` again. It does not publish or reclaim apex `proxycli.orbit`.
+Enable is idempotent. A second enable on the same Node and cache connection converges the Process and `collector.proxycli.orbit` again. It does not publish or reclaim the management dashboard at `cli-proxy-api.orbit`.
 
 ## What enable deploys
 
@@ -51,16 +51,26 @@ Enable places these four pieces on the chosen Node and in Gateway settings. The 
 
 | Piece | Owner | Bind |
 | --- | --- | --- |
-| Node Process `proxycli` | The chosen Node | `127.0.0.1:8787` |
+| Node Process `cli-proxy-api-collector` | The chosen Node | `127.0.0.1:8787` |
 | Orbit CA leaf and Caddy site | The chosen Node | HTTPS on the Node WireGuard address |
 | Private DNS `host-record` | VPN DNS | `collector.proxycli.orbit` → the Node WireGuard address |
 | Read token and control token | Gateway settings | Server-side only |
 
-`collector.proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it. Apex `proxycli.orbit` is not reserved. Publish CLIProxyAPI management there as a custom proxy Route to a loopback upstream such as `http://127.0.0.1:8317`. [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns that Route kind.
+`collector.proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it. Publish CLIProxyAPI management at `cli-proxy-api.orbit` as a custom proxy Route to a loopback upstream such as `http://127.0.0.1:8317`. [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns that Route kind.
 
 The Process command is `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search an operator `PATH`, so a bare `python3` does not start. Enable persists `PROXYCLI_*` on the Process specification and the unit receives those values as `Environment=` directives. The map includes the CLIProxyAPI URL and management key, the CodexBar read and control tokens, the loopback port, and the Valkey host, port, username, and password. [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes) owns that projection. HTTP `process:create` still accepts environment only for Docker.
 
+The management server is a separate Node Process named `cli-proxy-api`, listening on port 8317. Its dashboard is `/management.html` on `cli-proxy-api.orbit`. The collector keeps `collector.proxycli.orbit` for existing clients. The extension slug, API paths, and cache keys remain `proxycli`. Enable retires the old `proxycli` Process name before starting the renamed collector.
+
 The collector takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch when another poll already holds the lock. HTTP reads, including authenticated `GET /v1/quota-stats`, load that snapshot through one RESP stream and never fetch upstream.
+
+## Collection intervals
+
+The collector checks its schedule every minute. It fetches each enabled account at most every five minutes, or every fifteen minutes for Claude. Disabled accounts are skipped. Each account's next check is persisted in Valkey, including across restarts and account controls. Failed checks wait at least one hour, with exponential backoff capped at one day; a longer provider `Retry-After` still wins. An interrupted request waits one hour before retrying.
+
+The web page reads the cache every ten seconds. It shows all reported provider windows, remaining percentages, and collection errors on the overview. `collected_at` is the snapshot compilation time; individual `checked_at` and `next_check_at` values track quota retrieval. A cache refresh does not reset the upstream schedule.
+
+The Python runtime decodes CLIProxyAPI's wrapped status, headers, and JSON-string body. It supports Claude, Codex, Grok, Kimi, and Antigravity windows. Missing quota is reported as unavailable, never assumed to mean zero use. If Grok omits its JSON percentage, the collector uses Grok’s billing RPC through CLIProxyAPI. It accepts zero only from a complete response with a recognized active period, matching [CodexBar’s validated-zero fix](https://github.com/steipete/CodexBar/pull/3325). The text encoding preserves protobuf bytes through CLIProxyAPI’s JSON response.
 
 ## Disable
 
@@ -77,7 +87,7 @@ orbit extension:disable proxycli
 
 The Orbit web app shows a Quota section while the fleet feature is enabled. The overview lists each provider pool. A provider page lists accounts, window remaining, reset times, and enable or disable controls. Window titles are duration labels in management.html#/quota order: the longer window first (`7d` then `5h`). A window the provider omitted is absent. The UI never renders a missing window as zero and never labels a window Primary or Secondary.
 
-CodexBar uses the LLM Proxy quota-stats contract at `https://collector.proxycli.orbit/v1/quota-stats` with the read token as a bearer token. Account control at `https://collector.proxycli.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
+CodexBar uses the LLM Proxy quota-stats contract at `https://collector.proxycli.orbit/v1/quota-stats` with the read token as a bearer token. The custom CodexBar plugins also use cache-only `GET /api/v1/usage` and `GET /api/v1/providers/{provider}` on this collector. Their existing camelCase snapshot contract is preserved, including the `xai` alias for Grok. Native account control uses `PUT /api/v1/providers/{provider}/accounts/{account}` with the distinct control token. The collector compiles a snapshot every minute. CodexBar rejects snapshots older than three minutes; this does not increase quota polling. Account control at `https://collector.proxycli.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
 
 `orbit proxycli:status` reports whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written. `orbit proxycli:list` and `orbit proxycli:show` read the same snapshot. `orbit proxycli:update` toggles one account.
 

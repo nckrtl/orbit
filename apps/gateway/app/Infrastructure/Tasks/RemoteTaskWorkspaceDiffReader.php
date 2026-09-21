@@ -18,10 +18,17 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
 
     public function lineDiff(AppInstance $instance, string $baseBranch): int
     {
+        $changes = $this->lineChanges($instance, $baseBranch);
+
+        return $changes === null ? 0 : $changes['additions'] + $changes['deletions'];
+    }
+
+    public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+    {
         $instance->loadMissing('node');
 
         if ($instance->checkout_path === '' || $baseBranch === '') {
-            return 0;
+            return null;
         }
 
         try {
@@ -45,10 +52,11 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
                 'tasks.diff_failed',
             );
         } catch (RuntimeConvergenceException) {
-            return 0;
+            return null;
         }
 
-        $total = 0;
+        $additions = 0;
+        $deletions = 0;
 
         foreach (preg_split('/\R/', trim($result->stdout)) ?: [] as $line) {
             if ($line === '') {
@@ -59,10 +67,10 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
                 continue;
             }
 
-            $total += $matches[1] === '-' ? 0 : (int) $matches[1];
-            $total += $matches[2] === '-' ? 0 : (int) $matches[2];
+            $additions += $matches[1] === '-' ? 0 : (int) $matches[1];
+            $deletions += $matches[2] === '-' ? 0 : (int) $matches[2];
         }
 
-        return $total;
+        return ['additions' => $additions, 'deletions' => $deletions];
     }
 }

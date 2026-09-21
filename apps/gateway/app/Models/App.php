@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use Illuminate\Database\Eloquent\Collection;
@@ -14,6 +15,7 @@ use SensitiveParameter;
 /**
  * @property int $id
  * @property string $name
+ * @property string $code
  * @property string $slug
  * @property ProjectType $type
  * @property string $repository_url
@@ -33,7 +35,7 @@ final class App extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'];
 
     /** @var list<string> */
     #[\Override]
@@ -42,6 +44,9 @@ final class App extends Model
     protected static function booted(): void
     {
         self::creating(static function (self $app): void {
+            /** @var list<string> $used */
+            $used = self::query()->pluck('code')->all();
+            $app->code = ProjectCode::validate($app->code ?? ProjectCode::suggest($app->slug, $used));
             $app->repository_identity = GitRepositoryIdentity::derive($app->repository_url);
         });
     }

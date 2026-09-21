@@ -454,6 +454,8 @@
               "GET /api/v1/task-groups",
               "POST /api/v1/task-groups",
               "GET /api/v1/task-groups/{group}",
+              "GET /api/v1/task-groups/{group}/agents",
+              "GET /api/v1/task-groups/{group}/agents/{session}/stream",
               "POST /api/v1/task-groups/{group}/complete",
               "POST /api/v1/task-groups/{group}/tasks",
               "POST /api/v1/tasks/disable",

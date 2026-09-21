@@ -15,6 +15,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskAgentSession;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -157,7 +158,7 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
         'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ImplementerEffort]],
     ];
 
-    expect($reviewerCreate['title'])->toStartWith('Reviewer:')
+    expect($reviewerCreate['title'])->toStartWith('Orbit task #'.$group->id.' · Reviewer:')
         ->and($reviewerProject['defaultModelSelection'])->toBe($reviewerSelection)
         ->and($reviewerCreate['modelSelection'])->toBe($reviewerSelection)
         ->and($implementerProject['defaultModelSelection'])->toBe($implementerSelection)
@@ -291,4 +292,35 @@ it('reuses persisted thread ids instead of spawning again', function (): void {
         ->and($spawner->spawnImplementer($group->tasks->first()->fresh(['taskGroup.taskable']) ?? $group->tasks->first()))
         ->toBe('kept-implementer')
         ->and($dispatcher->commands)->toBe([]);
+});
+
+it('persists both role links before a refused opening turn and keeps them after workspace removal', function (): void {
+    $group = t3_spawner_group();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $dispatcher->failTurnStartRemaining = 4;
+    $reviewer = $spawner->spawnReviewer($group);
+    $implementer = $spawner->spawnImplementer($group->tasks->firstOrFail());
+    $group->taskable->delete();
+    $links = TaskAgentSession::query()->where('task_group_id', $group->id)->orderBy('id')->get();
+    expect($links)->toHaveCount(2)
+        ->and($links[0]->thread_id)->toBe($reviewer)
+        ->and($links[0]->task_id)->toBeNull()
+        ->and($links[1]->thread_id)->toBe($implementer)
+        ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
+        ->and($links[1]->node_id)->not->toBeNull();
+});
+
+it('imports legacy thread links using the instance morph alias', function (): void {
+    $group = t3_spawner_group();
+    $group->update(['reviewer_thread_id' => 'legacy-review']);
+    $task = $group->tasks->firstOrFail();
+    $task->update(['implementer_thread_id' => 'legacy-implement']);
+    $migration = require database_path('migrations/2026_09_21_124805_create_task_agent_sessions_table.php');
+    $migration->down();
+    $migration->up();
+    $links = TaskAgentSession::query()->orderBy('id')->get();
+    expect($links)->toHaveCount(2)
+        ->and($links[0]->node_id)->toBe($group->taskable->node_id)
+        ->and($links[1]->task_id)->toBe($task->id)
+        ->and($links[1]->thread_id)->toBe('legacy-implement');
 });

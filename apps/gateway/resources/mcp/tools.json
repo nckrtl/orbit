@@ -148,6 +148,10 @@
             "type": "string",
             "maxLength": 255
           },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
           "slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
@@ -182,6 +186,7 @@
         },
         "additionalProperties": false,
         "required": [
+          "code",
           "slug",
           "type",
           "repository_url",
@@ -889,6 +894,10 @@
             "minimum": 1,
             "description": "Numeric Project ID."
           },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -918,6 +927,7 @@
         "additionalProperties": false,
         "required": [
           "app",
+          "code",
           "type",
           "slug",
           "repository_url",
@@ -4180,6 +4190,10 @@
             "maxLength": 255,
             "description": "Optional display name"
           },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
           "slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
@@ -4218,6 +4232,7 @@
         },
         "additionalProperties": false,
         "required": [
+          "code",
           "slug",
           "type",
           "repository_url",
@@ -4921,6 +4936,10 @@
             "minimum": 1,
             "description": "Numeric Project ID."
           },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -4954,6 +4973,7 @@
         "additionalProperties": false,
         "required": [
           "app",
+          "code",
           "type",
           "slug",
           "repository_url",
@@ -5596,6 +5616,32 @@
           "group",
           "title",
           "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-agents",
+      "title": "List task agent sessions",
+      "description": "List task agent sessions",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/agents",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
         ]
       }
     },

@@ -132,7 +132,7 @@ export function NodeCreate() {
     };
 
     return (
-        <div className="flex flex-col gap-y-[16px] md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)]">
+        <div className="flex flex-col gap-y-[var(--panel-gap)] md:grid md:h-full md:grid-rows-[minmax(0,1fr)]">
             <PageHeader
                 trail={[
                     { label: "Nodes", open: () => go.section("nodes") },

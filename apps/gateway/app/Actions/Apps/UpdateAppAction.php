@@ -15,6 +15,7 @@ use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Apps\AppUpdateStatus;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -25,6 +26,7 @@ use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppUpdate;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -48,6 +50,19 @@ final readonly class UpdateAppAction
                 message: 'Provide at least one Project update.',
                 status: 422,
             );
+        }
+
+        if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided)) {
+            throw new ResourceOperationException('app.code_update_separate', 'Update the Project code separately from source settings.', 422);
+        }
+
+        if ($data->code !== null) {
+            $code = ProjectCode::validate($data->code);
+            try {
+                $app->update(['code' => $code]);
+            } catch (UniqueConstraintViolationException $exception) {
+                throw new ResourceOperationException('app.code_conflict', 'This Project code is already in use.', 409, previous: $exception);
+            }
         }
 
         if ($data->typeProvided && $data->type instanceof ProjectType) {

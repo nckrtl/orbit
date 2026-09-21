@@ -17,11 +17,13 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\NullCoderSettleNotifier;
+use App\Domain\Tasks\NullT3ThreadReader;
 use App\Domain\Tasks\NullTaskPullRequestOpener;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\T3Dispatcher;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
+use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskScheduler;
@@ -372,7 +374,9 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
     });
     app()->instance(AgentSpawner::class, $spawner);
     app()->instance(TaskPullRequestOpener::class, new NullTaskPullRequestOpener);
-    app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(new NullTaskWorkspaceDiffReader));
+    app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
+        new TaskGroupMetricsRefresher(new NullT3ThreadReader, new NullTaskWorkspaceDiffReader),
+    ));
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     $claimed = app(TaskScheduler::class)->claimNext();

@@ -15,6 +15,7 @@ export const SECTIONS = [
     "databases",
     "firewall",
     "quota",
+    "tasks",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
@@ -24,9 +25,10 @@ export const NAV = [
     "nodes",
     "projects",
     "databases",
+    "tasks",
 ] as const satisfies readonly Section[];
 
-/** Sidebar entries for this Gateway: the default four, plus Quota while the fleet feature is on. */
+/** Sidebar entries for this Gateway: the standard sections, plus Quota while the fleet feature is on. */
 export function useNav(): readonly Section[] {
     const enabled = useQuery(proxycliStatusQuery).data?.enabled === true;
 
@@ -69,6 +71,7 @@ export const SECTION_TITLES: Record<Section, string> = {
     databases: "Databases",
     firewall: "Firewall",
     quota: "Quota",
+    tasks: "Tasks",
 };
 
 export const FILTERED_SECTIONS: readonly string[] = ["instances", "processes", "schedules"];

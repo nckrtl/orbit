@@ -22,6 +22,7 @@ final class TaskGroupData extends Data
         public int $id,
         public int $appId,
         public string $app,
+        public string $projectCode,
         public ?string $taskableType,
         public ?int $taskableId,
         public string $title,
@@ -34,6 +35,8 @@ final class TaskGroupData extends Data
         public string $reviewerModel,
         public ?int $tokens,
         public ?int $lineDiff,
+        public ?int $linesAdded,
+        public ?int $linesDeleted,
         public ?int $durationMs,
         public array $tasks,
     ) {}
@@ -47,6 +50,7 @@ final class TaskGroupData extends Data
             id: $group->id,
             appId: $group->app_id,
             app: $group->app->slug,
+            projectCode: $group->app->code,
             taskableType: $taskable instanceof AppInstance ? 'instance' : $group->taskable_type,
             taskableId: $group->taskable_id,
             title: $group->title,
@@ -59,7 +63,11 @@ final class TaskGroupData extends Data
             reviewerModel: $group->reviewer_model,
             tokens: $group->tokens,
             lineDiff: $group->line_diff,
-            durationMs: $group->duration_ms,
+            linesAdded: $group->lines_added,
+            linesDeleted: $group->lines_deleted,
+            durationMs: $group->status->isActive() && $group->started_at !== null
+                ? max(0, (int) now()->diffInMilliseconds($group->started_at, true))
+                : $group->duration_ms,
             tasks: $group->tasks
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
                 ->values()

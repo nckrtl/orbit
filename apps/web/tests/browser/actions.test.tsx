@@ -59,7 +59,7 @@ it("profiles an instance and shows what the command printed in a modal", async (
     );
 
     await openApp("/instances/1");
-    await page.getByText("actions ▾").click();
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "profile", exact: true }).click();
 
     await expect.element(page.getByRole("dialog")).toHaveTextContent("Total ....... 41.20ms");
@@ -126,7 +126,7 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
     await expect.element(pane("Application log")).toBeVisible();
     await expect.element(pane("Properties")).not.toHaveTextContent("Analytics");
 
-    await page.getByText("actions ▾").click();
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
 
     const modal = page.getByRole("dialog");
@@ -154,7 +154,7 @@ it("enables analytics tracking from the menu, shows what to do next, then disabl
     await expect.element(pane("Top pages")).toHaveTextContent("120");
 
     // Enabled now, so the menu offers the opposite, and asks before it stops the tracking.
-    await page.getByText("actions ▾").click();
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "disable analytics", exact: true }).click();
     await expect
         .element(pane("charlie-shop/dev"))
@@ -174,7 +174,7 @@ it("shows a warn analytics panel when stats cannot be read, not zeros", async ()
     await expect.element(pane("Application log")).toBeVisible();
     await expect.element(pane("Analytics")).not.toBeInTheDocument();
 
-    await page.getByText("actions ▾").click();
+    await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "enable analytics", exact: true }).click();
     await userEvent.keyboard("{Escape}");
 

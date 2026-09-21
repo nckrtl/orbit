@@ -2413,6 +2413,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List task agent sessions */
+        get: operations["tasks-agents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/agents/{session}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Watch a task agent session */
+        get: operations["tasks-agent-stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/complete": {
         parameters: {
             query?: never;
@@ -2648,6 +2682,7 @@ export interface components {
             id?: number;
             name?: string;
             slug?: string;
+            code?: string;
             /** @enum {string} */
             type?: "monorepo" | "laravel-app" | "laravel-package";
             repository_url?: string;
@@ -3077,6 +3112,7 @@ export interface components {
             id?: number;
             app_id?: number;
             app?: string;
+            project_code?: string;
             taskable_type?: string | null;
             taskable_id?: number | null;
             title?: string;
@@ -3090,6 +3126,8 @@ export interface components {
             reviewer_model?: string;
             tokens?: number | null;
             line_diff?: number | null;
+            lines_added?: number | null;
+            lines_deleted?: number | null;
             duration_ms?: number | null;
             tasks?: components["schemas"]["Task"][];
         };
@@ -3104,7 +3142,17 @@ export interface components {
             implementer_thread_id?: string | null;
             tokens?: number | null;
             line_diff?: number | null;
+            lines_added?: number | null;
+            lines_deleted?: number | null;
             duration_ms?: number | null;
+        };
+        TaskAgentSession: {
+            id?: number;
+            task_group_id?: number;
+            task_id?: number | null;
+            node_id?: number | null;
+            role?: string;
+            thread_id?: string;
         };
         ToolManager: {
             id?: number | null;
@@ -3466,6 +3514,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name?: string;
+                    code: string;
                     slug: string;
                     /** @enum {string} */
                     type: "monorepo" | "laravel-app" | "laravel-package";
@@ -3640,6 +3689,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    code: string;
                     /** @enum {string} */
                     type: "monorepo" | "laravel-app" | "laravel-package";
                     slug: string;
@@ -10559,6 +10609,7 @@ export interface operations {
                 "application/json": {
                     /** @description Optional display name */
                     name?: string;
+                    code: string;
                     /** @description Unique project slug */
                     slug: string;
                     /**
@@ -10739,6 +10790,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    code: string;
                     /**
                      * @description New Project type
                      * @enum {string}
@@ -12852,6 +12904,95 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskAgentSession"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-agent-stream": {
+        parameters: {
+            query?: {
+                after_sequence?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric task agent session ID within this group. */
+                session: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read-only T3 thread snapshots and events. Resume with Last-Event-ID. Requires Gateway access. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

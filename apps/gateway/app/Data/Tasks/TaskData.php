@@ -23,6 +23,8 @@ final class TaskData extends Data
         public ?string $implementerThreadId,
         public ?int $tokens,
         public ?int $lineDiff,
+        public ?int $linesAdded,
+        public ?int $linesDeleted,
         public ?int $durationMs,
     ) {}
 
@@ -38,6 +40,8 @@ final class TaskData extends Data
             implementerThreadId: $task->implementer_thread_id,
             tokens: $task->tokens,
             lineDiff: $task->line_diff,
+            linesAdded: $task->lines_added,
+            linesDeleted: $task->lines_deleted,
             durationMs: $task->duration_ms,
         );
     }

@@ -192,6 +192,7 @@ const disabledProxyCli = (): ProxyCliStatus => ({
 /** Fleet proxycli status. A disabled or unreachable feature hides the Quota section. */
 export const proxycliStatusQuery = queryOptions({
     queryKey: ["proxycli-status"],
+    refetchInterval: POLL_SECONDS * 1000,
     queryFn: () => get<ProxyCliStatus>("/api/v1/proxycli").catch(() => disabledProxyCli()),
     retry: false,
 });

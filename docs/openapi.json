@@ -701,6 +701,10 @@
                     "type": "string",
                     "maxLength": 255
                   },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
                   "slug": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]+$",
@@ -734,6 +738,7 @@
                   }
                 },
                 "required": [
+                  "code",
                   "slug",
                   "type",
                   "repository_url",
@@ -824,7 +829,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/apps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"example\", \"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
           }
         ]
       }
@@ -1005,6 +1010,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
                   "type": {
                     "type": "string",
                     "enum": [
@@ -1032,6 +1041,7 @@
                   }
                 },
                 "required": [
+                  "code",
                   "type",
                   "slug",
                   "repository_url",
@@ -1111,7 +1121,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/apps/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"example\", \"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
           }
         ]
       }
@@ -13963,6 +13973,10 @@
                     "maxLength": 255,
                     "description": "Optional display name"
                   },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
                   "slug": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]+$",
@@ -14000,6 +14014,7 @@
                   }
                 },
                 "required": [
+                  "code",
                   "slug",
                   "type",
                   "repository_url",
@@ -14090,7 +14105,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"example\", \"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
           },
           {
             "lang": "php",
@@ -14289,6 +14304,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3}$"
+                  },
                   "type": {
                     "type": "string",
                     "enum": [
@@ -14320,6 +14339,7 @@
                   }
                 },
                 "required": [
+                  "code",
                   "type",
                   "slug",
                   "repository_url",
@@ -14399,7 +14419,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"code\": \"example\", \"type\": \"monorepo\", \"slug\": \"acme\", \"repository_url\": \"https://github.com/acme/site.git\", \"default_branch\": \"main\", \"root\": \"public\"}'\n"
           },
           {
             "lang": "php",
@@ -18247,6 +18267,164 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/agents": {
+      "get": {
+        "operationId": "tasks-agents",
+        "summary": "List task agent sessions",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaskAgentSession"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`tasks.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/agents\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-groups/{group}/agents/{session}/stream": {
+      "get": {
+        "operationId": "tasks-agent-stream",
+        "summary": "Watch a task agent session",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "session",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric task agent session ID within this group."
+          },
+          {
+            "name": "after_sequence",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "maximum": 9007199254740991,
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read-only T3 thread snapshots and events. Resume with Last-Event-ID. Requires Gateway access.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`tasks.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/agents/2/stream?after_sequence=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/complete": {
       "post": {
         "operationId": "tasks-complete",
@@ -19365,6 +19543,9 @@
             "type": "string"
           },
           "slug": {
+            "type": "string"
+          },
+          "code": {
             "type": "string"
           },
           "type": {
@@ -20974,6 +21155,9 @@
           "app": {
             "type": "string"
           },
+          "project_code": {
+            "type": "string"
+          },
           "taskable_type": {
             "type": [
               "string",
@@ -21033,6 +21217,18 @@
             ]
           },
           "line_diff": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_added": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_deleted": {
             "type": [
               "integer",
               "null"
@@ -21100,11 +21296,52 @@
               "null"
             ]
           },
+          "lines_added": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lines_deleted": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "duration_ms": {
             "type": [
               "integer",
               "null"
             ]
+          }
+        }
+      },
+      "TaskAgentSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "task_group_id": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "thread_id": {
+            "type": "string"
           }
         }
       },

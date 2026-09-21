@@ -256,6 +256,7 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/processes$/, () => ok(processes)],
             ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],
             ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
+            ["GET", /^\/api\/v1\/task-groups$/, () => ok([])],
             ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
             [
                 "GET",

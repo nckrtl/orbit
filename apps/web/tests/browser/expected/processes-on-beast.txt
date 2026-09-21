@@ -3,6 +3,7 @@
 │  Nodes │ 3
 │› Projects │ 3
 │  Databases │ 2
+│  Tasks │ 0
 ╰─
 
 ╭─ Processes
@@ -13,4 +14,4 @@
 │  valkey │ node beast │ beast │ docker │ running │ 1% │ 0.1G
 ╰─
 
-↑↓ sections · → into the page · 1-4 jump · n/p filters    demo fleet
+↑↓ sections · → into the page · 1-5 jump · n/p filters    demo fleet
