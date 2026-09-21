@@ -115,6 +115,11 @@ final readonly class T3AgentSpawner implements AgentSpawner
         $instance = $group->taskable;
 
         if (! $node instanceof Node || ! $instance instanceof AppInstance) {
+            Log::warning('T3 spawn skipped because the task group has no Instance on a Node.', [
+                'task_group_id' => $group->id,
+                'title' => $title,
+            ]);
+
             return null;
         }
 
@@ -135,6 +140,13 @@ final readonly class T3AgentSpawner implements AgentSpawner
                 ]);
             } catch (T3DispatchException $exception) {
                 if (! is_string($exception->existingProjectId)) {
+                    Log::warning('T3 project.create failed and reported no existing project.', [
+                        'task_group_id' => $group->id,
+                        'node_id' => $node->id,
+                        'workspace_root' => $instance->checkout_path,
+                        'exception' => $exception->getMessage(),
+                    ]);
+
                     return null;
                 }
 
@@ -154,7 +166,14 @@ final readonly class T3AgentSpawner implements AgentSpawner
                 'worktreePath' => $instance->checkout_path,
                 'createdAt' => $createdAt,
             ]);
-        } catch (T3DispatchException) {
+        } catch (T3DispatchException $exception) {
+            Log::warning('T3 thread.create failed.', [
+                'task_group_id' => $group->id,
+                'node_id' => $node->id,
+                'project_id' => $projectId,
+                'exception' => $exception->getMessage(),
+            ]);
+
             return null;
         }
 

@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 final readonly class TaskScheduler
 {
@@ -306,6 +307,7 @@ final readonly class TaskScheduler
 
         if (! is_string($reviewerThreadId) || $reviewerThreadId === '') {
             $this->failOpeningSpawn($group, null, 'reviewer');
+            return;
         }
 
         $group->reviewer_thread_id = $reviewerThreadId;
@@ -377,10 +379,24 @@ final readonly class TaskScheduler
 
         $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
 
-        if (is_string($threadId) && $threadId !== '') {
-            $task->implementer_thread_id = $threadId;
+        if (! is_string($threadId) || $threadId === '') {
+            $task->status = TaskStatus::Failed;
             $task->save();
+            $group = $task->taskGroup()->first();
+            if ($group instanceof TaskGroup) {
+                $group->status = TaskGroupStatus::Failed;
+                $group->save();
+                Log::error('A task group agent spawn returned no thread id.', [
+                    'task_group_id' => $group->id,
+                    'task_id' => $task->id,
+                    'agent' => 'implementer',
+                ]);
+            }
+            return;
         }
+
+        $task->implementer_thread_id = $threadId;
+        $task->save();
     }
 
     /** @return Collection<int, Task> */
@@ -435,7 +451,7 @@ final readonly class TaskScheduler
             ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
     }
 
-    private function failOpeningSpawn(TaskGroup $group, ?Task $task, string $agent): never
+    private function failOpeningSpawn(TaskGroup $group, ?Task $task, string $agent): void
     {
         if ($task instanceof Task) {
             $task->status = TaskStatus::Failed;
@@ -445,7 +461,12 @@ final readonly class TaskScheduler
         $group->status = TaskGroupStatus::Failed;
         $group->save();
 
-        throw new \RuntimeException("Task group {$group->id} could not start: {$agent} spawn returned no thread id.");
+        Log::error('A task group agent spawn returned no thread id.', [
+            'task_group_id' => $group->id,
+            'task_id' => $task?->id,
+            'agent' => $agent,
+        ]);
+
     }
 
     private function visitable(TaskGroup $group): bool

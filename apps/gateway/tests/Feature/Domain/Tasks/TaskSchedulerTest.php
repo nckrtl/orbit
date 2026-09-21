@@ -318,10 +318,10 @@ it('fails a group when the reviewer spawn returns no thread id', function (): vo
         }
     });
 
-    expect(fn (): ?TaskGroup => app(TaskScheduler::class)->claimNext())
-        ->toThrow(RuntimeException::class, "Task group {$group->id} could not start: reviewer spawn returned no thread id.");
+    $claimed = app(TaskScheduler::class)->claimNext();
 
-    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
+    expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
         ->and($group->fresh()?->reviewer_thread_id)->toBeNull()
         ->and($group->tasks->first()?->fresh()?->status)->toBe(TaskStatus::Pending)
         ->and($group->tasks->first()?->fresh()?->implementer_thread_id)->toBeNull();
@@ -361,13 +361,64 @@ it('fails a group and its first task when the implementer spawn returns no threa
         }
     });
 
-    expect(fn (): ?TaskGroup => app(TaskScheduler::class)->claimNext())
-        ->toThrow(RuntimeException::class, "Task group {$group->id} could not start: implementer spawn returned no thread id.");
+    $claimed = app(TaskScheduler::class)->claimNext();
 
-    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
+    expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
         ->and($group->fresh()?->reviewer_thread_id)->toBe('reviewer-thread')
         ->and($group->tasks->first()?->fresh()?->status)->toBe(TaskStatus::Failed)
         ->and($group->tasks->first()?->fresh()?->implementer_thread_id)->toBeNull();
+});
+
+it('fails the group when a later implementer spawn returns no thread id', function (): void {
+    $app = scheduler_app('missing-next-implementer');
+    $instance = scheduler_instance($app, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace');
+    $group = queued_group($app, 'Missing next implementer', $instance);
+    Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Second',
+        'brief' => 'Next subtask',
+        'status' => TaskStatus::Pending,
+    ]);
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, new class implements AgentSpawner
+    {
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            return 'reviewer-thread';
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            return $task->position === 1 ? 'implementer-1' : null;
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return 'signoff-sha';
+        }
+    });
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
+    $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+
+    expect($advanced->status)->toBe(TaskGroupStatus::Failed)
+        ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
+        ->and($advanced->tasks->last()?->status)->toBe(TaskStatus::Failed)
+        ->and($advanced->tasks->last()?->implementer_thread_id)->toBeNull();
 });
 
 it('leaves a provisioned group reserved when the Node is already at the ceiling', function (): void {
