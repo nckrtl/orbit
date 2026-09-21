@@ -61,7 +61,7 @@ The optional [tasks](/reference/tasks) extension stores Commander-style feature 
 
 ## proxycli
 
-The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://proxycli.orbit` for CodexBar. The Orbit web app reads the same snapshot. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary.
+The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://collector.proxycli.orbit` for CodexBar. The Orbit web app reads the same snapshot. Apex `proxycli.orbit` stays free for a CLIProxyAPI management Route. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) owns the hostname split.
 
 ## Database connections
 

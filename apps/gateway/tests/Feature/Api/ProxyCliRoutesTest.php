@@ -102,7 +102,7 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
         ])
         ->assertCreated()
         ->assertJsonPath('data.enabled', true)
-        ->assertJsonPath('data.hostname', 'proxycli.orbit')
+        ->assertJsonPath('data.hostname', 'collector.proxycli.orbit')
         ->assertJsonPath('data.node_id', $node->id)
         ->assertJsonPath('data.cache_connection', 'valkey')
         ->assertJsonMissingPath('data.cliproxy_management_key')
@@ -124,6 +124,29 @@ it('enables proxycli when shared Valkey sits on a database Node', function (): v
         ->and(app(RecordingProxyCliPublicationManager::class)->converged)->toBeTrue()
         ->and($environment['PROXYCLI_CACHE_HOST'])->toBe('10.44.0.8')
         ->and($environment['PROXYCLI_CACHE_PORT'])->toBe('6379');
+});
+
+it('keeps the collector hostname on a second enable', function (): void {
+    $gateway = proxycli_gateway();
+    $node = proxycli_node();
+    proxycli_valkey($node);
+    $payload = [
+        'node_id' => $node->id,
+        'cache_connection' => 'valkey',
+        'cliproxy_url' => 'http://127.0.0.1:8317',
+        'cliproxy_management_key' => 'management-key',
+    ];
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', $payload)
+        ->assertCreated()
+        ->assertJsonPath('data.hostname', 'collector.proxycli.orbit');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->postJson('/api/v1/proxycli', $payload)
+        ->assertCreated()
+        ->assertJsonPath('data.enabled', true)
+        ->assertJsonPath('data.hostname', 'collector.proxycli.orbit');
 });
 
 it('fails closed when the cache connection is missing, not redis, or unplaced', function (string $setup, string $code): void {

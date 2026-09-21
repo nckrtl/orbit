@@ -2052,12 +2052,12 @@ export interface paths {
         put?: never;
         /**
          * Enable proxycli
-         * @description Deploys one collector Process and publishes https://proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.
+         * @description Deploys one collector Process and publishes https://collector.proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.
          */
         post: operations["proxycli-enable"];
         /**
          * Disable proxycli
-         * @description Stops the collector Process, withdraws proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.
+         * @description Stops the collector Process, withdraws collector.proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.
          */
         delete: operations["proxycli-disable"];
         options?: never;

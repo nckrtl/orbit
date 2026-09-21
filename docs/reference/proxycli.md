@@ -1,15 +1,15 @@
 ---
 title: "proxycli"
-description: "The optional Orbit extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at proxycli.orbit."
+description: "The optional Orbit extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at collector.proxycli.orbit."
 ---
 
 # proxycli
 
-This page tells an operator how the optional `proxycli` extension collects CLIProxyAPI account quota, stores one snapshot in shared Valkey, and exposes provider pools to the Orbit web app and CodexBar. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records the extension boundary. [Cut over proxy-quota collectors](/solutions/cutover-proxycli) owns the migration from hand-rolled Processes.
+This page tells an operator how the optional `proxycli` extension collects CLIProxyAPI account quota, stores one snapshot in shared Valkey, and exposes provider pools to the Orbit web app and CodexBar. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) owns the collector hostname. [Cut over proxy-quota collectors](/solutions/cutover-proxycli) owns the migration from hand-rolled Processes.
 
 ## What the extension owns
 
-`proxycli` is a Gateway-owned fleet feature. Enabling the local CLI extension reveals the `proxycli:*` family. Enabling the fleet feature deploys one collector Process and publishes `https://proxycli.orbit`. Disabling the fleet feature stops that Process, withdraws the hostname, and hides the web quota UI.
+`proxycli` is a Gateway-owned fleet feature. Enabling the local CLI extension reveals the `proxycli:*` family. Enabling the fleet feature deploys one collector Process and publishes `https://collector.proxycli.orbit`. Disabling the fleet feature stops that Process, withdraws the hostname, and hides the web quota UI.
 
 The collector is the only process that calls CLIProxyAPI for quota. The web app, the Gateway API, and CodexBar read the Valkey snapshot. A refresh does not start a second poll. An account toggle updates CLIProxyAPI account status and then recompiles pools from the cached snapshot.
 
@@ -43,7 +43,7 @@ orbit proxycli:enable --node=beast --cache-connection=valkey --cliproxy-url=http
 
 `cliproxy-url` is the CLIProxyAPI Management API origin. The collector Process uses that URL from the chosen Node, so `http://127.0.0.1:8317` is correct when CLIProxyAPI already listens on that Node. The management key stays on the Gateway and in the Process environment. The API never returns it.
 
-Enable is idempotent. A second enable on the same Node and cache connection converges the Process and hostname again.
+Enable is idempotent. A second enable on the same Node and cache connection converges the Process and `collector.proxycli.orbit` again. It does not publish or reclaim apex `proxycli.orbit`.
 
 ## What enable deploys
 
@@ -53,10 +53,10 @@ Enable places these four pieces on the chosen Node and in Gateway settings. The 
 | --- | --- | --- |
 | Node Process `proxycli` | The chosen Node | `127.0.0.1:8787` |
 | Orbit CA leaf and Caddy site | The chosen Node | HTTPS on the Node WireGuard address |
-| Private DNS `host-record` | VPN DNS | `proxycli.orbit` → the Node WireGuard address |
+| Private DNS `host-record` | VPN DNS | `collector.proxycli.orbit` → the Node WireGuard address |
 | Read token and control token | Gateway settings | Server-side only |
 
-`proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it.
+`collector.proxycli.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. A Route cannot own it. Apex `proxycli.orbit` is not reserved. Publish CLIProxyAPI management there as a custom proxy Route to a loopback upstream such as `http://127.0.0.1:8317`. [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns that Route kind.
 
 The Process command is `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search an operator `PATH`, so a bare `python3` does not start. Enable persists `PROXYCLI_*` on the Process specification and the unit receives those values as `Environment=` directives. The map includes the CLIProxyAPI URL and management key, the CodexBar read and control tokens, the loopback port, and the Valkey host, port, username, and password. [ADR 0108](/decisions/0108-persist-managed-environment-on-systemd-processes) owns that projection. HTTP `process:create` still accepts environment only for Docker.
 
@@ -77,7 +77,7 @@ orbit extension:disable proxycli
 
 The Orbit web app shows a Quota section while the fleet feature is enabled. The overview lists each provider pool. A provider page lists accounts, window remaining, reset times, and enable or disable controls. Window titles are duration labels in management.html#/quota order: the longer window first (`7d` then `5h`). A window the provider omitted is absent. The UI never renders a missing window as zero and never labels a window Primary or Secondary.
 
-CodexBar uses the LLM Proxy quota-stats contract at `https://proxycli.orbit/v1/quota-stats` with the read token as a bearer token. Account control at `https://proxycli.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
+CodexBar uses the LLM Proxy quota-stats contract at `https://collector.proxycli.orbit/v1/quota-stats` with the read token as a bearer token. Account control at `https://collector.proxycli.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
 
 `orbit proxycli:status` reports whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written. `orbit proxycli:list` and `orbit proxycli:show` read the same snapshot. `orbit proxycli:update` toggles one account.
 
@@ -94,7 +94,7 @@ These codes appear on enable, disable, reads, and the CLI family. Placement fail
 | `proxycli.node_invalid` | The collector Node is missing, inactive, or has no WireGuard address. |
 | `proxycli.source_publication_failed` | Enable could not install the collector script on the Node. |
 | `proxycli.certificate_publication_failed` | Enable could not publish the Orbit CA leaf on the Node. |
-| `proxycli.caddy_publication_failed` | Enable could not install the `proxycli.orbit` Caddy site. |
+| `proxycli.caddy_publication_failed` | Enable could not install the `collector.proxycli.orbit` Caddy site. |
 | `extension.disabled` | A `proxycli:*` CLI command runs before `extension:enable proxycli`. |
 | `extension.unknown` | The slug is not a known extension. |
 

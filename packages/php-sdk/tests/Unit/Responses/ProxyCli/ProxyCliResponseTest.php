@@ -10,7 +10,7 @@ use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 it('maps a fleet status without tokens or keys', function (): void {
     $response = ProxyCliStatusResponse::fromGatewayData([
         'enabled' => true,
-        'hostname' => 'proxycli.orbit',
+        'hostname' => 'collector.proxycli.orbit',
         'node_id' => 7,
         'cache_connection' => 'valkey',
         'collected_at' => '2026-09-20T12:00:00Z',
@@ -20,7 +20,7 @@ it('maps a fleet status without tokens or keys', function (): void {
 
     expect($response->toArray())->toBe([
         'enabled' => true,
-        'hostname' => 'proxycli.orbit',
+        'hostname' => 'collector.proxycli.orbit',
         'node_id' => 7,
         'cache_connection' => 'valkey',
         'collected_at' => '2026-09-20T12:00:00Z',
