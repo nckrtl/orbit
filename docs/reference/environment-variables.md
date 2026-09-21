@@ -11,7 +11,9 @@ This page tells an operator how the Gateway reads, stores, and safely replaces a
 
 The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`.
 
-The Gateway accepts an active Instance only after its recorded placement is complete and no source migration or Route domain replacement is pending. An otherwise eligible Instance with no recorded source profile returns HTTP 409 `instance.source_profile_missing` for import, stored update, and synchronization. The message names recovery through the same creation request with `recover_source_profile`. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
+The Gateway accepts an active Instance only after its recorded placement is complete and no source migration or in-flight Route replacement is pending. A finished public Route may keep a terminal public-edge `replacement_step` such as `public-activated` or `ingress-firewall`. That retained step is not a pending replacement. A Route that is still activating or replacing returns HTTP 409 `env.owner_unavailable`.
+
+An otherwise eligible Instance with no recorded source profile returns HTTP 409 `instance.source_profile_missing` for import, stored update, and synchronization. The message names recovery through the same creation request with `recover_source_profile`. It also enforces access from the active peer to the owning Node before it reads the environment file or stored configuration. Import requires the owning Node to be active. A stored update does not contact the Node and can succeed while that Node is unreachable.
 
 ## Use the PHP SDK
 

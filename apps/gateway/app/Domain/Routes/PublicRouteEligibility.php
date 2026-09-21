@@ -50,8 +50,8 @@ final readonly class PublicRouteEligibility
 
     /**
      * A public edge is live when publication is public, the Route is authoritative, the Cluster
-     * can serve Ingress, and activation has reached the public handler. A null replacement step
-     * means public activation has not finished.
+     * can serve Ingress, and activation has reached a terminal public-edge step. A null
+     * replacement step means public activation has not finished.
      */
     public function publicEdgeIsLive(Route $route): bool
     {
@@ -64,6 +64,16 @@ final readonly class PublicRouteEligibility
         }
 
         return $this->publicActivationReached($route->replacement_step);
+    }
+
+    /**
+     * A finished public Route keeps a terminal public-edge step so the edge stays live.
+     * That retained step is not an in-flight replacement. A null step means no
+     * replacement is in progress.
+     */
+    public function isInFlightReplacementStep(?RouteReplacementStep $step): bool
+    {
+        return $step !== null && ! $this->publicActivationReached($step);
     }
 
     public function publicActivationReached(?RouteReplacementStep $step): bool

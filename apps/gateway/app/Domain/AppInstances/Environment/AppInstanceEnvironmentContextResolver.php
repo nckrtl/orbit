@@ -6,6 +6,7 @@ namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -17,6 +18,10 @@ use Illuminate\Database\Eloquent\Builder;
 
 final readonly class AppInstanceEnvironmentContextResolver
 {
+    public function __construct(
+        private PublicRouteEligibility $publicRoutes = new PublicRouteEligibility,
+    ) {}
+
     public function resolve(
         AppInstance $instance,
         bool $requireActiveNode,
@@ -65,7 +70,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             ! $route->isAuthoritative()
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
-            || $route->replacement_step !== null
+            || $this->publicRoutes->isInFlightReplacementStep($route->replacement_step)
         ) {
             $this->conflict();
         }

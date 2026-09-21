@@ -217,9 +217,11 @@
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Process",
-                "Route"
+                "Route",
+                "Route replacement"
             ],
             "governing_adrs": []
         },
@@ -3541,11 +3543,13 @@
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Route",
+                "Route replacement",
                 "Web root"
             ],
             "governing_adrs": [
