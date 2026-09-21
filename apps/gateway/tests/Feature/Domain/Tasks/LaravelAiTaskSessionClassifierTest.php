@@ -2,16 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Infrastructure\Ai\ChoiceAnswer;
-use App\Infrastructure\Ai\Classification;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use Illuminate\Support\Facades\Http;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 function classifier_observation(
     string $sessState = 'idle',
@@ -63,9 +62,9 @@ function classifier_observation(
 
 it('returns the faked Choice as the next action', function (): void {
     Http::preventStrayRequests();
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, 0.91),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.91),
+    ]]);
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(pendingApprovalId: 'approval-1'),
@@ -76,22 +75,18 @@ it('returns the faked Choice as the next action', function (): void {
         ->and($decision->reason)->toBe('Jev selected drain_approval.');
 });
 
-it('fails closed when the TypeSafe key is missing', function (): void {
-    Http::preventStrayRequests();
-    Classification::resetFake();
+it('uses the package fake without a TypeSafe key', function (): void {
+    Classification::fake();
     config()->set('ai.providers.typesafe.key', null);
 
-    expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
-        ->toThrow(
-            TaskSessionClassificationException::class,
-            'TYPESAFE_API_KEY is missing. Task session routing will not invent a next action.',
-        );
+    expect(app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation())->action)
+        ->toBe(TaskSessionNextAction::EscalateCoder);
 });
 
 it('selects drain_approval for a pending approval fixture', function (): void {
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, 0.88),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.88),
+    ]]);
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(sessState: 'waiting', idle: false, pendingApprovalId: 'approval-9'),
@@ -99,9 +94,9 @@ it('selects drain_approval for a pending approval fixture', function (): void {
 });
 
 it('relays a reviewer summary when the implementer is idle', function (): void {
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::RelayReviewToImplementer->value, 0.84),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::RelayReviewToImplementer->value, [], 0.84),
+    ]]);
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(reviewerText: 'Please add tests, then stop.'),
@@ -109,9 +104,9 @@ it('relays a reviewer summary when the implementer is idle', function (): void {
 });
 
 it('marks a verified subtask done when more work remains', function (): void {
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, 0.9),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, [], 0.9),
+    ]]);
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(prUrl: 'https://github.com/nckrtl/orbit/pull/21'),
@@ -119,9 +114,9 @@ it('marks a verified subtask done when more work remains', function (): void {
 });
 
 it('settles a verified commit with a pull request', function (): void {
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::SettleGroup->value, 0.93),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::SettleGroup->value, [], 0.93),
+    ]]);
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(
@@ -135,9 +130,9 @@ it('settles a verified commit with a pull request', function (): void {
 
 it('escalates when Choice confidence is below the gate', function (): void {
     config()->set('orbit.tasks.jev_confidence_threshold', 0.75);
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, 0.2),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.2),
+    ]]);
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(pendingApprovalId: 'approval-low'),

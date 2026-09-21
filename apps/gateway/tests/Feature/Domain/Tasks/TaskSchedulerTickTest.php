@@ -18,13 +18,13 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
-use App\Infrastructure\Ai\ChoiceAnswer;
-use App\Infrastructure\Ai\Classification;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 function tick_group(): TaskGroup
 {
@@ -114,9 +114,9 @@ it('drains a pending approval chosen by the faked Choice', function (): void {
             ];
         }
     });
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, 0.9),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.9),
+    ]]);
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -173,9 +173,9 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, 0.9),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.9),
+    ]]);
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -218,9 +218,9 @@ it('advances the current subtask when Jev marks it done', function (): void {
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new NullT3ThreadReader);
     app()->instance(AgentSpawner::class, $spawner);
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, 0.92),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, [], 0.92),
+    ]]);
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -301,9 +301,9 @@ it('dispatches nothing when Jev selects noop', function (): void {
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake([
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::Noop->value, 0.97),
-    ]);
+    Classification::fake([[
+        'next_action' => new ChoiceAnswer(TaskSessionNextAction::Noop->value, [], 0.97),
+    ]]);
 
     $decisions = app(TaskScheduler::class)->tick();
 
