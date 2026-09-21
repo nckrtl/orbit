@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { applyAgentEvent, emptyConversation } from "./agent-stream";
+import { applyAgentEvent, emptyConversation, groupConversation, type Entry } from "./agent-stream";
 
 it("keeps a created thread distinct from a running agent", () => {
     const state = applyAgentEvent(
@@ -15,7 +15,8 @@ it("keeps a created thread distinct from a running agent", () => {
     );
     expect(state.status).toBe("Not started");
     expect(state.tokens).toBeNull();
-    expect(state.lineDiff).toBeNull();
+    expect(state.linesAdded).toBeNull();
+    expect(state.linesDeleted).toBeNull();
     expect(
         applyAgentEvent(
             state,
@@ -90,5 +91,27 @@ it("reads session tokens and checkpoint line diff from a snapshot", () => {
         "one",
     );
     expect(state.tokens).toBe(1200);
-    expect(state.lineDiff).toBe(5);
+    expect(state.linesAdded).toBe(4);
+    expect(state.linesDeleted).toBe(1);
+});
+
+it("groups tool steps until a text message, then starts a new group", () => {
+    const entry = (id: string, kind: Entry["kind"], label: string, text: string): Entry => ({
+        id,
+        kind,
+        label,
+        text,
+        at: "",
+    });
+    const user = entry("u", "message", "user", "go");
+    const tests = entry("a1", "activity", "command", "ran tests");
+    const edit = entry("a2", "activity", "command", "edited file");
+    const done = entry("m", "message", "assistant", "Done");
+    const commit = entry("a3", "activity", "command", "committed");
+    expect(groupConversation([user, tests, edit, done, commit])).toEqual([
+        { type: "message", entry: user },
+        { type: "activities", entries: [tests, edit] },
+        { type: "message", entry: done },
+        { type: "activities", entries: [commit] },
+    ]);
 });

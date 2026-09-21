@@ -33,14 +33,37 @@ export type Conversation = {
     status: string;
     entries: Entry[];
     tokens: number | null;
-    lineDiff: number | null;
+    linesAdded: number | null;
+    linesDeleted: number | null;
 };
+export type ConversationGroup =
+    | { type: "message"; entry: Entry }
+    | { type: "activities"; entries: Entry[] };
+
+/** Group consecutive tool steps. A text message closes the group; the next step starts another. */
+export function groupConversation(entries: Entry[]): ConversationGroup[] {
+    const groups: ConversationGroup[] = [];
+    for (const entry of entries) {
+        if (entry.kind === "message") {
+            groups.push({ type: "message", entry });
+            continue;
+        }
+        const last = groups.at(-1);
+        if (last?.type === "activities") {
+            last.entries.push(entry);
+        } else {
+            groups.push({ type: "activities", entries: [entry] });
+        }
+    }
+    return groups;
+}
 export const emptyConversation: Conversation = {
     sequence: -1,
     status: "Unknown",
     entries: [],
     tokens: null,
-    lineDiff: null,
+    linesAdded: null,
+    linesDeleted: null,
 };
 const object = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -88,9 +111,12 @@ function walkUsage(node: unknown, tokens: number | null): number | null {
     );
 }
 
-function checkpointLines(thread: Record<string, unknown>): number | null {
+function checkpointLines(
+    thread: Record<string, unknown>,
+): { added: number; deleted: number } | null {
     if (!Array.isArray(thread.checkpoints)) return null;
-    let total = 0;
+    let added = 0;
+    let deleted = 0;
     let found = false;
     for (const checkpoint of thread.checkpoints) {
         const files = object(checkpoint).files;
@@ -98,11 +124,22 @@ function checkpointLines(thread: Record<string, unknown>): number | null {
         for (const file of files) {
             found = true;
             const row = object(file);
-            total += nonNegative(row.additions) ?? 0;
-            total += nonNegative(row.deletions) ?? 0;
+            added += nonNegative(row.additions) ?? 0;
+            deleted += nonNegative(row.deletions) ?? 0;
         }
     }
-    return found ? total : null;
+    return found ? { added, deleted } : null;
+}
+
+function checkpointCounts(thread: Record<string, unknown>): {
+    linesAdded: number | null;
+    linesDeleted: number | null;
+} {
+    const lines = checkpointLines(thread);
+    return {
+        linesAdded: lines?.added ?? null,
+        linesDeleted: lines?.deleted ?? null,
+    };
 }
 
 function upsert(entries: Entry[], value: Entry | null): Entry[] {
@@ -140,7 +177,7 @@ export function applyAgentEvent(
                 : (statusLabels[text(session.status)] ?? "Not started"),
             entries: entries.sort((a, b) => a.at.localeCompare(b.at)),
             tokens: walkUsage(thread, null),
-            lineDiff: checkpointLines(thread),
+            ...checkpointCounts(thread),
         };
     }
     if (item.kind !== "event") return state;

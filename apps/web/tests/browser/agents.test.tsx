@@ -53,7 +53,7 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
             id: 2,
             task_group_id: 7,
             task_id: 9,
-            node_id: 3,
+            node_id: 2,
             role: "implementer",
             thread_id: "implement",
         },
@@ -90,6 +90,8 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
     await expect
         .element(page.getByRole("tabpanel"))
         .toHaveTextContent("Thread created. No agent activity yet.");
+    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("T3 - beast");
+    expect(document.querySelector('[role="tabpanel"]')?.textContent).not.toContain("implement");
     implementer.send({
         kind: "event",
         event: {
@@ -107,6 +109,62 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
         .element(page.getByRole("tabpanel"))
         .toHaveTextContent("Reading the source <script>unsafe()</script>");
     expect(document.querySelector('[role="tabpanel"] script')).toBeNull();
+    implementer.send({
+        kind: "event",
+        event: {
+            sequence: 7,
+            aggregateId: "implement",
+            type: "thread.session-set",
+            payload: { session: { status: "running" } },
+        },
+    });
+    implementer.send({
+        kind: "event",
+        event: {
+            sequence: 8,
+            aggregateId: "implement",
+            type: "thread.activity-appended",
+            payload: { activity: { id: "a1", kind: "command", summary: "ran tests" } },
+        },
+    });
+    implementer.send({
+        kind: "event",
+        event: {
+            sequence: 9,
+            aggregateId: "implement",
+            type: "thread.activity-appended",
+            payload: { activity: { id: "a2", kind: "command", summary: "edited file" } },
+        },
+    });
+    await expect
+        .poll(() => document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"))
+        .toBe("active");
+    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("edited file");
+    implementer.send({
+        kind: "event",
+        event: {
+            sequence: 10,
+            aggregateId: "implement",
+            type: "thread.message-sent",
+            payload: { messageId: "m2", role: "assistant", text: "Done." },
+        },
+    });
+    await expect
+        .poll(() => document.querySelector("[data-activity-group]")?.getAttribute("data-activity-group"))
+        .toBe("complete");
+    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("2 steps");
+    implementer.send({
+        kind: "event",
+        event: {
+            sequence: 11,
+            aggregateId: "implement",
+            type: "thread.activity-appended",
+            payload: { activity: { id: "a3", kind: "command", summary: "committed" } },
+        },
+    });
+    await expect
+        .poll(() => document.querySelector("[data-activity-group='active']")?.textContent)
+        .toContain("committed");
     document.getElementById("agent-tab-2")!.focus();
     await userEvent.keyboard("{ArrowUp}");
     await expect
@@ -120,7 +178,9 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
         "Reading the source",
     );
     reviewer.onerror?.();
-    await expect.element(page.getByRole("tabpanel")).toHaveTextContent("Reconnecting…");
+    await expect
+        .poll(() => document.querySelector('[role="tabpanel"] [role="status"]')?.getAttribute("aria-label"))
+        .toBe("Not live");
     await app.router.navigate({ to: "/" });
     expect(reviewer.closed).toBe(true);
     await app.router.navigate({ to: "/tasks/$id", params: { id: "7" } });

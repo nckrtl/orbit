@@ -1,5 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import {
+    accumulatedLineChanges,
     completedSubtaskProgress,
     formatCardDuration,
     formatCompactCount,
@@ -88,6 +89,17 @@ it("counts completed nested tasks against the group total", () => {
         ]),
     ).toEqual({ completed: 2, total: 5 });
     expect(completedSubtaskProgress([])).toEqual({ completed: 0, total: 0 });
+});
+
+it("accumulates subtask line changes and skips tasks without a split diff", () => {
+    expect(
+        accumulatedLineChanges([
+            { lines_added: 10, lines_deleted: 2 },
+            { lines_added: null, lines_deleted: null },
+            { lines_added: 4, lines_deleted: 7 },
+        ]),
+    ).toEqual({ lines_added: 14, lines_deleted: 9 });
+    expect(accumulatedLineChanges([{ line_diff: 5 }])).toBeNull();
 });
 
 it("formats card durations in minutes and hours without counting unknown time", () => {

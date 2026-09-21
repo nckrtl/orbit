@@ -127,7 +127,7 @@ function QuotaWindows({
                             }
                         >
                             <div
-                                className="h-full bg-cyan"
+                                className="h-full bg-white"
                                 style={{
                                     width: `${Math.max(0, Math.min(100, window.remaining_percent))}%`,
                                 }}

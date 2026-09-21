@@ -36,7 +36,11 @@ export function Properties({
     title?: string;
 }) {
     return (
-        <Frame title={title} className={`w-full ${className ?? ""}`.trim()}>
+        <Frame
+            title={title}
+            className={`w-full ${className ?? ""}`.trim()}
+            bodyClassName="properties"
+        >
             {properties.map((property) => {
                 const value = text(property.value);
 

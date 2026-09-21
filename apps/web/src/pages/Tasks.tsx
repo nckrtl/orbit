@@ -5,6 +5,7 @@ import { GatewayError } from "../api/client";
 import { lists } from "../api/queries";
 import {
     completedSubtaskProgress,
+    accumulatedLineChanges,
     formatCompactCount,
     formatDurationMs,
     formatCardDuration,
@@ -37,6 +38,29 @@ function TaskStatus({ status }: { status: TaskGroup["status"] | "pending" }) {
                 ? "text-dim"
                 : "text-yellow";
     return <span className={color}>{taskStatusLabels[status]}</span>;
+}
+
+function lineDiffProperty(detail: TaskGroup | Task) {
+    const accumulated = "tasks" in detail ? accumulatedLineChanges(detail.tasks) : null;
+    const added = accumulated?.lines_added ?? detail.lines_added;
+    const deleted = accumulated?.lines_deleted ?? detail.lines_deleted;
+    return [
+        {
+            name: "Line diff",
+            value: formatSignedLineChanges(added, deleted) ?? formatLineDiff(detail.line_diff),
+            title:
+                formatSignedLineChanges(added, deleted, formatLineDiff) ??
+                formatLineDiff(detail.line_diff) ??
+                undefined,
+            node:
+                added != null && deleted != null ? (
+                    <span aria-label="Line changes">
+                        <span className="text-green">+{formatCompactCount(added)}</span>{" "}
+                        <span className="text-red">−{formatCompactCount(deleted)}</span>
+                    </span>
+                ) : undefined,
+        },
+    ];
 }
 
 function taskProperties(
@@ -73,27 +97,7 @@ function taskProperties(
             value: formatCompactCount(detail.tokens),
             title: formatTokens(detail.tokens) ?? undefined,
         },
-        {
-            name: "Line diff",
-            value:
-                formatSignedLineChanges(detail.lines_added, detail.lines_deleted) ??
-                formatLineDiff(detail.line_diff),
-            title:
-                formatSignedLineChanges(detail.lines_added, detail.lines_deleted, formatLineDiff) ??
-                formatLineDiff(detail.line_diff) ??
-                undefined,
-            node:
-                detail.lines_added != null && detail.lines_deleted != null ? (
-                    <span aria-label="Line changes">
-                        <span className="text-green">
-                            +{formatCompactCount(detail.lines_added)}
-                        </span>{" "}
-                        <span className="text-red">
-                            −{formatCompactCount(detail.lines_deleted)}
-                        </span>
-                    </span>
-                ) : undefined,
-        },
+        ...lineDiffProperty(detail),
         { name: "Duration", value: formatDurationMs(detail.duration_ms) },
     ];
 }
@@ -107,7 +111,7 @@ function TaskError({ error, retry }: { error: Error; retry: () => void }) {
                     ? "Tasks are disabled on this Gateway. Enable the tasks extension to view tracked work."
                     : `Could not load tasks: ${error.message}`}
             </p>
-            <button type="button" className="mt-[8px] text-cyan underline" onClick={retry}>
+            <button type="button" className="link mt-[8px]" onClick={retry}>
                 Try again
             </button>
         </div>

@@ -25,6 +25,23 @@ export function taskColumn(status: TaskGroup["status"] | Task["status"]): TaskCo
     return "In progress";
 }
 
+/** Added and deleted lines across subtasks. Subtasks without a split diff are skipped. */
+export function accumulatedLineChanges(tasks: readonly LineChanges[]): {
+    lines_added: number;
+    lines_deleted: number;
+} | null {
+    let added = 0;
+    let deleted = 0;
+    let found = false;
+    for (const task of tasks) {
+        if (typeof task.lines_added !== "number" || typeof task.lines_deleted !== "number") continue;
+        found = true;
+        added += task.lines_added;
+        deleted += task.lines_deleted;
+    }
+    return found ? { lines_added: added, lines_deleted: deleted } : null;
+}
+
 /** How many nested tasks have finished successfully, of the group's total. */
 export function completedSubtaskProgress(tasks: readonly Task[]): {
     completed: number;

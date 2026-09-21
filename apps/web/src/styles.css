@@ -71,7 +71,6 @@ body {
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    user-select: none;
     cursor: default;
 }
 
@@ -222,6 +221,15 @@ body {
 }
 
 /* Agent sessions share the board's inset cards and continuous column divider. */
+/* The session count sits at the end of the list column, on the same edge as the Agents label. */
+@media (min-width: 48rem) {
+    .agent-sessions-frame > .frame-edge[data-edge="top"] > .frame-label:not([data-role="title"]) {
+        position: absolute;
+        left: calc(26ch - 1ch - var(--panel-padding));
+        transform: translateX(-100%);
+    }
+}
+
 .agent-sessions-body {
     padding: 0;
     /* The thread viewport scrolls, not the frame body. */
@@ -307,6 +315,11 @@ body {
     padding-bottom: calc(var(--lh) / 2);
 }
 
+/* Property lists sit a step looser than the 20px grid so each line has room around it. */
+.frame-body.properties .row {
+    height: 28px;
+}
+
 .row[data-head] {
     /* The head stays where it is drawn, below the frame's padding; its shadow hides the rows that scroll through that padding. */
     position: sticky;
@@ -390,8 +403,9 @@ body {
 }
 
 .link {
-    color: var(--cyan);
+    color: var(--fg);
     text-decoration: underline;
+    text-decoration-color: var(--fg);
     text-underline-offset: 3px;
     cursor: pointer;
 }
@@ -463,4 +477,31 @@ body {
 .selectable {
     user-select: text;
     cursor: text;
+}
+
+/* The latest tool step sweeps while that group is still open. */
+@keyframes shimmer-text {
+    from {
+        background-position: 200% 0;
+    }
+    to {
+        background-position: -200% 0;
+    }
+}
+
+.shimmer-text {
+    background-image: linear-gradient(90deg, var(--dim) 40%, var(--fg) 50%, var(--dim) 60%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer-text 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shimmer-text {
+        animation: none;
+        background: none;
+        color: var(--fg);
+    }
 }
