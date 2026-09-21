@@ -9,6 +9,7 @@ import { useLiveness, usePollingReason } from "../realtime/liveness";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
+    NAV,
     navFor,
     useNav,
     SECTION_TITLES,
