@@ -304,10 +304,12 @@ final readonly class TaskScheduler
     {
         $reviewerThreadId = $this->spawner->spawnReviewer($group);
 
-        if (is_string($reviewerThreadId) && $reviewerThreadId !== '') {
-            $group->reviewer_thread_id = $reviewerThreadId;
-            $group->save();
+        if (! is_string($reviewerThreadId) || $reviewerThreadId === '') {
+            $this->failOpeningSpawn($group, null, 'reviewer');
         }
+
+        $group->reviewer_thread_id = $reviewerThreadId;
+        $group->save();
 
         $first = $this->orderedTasks($group->tasks)->first();
 
@@ -318,6 +320,10 @@ final readonly class TaskScheduler
         try {
             $this->startTask($first);
         } catch (TaskSequenceException) {
+        }
+
+        if (! is_string($first->implementer_thread_id) || $first->implementer_thread_id === '') {
+            $this->failOpeningSpawn($group, $first, 'implementer');
         }
     }
 
@@ -427,6 +433,19 @@ final readonly class TaskScheduler
             ->filter(static fn (Task $candidate): bool => $candidate->position < $task->position
                 || ($candidate->position === $task->position && $candidate->id < $task->id))
             ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
+    }
+
+    private function failOpeningSpawn(TaskGroup $group, ?Task $task, string $agent): never
+    {
+        if ($task instanceof Task) {
+            $task->status = TaskStatus::Failed;
+            $task->save();
+        }
+
+        $group->status = TaskGroupStatus::Failed;
+        $group->save();
+
+        throw new \RuntimeException("Task group {$group->id} could not start: {$agent} spawn returned no thread id.");
     }
 
     private function visitable(TaskGroup $group): bool
