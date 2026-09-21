@@ -1,0 +1,51 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Actions\Tasks;
+
+use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Models\AppInstance;
+use App\Models\TaskGroup;
+
+final readonly class CancelTaskGroupAction
+{
+    public function __construct(
+        private RequireTasksExtensionAction $requireExtension,
+        private AppInstanceRemover $remover,
+    ) {}
+
+    public function execute(TaskGroup $group): TaskGroup
+    {
+        $this->requireExtension->execute();
+
+        $group->refresh()->load(['app', 'tasks', 'taskable']);
+
+        if (in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Completed], true)) {
+            throw new ResourceOperationException(
+                errorCode: 'tasks.not_cancellable',
+                message: __('A settling or completed task group cannot be cancelled.'),
+                status: 409,
+            );
+        }
+
+        $instance = $group->taskable;
+
+        if ($instance instanceof AppInstance) {
+            if ($instance->status === AppInstanceState::SourceResolved && ! $instance->routes()->exists()) {
+                $instance->delete();
+            } else {
+                $this->remover->execute($instance, true);
+            }
+        }
+
+        $group->taskable()->dissociate();
+        $group->status = TaskGroupStatus::Cancelled;
+        $group->save();
+
+        return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    }
+}

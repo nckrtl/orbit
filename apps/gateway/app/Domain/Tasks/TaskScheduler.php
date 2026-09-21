@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 final readonly class TaskScheduler
 {
@@ -304,10 +305,14 @@ final readonly class TaskScheduler
     {
         $reviewerThreadId = $this->spawner->spawnReviewer($group);
 
-        if (is_string($reviewerThreadId) && $reviewerThreadId !== '') {
-            $group->reviewer_thread_id = $reviewerThreadId;
-            $group->save();
+        if (! is_string($reviewerThreadId) || $reviewerThreadId === '') {
+            $this->failSpawn($group, null, 'reviewer');
+
+            return;
         }
+
+        $group->reviewer_thread_id = $reviewerThreadId;
+        $group->save();
 
         $first = $this->orderedTasks($group->tasks)->first();
 
@@ -371,10 +376,16 @@ final readonly class TaskScheduler
 
         $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
 
-        if (is_string($threadId) && $threadId !== '') {
-            $task->implementer_thread_id = $threadId;
-            $task->save();
+        if (! is_string($threadId) || $threadId === '') {
+            $group = $task->taskGroup()->first();
+
+            $this->failSpawn($group instanceof TaskGroup ? $group : null, $task, 'implementer');
+
+            return;
         }
+
+        $task->implementer_thread_id = $threadId;
+        $task->save();
     }
 
     /** @return Collection<int, Task> */
@@ -427,6 +438,25 @@ final readonly class TaskScheduler
             ->filter(static fn (Task $candidate): bool => $candidate->position < $task->position
                 || ($candidate->position === $task->position && $candidate->id < $task->id))
             ->every(static fn (Task $candidate): bool => $candidate->status === TaskStatus::Completed);
+    }
+
+    private function failSpawn(?TaskGroup $group, ?Task $task, string $agent): void
+    {
+        if ($task instanceof Task) {
+            $task->status = TaskStatus::Failed;
+            $task->save();
+        }
+
+        if ($group instanceof TaskGroup) {
+            $group->status = TaskGroupStatus::Failed;
+            $group->save();
+        }
+
+        Log::error('A task group agent spawn returned no thread id.', [
+            'task_group_id' => $group?->id,
+            'task_id' => $task?->id,
+            'agent' => $agent,
+        ]);
     }
 
     private function visitable(TaskGroup $group): bool

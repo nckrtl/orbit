@@ -11,10 +11,13 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
@@ -42,7 +45,7 @@ function provisioner_node(string $name, string $ip): Node
         'name' => $name,
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
-        'tld' => 'test',
+        'tld' => "{$name}.test",
         'public_ssh_host' => $ip,
         'wireguard_ip' => $ip,
         'user' => 'orbit',
@@ -50,6 +53,17 @@ function provisioner_node(string $name, string $ip): Node
     ]);
     $node->roles()->create([
         'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $node->processes()->create([
+        'name' => 't3-code',
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/t3', 'serve', "--host={$ip}", '--port=3773', '--no-browser']],
+        'restart_policy' => 'always',
+        'keep_alive' => true,
+        'desired_state' => DesiredProcessState::Running,
         'status' => LifecycleStatus::Active,
     ]);
 
@@ -241,3 +255,66 @@ it('returns null when destination occupation refuses the checkout', function ():
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
         ->toBeNull();
 });
+
+it('skips a non-T3 app-dev Node even when it has the lower id', function (): void {
+    $app = provisioner_app('placement');
+    $incapable = provisioner_node('no-t3', '10.44.0.110');
+    $incapable->processes()->delete();
+    $capable = provisioner_node('with-t3', '10.44.0.111');
+    $group = provisioner_group($app);
+    bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->node_id)->toBe($capable->id);
+    $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
+});
+
+it('returns null without creating a workspace when the only capable Node is full', function (): void {
+    $app = provisioner_app('full');
+    $incapable = provisioner_node('no-t3', '10.44.0.110');
+    $incapable->processes()->delete();
+    $capable = provisioner_node('full-t3', '10.44.0.111');
+    $occupied = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $capable->id,
+        'name' => 'occupied',
+        'checkout_path' => '/srv/orbit/apps/full/occupied',
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+        $active = provisioner_group($app, "Active {$i}");
+        $active->taskable()->associate($occupied);
+        $active->save();
+    }
+    $group = provisioner_group($app);
+    $fakes = bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance)->toBeNull()
+        ->and($fakes->source->calls)->toBe([]);
+    $this->assertDatabaseCount('app_instances', 1);
+    $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
+});
+
+it('returns null when the app-dev Node has no usable T3 process', function (string $reason): void {
+    $app = provisioner_app('unavailable');
+    $node = provisioner_node('unavailable', '10.44.0.112');
+    match ($reason) {
+        'missing' => $node->processes()->delete(),
+        'unrelated' => $node->processes()->update(['name' => 'other-service']),
+        'failed' => $node->processes()->update(['status' => LifecycleStatus::Failed]),
+        'stopped' => $node->processes()->update(['desired_state' => DesiredProcessState::Stopped]),
+        'no-address' => $node->update(['wireguard_ip' => null]),
+        'empty-address' => $node->update(['wireguard_ip' => '']),
+    };
+    $group = provisioner_group($app);
+    $fakes = bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance)->toBeNull()
+        ->and($fakes->source->calls)->toBe([]);
+    $this->assertDatabaseCount('app_instances', 0);
+})->with(['missing', 'unrelated', 'failed', 'stopped', 'no-address', 'empty-address']);

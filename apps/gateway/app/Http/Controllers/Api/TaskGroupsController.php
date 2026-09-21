@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Tasks\AddTaskAction;
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
@@ -69,6 +70,15 @@ final class TaskGroupsController extends Controller
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function complete(EmptyTasksRequest $request, TaskGroup $group, CompleteTaskGroupAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => TaskGroupData::fromModel($action->execute($group))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function cancel(EmptyTasksRequest $request, TaskGroup $group, CancelTaskGroupAction $action): JsonResponse
     {
         return response()->json([
             'data' => TaskGroupData::fromModel($action->execute($group))->toArray(),

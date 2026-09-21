@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\InstanceProvisioning;
+use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -67,6 +70,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
         'tasks:add' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
     ]);
 });
@@ -79,6 +83,8 @@ it('declares Gateway access for enable disable status create and add', function 
         ->and(new ReflectionMethod(TaskGroupsController::class, 'addTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'complete')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
+        ->toBe(ServingNode::Gateway)
+        ->and(new ReflectionMethod(TaskGroupsController::class, 'cancel')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway);
 });
 
@@ -143,6 +149,69 @@ it('returns 409 tasks.disabled for create list and show while the extension is o
         ->assertJsonPath('error.code', 'tasks.disabled');
 
     expect(TaskGroup::query()->count())->toBe(0);
+});
+
+it('still returns the created group when the opening spawn fails', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('spawn-failure');
+    $node = Node::query()->create([
+        'name' => 'spawn-failure-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.81',
+        'wireguard_ip' => '10.44.0.81',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'workspace',
+        'checkout_path' => '/tmp/tasks-spawn-failure',
+        'status' => 'reserved',
+    ]);
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, new class implements AgentSpawner
+    {
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            return null;
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return null;
+        }
+    });
+
+    $this->postJson('/api/v1/task-groups', [
+        'app_id' => $app->id,
+        'title' => 'Spawn failure',
+        'brief' => 'Fail the group. Accept when create still answers.',
+        'tasks' => [
+            ['title' => 'Only', 'brief' => 'One subtask. Accept when it is recorded.'],
+        ],
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.title', 'Spawn failure')
+        ->assertJsonPath('data.status', 'failed');
+
+    expect(TaskGroup::query()->count())->toBe(1);
 });
 
 it('creates a group with ordered tasks and lists and shows it', function (): void {

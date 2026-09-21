@@ -2773,6 +2773,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Task"
@@ -2959,6 +2960,21 @@
             "governing_adrs": [
                 "0103",
                 "0110"
+            ]
+        },
+        {
+            "path": "docs/decisions/0111-retain-transfer-history-through-instance-removal.md",
+            "title": "ADR 0111: Retain completed transfer history through AppInstance removal",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance"
+            ],
+            "governing_adrs": [
+                "0111"
             ]
         },
         {
@@ -3352,7 +3368,8 @@
                 "0038",
                 "0041",
                 "0045",
-                "0046"
+                "0046",
+                "0111"
             ]
         },
         {
@@ -4108,9 +4125,11 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Database",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Task",

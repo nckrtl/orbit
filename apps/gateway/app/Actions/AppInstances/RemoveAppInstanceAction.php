@@ -38,6 +38,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\AppInstanceTransfer;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use Illuminate\Support\Collection;
@@ -379,6 +380,17 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
     private function assertSupported(AppInstance $appInstance): void
     {
+        if (AppInstanceTransfer::query()
+            ->where('app_instance_id', $appInstance->id)
+            ->where('status', '!=', 'completed')
+            ->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.transfer_incomplete',
+                message: "AppInstance [{$appInstance->name}] has an incomplete or failed transfer that must be recovered before removal.",
+                status: 409,
+            );
+        }
+
         if (AppInstance::query()
             ->where('clone_candidate_id', $appInstance->id)
             ->whereNull('clone_completed_at')
@@ -815,6 +827,10 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         DB::transaction(function () use ($operation, $member): void {
             $lockedOperation = AppInstanceRemoval::query()->lockForUpdate()->findOrFail($operation->id);
             $lockedMember = $lockedOperation->members()->lockForUpdate()->findOrFail($member->id);
+            AppInstanceTransfer::query()
+                ->where('app_instance_id', $member->app_instance_id)
+                ->where('status', 'completed')
+                ->update(['app_instance_id' => null]);
             AppInstance::query()->lockForUpdate()->findOrFail($member->app_instance_id)->delete();
             $lockedMember->update(['row_deleted_at' => now()]);
 

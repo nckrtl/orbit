@@ -24,6 +24,7 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\RelativeWebRoot;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\T3NodeEligibility;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
@@ -45,6 +46,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentAppInstanceSourceLifecycle $source,
         private DevelopmentAppInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
+        private T3NodeEligibility $t3Nodes,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): ?AppInstance
@@ -266,6 +268,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             ->get();
 
         $eligible = $nodes
+            ->filter(fn (Node $node): bool => $this->t3Nodes->allows($node))
             ->filter(fn (Node $node): bool => $this->ceilings->activeForNode($node->id) < TaskCeilings::PerNode)
             ->sortBy(fn (Node $node): array => [$this->ceilings->activeForNode($node->id), $node->id])
             ->values();

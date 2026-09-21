@@ -93,7 +93,11 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create`, `thread.create`, or the opening `thread.turn.start`, the group stays `reserved` or `running` without thread ids.
+A claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. The Node must own an active `t3-code` Process whose desired state is `running`, matching the managed T3 service. This recorded state is the placement signal, not an HTTP health probe. If no such Node fits the ceiling, provisioning returns no Instance and creates no workspace.
+
+When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the long-lived reviewer and first implementer, and the Gateway stores their thread ids. After a successful `thread.create`, a refused `thread.turn.start` is retried once and then leaves the thread id unset.
+
+A spawn that returns no thread id marks the group `failed` and logs which spawn refused. The failing subtask is marked `failed` too. This applies to both opening spawns and to the implementer of any later subtask, so no group stays `running` with a null thread id. Create answers with the failed group rather than raising, so one group cannot break an unrelated create.
 
 `tasks:tick` (`php artisan tasks:tick`) then observes those stored reviewer and implementer threads and routes them. It does not poll Nodes for capacity and it never includes non-task T3 threads.
 
@@ -149,7 +153,7 @@ Jev Choice options:
 
 Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `escalate_coder`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents a next action.
 
-Gateway introduces `config/ai.php` for this Choice. Commander only stored `TYPESAFE_API_KEY` and `TOOLBAR_TYPESAFE_ENABLED`. It had no Laravel AI package and no application code that read those keys. laravel/ai 1.x Classification cannot install beside the current `laravel/mcp` pin, so Gateway owns the Classification + Choice + fake client and does not depend on the `laravel/ai` package. The client posts to TypeSafe `POST /v1/systemone`.
+Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
 Run the tick with `php artisan tasks:tick` while the extension is enabled. Ordinary drains, continues, relays, and noops do not notify Coder. A refused drain, continue, or relay escalates to Coder instead of succeeding silently.
 
@@ -188,6 +192,8 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_TASKS_GITHUB_TOKEN` | Optional GitHub token with pull-request write access when `gh` on the Node cannot open the PR |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
+| `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |
+| `nodes.settings.t3.url` | Optional full base URL for that node's T3 server. When absent, the node's WireGuard address and `ORBIT_T3_PORT` are used. |
 | `TYPESAFE_API_KEY` | TypeSafe Jev key for task-session Classification. Missing key fails closed |
 | `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`. Below this, the tick escalates |
 
@@ -219,4 +225,12 @@ These items stay unimplemented here and need a later feature PR.
 - Creating or changing tasks through the web UI
 - Per-Project model overrides
 - Tom-on-Mini routing
-- Fleet TypeSafe key mint (Ops after CLEAN)
+ - Fleet TypeSafe key mint (Ops after CLEAN)
+
+## Cancel a stuck group
+
+Call `tasks-cancel` with `{ "group": 123 }` to cancel a `queued`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. Cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
+
+A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not send a T3 stop command.
+
+A `settling` or `completed` group returns HTTP 409 with `tasks.not_cancellable` (an MCP error result). Use `tasks-complete` for a settling group after review and merge.

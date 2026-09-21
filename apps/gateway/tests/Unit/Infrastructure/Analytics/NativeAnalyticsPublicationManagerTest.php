@@ -160,7 +160,7 @@ function analytics_publication_manager(
                     return new CommandResult($this->failCertificate ? 1 : 0, '', '', 1, false);
                 }
 
-                $isCaddyPublish = str_contains($command->input ?? '', 'base64 --decode');
+                $isCaddyPublish = ! str_contains($command->input ?? '', 'if [ ! -d');
                 $this->events[] = $isCaddyPublish ? 'ssh:caddy' : 'ssh:caddy-remove';
 
                 return new CommandResult($this->failCaddy ? 1 : 0, '', '', 1, false);

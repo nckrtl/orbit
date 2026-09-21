@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 /**
  * @property string $id
- * @property int $app_instance_id
+ * @property int|null $app_instance_id
  * @property int $source_node_id
  * @property int|null $source_router_node_id
  * @property int $destination_node_id

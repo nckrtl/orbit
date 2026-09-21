@@ -10,6 +10,8 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
@@ -282,6 +284,143 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
         ->and($claimed?->tasks->first()?->implementer_thread_id)->toBe('implementer-thread');
 });
 
+it('fails a group when the reviewer spawn returns no thread id', function (): void {
+    $app = scheduler_app('missing-reviewer');
+    $instance = scheduler_instance($app, scheduler_node('missing-reviewer-node', '10.44.0.96'), 'workspace');
+    $group = queued_group($app, 'Missing reviewer');
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, new class implements AgentSpawner
+    {
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            return 'implementer-thread';
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return 'signoff-sha';
+        }
+    });
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+
+    expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->fresh()?->reviewer_thread_id)->toBeNull()
+        ->and($group->tasks->first()?->fresh()?->status)->toBe(TaskStatus::Pending)
+        ->and($group->tasks->first()?->fresh()?->implementer_thread_id)->toBeNull();
+});
+
+it('fails a group and its first task when the implementer spawn returns no thread id', function (): void {
+    $app = scheduler_app('missing-implementer');
+    $instance = scheduler_instance($app, scheduler_node('missing-implementer-node', '10.44.0.97'), 'workspace');
+    $group = queued_group($app, 'Missing implementer');
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, new class implements AgentSpawner
+    {
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            return 'reviewer-thread';
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            return null;
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return 'signoff-sha';
+        }
+    });
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+
+    expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->fresh()?->reviewer_thread_id)->toBe('reviewer-thread')
+        ->and($group->tasks->first()?->fresh()?->status)->toBe(TaskStatus::Failed)
+        ->and($group->tasks->first()?->fresh()?->implementer_thread_id)->toBeNull();
+});
+
+it('fails the group when a later implementer spawn returns no thread id', function (): void {
+    $app = scheduler_app('missing-next-implementer');
+    $instance = scheduler_instance($app, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace');
+    $group = queued_group($app, 'Missing next implementer', $instance);
+    Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Second',
+        'brief' => 'Next subtask',
+        'status' => TaskStatus::Pending,
+    ]);
+
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    app()->instance(AgentSpawner::class, new class implements AgentSpawner
+    {
+        public function spawnReviewer(TaskGroup $group): ?string
+        {
+            return 'reviewer-thread';
+        }
+
+        public function spawnImplementer(Task $task): ?string
+        {
+            return $task->position === 1 ? 'implementer-1' : null;
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return 'signoff-sha';
+        }
+    });
+
+    $claimed = app(TaskScheduler::class)->claimNext();
+    $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
+    $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+
+    expect($advanced->status)->toBe(TaskGroupStatus::Failed)
+        ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
+        ->and($advanced->tasks->last()?->status)->toBe(TaskStatus::Failed)
+        ->and($advanced->tasks->last()?->implementer_thread_id)->toBeNull();
+});
+
 it('leaves a provisioned group reserved when the Node is already at the ceiling', function (): void {
     $app = scheduler_app('held-app');
     $node = scheduler_node('full-node', '10.44.0.92');
@@ -326,6 +465,16 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
     $node->roles()->create([
         'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $node->processes()->create([
+        'name' => 't3-code',
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/t3', 'serve', '--port=3773']],
+        'restart_policy' => 'always',
+        'keep_alive' => true,
+        'desired_state' => DesiredProcessState::Running,
         'status' => LifecycleStatus::Active,
     ]);
     $group = queued_group($app, 'Real wire');

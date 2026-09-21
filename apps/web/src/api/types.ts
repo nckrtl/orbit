@@ -131,6 +131,8 @@ export type ProxyCliStatus = {
     collected_at: string | null;
 };
 
+export type TasksStatus = { enabled: boolean };
+
 /** An Instance's analytics: its tracking hosts, and what the operator does next. */
 export type InstanceAnalytics = {
     instance_id: number;
