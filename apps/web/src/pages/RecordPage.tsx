@@ -512,7 +512,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
             <QueuePanel instance={instance} />
             <LogPane
                 title="Application log"
-                className="min-h-[220px] flex-1 md:min-h-0"
+                className="min-h-[220px] flex-1"
                 lines={logs.data}
                 loading={logs.isPending}
             />
@@ -623,7 +623,7 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
             />
             <LogPane
                 title="Log"
-                className="min-h-[220px] flex-1 md:min-h-0"
+                className="min-h-[220px] flex-1"
                 lines={logs.data}
                 loading={logs.isPending}
             />
@@ -657,7 +657,7 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
             />
             <LogPane
                 title="Log"
-                className="min-h-[220px] flex-1 md:min-h-0"
+                className="min-h-[220px] flex-1"
                 lines={logs.data}
                 loading={logs.isPending}
             />
@@ -838,7 +838,7 @@ export function DeploymentPage() {
                 />
                 <LogPane
                     title="Log"
-                    className="min-h-[220px] flex-1 md:min-h-0"
+                    className="min-h-[220px] flex-1"
                     lines={log.data}
                     loading={log.isPending}
                 />
