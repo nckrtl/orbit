@@ -9,12 +9,15 @@ use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceSigner;
+use App\Infrastructure\Tasks\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3AgentSpawner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 function t3_spawner_group(): TaskGroup
 {
@@ -129,20 +132,62 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
             'thread.turn.start',
         ]);
 
+    $reviewerProject = $dispatcher->commands[0];
     $reviewerCreate = $dispatcher->commands[1];
+    $implementerProject = $dispatcher->commands[3];
     $implementerCreate = $dispatcher->commands[4];
+    $reviewerSelection = [
+        'instanceId' => TaskAgentDefaults::ReviewerModel,
+        'model' => TaskAgentDefaults::ReviewerModel,
+        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ReviewerEffort]],
+    ];
+    $implementerSelection = [
+        'instanceId' => TaskAgentDefaults::ImplementerModel,
+        'model' => TaskAgentDefaults::ImplementerModel,
+        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ImplementerEffort]],
+    ];
 
     expect($reviewerCreate['title'])->toStartWith('Reviewer:')
-        ->and($reviewerCreate['modelSelection'])->toBe([
-            'instanceId' => TaskAgentDefaults::ReviewerModel,
-            'model' => TaskAgentDefaults::ReviewerModel,
-            'options' => [['effort' => TaskAgentDefaults::ReviewerEffort]],
-        ])
+        ->and($reviewerProject['defaultModelSelection'])->toBe($reviewerSelection)
+        ->and($reviewerCreate['modelSelection'])->toBe($reviewerSelection)
+        ->and($implementerProject['defaultModelSelection'])->toBe($implementerSelection)
+        ->and($implementerCreate['modelSelection'])->toBe($implementerSelection)
         ->and($reviewerCreate['worktreePath'])->toBe('/srv/orbit/apps/orbit/task-1')
         ->and($reviewerCreate['branch'])->toBe('task-1')
-        ->and($implementerCreate['modelSelection']['model'])->toBe(TaskAgentDefaults::ImplementerModel)
         ->and($dispatcher->commands[2]['message'])->toContain('long-lived reviewer')
         ->and($dispatcher->commands[5]['message'])->toContain('Implement this subtask');
+});
+
+it('posts T3 model options as id and value JSON objects', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1]),
+    ]);
+    $group = t3_spawner_group();
+    [, , $signer] = t3_spawner_stack();
+
+    $threadId = (new T3AgentSpawner(app(HttpT3Dispatcher::class), $signer))->spawnReviewer($group);
+
+    expect($threadId)->not->toBeNull();
+
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode($request->body(), true);
+
+        return is_array($payload)
+            && ($payload['type'] ?? null) === 'project.create'
+            && ($payload['defaultModelSelection']['options'] ?? null) === [
+                ['id' => 'effort', 'value' => 'high'],
+            ];
+    });
+    Http::assertSent(function (Request $request): bool {
+        $payload = json_decode($request->body(), true);
+
+        return is_array($payload)
+            && ($payload['type'] ?? null) === 'thread.create'
+            && ($payload['modelSelection']['options'] ?? null) === [
+                ['id' => 'effort', 'value' => 'high'],
+            ];
+    });
 });
 
 it('sends please review to the stored reviewer thread and commits on sign-off', function (): void {
