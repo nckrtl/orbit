@@ -35,11 +35,7 @@ function ProviderMark({
     const state = !live ? "Not live" : working ? "Working" : "Idle";
     return (
         <span className="text-dim">
-            <span
-                role="status"
-                aria-label={state}
-                className={statusColor(live, working)}
-            >
+            <span role="status" aria-label={state} className={statusColor(live, working)}>
                 ●
             </span>
             {provider ? ` ${provider.name}` : ""}
@@ -105,60 +101,64 @@ export function AgentSessions({
                         {sessions.map((session, index) => {
                             const provider = agentProvider(session.model);
                             return (
-                            <button
-                                key={session.id}
-                                role="tab"
-                                id={`agent-tab-${session.id}`}
-                                aria-controls={`agent-panel-${session.id}`}
-                                aria-selected={selected.id === session.id}
-                                tabIndex={selected.id === session.id ? 0 : -1}
-                                className="agent-session-tab kanban-card rounded text-left focus-visible:outline-2 focus-visible:outline-cyan"
-                                onClick={() => setSelectedId(session.id)}
-                                onKeyDown={(event) => {
-                                    const offset =
-                                        event.key === "ArrowDown"
-                                            ? 1
-                                            : event.key === "ArrowUp"
-                                              ? -1
-                                              : 0;
-                                    const target =
-                                        event.key === "Home"
-                                            ? sessions[0]
-                                            : event.key === "End"
-                                              ? sessions.at(-1)
-                                              : offset
-                                                ? sessions[
-                                                      (index + offset + sessions.length) %
-                                                          sessions.length
-                                                  ]
-                                                : undefined;
-                                    if (target) {
-                                        event.preventDefault();
-                                        event.stopPropagation();
-                                        setSelectedId(target.id);
-                                        document.getElementById(`agent-tab-${target.id}`)?.focus();
-                                    }
-                                }}
-                            >
-                                <span
-                                    className={`flex items-baseline justify-between gap-[1ch] text-dim ${sessionMetaClassName}`}
+                                <button
+                                    key={session.id}
+                                    role="tab"
+                                    id={`agent-tab-${session.id}`}
+                                    aria-controls={`agent-panel-${session.id}`}
+                                    aria-selected={selected.id === session.id}
+                                    tabIndex={selected.id === session.id ? 0 : -1}
+                                    className="agent-session-tab kanban-card rounded text-left focus-visible:outline-2 focus-visible:outline-cyan"
+                                    onClick={() => setSelectedId(session.id)}
+                                    onKeyDown={(event) => {
+                                        const offset =
+                                            event.key === "ArrowDown"
+                                                ? 1
+                                                : event.key === "ArrowUp"
+                                                  ? -1
+                                                  : 0;
+                                        const target =
+                                            event.key === "Home"
+                                                ? sessions[0]
+                                                : event.key === "End"
+                                                  ? sessions.at(-1)
+                                                  : offset
+                                                    ? sessions[
+                                                          (index + offset + sessions.length) %
+                                                              sessions.length
+                                                      ]
+                                                    : undefined;
+                                        if (target) {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            setSelectedId(target.id);
+                                            document
+                                                .getElementById(`agent-tab-${target.id}`)
+                                                ?.focus();
+                                        }
+                                    }}
                                 >
-                                    <span>{taskIdentity(session.task_id ?? groupId, projectCode)}</span>
-                                    {provider?.name}
-                                </span>
-                                <strong className="block">
                                     <span
-                                        className={statusColor(
-                                            session.id === selected.id && sessionLive,
-                                            session.id === selected.id && sessionWorking,
-                                        )}
-                                        aria-hidden
+                                        className={`flex items-baseline justify-between gap-[1ch] text-dim ${sessionMetaClassName}`}
                                     >
-                                        ●{" "}
+                                        <span>
+                                            {taskIdentity(session.task_id ?? groupId, projectCode)}
+                                        </span>
+                                        {provider?.name}
                                     </span>
-                                    {session.role === "reviewer" ? "Reviewer" : "Implementer"}
-                                </strong>
-                            </button>
+                                    <strong className="block">
+                                        <span
+                                            className={statusColor(
+                                                session.id === selected.id && sessionLive,
+                                                session.id === selected.id && sessionWorking,
+                                            )}
+                                            aria-hidden
+                                        >
+                                            ●{" "}
+                                        </span>
+                                        {session.role === "reviewer" ? "Reviewer" : "Implementer"}
+                                    </strong>
+                                </button>
                             );
                         })}
                     </div>
@@ -216,9 +216,7 @@ function ActivityGroup({ entries, active }: { entries: Entry[]; active: boolean 
     if (active) {
         return (
             <article className="mb-[16px] last:mb-0" data-activity-group="active">
-                {entries.length > 1 && (
-                    <p className="mb-[4px] text-dim">Worked for {countLabel}</p>
-                )}
+                {entries.length > 1 && <p className="mb-[4px] text-dim">Worked for {countLabel}</p>}
                 <p className="shimmer-text">{summary}</p>
             </article>
         );
@@ -344,47 +342,47 @@ function SessionViewer({
                     />
                 </div>
                 <div className="relative shrink-0" ref={menuRef}>
-                        <button
-                            type="button"
-                            className="flex cursor-pointer items-center justify-center text-dim hover:text-fg"
+                    <button
+                        type="button"
+                        className="flex cursor-pointer items-center justify-center text-dim hover:text-fg"
+                        aria-label="Session actions"
+                        title="Session actions"
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        onClick={() => setMenuOpen((open) => !open)}
+                    >
+                        <EllipsisHorizontalIcon className="size-[20px]" aria-hidden="true" />
+                    </button>
+                    {menuOpen && (
+                        <div
+                            role="menu"
                             aria-label="Session actions"
-                            title="Session actions"
-                            aria-haspopup="menu"
-                            aria-expanded={menuOpen}
-                            onClick={() => setMenuOpen((open) => !open)}
+                            className="absolute right-0 top-full z-10 mt-[4px] min-w-[24ch] border border-line bg-bg"
                         >
-                            <EllipsisHorizontalIcon className="size-[20px]" aria-hidden="true" />
-                        </button>
-                        {menuOpen && (
-                            <div
-                                role="menu"
-                                aria-label="Session actions"
-                                className="absolute right-0 top-full z-10 mt-[4px] min-w-[24ch] border border-line bg-bg"
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full cursor-pointer px-[1ch] py-[2px] text-left hover:bg-fg/10"
+                                onClick={() => {
+                                    setFollowing((value) => !value);
+                                    setMenuOpen(false);
+                                }}
                             >
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="block w-full cursor-pointer px-[1ch] py-[2px] text-left hover:bg-fg/10"
-                                    onClick={() => {
-                                        setFollowing((value) => !value);
-                                        setMenuOpen(false);
-                                    }}
-                                >
-                                    {following ? "Pause scrolling" : "Follow latest"}
-                                </button>
-                                <button
-                                    type="button"
-                                    role="menuitem"
-                                    className="block w-full cursor-pointer px-[1ch] py-[2px] text-left hover:bg-fg/10"
-                                    onClick={() => {
-                                        void navigator.clipboard?.writeText(session.thread_id);
-                                        setMenuOpen(false);
-                                    }}
-                                >
-                                    Copy T3 thread ID
-                                </button>
-                            </div>
-                        )}
+                                {following ? "Pause scrolling" : "Follow latest"}
+                            </button>
+                            <button
+                                type="button"
+                                role="menuitem"
+                                className="block w-full cursor-pointer px-[1ch] py-[2px] text-left hover:bg-fg/10"
+                                onClick={() => {
+                                    void navigator.clipboard?.writeText(session.thread_id);
+                                    setMenuOpen(false);
+                                }}
+                            >
+                                Copy T3 thread ID
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
             <div
@@ -417,10 +415,7 @@ function SessionViewer({
                     }
                     const entry = group.entry;
                     return (
-                        <article
-                            key={`${entry.kind}:${entry.id}`}
-                            className="mb-[16px] last:mb-0"
-                        >
+                        <article key={`${entry.kind}:${entry.id}`} className="mb-[16px] last:mb-0">
                             <div className="mb-[4px] flex gap-[2ch] text-dim">
                                 <strong className="capitalize">{entry.label}</strong>
                                 {entry.at && (
