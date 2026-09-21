@@ -104,6 +104,11 @@ it('fills subtask session metrics from T3 and the group line diff from git', fun
 
             return 22;
         }
+
+        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        {
+            return false;
+        }
     };
 
     $refreshed = new TaskGroupMetricsRefresher($threads, $diff)->refresh($group);
@@ -141,6 +146,11 @@ it('keeps stored thread metrics when T3 refuses the snapshot', function (): void
         public function lineDiff(AppInstance $instance, string $baseBranch): int
         {
             return 11;
+        }
+
+        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        {
+            return false;
         }
     };
 
@@ -183,6 +193,11 @@ it('refreshes an active group when it is shown', function (): void {
         {
             return 9;
         }
+
+        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        {
+            return false;
+        }
     });
 
     $shown = app(ShowTaskGroupAction::class)->execute($group);
@@ -221,6 +236,11 @@ it('does not query T3 for a finished group', function (): void {
         public function lineDiff(AppInstance $instance, string $baseBranch): int
         {
             return 99;
+        }
+
+        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        {
+            return false;
         }
     })->refresh($group);
 

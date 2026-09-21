@@ -1,11 +1,11 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension stores TaskGroup features, provisions a shared Instance, starts T3 agents, opens the pull request, notifies Coder, and removes the instance on complete."
+description: "How the Gateway tasks extension stores TaskGroup features, provisions a shared Instance, starts T3 agents, routes idle sessions with Jev, opens the pull request, notifies Coder, and removes the instance on complete."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension stores a Commander-style feature group, provisions its shared Instance, starts T3 agents, opens the pull request, notifies Coder on settle, and removes the instance after merge. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the architectural choices.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. The Gateway stores the group, provisions its shared Instance, starts T3 agents, and routes idle and pending-input sessions with TypeSafe Jev. It then opens the pull request, notifies Coder on escalate or a settle that is ready for CLEAN, and removes the instance after merge. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 
@@ -36,7 +36,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `implementer_thread_id` | Task | Fresh implementer thread for that subtask |
 | `pr_url` | TaskGroup | Pull request opened after the last sign-off |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
-| `implementer_model` / `reviewer_model` | TaskGroup | Defaults: `codex-luna-lite` and `claude-opus` |
+| `implementer_model` / `reviewer_model` | TaskGroup | Defaults: `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
 | `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
 
 Group statuses: `queued`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `pending`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
@@ -83,18 +83,19 @@ When the parent task is open, Tokens is the total of every T3 session attached t
 
 ## Scheduler and ceilings
 
-After a successful create, the Gateway scheduler claims the oldest queued group that still fits the ceilings. It does not poll Nodes.
+After a successful create, the Gateway scheduler claims the oldest queued group that still fits the Node ceiling. It does not poll Nodes and it does not apply a per-Project ceiling.
 
 Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 | Ceiling | Limit |
 | --- | --- |
-| Active groups per Project | 3 |
 | Active groups per Node | 10 |
 
-A group without an Instance counts toward the Project ceiling only. The Node ceiling applies once `taskable` points at an Instance on that Node.
+The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create` or `thread.create`, the group stays `reserved` or `running` without thread ids. After a successful `thread.create`, a refused `thread.turn.start` still stores the thread id.
+A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create`, `thread.create`, or the opening `thread.turn.start`, the group stays `reserved` or `running` without thread ids.
+
+`tasks:tick` (`php artisan tasks:tick`) then observes those stored reviewer and implementer threads and routes them. It does not poll Nodes for capacity and it never includes non-task T3 threads.
 
 ## Shared Instance
 
@@ -119,11 +120,38 @@ The Gateway stores each session's group, optional subtask, role, Node, and T3 th
 
 Agents run on the T3 server of the Node that owns that Instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server. A successful dispatch needs a sequence. Commands that have no thread, including `project.create`, may omit `threadId`. `project.create` `defaultModelSelection` and `thread.create` `modelSelection` send options as `{id, value}` objects, never a bare map such as `{effort: high}`.
 
-When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged. The spawn still returns the created thread id.
+When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged at error. The spawn then returns null and stores no thread id.
 
-Each subtask gets a fresh implementer (`codex-luna-lite`, low effort). The group keeps one reviewer thread (`claude-opus`, high effort). Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first pending subtask. The next pending subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
+Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The driver is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first pending subtask. The next pending subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
 When a subtask settles, the scheduler marks it `reviewing` and sends "please review" to the reviewer thread. After the reviewer signs off, the Gateway commits in the shared checkout when git can create a commit, completes that subtask, and starts the next implementer. After the last subtask, the group moves to `settling`.
+
+`thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
+
+## Session routing
+
+A scheduler tick builds one observation per stored task thread and asks TypeSafe Jev for one `next_action`. Code gathers facts. Jev does not generate prose.
+
+Each observation includes session status, whether the thread is idle, pending approval and user-input request ids, last assistant and user text excerpts, whether the workspace has new commits since thread start, and `pr_url` / CI summary when Gateway already has them. When the HTTP snapshot omits a pending request id, subscribeThread activities still expose it. The observer merges both.
+
+Jev Choice options:
+
+| Action | Effect |
+| --- | --- |
+| `drain_approval` | `thread.approval.respond` with `decision=acceptForSession` |
+| `drain_user_input` | `thread.user-input.respond` with answers that continue the current brief and refuse scope expansion |
+| `continue_implementer` | `thread.turn.start` on the implementer with the Codex model selection |
+| `relay_review_to_implementer` | `thread.turn.start` on the implementer that includes the last reviewer excerpt |
+| `mark_subtask_done` | Existing settleImplementer, acceptReview, and next-subtask spawn paths |
+| `settle_group` | Existing settle path: open the PR, write metrics, and notify Coder when CLEAN-ready |
+| `escalate_coder` | HMAC Coder webhook with the observation and the low-confidence or failed Choice |
+| `noop` | No T3 dispatch and no Coder notify |
+
+Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `escalate_coder`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents a next action.
+
+Gateway introduces `config/ai.php` for this Choice. Commander only stored `TYPESAFE_API_KEY` and `TOOLBAR_TYPESAFE_ENABLED`. It had no Laravel AI package and no application code that read those keys. laravel/ai 1.x Classification cannot install beside the current `laravel/mcp` pin, so Gateway owns the Classification + Choice + fake client and does not depend on the `laravel/ai` package. The client posts to TypeSafe `POST /v1/systemone`.
+
+Run the tick with `php artisan tasks:tick` while the extension is enabled. Ordinary drains, continues, relays, and noops do not notify Coder. A refused drain, continue, or relay escalates to Coder instead of succeeding silently.
 
 ## Pull request and settle metrics
 
@@ -160,6 +188,8 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_TASKS_GITHUB_TOKEN` | Optional GitHub token with pull-request write access when `gh` on the Node cannot open the PR |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
+| `TYPESAFE_API_KEY` | TypeSafe Jev key for task-session Classification. Missing key fails closed |
+| `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`. Below this, the tick escalates |
 
 The Gateway skips the webhook when the URL or secret is missing. A refused Coder response does not fail settle.
 
@@ -172,6 +202,8 @@ The signed payload is `{unix timestamp}.{raw JSON body}`. Senders use these head
 | `Content-Type` | `application/json` |
 
 The JSON body contains `event` (`task_group.settled`), `task_group_id`, `title`, `tokens`, `line_diff`, `duration_ms`, and `pull_request_url`.
+
+An `escalate_coder` Choice posts the same HMAC headers with `event` `task_group.escalated`. That body adds `reason`, `confidence`, `thread_id`, and the structured observation. The scheduler does not post Coder webhooks for drains, continues, relays, or noops.
 
 ## Complete and cleanup
 
@@ -186,3 +218,5 @@ These items stay unimplemented here and need a later feature PR.
 - Commander data migration and retiring Commander
 - Creating or changing tasks through the web UI
 - Per-Project model overrides
+- Tom-on-Mini routing
+- Fleet TypeSafe key mint (Ops after CLEAN)

@@ -75,6 +75,11 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
 
             return 18;
         }
+
+        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        {
+            return false;
+        }
     };
 
     $metrics = new LocalTaskSettleMetricsCollector(

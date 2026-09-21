@@ -19,7 +19,90 @@ final readonly class TaskScheduler
         private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
         private CoderSettleNotifier $coder,
+        private TaskExtensionState $extension,
+        private TaskSessionObserver $observer,
+        private TaskSessionClassifier $classifier,
+        private TaskSessionActor $actor,
     ) {}
+
+    /**
+     * @return list<TaskSessionDecision>
+     */
+    public function tick(): array
+    {
+        if (! $this->extension->enabled()) {
+            return [];
+        }
+
+        $groups = TaskGroup::query()
+            ->with(['app', 'tasks', 'taskable'])
+            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing])
+            ->orderBy('id')
+            ->get();
+
+        $decisions = [];
+
+        foreach ($groups as $group) {
+            $observation = $this->observer->observe($group);
+
+            if ($observation->threads === []) {
+                continue;
+            }
+
+            try {
+                $decision = $this->classifier->classify($observation);
+            } catch (TaskSessionClassificationException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+            }
+
+            try {
+                $this->actor->execute($group, $observation, $decision);
+            } catch (T3DispatchException $exception) {
+                $decision = TaskSessionDecision::escalate($exception->getMessage());
+                $this->actor->execute($group, $observation, $decision);
+            }
+
+            $this->advance($group, $decision);
+            $decisions[] = $decision;
+        }
+
+        return $decisions;
+    }
+
+    private function advance(TaskGroup $group, TaskSessionDecision $decision): void
+    {
+        $group = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        $current = $group->tasks
+            ->sortBy(static fn (Task $task): array => [$task->position, $task->id])
+            ->first(static fn (Task $task): bool => in_array($task->status, [
+                TaskStatus::Running,
+                TaskStatus::Reviewing,
+            ], true));
+
+        if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
+            if ($current->status === TaskStatus::Running) {
+                $this->settleImplementer($current);
+            } elseif ($current->status === TaskStatus::Reviewing) {
+                $this->acceptReview($current);
+            }
+
+            return;
+        }
+
+        if ($decision->action !== TaskSessionNextAction::SettleGroup) {
+            return;
+        }
+
+        if ($current instanceof Task && $current->status === TaskStatus::Reviewing) {
+            $this->acceptReview($current);
+
+            return;
+        }
+
+        if ($group->status === TaskGroupStatus::Settling) {
+            $this->settle($group);
+        }
+    }
 
     public function claimNext(): ?TaskGroup
     {

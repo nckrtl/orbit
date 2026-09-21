@@ -17,4 +17,9 @@ final readonly class NullTaskWorkspaceDiffReader implements TaskWorkspaceDiffRea
     {
         return 0;
     }
+
+    public function hasCommitsSince(AppInstance $instance, string $since): bool
+    {
+        return false;
+    }
 }

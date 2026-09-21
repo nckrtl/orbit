@@ -167,8 +167,8 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.app', 'commander-demo')
         ->assertJsonPath('data.status', 'reserved')
         ->assertJsonPath('data.notify_coder', true)
-        ->assertJsonPath('data.implementer_model', 'codex-luna-lite')
-        ->assertJsonPath('data.reviewer_model', 'claude-opus')
+        ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
+        ->assertJsonPath('data.reviewer_model', 'claude-opus-5')
         ->assertJsonPath('data.taskable_type', null)
         ->assertJsonPath('data.tasks.0.position', 1)
         ->assertJsonPath('data.tasks.0.title', 'ADR')
@@ -202,7 +202,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Reserved);
 });
 
-it('leaves a fourth create queued when the App already has three active groups', function (): void {
+it('creates a fourth group when the App already has three active groups', function (): void {
     tasks_gateway();
     enable_tasks();
     $app = tasks_app('full-create');
@@ -218,10 +218,10 @@ it('leaves a fourth create queued when the App already has three active groups',
     $this->postJson('/api/v1/task-groups', [
         'app_id' => $app->id,
         'title' => 'Four',
-        'brief' => 'Must wait for a ceiling slot.',
+        'brief' => 'No per-Project ceiling holds this group.',
     ])
         ->assertCreated()
-        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.status', 'reserved')
         ->assertJsonPath('data.title', 'Four');
 });
 
