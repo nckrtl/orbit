@@ -197,7 +197,7 @@ it('removes a fully reconciled untargeted Route without route.reconciliation_req
         ->and(Route::query()->whereKey($route->id)->exists())
         ->toBeFalse()
         ->and($removal->events)
-        ->toBe(['dns', 'certificates', 'caddy', 'firewall']);
+        ->toBe(['dns', 'caddy', 'certificates', 'firewall']);
 });
 
 it('retains domain reconciliation refusals for generated Routes before projection', function (): void {

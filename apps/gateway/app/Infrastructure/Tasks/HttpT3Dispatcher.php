@@ -37,7 +37,9 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
         }
 
         if (! $response->successful()) {
-            throw new T3DispatchException;
+            throw new T3DispatchException(
+                existingProjectId: T3DispatchException::existingProjectId((string) $response->body()),
+            );
         }
 
         $sequence = $response->json('sequence');
@@ -47,15 +49,9 @@ final readonly class HttpT3Dispatcher implements T3Dispatcher
             throw new T3DispatchException;
         }
 
-        $resolvedThreadId = $returnedThreadId ?? $threadId;
-
-        if ($resolvedThreadId === '') {
-            throw new T3DispatchException;
-        }
-
         return [
             'sequence' => $sequence,
-            'thread_id' => $resolvedThreadId,
+            'thread_id' => $returnedThreadId ?? $threadId,
         ];
     }
 

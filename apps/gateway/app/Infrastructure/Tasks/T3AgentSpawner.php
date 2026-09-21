@@ -113,15 +113,24 @@ final readonly class T3AgentSpawner implements AgentSpawner
         ];
 
         try {
-            $this->dispatcher->dispatch($node, [
-                'type' => 'project.create',
-                'commandId' => (string) Str::uuid(),
-                'projectId' => $projectId,
-                'workspaceRoot' => $instance->checkout_path,
-                'title' => $group->title,
-                'defaultModelSelection' => $selection,
-                'createdAt' => $createdAt,
-            ]);
+            try {
+                $this->dispatcher->dispatch($node, [
+                    'type' => 'project.create',
+                    'commandId' => (string) Str::uuid(),
+                    'projectId' => $projectId,
+                    'workspaceRoot' => $instance->checkout_path,
+                    'title' => $group->title,
+                    'defaultModelSelection' => $selection,
+                    'createdAt' => $createdAt,
+                ]);
+            } catch (T3DispatchException $exception) {
+                if (! is_string($exception->existingProjectId)) {
+                    return null;
+                }
+
+                $projectId = $exception->existingProjectId;
+            }
+
             $created = $this->dispatcher->dispatch($node, [
                 'type' => 'thread.create',
                 'commandId' => (string) Str::uuid(),
@@ -135,9 +144,10 @@ final readonly class T3AgentSpawner implements AgentSpawner
                 'worktreePath' => $instance->checkout_path,
                 'createdAt' => $createdAt,
             ]);
-            $this->startTurn($node, $created['thread_id'], $message);
+            $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
+            $this->startTurn($node, $resolvedThreadId, $message);
 
-            return $created['thread_id'];
+            return $resolvedThreadId;
         } catch (T3DispatchException) {
             return null;
         }

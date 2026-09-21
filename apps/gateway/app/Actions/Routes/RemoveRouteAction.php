@@ -90,13 +90,13 @@ final readonly class RemoveRouteAction
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupDns($locked);
             });
-            $failureStep = RouteRemovalStep::Certificates;
-            $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
-                $this->projection->cleanupCertificates($locked);
-            });
             $failureStep = RouteRemovalStep::Caddy;
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupCaddy($locked);
+            });
+            $failureStep = RouteRemovalStep::Certificates;
+            $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
+                $this->projection->cleanupCertificates($locked);
             });
             $failureStep = RouteRemovalStep::Firewall;
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
@@ -251,8 +251,8 @@ final readonly class RemoveRouteAction
     {
         return match ($step) {
             RouteRemovalStep::Dns => 0,
-            RouteRemovalStep::Certificates => 1,
-            RouteRemovalStep::Caddy => 2,
+            RouteRemovalStep::Caddy => 1,
+            RouteRemovalStep::Certificates => 2,
             RouteRemovalStep::Firewall => 3,
             RouteRemovalStep::Record => 4,
         };

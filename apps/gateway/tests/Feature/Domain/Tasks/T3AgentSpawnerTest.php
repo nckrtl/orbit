@@ -70,6 +70,8 @@ function t3_spawner_stack(): array
 
         public bool $fail = false;
 
+        public ?string $adoptProjectId = null;
+
         public function dispatch(Node $node, array $command): array
         {
             expect($command)->not->toHaveKey('command')
@@ -77,6 +79,12 @@ function t3_spawner_stack(): array
 
             if ($this->fail) {
                 throw new T3DispatchException;
+            }
+
+            if (is_string($this->adoptProjectId) && ($command['type'] ?? null) === 'project.create') {
+                $this->commands[] = $command;
+
+                throw new T3DispatchException(existingProjectId: $this->adoptProjectId);
             }
 
             $this->commands[] = $command;
@@ -152,6 +160,23 @@ it('sends please review to the stored reviewer thread and commits on sign-off', 
         ->and($dispatcher->commands[0]['message'])->toStartWith('please review')
         ->and($sha)->toBe(str_repeat('b', 40))
         ->and($signer->commits)->toBe(1);
+});
+
+it('adopts the existing T3 project when workspace root already has one', function (): void {
+    $group = t3_spawner_group();
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $dispatcher->adoptProjectId = '550e8400-e29b-41d4-a716-446655440000';
+
+    $reviewerId = $spawner->spawnReviewer($group);
+
+    expect($reviewerId)->not->toBeNull()
+        ->and(array_column($dispatcher->commands, 'type'))->toBe([
+            'project.create',
+            'thread.create',
+            'thread.turn.start',
+        ])
+        ->and($dispatcher->commands[1]['projectId'])->toBe('550e8400-e29b-41d4-a716-446655440000')
+        ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
 });
 
 it('returns null when T3 refuses the spawn', function (): void {

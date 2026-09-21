@@ -237,7 +237,7 @@ describe('instance:analytics:enable', function (): void {
             ->and(RouteAnalyticsTracking::query()->count())->toBe(2)
             ->and($this->edge->calls)->toContain('remove-public-edge')
             ->and($this->removal->routeIds)->toBe(array_fill(0, 4, $dropped->id))
-            ->and($this->removal->events)->toBe(['dns', 'certificates', 'caddy', 'firewall']);
+            ->and($this->removal->events)->toBe(['dns', 'caddy', 'certificates', 'firewall']);
     });
 
     it('stays off the public edge without error while the cluster has no active Ingress', function (): void {
