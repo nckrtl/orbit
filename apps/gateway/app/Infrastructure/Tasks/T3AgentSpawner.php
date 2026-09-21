@@ -219,6 +219,8 @@ final readonly class T3AgentSpawner implements AgentSpawner
                 'attachments' => [],
             ],
             'modelSelection' => $selection,
+            'runtimeMode' => 'full-access',
+            'interactionMode' => 'default',
             'createdAt' => now()->toIso8601String(),
         ]);
     }
