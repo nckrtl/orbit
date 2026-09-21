@@ -23,7 +23,7 @@ final class DestroyDeployStepCommand extends DeploymentCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Destroy a named deploy step on a production AppInstance.';
+    protected $description = 'Destroy a named deploy step on a production Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -42,7 +42,7 @@ final class DestroyDeployStepCommand extends DeploymentCommand
 
         if ($this->option('yes') !== true) {
             $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
-                ['Resolve App instance', 'Loading App instance', 'Loaded App instance']);
+                ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
             if (! $instance instanceof AppInstanceResponse) {
                 return self::FAILURE;
             }
@@ -55,7 +55,7 @@ final class DestroyDeployStepCommand extends DeploymentCommand
             if ($step === null) {
                 return $this->renderGatewayFailure('deploy_step.not_found', 'The deploy step was not found.', $steps->requestId);
             }
-            if (! $this->confirmAction("Remove deploy step [{$step->name}] from App instance [{$instance->name}] (#{$instance->id})?", 'Deploy step removal cancelled.')) {
+            if (! $this->confirmAction("Remove deploy step [{$step->name}] from Instance [{$instance->name}] (#{$instance->id})?", 'Deploy step removal cancelled.')) {
                 return self::FAILURE;
             }
         }

@@ -27,7 +27,7 @@ function instance_source_consent_case(string $family): array
     $case = match ($family) {
         'remove' => [
             'arguments' => ['instance:destroy', '11'],
-            'prompt' => 'Remove App instance [source] (#11) and delete its owned development source, Route and runtime?',
+            'prompt' => 'Remove Instance [source] (#11) and delete its owned development source, Route and runtime?',
             'reads' => 1, 'option' => '--yes', 'code' => 'input.confirmation_required',
             'replies' => [instance_source_reply(ShowAppInstanceRequest::class, $instance),
                 instance_source_reply(DestroyAppInstanceRequest::class, ['id' => 11, 'name' => 'source', 'force' => false, 'status' => 'completed', 'total' => 1, 'completed' => 1, 'remaining' => 0])],
@@ -35,14 +35,14 @@ function instance_source_consent_case(string $family): array
         ],
         'step' => [
             'arguments' => ['instance:deploy-step:destroy', '11', 'migrate'],
-            'prompt' => 'Remove deploy step [migrate] from App instance [source] (#11)?',
+            'prompt' => 'Remove deploy step [migrate] from Instance [source] (#11)?',
             'reads' => 2, 'option' => '--yes', 'code' => 'input.confirmation_required',
             'replies' => [instance_source_reply(ShowAppInstanceRequest::class, $instance), instance_source_reply(ListInstanceDeployStepsRequest::class, [$step]), instance_source_reply(DestroyInstanceDeployStepRequest::class, $step)],
             'mutation' => DestroyInstanceDeployStepRequest::class, 'body' => [],
         ],
         'transfer' => [
             'arguments' => ['instance:transfer', '11', '8'],
-            'prompt' => 'Transfer App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?',
+            'prompt' => 'Transfer Instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?',
             'reads' => 2, 'option' => '--force', 'code' => 'instance.confirmation_required',
             'replies' => [instance_source_reply(ShowAppInstanceRequest::class, $instance),
                 instance_source_reply(ShowNodeRequest::class, ['id' => 8, 'name' => 'destination']),
@@ -115,7 +115,7 @@ it('requires default-No native consent and restores the terminal before returnin
 it('names the original source when confirming a transfer retry after cutover', function (bool $accepted): void {
     $case = instance_source_consent_case('transfer');
     $case['arguments'][] = '--no-ansi';
-    $case['prompt'] = 'Retry transfer of App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
+    $case['prompt'] = 'Retry transfer of Instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
     $case['replies'][0]['body']['data']['node_id'] = 8;
     $case['replies'][0]['body']['data']['transfer'] = [
         'source_node_id' => 2, 'destination_node_id' => 8,
@@ -138,7 +138,7 @@ it('names the original source when confirming a transfer retry after cutover', f
 it('leaves changed transfer retry options to Gateway identity validation', function (string $option, string $field, string $value): void {
     $case = instance_source_consent_case('transfer');
     $case['arguments'] = [...$case['arguments'], '--no-ansi', $option.'='.$value];
-    $case['prompt'] = 'Retry transfer of App instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
+    $case['prompt'] = 'Retry transfer of Instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?';
     $case['replies'][0]['body']['data']['node_id'] = 8;
     $case['replies'][0]['body']['data']['transfer'] = [
         'source_node_id' => 2, 'destination_node_id' => 8,

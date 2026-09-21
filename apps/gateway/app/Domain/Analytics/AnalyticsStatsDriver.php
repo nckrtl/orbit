@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Analytics;
 
 /**
- * Reads visits for one App instance from the fleet analytics service.
+ * Reads visits for one Instance from the fleet analytics service.
  *
  * The first implementation talks to the fleet Plausible Community Edition Stats API
  * ([ADR 0102](/decisions/0102-read-app-instance-analytics-through-a-fleet-driver)).
@@ -23,7 +23,7 @@ interface AnalyticsStatsDriver
 
     /**
      * Stats for one Plausible site, or a failed read with no visitor numbers.
-     * `$siteDomain` is the App instance's authoritative public domain.
+     * `$siteDomain` is the Instance's authoritative public domain.
      */
     public function read(string $siteDomain): AnalyticsStatsRead;
 }

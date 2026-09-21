@@ -1,13 +1,13 @@
 ╭─ Navigation
 │  Dashboard │
 │  Nodes │ 3
-│› Apps │ 3
+│› Projects │ 3
 │  Databases │ 2
 ╰─
 
 ╭─ Properties
 │  Name │ dev
-│  App │ charlie-shop
+│  Project │ charlie-shop
 │  Node │ beast
 │  Environment │ development
 │  Domain │ dev.charlie-shop.test

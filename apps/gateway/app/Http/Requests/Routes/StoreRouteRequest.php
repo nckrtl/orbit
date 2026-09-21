@@ -138,7 +138,7 @@ final class StoreRouteRequest extends FormRequest
     private function validateCustomProxy(Validator $validator): void
     {
         if ($this->input('app_id') !== null || $this->input('app_instance_id') !== null || $this->input('cluster_id') !== null) {
-            $validator->errors()->add('scope', 'A custom proxy Route cannot own an App, App instance, or Cluster scope.');
+            $validator->errors()->add('scope', 'A custom proxy Route cannot own an App, Instance, or Cluster scope.');
         }
 
         $publication = $this->input('publication');

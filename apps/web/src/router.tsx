@@ -11,7 +11,7 @@ import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
 
 // The URL carries what `orbit top` keeps in its page stack: the section, the open record, and the
-// node and app filters. Back is the browser's own.
+// node and project filters. Back is the browser's own.
 const rootRoute = createRootRoute({ component: Shell });
 
 const text = (value: unknown): string | undefined =>
@@ -29,9 +29,9 @@ const routeTree = rootRoute.addChildren([
         getParentRoute: () => rootRoute,
         path: "/$section",
         component: SectionList,
-        validateSearch: (search: Record<string, unknown>): { node?: string; app?: string } => ({
+        validateSearch: (search: Record<string, unknown>): { node?: string; project?: string } => ({
             node: text(search.node),
-            app: text(search.app),
+            project: text(search.project),
         }),
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/$section/$id", component: RecordPage }),

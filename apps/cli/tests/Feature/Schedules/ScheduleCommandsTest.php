@@ -433,10 +433,10 @@ it('applies explicit selector validation before HTTP in every output and interac
         ], 'schedule.node_id_invalid', 'Node ID must be a positive integer.'],
         'negative AppInstance ID' => [[
             '--instance' => '-7',
-        ], 'schedule.instance_id_invalid', 'AppInstance ID must be a positive integer.'],
+        ], 'schedule.instance_id_invalid', 'Instance ID must be a positive integer.'],
         'malformed AppInstance ID' => [[
             '--instance' => '7.5',
-        ], 'schedule.instance_id_invalid', 'AppInstance ID must be a positive integer.'],
+        ], 'schedule.instance_id_invalid', 'Instance ID must be a positive integer.'],
         'Node with AppInstance option' => [[
             '--node' => '3',
             '--no-start' => true,

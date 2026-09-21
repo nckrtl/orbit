@@ -5,9 +5,11 @@ type Schema<K extends keyof components["schemas"]> = Required<components["schema
 // The spec marks no field as required, so every property is optional in the generated types.
 // The Gateway always sends them; Required<> states that once instead of at every read.
 export type Node = Schema<"Node">;
-export type App = Schema<"App">;
-export type Instance = Omit<Schema<"AppInstance">, "app" | "node" | "deploy_steps"> & {
-    app: { id: number; name: string; slug: string };
+export type Project = Schema<"App">;
+export type ProjectIdentity = { id: number; name: string; slug: string };
+export type Instance = Omit<Schema<"AppInstance">, "app" | "project" | "node" | "deploy_steps"> & {
+    app: ProjectIdentity;
+    project?: ProjectIdentity;
     node: { id: number; name: string };
     deploy_steps: DeployStep[];
 };
@@ -31,7 +33,7 @@ export type DeploymentEvent = {
 /** The record families a pane, a page, or an actions menu can name. */
 export type Kind =
     | "nodes"
-    | "apps"
+    | "projects"
     | "instances"
     | "processes"
     | "schedules"
@@ -41,7 +43,7 @@ export type Kind =
 
 export type RecordOf = {
     nodes: Node;
-    apps: App;
+    projects: Project;
     instances: Instance;
     processes: Process;
     schedules: Schedule;
@@ -84,7 +86,7 @@ export type LiveFirewallRule =
     | LiveFirewallSnapshot["missing"][number];
 export type LiveFirewallMatch = LiveFirewallRule["match"];
 
-/** One tracking host an App instance publishes for the analytics role. */
+/** One tracking host an Instance publishes for the analytics role. */
 export type AnalyticsHost = {
     host: string;
     route_id: number;
@@ -129,7 +131,7 @@ export type ProxyCliStatus = {
     collected_at: string | null;
 };
 
-/** An App instance's analytics: its tracking hosts, and what the operator does next. */
+/** An Instance's analytics: its tracking hosts, and what the operator does next. */
 export type InstanceAnalytics = {
     instance_id: number;
     enabled: boolean;
@@ -139,14 +141,14 @@ export type InstanceAnalytics = {
     snippet: string | null;
 };
 
-/** One path in the App instance's top-pages breakdown. */
+/** One path in the Instance's top-pages breakdown. */
 export type AnalyticsPage = {
     path: string;
     visitors: number;
 };
 
 /**
- * Visitor counts for an App instance's tracked site. Only `available` is there when the panel
+ * Visitor counts for an Instance's tracked site. Only `available` is there when the panel
  * must not show. Visitor fields are absent when `readable` is false.
  */
 export type InstanceAnalyticsStats = {

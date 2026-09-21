@@ -19,7 +19,7 @@ final class ListDeployStepsCommand extends DeploymentCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List deploy steps on a production AppInstance.';
+    protected $description = 'List deploy steps on a production Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

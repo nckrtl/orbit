@@ -35,7 +35,7 @@ final class UpdateProcessCommand extends ProcessCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Replace one App process definition.';
+    protected $description = 'Replace one Project process definition.';
 
     public function handle(
         GatewayConfigRepository $repository,

@@ -47,23 +47,23 @@ SDK Project responses and the `project:list` and `project:show` commands expose 
 
 ## Keep one repository owner
 
-The Git host and path identify a repository. Equivalent SSH and HTTPS URLs match, with or without a trailing `.git`. The Gateway stores this identity separately from the access URL. Creating a second App for the same repository returns `app.repository_identity_conflict` and changes nothing.
+The Git host and path identify a repository. Equivalent SSH and HTTPS URLs match, with or without a trailing `.git`. The Gateway stores this identity separately from the access URL. Creating a second Project for the same repository returns `app.repository_identity_conflict` and changes nothing.
 
-Repository validation and failure details do not expose embedded credentials or unredacted Git output. A checkout-origin lookup uses the canonical identity and therefore resolves no more than one App across equivalent access forms.
+Repository validation and failure details do not expose embedded credentials or unredacted Git output. A checkout-origin lookup uses the canonical identity and therefore resolves no more than one Project across equivalent access forms.
 
-During an upgrade, the Gateway checks every existing App before it makes repository identity unique. If it finds a duplicate identity, it reports the conflicting App IDs, changes no App, and refuses the migration until an operator resolves the conflict.
+During an upgrade, the Gateway checks every existing Project before it makes repository identity unique. If it finds a duplicate identity, it reports the conflicting Project IDs, changes no Project, and refuses the migration until an operator resolves the conflict.
 
-## Resolve an App during registration
+## Resolve a Project during registration
 
-Registration finds the App from the checkout's verified Git origin. It matches the repository identity across URL formats. Conflicting App or source details stop registration before any changes.
+Registration finds the Project from the checkout's verified Git origin. It matches the repository identity across URL formats. Conflicting Project or source details stop registration before any changes.
 
-When no App owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its App instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request.
+When no Project owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the Project before its Instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request.
 
-Ownership transfer requires a default-No confirmation naming the source, or explicit `--yes`. Non-interactive registration, including every `--json` call, requires `--yes` and refuses when a required value remains unresolved. These refusals send no mutation request. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
+Ownership transfer requires a default-No confirmation naming the source, or explicit `--yes`. Non-interactive registration, including every `--json` call, requires `--yes` and refuses when a required value remains unresolved. These refusals send no mutation request. If Project creation succeeds and later registration fails, the valid Project remains available for an identical retry.
 
-Registration can infer these App values from unambiguous source evidence.
+Registration can infer these Project values from unambiguous source evidence.
 
-| App value | Verified source evidence |
+| Project value | Verified source evidence |
 | --- | --- |
 | Slug | Repository name |
 | `default_branch` | Remote symbolic default branch |
@@ -75,7 +75,7 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and defaults returns the existing Project. A retry does not look up an omitted branch again.
 
-A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
+A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
 ## Update a Project
 
@@ -90,17 +90,17 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `type` and `--type` | Change Project capabilities. A change to `laravel-app` is refused while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
 | `slug` and `--slug` | Reconcile generated development Route domains and Laravel application URLs before the new slug is published. Existing checkout paths, production users, and homes stay as recorded. |
 | `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
-| `default_branch` and `--default-branch` | Store the new App default and switch every development `default` App instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
-| `root` and `--root` | Change the inherited web root of every App instance without its own override. Production resolves the new root inside the active release. |
+| `default_branch` and `--default-branch` | Store the new Project default and switch every development `default` Instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
+| `root` and `--root` | Change the inherited web root of every Instance without its own override. Production resolves the new root inside the active release. |
 
-The Gateway treats the supplied fields as one operation. It inventories affected App instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous App record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
+The Gateway treats the supplied fields as one operation. It inventories affected Instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous Project record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
 
-When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another App (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Production Git source, deployment branch, starting commit, and release layout do not change. App updates never start a deployment.
+When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another Project (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Production Git source, deployment branch, starting commit, and release layout do not change. Project updates never start a deployment.
 
-When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The App instance name, managed path, and Route identity stay unchanged.
+When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The Instance name, managed path, and Route identity stay unchanged.
 
 When the slug or web root changes, the Gateway reconciles generated Routes, runtime projections, and Laravel canonical URLs before publication. An application HTTP error does not block completion after Orbit-owned writes succeed. [Applications](/domains/applications#reconcile-an-app-update) describes source ownership and Laravel URL ownership during these updates.
 
 ## Incomplete source defaults
 
-An App whose source defaults are incomplete can have a null default branch or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading or retrying creation does not infer missing values.
+A Project whose source defaults are incomplete can have a null default branch or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading or retrying creation does not infer missing values.

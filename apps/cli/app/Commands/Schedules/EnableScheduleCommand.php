@@ -15,7 +15,7 @@ final class EnableScheduleCommand extends ScheduleItemCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Enable and start one installed AppInstance Schedule timer.';
+    protected $description = 'Enable and start one installed Instance Schedule timer.';
 
     protected function request(string $scheduleId): GatewayRequest
     {

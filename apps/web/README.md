@@ -34,7 +34,7 @@ The fixture files use the format of the recorded Gateway fixtures in `packages/p
 - `src/ui`: the terminal-style primitives (`Frame`, `Pane`, `Bar`, `LogPane`), the keyboard handling, and the shell.
 - `src/pages`: the dashboard, the section lists, the record pages, and the node form.
 
-The URL carries the section, the open record, and the node and app filters. Hover, focus, and the selected row per pane live in `src/ui/store.ts`.
+The URL carries the section, the open record, and the node and project filters. Hover, focus, and the selected row per pane live in `src/ui/store.ts`.
 
 - `src/demo`: the in-memory Gateway for demo mode and tests.
 - `tests/browser`: the browser tests and the expected screens.

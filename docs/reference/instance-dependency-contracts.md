@@ -1,6 +1,6 @@
 ---
 title: "Gateway dependency contracts"
-description: "Immutable graph and operation values for App instance dependency inventory."
+description: "Immutable graph and operation values for Instance dependency inventory."
 ---
 
 # Gateway dependency contracts
@@ -158,7 +158,7 @@ An unavailable instance fails before collection. Instance lock contention return
 
 ## Composer update executor
 
-`UpdateComposerDependenciesAction` runs a bounded Composer update for one development App instance root. It returns a Composer `DependencyUpdateStepResult`. Shared update preflight, instance locks, JavaScript mutation, and post-update scanning belong to the later coordinator.
+`UpdateComposerDependenciesAction` runs a bounded Composer update for one development Instance root. It returns a Composer `DependencyUpdateStepResult`. Shared update preflight, instance locks, JavaScript mutation, and post-update scanning belong to the later coordinator.
 
 The action refuses production before SSH with `dependencies.production_update_forbidden` and `mayHaveMutated=false`. It uses the recorded checkout path and the owning Node user, never the public web root. Invalid environment, source layout, migration-required state, or identity fails with `dependencies.unsafe_source` and does not start Composer.
 
@@ -172,7 +172,7 @@ A successful Composer exit returns `succeeded` with `mayHaveMutated=true`. That 
 
 ## Vite+ npm update adapter
 
-`UpdateNpmDependenciesAction` runs a bounded Vite+ update for one development App instance root whose JavaScript manager is npm. It returns an npm `DependencyUpdateStepResult`. Shared update preflight, instance locks, Composer mutation, other JavaScript managers, Yarn refusal, and post-update scanning belong to the later coordinator.
+`UpdateNpmDependenciesAction` runs a bounded Vite+ update for one development Instance root whose JavaScript manager is npm. It returns an npm `DependencyUpdateStepResult`. Shared update preflight, instance locks, Composer mutation, other JavaScript managers, Yarn refusal, and post-update scanning belong to the later coordinator.
 
 Production refusal, identity checks, safe source handling, execution bounds, and result semantics match the Composer update executor. Verified absence of an npm project returns `absent` without Vite+.
 
@@ -204,7 +204,7 @@ Vite+ can add `devEngines.packageManager` manager-selection metadata to the mani
 
 ## Vite+ pnpm update adapter
 
-`UpdatePnpmDependenciesAction` runs a bounded Vite+ update for one development App instance root whose JavaScript manager is pnpm. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It reuses the shared Vite+ supervisor from the npm adapter. Shared update preflight, instance locks, Composer mutation, Bun mutation, Yarn refusal, and post-update scanning belong to the later coordinator.
+`UpdatePnpmDependenciesAction` runs a bounded Vite+ update for one development Instance root whose JavaScript manager is pnpm. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It reuses the shared Vite+ supervisor from the npm adapter. Shared update preflight, instance locks, Composer mutation, Bun mutation, Yarn refusal, and post-update scanning belong to the later coordinator.
 
 Production refusal, identity checks, safe source handling, execution bounds, and result semantics match the Composer and npm update executors. Verified absence of a pnpm project returns `absent` without Vite+.
 
@@ -234,7 +234,7 @@ Vite+ can add `devEngines.packageManager` manager-selection metadata to the mani
 
 ## Vite+ bun update adapter
 
-`UpdateBunDependenciesAction` runs a bounded Vite+ update for one development App instance root whose JavaScript manager is bun. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It reuses the shared Vite+ supervisor from the npm adapter with a verified Bun pass-through. Shared update preflight, instance locks, Composer mutation, npm and pnpm mutation, Yarn refusal, and post-update scanning belong to the later coordinator.
+`UpdateBunDependenciesAction` runs a bounded Vite+ update for one development Instance root whose JavaScript manager is bun. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It reuses the shared Vite+ supervisor from the npm adapter with a verified Bun pass-through. Shared update preflight, instance locks, Composer mutation, npm and pnpm mutation, Yarn refusal, and post-update scanning belong to the later coordinator.
 
 Production refusal, identity checks, safe source handling, execution bounds, and result semantics match the Composer and npm update executors. Verified absence of a bun project returns `absent` without Vite+.
 
@@ -264,7 +264,7 @@ Vite+ can add `devEngines.packageManager` manager-selection metadata to the mani
 
 ## Vite+ Yarn refusal adapter
 
-`UpdateYarnDependenciesAction` inspects one development App instance root for Classic or modern Yarn and refuses mutation. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It does not run Vite+, Yarn, npm, pnpm, or Bun. Shared update preflight, instance locks, Composer mutation, npm, pnpm, and Bun mutation, and post-update scanning belong to the later coordinator. Whole-update Yarn refusal before Composer also belongs to that coordinator.
+`UpdateYarnDependenciesAction` inspects one development Instance root for Classic or modern Yarn and refuses mutation. It returns an npm `DependencyUpdateStepResult` because JavaScript identities use ecosystem `npm`. It does not run Vite+, Yarn, npm, pnpm, or Bun. Shared update preflight, instance locks, Composer mutation, npm, pnpm, and Bun mutation, and post-update scanning belong to the later coordinator. Whole-update Yarn refusal before Composer also belongs to that coordinator.
 
 Production refusal, identity checks, and safe source handling match the Composer and Vite+ update executors. Verified absence of Yarn signals returns `absent` without a package-manager command.
 
@@ -342,7 +342,7 @@ A unique target must be active, outside removal and free of a required source mi
 
 ### SDK and CLI selection
 
-The SDK exposes `ResolveAppInstanceRequest` and `ResolvedAppInstanceResponse`. It accepts at most 4096 bytes of response JSON and requires the exact success envelope and ownership fields. Duplicate JSON keys, including escaped equivalents, are rejected. The body must contain a valid request ID that agrees with a valid response-header request ID when present. Malformed responses raise a safe `GatewayApiException` without returning a target or raw response data.
+The SDK exposes `ResolveInstanceRequest` and `ResolvedInstanceResponse`. It accepts at most 4096 bytes of response JSON and requires the exact success envelope and ownership fields. Duplicate JSON keys, including escaped equivalents, are rejected. The body must contain a valid request ID that agrees with a valid response-header request ID when present. Malformed responses raise a safe `GatewayApiException` without returning a target or raw response data.
 
 The CLI's `DependencyInstanceSelector::resolveDomain` provides a shared SDK call for subsequent scan and update commands. It preserves the domain input and structured errors, without local Route filtering or directory detection. No dependency command or package mutation is added by this resolver.
 
@@ -354,11 +354,11 @@ The Gateway compares the canonical absolute path with registered development che
 
 The response contains only `instance_id`, `app_id`, `node_id`, and `environment`, with standard request correlation. The SDK validates the bounded raw envelope, duplicate keys, ownership types, and correlation. Directory selection asserts the caller's canonical path; it does not inspect remote files or prove the process working directory. Later operations recheck authorization, lifecycle, and source state.
 
-`DependencyInstanceSelector::select` gives an explicit App domain precedence over local discovery. All-instance selection returns no local target and does not inspect the working directory. Combining an explicit App with all-instance selection fails before HTTP.
+`DependencyInstanceSelector::select` gives an explicit Project domain precedence over local discovery. All-instance selection returns no local target and does not inspect the working directory. Combining an explicit Project with all-instance selection fails before HTTP.
 
 ## All-instance CLI scanning
 
-`instance:dependencies:scan --all` uses `ListAppInstancesRequest` to capture the authorized instance set, then `ScanInstanceDependenciesRequest` for each captured ID in that list order. The CLI does not filter, reorder, or invent targets locally. Listing authorization remains the Gateway list contract; each scan still rechecks access and lifecycle.
+`instance:dependencies:scan --all` uses `ListInstancesRequest` to capture the authorized instance set, then `ScanInstanceDependenciesRequest` for each captured ID in that list order. The CLI does not filter, reorder, or invent targets locally. Listing authorization remains the Gateway list contract; each scan still rechecks access and lifecycle.
 
 ### Listing envelope
 
@@ -373,4 +373,4 @@ A listing transport or structured error envelope returns the ordinary CLI `error
 
 ## Nightly Gateway Schedule
 
-Operators create one Node Schedule whose command is `orbit instance:dependencies:scan --all --json --no-interaction`. The Schedule owns calendar time, timezone (via the systemd calendar expression), and timeout. The Gateway CLI on that Node uses the managed user's configured profile. Fleet membership is resolved at each run through `ListAppInstancesRequest`; new instances require no Schedule changes. A nonzero CLI exit from any instance failure is a failed Schedule run with retained logs. The feature does not install per-instance Schedules or a live production Schedule.
+Operators create one Node Schedule whose command is `orbit instance:dependencies:scan --all --json --no-interaction`. The Schedule owns calendar time, timezone (via the systemd calendar expression), and timeout. The Gateway CLI on that Node uses the managed user's configured profile. Fleet membership is resolved at each run through `ListInstancesRequest`; new instances require no Schedule changes. A nonzero CLI exit from any instance failure is a failed Schedule run with retained logs. The feature does not install per-instance Schedules or a live production Schedule.

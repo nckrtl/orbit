@@ -20,19 +20,19 @@ final class TransferInstanceCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:transfer
-        {instance : Numeric AppInstance ID}
+        {instance : Numeric Instance ID}
         {node : Numeric destination Node ID}
-        {--name= : Optional destination AppInstance name}
+        {--name= : Optional destination Instance name}
         {--sqlite-source-path= : Optional SQLite database path on the source}
         {--force : Confirm downtime and old-placement deletion}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Transfer a development AppInstance to another app-dev Node.';
+    protected $description = 'Transfer a development Instance to another app-dev Node.';
 
     #[\Override]
     protected $help = <<<'HELP'
-Transfer moves one active development AppInstance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.
+Transfer moves one active development Instance to a distinct active app-dev Node in an active Cluster. The destination may be in the same Cluster or another Cluster.
 
 Orbit stops source processes for the downtime window, copies the source checkout or worktree into an independent destination checkout, optionally copies one selected SQLite snapshot, rebuilds destination environment values, moves or replaces the Route, and deletes the old managed placement. Production, standalone, and same-Node transfers are refused.
 
@@ -63,7 +63,7 @@ HELP;
 
         if ($this->option('force') !== true) {
             $source = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
-                ['Resolve App instance', 'Loading App instance', 'Loaded App instance']);
+                ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
             if (! $source instanceof AppInstanceResponse) {
                 return self::FAILURE;
             }
@@ -76,11 +76,11 @@ HELP;
             $action = $resuming ? 'Retry transfer of' : 'Transfer';
             $sourceNodeId = $resuming ? $source->transfer->sourceNodeId : $source->nodeId;
             if (! $destination instanceof NodeResponse || ! $this->confirmAction(
-                "{$action} App instance [{$source->name}] (#{$source->id}) from Node #{$sourceNodeId} to Node [{$destination->name}] (#{$destination->id}) with downtime and deletion of the old placement?",
-                'App instance transfer cancelled.',
+                "{$action} Instance [{$source->name}] (#{$source->id}) from Node #{$sourceNodeId} to Node [{$destination->name}] (#{$destination->id}) with downtime and deletion of the old placement?",
+                'Instance transfer cancelled.',
                 option: 'force',
                 requiredCode: 'instance.confirmation_required',
-                requiredMessage: 'Use --force to confirm AppInstance transfer downtime and old-placement deletion.',
+                requiredMessage: 'Use --force to confirm Instance transfer downtime and old-placement deletion.',
             )) {
                 return self::FAILURE;
             }
@@ -95,7 +95,7 @@ HELP;
                 sqliteSourcePath: $this->stringOption('sqlite-source-path'),
             ),
             AppInstanceResponse::class,
-            ['Transfer App instance', 'Transferring App instance', 'Transferred App instance'],
+            ['Transfer Instance', 'Transferring Instance', 'Transferred Instance'],
             static function (object $response): ProgressState {
                 if (! $response instanceof AppInstanceResponse || $response->transfer === null || $response->domain === null || $response->domain === '') {
                     throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response instanceof AppInstanceResponse ? $response->requestId : null);
@@ -131,7 +131,7 @@ HELP;
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Destination Node' => $instance->nodeId,
             'Destination path' => $instance->checkoutPath,

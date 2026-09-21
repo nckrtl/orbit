@@ -147,7 +147,7 @@ final readonly class PlausibleCommunityEditionStatsDriver implements AnalyticsSt
             return AnalyticsStatsRead::failed(
                 $siteDomain,
                 'analytics.stats_site_missing',
-                'Plausible has no site for this App instance domain.',
+                'Plausible has no site for this Instance domain.',
             );
         }
 

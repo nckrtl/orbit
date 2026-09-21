@@ -45,7 +45,7 @@ final readonly class UpdateAppAction
         if (! $data->hasChanges()) {
             throw new ResourceOperationException(
                 errorCode: 'app.update_required',
-                message: 'Provide at least one App update.',
+                message: 'Provide at least one Project update.',
                 status: 422,
             );
         }
@@ -128,7 +128,7 @@ final readonly class UpdateAppAction
                 if ($incomplete->fingerprint !== $fingerprint) {
                     throw new ResourceOperationException(
                         errorCode: 'app.update_in_progress',
-                        message: 'An App update is already in progress.',
+                        message: 'A Project update is already in progress.',
                         status: 409,
                     );
                 }
@@ -497,7 +497,7 @@ final readonly class UpdateAppAction
         if (OrbitApp::query()->where('slug', $slug)->whereKeyNot($app->id)->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.slug_conflict',
-                message: "App slug [{$slug}] is already owned.",
+                message: "Project slug [{$slug}] is already owned.",
                 status: 409,
             );
         }
@@ -513,7 +513,7 @@ final readonly class UpdateAppAction
         ) {
             throw new ResourceOperationException(
                 errorCode: 'app.repository_identity_conflict',
-                message: 'The repository is already owned by another App.',
+                message: 'The repository is already owned by another Project.',
                 status: 409,
             );
         }
@@ -571,7 +571,7 @@ final readonly class UpdateAppAction
             if (! $instance instanceof AppInstance) {
                 throw new ResourceOperationException(
                     errorCode: 'app.production_ownership_changed',
-                    message: 'A production App instance changed during the App update.',
+                    message: 'A production Instance changed during the Project update.',
                     status: 409,
                 );
             }
@@ -579,7 +579,7 @@ final readonly class UpdateAppAction
             if ($this->productionSnapshot($instance) !== $snapshot) {
                 throw new ResourceOperationException(
                     errorCode: 'app.production_ownership_changed',
-                    message: 'A production App instance changed during the App update.',
+                    message: 'A production Instance changed during the Project update.',
                     status: 409,
                 );
             }

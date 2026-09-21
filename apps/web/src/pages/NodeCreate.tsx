@@ -9,8 +9,8 @@ import { PageHeader } from "../ui/PageHeader";
 import { ui } from "../ui/store";
 
 const ROLES = [
-    ["app-dev", "runs App instances"],
-    ["app-prod", "runs production App instances"],
+    ["app-dev", "runs Instances"],
+    ["app-prod", "runs production Instances"],
     ["gateway", "runs the Gateway and the VPN hub"],
 ] as const;
 

@@ -20,7 +20,7 @@ final class UpdateInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update a production AppInstance deployment branch.';
+    protected $description = 'Update a production Instance deployment branch.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -49,7 +49,7 @@ final class UpdateInstanceCommand extends GatewayCommand
             $connector,
             new UpdateAppInstanceRequest($instanceId, $branch),
             AppInstanceResponse::class,
-            ['Update App instance', 'Updating App instance', 'Updated App instance'],
+            ['Update Instance', 'Updating Instance', 'Updated Instance'],
         );
 
         if (! $instance instanceof AppInstanceResponse) {
@@ -62,7 +62,7 @@ final class UpdateInstanceCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("App instance: {$instance->name}", [
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,
             'Deployment branch' => $branch,

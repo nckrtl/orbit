@@ -1,7 +1,7 @@
-Fetching App instance...
+Fetching Instance...
 Fetching Processes...
 
-┌  App instance: dev
+┌  Instance: dev
 │
 ├  ID                   1
 │

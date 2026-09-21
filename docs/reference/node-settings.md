@@ -48,7 +48,7 @@ The CLI requires an explicit Node ID or registered name and at least one setting
 
 When a checkout is created, the Gateway resolves the effective apps root as `settings.apps.path`, or `<managed-user-home>/apps` when that override is absent.
 
-A new App instance checkout is `<apps-root>/<app-slug>/<instance-name>`. [Applications](/domains/applications) owns placement and identity. The Gateway records that path on the App instance and does not move, rewrite, or delete an existing checkout when the Node setting changes.
+A new Instance checkout is `<apps-root>/<app-slug>/<instance-name>`. [Applications](/domains/applications) owns placement and identity. The Gateway records that path on the Instance and does not move, rewrite, or delete an existing checkout when the Node setting changes.
 
 ## Validate before the root becomes stored
 

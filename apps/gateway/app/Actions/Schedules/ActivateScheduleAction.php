@@ -28,7 +28,7 @@ final readonly class ActivateScheduleAction
         if (! AppInstance::isMorphType($schedule->target_type)) {
             throw new ResourceOperationException(
                 ScheduleErrorCode::TargetInvalid->value,
-                'Only an AppInstance Schedule can be activated.',
+                'Only an Instance Schedule can be activated.',
                 422,
             );
         }

@@ -5,16 +5,16 @@ description: "How the Gateway stores a Schedule, projects it to a native systemd
 
 # Schedules
 
-This page tells an operator how the Gateway stores a Schedule, projects it to native systemd execution, reports its latest result, and removes its owned state. [ADR 0013](/decisions/0013-native-systemd-schedule-management) owns native timer execution, [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules) owns App instance cleanup, [ADR 0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances) owns stopped App instance installation and explicit activation, and [ADR 0060](/decisions/0060-record-latest-schedule-run-status) owns latest-run reporting.
+This page tells an operator how the Gateway stores a Schedule, projects it to native systemd execution, reports its latest result, and removes its owned state. [ADR 0013](/decisions/0013-native-systemd-schedule-management) owns native timer execution, [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules) owns Instance cleanup, [ADR 0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances) owns stopped Instance installation and explicit activation, and [ADR 0060](/decisions/0060-record-latest-schedule-run-status) owns latest-run reporting.
 
 ## Store one target-owned Schedule
 
-The Gateway stores one Schedule for exactly one Node or App instance target. The Schedule UUID is its public identity and the only value used to name its host artifacts.
+The Gateway stores one Schedule for exactly one Node or Instance target. The Schedule UUID is its public identity and the only value used to name its host artifacts.
 
 | Value | Contract |
 | --- | --- |
 | `id` | An immutable UUID. |
-| `target` | Exactly one Node or App instance. |
+| `target` | Exactly one Node or Instance. |
 | `name` | Unique within the target. It contains 1 through 63 lowercase ASCII letters or numbers, with hyphens only between them. |
 | `calendar` | One printable ASCII line of at most 255 bytes, accepted only when the target Node's `systemd-analyze calendar` accepts it. |
 | `command` | One non-empty UTF-8 line of at most 4,096 bytes. NUL, carriage return, and line feed are invalid. |
@@ -26,7 +26,7 @@ The Gateway stores one Schedule for exactly one Node or App instance target. The
 
 An identical create retries or returns the same Schedule without changing its desired timer state. A different specification with the same target and name returns `schedule.retry_conflict`. Orbit changes a specification only when the operator destroys the Schedule and creates its replacement.
 
-An App Schedule definition stores a calendar without host `systemd-analyze calendar` validation. The [App process and Schedule definitions](/reference/app-processes-and-schedules) page owns that write contract.
+A Project Schedule definition stores a calendar without host `systemd-analyze calendar` validation. The [Project process and Schedule definitions](/reference/app-processes-and-schedules) page owns that write contract.
 
 ## Use the Schedule API
 
@@ -41,9 +41,9 @@ An active Gateway peer uses eight endpoints under `/api/v1/schedules`. Every end
 | Logs | `GET /api/v1/schedules/{uuid}/logs` | Returns bounded output for the exact service and reports whether older or incomplete output was removed. |
 | Complete | `POST /api/v1/schedules/{uuid}/complete` | Records the latest result from the installed Node and returns no content. |
 | Destroy | `DELETE /api/v1/schedules/{uuid}` | Starts or resumes exact-owned cleanup and returns bounded Schedule data. |
-| Enable | `POST /api/v1/schedules/{uuid}/activate` | Accepts an empty body, enables an App instance timer, and returns bounded Schedule data. |
+| Enable | `POST /api/v1/schedules/{uuid}/activate` | Accepts an empty body, enables an Instance timer, and returns bounded Schedule data. |
 
-Create accepts `target_type`, `target_id`, `name`, `calendar`, and `command`. It also accepts optional `timeout_seconds` and boolean `start`; the timeout defaults to 3,600 seconds, and `start` defaults to `true`. A Node target rejects `start: false`. An App instance target can install with its timer disabled.
+Create accepts `target_type`, `target_id`, `name`, `calendar`, and `command`. It also accepts optional `timeout_seconds` and boolean `start`; the timeout defaults to 3,600 seconds, and `start` defaults to `true`. A Node target rejects `start: false`. An Instance target can install with its timer disabled.
 
 List and show expose `desired_timer_state` as `enabled` or `disabled`, independent of the installation lifecycle `status`. A request for an unknown Schedule UUID with valid syntax returns `404`. A malformed JSON object, duplicate or escaped-duplicate member, unsupported member, or wrong member type returns `422` before the Gateway changes Schedule intent or host state.
 
@@ -51,7 +51,7 @@ The Gateway records one sanitized Activity for list, create, show, run, logs, de
 
 ## Use the PHP software development kit
 
-The PHP software development kit (SDK) exposes typed transport for the same eight Schedule operations. It encodes each Schedule UUID path segment, sends Node and App instance targets as distinct shapes, preserves an omitted optional value separately from an explicit value, and leaves target and lifecycle policy to the Gateway.
+The PHP software development kit (SDK) exposes typed transport for the same eight Schedule operations. It encodes each Schedule UUID path segment, sends Node and Instance targets as distinct shapes, preserves an omitted optional value separately from an explicit value, and leaves target and lifecycle policy to the Gateway.
 
 Schedule responses are immutable and preserve bounded request IDs and accepted Schedule fields. They bound command, log, identifier, error, and nested values, redact credential-shaped content, reject malformed nested data, and omit command text from collection items.
 
@@ -64,10 +64,10 @@ An operator uses Schedule commands from a machine with an active Gateway profile
 | Command | Result |
 | --- | --- |
 | `orbit schedule:create NAME --node=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Node ID. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive App instance ID. Add `--no-start` to install its timer disabled and stopped. |
-| `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the App. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:create NAME --instance=ID --calendar=CALENDAR --command=COMMAND` | Create a Schedule for one positive Instance ID. Add `--no-start` to install its timer disabled and stopped. |
+| `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
 | `orbit schedule:list` | List authorized Schedule summaries without command text. |
-| `orbit schedule:list --app=APP` | List the App's Schedule definitions. |
+| `orbit schedule:list --app=APP` | List the Project's Schedule definitions. |
 | `orbit schedule:show UUID` | Show one authorized Schedule. |
 | `orbit schedule:show NAME --app=APP` | Show one Schedule definition by name. |
 | `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
@@ -75,9 +75,9 @@ An operator uses Schedule commands from a machine with an active Gateway profile
 | `orbit schedule:logs UUID` | Show only the bounded lines returned by the Gateway. |
 | `orbit schedule:destroy UUID [--yes]` | Destroy one Schedule through the Gateway. Interactive confirmation defaults to No. |
 | `orbit schedule:destroy NAME --app=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
-| `orbit schedule:enable UUID` | Enable and start an installed App instance timer without replacing the Schedule. |
+| `orbit schedule:enable UUID` | Enable and start an installed Instance timer without replacing the Schedule. |
 
-`schedule:create` requires exactly one of `--node`, `--instance`, or `--app`. Combined selectors, no selector, a malformed or non-positive ID, `--node` with the App instance-only `--no-start` option, and `--for` without `--app` fail before the CLI sends an HTTP request. `--for` is required with `--app` on create and update. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target. The [App process and Schedule definitions](/reference/app-processes-and-schedules) page owns the App target.
+`schedule:create` requires exactly one of `--node`, `--instance`, or `--app`. Combined selectors, no selector, a malformed or non-positive ID, `--node` with the Instance-only `--no-start` option, and `--for` without `--app` fail before the CLI sends an HTTP request. `--for` is required with `--app` on create and update. Interactive, non-interactive, and `--json` calls use the same rule and never prompt for a target. The [Project process and Schedule definitions](/reference/app-processes-and-schedules) page owns the Project target.
 
 Human output and `--json` output preserve the Gateway request ID. They show `desired_timer_state` separately from lifecycle `status`, and shared safe errors expose no command, log, credential, or remote execution detail.
 
@@ -90,12 +90,12 @@ The Gateway derives the host Node, runtime user, home, working directory, and sh
 | Target | Execution context |
 | --- | --- |
 | Node | The Node's managed `orbit` user, home, and non-interactive login-shell context. |
-| Development App instance | The host Node, managed application-development runtime user and home, recorded checkout working directory, and derived non-interactive login-shell context. |
-| Production App instance | The host Node, dedicated production user and home, fixed `/bin/bash` without login, and the production home's `current` working directory. |
+| Development Instance | The host Node, managed application-development runtime user and home, recorded checkout working directory, and derived non-interactive login-shell context. |
+| Production Instance | The host Node, dedicated production user and home, fixed `/bin/bash` without login, and the production home's `current` working directory. |
 
-Each production execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active. A production App instance without `current` can accept a Schedule whose timer starts disabled, but a manual run or activation returns `schedule.target_unavailable` until a release is selected.
+Each production execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active. A production Instance without `current` can accept a Schedule whose timer starts disabled, but a manual run or activation returns `schedule.target_unavailable` until a release is selected.
 
-Removing a target Node or host Node, or changing a target's Node, user, home, or stable working-directory path, returns `schedule.target_in_use` while the Schedule exists. App instance removal uses the owned cascade instead of this guard.
+Removing a target Node or host Node, or changing a target's Node, user, home, or stable working-directory path, returns `schedule.target_in_use` while the Schedule exists. Instance removal uses the owned cascade instead of this guard.
 
 ## Project protected systemd artifacts
 
@@ -111,7 +111,7 @@ Schedule installation keeps the shared `/etc/orbit` directory owned by `root:roo
 
 The caller command appears only in the protected script. It never appears in an SSH, `sudo`, `systemctl`, `journalctl`, `systemd-analyze`, or other infrastructure argument.
 
-A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An App instance Schedule can install enabled or disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the App instance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
+A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An Instance Schedule can install enabled or disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the Instance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
 
 A manual run starts the same oneshot service without waiting for completion and never changes the desired timer state. The persistent timer lets systemd run one missed occurrence after Node downtime.
 
@@ -139,9 +139,9 @@ When a matching add fails while converging an existing Schedule, the Gateway res
 
 Standalone removal marks the Schedule `removing`, disables and stops only its timer, and inspects the service directly. It lets an active command finish before it removes the exact timer, service, script, and Schedule record. A failure leaves the Schedule `removing`, and an identical retry resumes cleanup without depending on a completion callback.
 
-App instance removal first completes source preflight and prevents new Schedule attachment to every accepted member. It then disables each owned timer and removes every owned Schedule record and persistent artifact without waiting for an active command. A late or racing callback cannot recreate Schedule intent, restore artifacts, bypass `removing`, or delay App instance removal.
+Instance removal first completes source preflight and prevents new Schedule attachment to every accepted member. It then disables each owned timer and removes every owned Schedule record and persistent artifact without waiting for an active command. A late or racing callback cannot recreate Schedule intent, restore artifacts, bypass `removing`, or delay Instance removal.
 
-A failed cascade keeps the App instance removal and unfinished Schedule cleanup resumable. Retry processes only recorded unfinished owned work. Node-owned Schedules, other App instances' Schedules, and unrecognized artifacts on the same Node remain unchanged.
+A failed cascade keeps the Instance removal and unfinished Schedule cleanup resumable. Retry processes only recorded unfinished owned work. Node-owned Schedules, other Instances' Schedules, and unrecognized artifacts on the same Node remain unchanged.
 
 ## Handle stable operation errors
 

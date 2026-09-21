@@ -46,7 +46,7 @@ export const nodeName = (fleet: Fleet, id: number): string =>
 export function instanceName(fleet: Fleet, id: number): string {
     const instance = fleet.instances.find((candidate) => candidate.id === id);
 
-    return instance === undefined ? "—" : `${instance.app.slug}/${instance.name}`;
+    return instance === undefined ? "—" : `${(instance.project ?? instance.app).slug}/${instance.name}`;
 }
 
 export const instanceNodeName = (fleet: Fleet, id: number): string =>
@@ -64,8 +64,8 @@ export const processNodeName = (fleet: Fleet, process: Process): string =>
 
 export const instancesForNode = (fleet: Fleet, name: string): Instance[] =>
     fleet.instances.filter((instance) => instance.node.name === name);
-export const instancesForApp = (fleet: Fleet, slug: string): Instance[] =>
-    fleet.instances.filter((instance) => instance.app.slug === slug);
+export const instancesForProject = (fleet: Fleet, slug: string): Instance[] =>
+    fleet.instances.filter((instance) => (instance.project ?? instance.app).slug === slug);
 export const processesFor = (fleet: Fleet, type: "node" | "instance", id: number): Process[] =>
     fleet.processes.filter((process) => process.target_type === type && process.target_id === id);
 export const schedulesForInstance = (fleet: Fleet, id: number): Schedule[] =>
@@ -73,25 +73,26 @@ export const schedulesForInstance = (fleet: Fleet, id: number): Schedule[] =>
         (schedule) => schedule.target_type === "instance" && schedule.target_id === id,
     );
 
-export function schedulesForApp(fleet: Fleet, slug: string): Schedule[] {
-    const ids = new Set(instancesForApp(fleet, slug).map((instance) => instance.id));
+export function schedulesForProject(fleet: Fleet, slug: string): Schedule[] {
+    const ids = new Set(instancesForProject(fleet, slug).map((instance) => instance.id));
 
     return fleet.schedules.filter((schedule) => ids.has(schedule.target_id));
 }
 
-/** The section's list, narrowed by the node and app filters where the section admits them. */
+/** The section's list, narrowed by the node and project filters where the section admits them. */
 export function listRows(
     fleet: Fleet,
     section: Kind,
     nodeFilter: string | undefined,
-    appFilter: string | undefined,
+    projectFilter: string | undefined,
 ): AnyRecord[] {
     const ids = new Set(
         fleet.instances
             .filter(
                 (instance) =>
                     (nodeFilter === undefined || instance.node.name === nodeFilter) &&
-                    (appFilter === undefined || instance.app.slug === appFilter),
+                    (projectFilter === undefined ||
+                        (instance.project ?? instance.app).slug === projectFilter),
             )
             .map((instance) => instance.id),
     );
@@ -99,14 +100,14 @@ export function listRows(
     switch (section) {
         case "nodes":
             return fleet.nodes;
-        case "apps":
-            return fleet.apps;
+        case "projects":
+            return fleet.projects;
         case "instances":
             return fleet.instances.filter((instance) => ids.has(instance.id));
         case "processes":
             return fleet.processes.filter((process) =>
                 process.target_type === "node"
-                    ? appFilter === undefined &&
+                    ? projectFilter === undefined &&
                       (nodeFilter === undefined ||
                           nodeName(fleet, process.target_id) === nodeFilter)
                     : ids.has(process.target_id),
@@ -164,7 +165,7 @@ export function attentionRows(fleet: Fleet): AttentionRow[] {
                     kind: "instances",
                     record: instance,
                     label: "Instance",
-                    name: `${instance.app.slug}/${instance.name}`,
+                    name: `${(instance.project ?? instance.app).slug}/${instance.name}`,
                     where: instance.node.name,
                     state: instance.status,
                 }),
@@ -218,7 +219,7 @@ const off = <T>(rows: T[], healthy: (row: T) => boolean): number =>
 export function counts(fleet: Fleet): Record<Exclude<Kind, "deployments">, [number, number]> {
     return {
         nodes: [fleet.nodes.length, off(fleet.nodes, nodeHealthy)],
-        apps: [fleet.apps.length, 0],
+        projects: [fleet.projects.length, 0],
         instances: [fleet.instances.length, off(fleet.instances, instanceHealthy)],
         processes: [fleet.processes.length, off(fleet.processes, processHealthy)],
         schedules: [fleet.schedules.length, off(fleet.schedules, scheduleHealthy)],
@@ -244,8 +245,8 @@ export function recordTitle(kind: Kind, row: AnyRecord): string {
         case "nodes":
             return (row as Node).name;
         case "instances":
-            return `${(row as Instance).app.slug}/${(row as Instance).name}`;
-        case "apps":
+            return `${((row as Instance).project ?? (row as Instance).app).slug}/${(row as Instance).name}`;
+        case "projects":
         case "databases":
             return (row as { slug: string }).slug;
         case "firewall": {

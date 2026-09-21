@@ -38,9 +38,9 @@ final class InstanceShowFlowCommand extends GatewayCommand
         $instance = $this->fixture('instances/instance-show/charlie-shop-dev')['data'];
         $processes = $this->fixture('processes/process-list/instance')['data'];
 
-        $overview = $this->humanRenderer()->detail("App instance: {$instance['name']}", [
+        $overview = $this->humanRenderer()->detail("Instance: {$instance['name']}", [
             'ID' => $instance['id'],
-            'App' => $instance['app']['slug'],
+            'Project' => $instance['app']['slug'],
             'Node' => $instance['node']['name'],
             'Status' => $instance['status'],
             'Environment' => $instance['environment'],
@@ -76,7 +76,7 @@ final class InstanceShowFlowCommand extends GatewayCommand
                     ['title' => 'Processes', 'list' => new SearchableDataTablePrompt(['ID', 'Name', 'Runtime', 'Desired', 'Runtime status', 'Status'], $processRows, 'Processes', required: true, scroll: max(1, count($processRows)))],
                     ['title' => 'Schedules', 'list' => new SearchableDataTablePrompt(['ID', 'Name', 'Expression', 'Next run', 'Status'], $scheduleRows, 'Schedules', required: true, scroll: count($scheduleRows))],
                 ];
-                $prompt = new TabbedShowPrompt("App instance: {$instance['name']} on {$instance['node']['name']}", $tabs);
+                $prompt = new TabbedShowPrompt("Instance: {$instance['name']} on {$instance['node']['name']}", $tabs);
                 $prompt->active = match ($this->stringOption('tab')) {
                     'processes' => 1,
                     'schedules' => 2,

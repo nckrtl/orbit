@@ -86,7 +86,7 @@ it('runs ownership and scope guards through destructive action entry points', fu
     ]);
 
     expect(fn () => app(RemoveAppAction::class)->execute($this->orbitApp))
-        ->toThrow(ResourceOperationException::class, 'still has AppInstances')
+        ->toThrow(ResourceOperationException::class, 'still has Instances')
         ->and(fn () => app(RemoveAppAction::class)->execute($routed))
         ->toThrow(ResourceOperationException::class, 'still owns Routes')
         ->and(fn () => app(RemoveNodeAction::class)->execute($this->node, $caller, offline: true, force: true))

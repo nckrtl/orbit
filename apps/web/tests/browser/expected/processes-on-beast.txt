@@ -1,7 +1,7 @@
 ╭─ Navigation
 │  Dashboard │
 │  Nodes │ 3
-│› Apps │ 3
+│› Projects │ 3
 │  Databases │ 2
 ╰─
 

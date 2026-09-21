@@ -204,7 +204,7 @@ final readonly class CloneAppInstanceAction
             ->exists()) {
             throw $this->conflict(
                 'instance.production_placement_conflict',
-                'The App already has a production AppInstance on the selected Node.',
+                'The Project already has a production Instance on the selected Node.',
             );
         }
 

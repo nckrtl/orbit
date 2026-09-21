@@ -53,8 +53,8 @@ it('treats ConsoleInterrupted as cancellation even after wrapping', function ():
 it('shows progress interruption when a wrapped resolver failure follows SIGINT', function (): void {
     $entry = InterruptIntent::pending();
     $output = new BufferedOutput;
-    $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Remove App instance');
-    $display->admit('remove', 'Remove App instance', 'Removing App instance', 'Removed App instance');
+    $display = new ProgressDisplay(new ConsoleMode(false, false, false, false, 80), $output, 'Remove Instance');
+    $display->admit('remove', 'Remove Instance', 'Removing Instance', 'Removed Instance');
     $wrapped = new UnexpectedValueException('Gateway request ID resolver failed.');
 
     try {
@@ -89,11 +89,11 @@ it('does not settle animation, progress, or spinner as success when a callback s
     expect(new Animation($mode, $output, ["○ Next\n", "◉ Next\n"])->during(fn (): int => 7))->toBe(7);
     expect(InterruptIntent::pending())->toBe($entry);
 
-    $progress = new ProgressDisplay($mode, $output, 'Remove App instance');
-    $progress->admit('remove', 'Remove App instance', 'Removing App instance', 'Removed App instance');
+    $progress = new ProgressDisplay($mode, $output, 'Remove Instance');
+    $progress->admit('remove', 'Remove Instance', 'Removing Instance', 'Removed Instance');
     expect(fn () => $progress->during('remove', $swallowed))->toThrow(ConsoleInterrupted::class);
     expect($output->fetch())->toContain('Operation interrupted.')
-        ->not->toContain('Operation failed.', 'Removed App instance');
+        ->not->toContain('Operation failed.', 'Removed Instance');
     expect(InterruptIntent::pending())->toBe($entry);
 
     $spinnerOutput = new BufferedOutput;

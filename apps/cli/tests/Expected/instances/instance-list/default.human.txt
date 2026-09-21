@@ -1,10 +1,10 @@
-Loading App instances...
+Loading Instances...
 
-┌  List App instances
+┌  List Instances
 │
-├  ● Loaded App instances
+├  ● Loaded Instances
 │
-└  Loaded App instances.
+└  Loaded Instances.
 
  ┌────┬─────┬──────┬───────────┬──────┬─────────────┬─────────────┬────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────┬─────────┐
  │ ID │ APP │ NODE │ VITE PORT │ NAME │ ENVIRONMENT │ SOURCE LAYO │ ROOT   │ SELECTED B │ BRANCH OVE │ MIGRATION  │ ROUTE DOMA │ URL        │ STATUS │ REMOVAL │

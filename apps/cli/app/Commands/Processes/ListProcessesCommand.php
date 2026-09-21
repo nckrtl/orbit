@@ -19,14 +19,14 @@ final class ListProcessesCommand extends TargetedProcessCommand
 
     #[\Override]
     protected $signature = 'process:list
-        {--instance= : Positive AppInstance ID}
+        {--instance= : Positive Instance ID}
         {--node= : Node ID or registered name}
         {--project= : Numeric Project ID}
         {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List processes for one AppInstance or Node, or process definitions for one App.';
+    protected $description = 'List processes for one Instance or Node, or process definitions for one Project.';
 
     public function handle(
         GatewayConfigRepository $repository,

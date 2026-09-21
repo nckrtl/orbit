@@ -38,7 +38,7 @@ A successful call returns the API's JSON document as text, usually `{"data": ...
 
 `instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return every progress event in order under `events`; the last event carries the result.
 
-Four operations are machine callbacks and have no tool: the realtime channel signature, the Grafana access check, the App instance wake page, and the schedule completion report.
+Four operations are machine callbacks and have no tool: the realtime channel signature, the Grafana access check, the Instance wake page, and the schedule completion report.
 
 The `tasks-*` tools belong to the enable-gated [tasks](/reference/tasks) extension. `tasks-create` and `tasks-add` require Gateway access. Create, add, list, and show return `tasks.disabled` until an authorized caller enables the extension.
 

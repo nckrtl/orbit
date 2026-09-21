@@ -20,7 +20,7 @@ abstract class InstanceAnalyticsCommand extends GatewayCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($headline, [
-            'App instance' => "#{$response->instanceId}",
+            'Instance' => "#{$response->instanceId}",
             'Domain' => $response->domain,
             'Tracking' => $response->enabled ? 'enabled' : 'disabled',
             'Dashboard' => $response->dashboardUrl,

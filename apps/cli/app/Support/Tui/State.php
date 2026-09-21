@@ -577,14 +577,14 @@ final class State
         return $rows;
     }
 
-    /** @return array{Nodes: array{int,int}, Apps: array{int,int}, Instances: array{int,int}, Processes: array{int,int}, Schedules: array{int,int}, Databases: array{int,int}, Firewall: array{int,int}} */
+    /** @return array{Nodes: array{int,int}, Projects: array{int,int}, Instances: array{int,int}, Processes: array{int,int}, Schedules: array{int,int}, Databases: array{int,int}, Firewall: array{int,int}} */
     public function counts(): array
     {
         $off = static fn (array $rows, callable $ok): int => count(array_filter($rows, static fn (array $row): bool => ! $ok($row)));
 
         return [
             'Nodes' => [count($this->nodes), $off($this->nodes, self::nodeHealthy(...))],
-            'Apps' => [count($this->apps), 0],
+            'Projects' => [count($this->apps), 0],
             'Instances' => [count($this->instances), $off($this->instances, self::instanceHealthy(...))],
             'Processes' => [count($this->processes), $off($this->processes, self::processHealthy(...))],
             'Schedules' => [count($this->schedules), $off($this->schedules, self::scheduleHealthy(...))],

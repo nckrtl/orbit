@@ -18,7 +18,7 @@ final class RollbackCommand extends DeploymentCommand
         {--json : Return machine-readable NDJSON}';
 
     #[\Override]
-    protected $description = 'Select one retained production AppInstance release.';
+    protected $description = 'Select one retained production Instance release.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -50,7 +50,7 @@ final class RollbackCommand extends DeploymentCommand
         );
 
         return $stream instanceof DeploymentStream
-            ? $this->renderDeploymentStream($stream, "Roll back AppInstance [{$instanceId}]", 'rollback', 'Rollback')
+            ? $this->renderDeploymentStream($stream, "Roll back Instance [{$instanceId}]", 'rollback', 'Rollback')
             : self::FAILURE;
     }
 }

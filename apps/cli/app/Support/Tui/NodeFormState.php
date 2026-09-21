@@ -73,8 +73,8 @@ final class NodeFormState
             'roles' => PanelMultiSelectPrompt::make(
                 label: 'Roles',
                 options: [
-                    'app-dev' => 'app-dev · runs App instances',
-                    'app-prod' => 'app-prod · runs production App instances',
+                    'app-dev' => 'app-dev · runs Instances',
+                    'app-prod' => 'app-prod · runs production Instances',
                     'gateway' => 'gateway · runs the Gateway and the VPN hub',
                 ],
                 default: ['app-dev'],

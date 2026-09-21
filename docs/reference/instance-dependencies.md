@@ -1,15 +1,15 @@
 ---
-title: "App instance dependencies"
+title: "Instance dependencies"
 description: "Index resolved dependencies and update development instances within their declared version constraints."
 ---
 
-# App instance dependencies
+# Instance dependencies
 
-Scan an App instance to record its resolved Composer and JavaScript dependencies in the Gateway. Update a development instance to resolve newer versions within its declared constraints, then refresh its inventory. [ADR 0089](/decisions/0089-index-appinstance-dependencies) owns the inventory and update boundaries.
+Scan an Instance to record its resolved Composer and JavaScript dependencies in the Gateway. Update a development instance to resolve newer versions within its declared constraints, then refresh its inventory. [ADR 0089](/decisions/0089-index-appinstance-dependencies) owns the inventory and update boundaries.
 
 ## What the inventory describes
 
-The inventory belongs to an App instance. Two instances of the same App can use different versions. An App summary combines its instances without assigning one version to the whole App.
+The inventory belongs to an Instance. Two instances of the same Project can use different versions. A Project summary combines its instances without assigning one version to the whole Project.
 
 Orbit reads the root manifests and lockfiles. A development scan reads the recorded checkout; a production scan reads the selected release. The root is the project directory, not its public web directory. Nested projects and monorepo workspaces are unsupported.
 
@@ -60,7 +60,7 @@ Parsers reject malformed or unrecognized records that prevent a complete graph. 
 
 ## Select and scan an instance
 
-Use the current directory or an explicit instance domain. The domain selects an instance, not every instance of an App.
+Use the current directory or an explicit instance domain. The domain selects an instance, not every instance of a Project.
 
 | Command | Result |
 | --- | --- |
@@ -78,7 +78,7 @@ Human output identifies each instance, its scan result, and counts by ecosystem.
 
 Directory detection and `--app=FULL_DOMAIN` scan one instance. The command shows target resolution and one scan step while the Gateway works. It never prompts.
 
-Human results identify the instance, App, Node, and environment. Each ecosystem shows its freshness state, resolution and requirement counts, observation time, latest attempt time, and stable failure code. Counts for stale data describe the retained observation. Unknown counts appear as an em dash; verified absence has zero counts. Resolution counts include separate versions and contexts of the same package.
+Human results identify the instance, Project, Node, and environment. Each ecosystem shows its freshness state, resolution and requirement counts, observation time, latest attempt time, and stable failure code. Counts for stale data describe the retained observation. Unknown counts appear as an em dash; verified absence has zero counts. Resolution counts include separate versions and contexts of the same package.
 
 `--json` emits one SDK inventory object with `instance_id`, `succeeded`, `composer`, `javascript`, and `request_id`. The ecosystem objects retain full graphs, source provenance, timestamps, and failure codes as described in the [dependency contracts](/reference/instance-dependency-contracts). Selection and transport failures use the ordinary `error` envelope with nullable `error.request_id`. Exit status is zero only when both ecosystems succeed; partial, stale, unknown, invalid-target, and transport failures return one. No package installation or application file change occurs.
 
@@ -88,7 +88,7 @@ Human results identify the instance, App, Node, and environment. Each ecosystem 
 
 The listing envelope must be a JSON object whose `data` field is a JSON array. A valid empty array succeeds and reports zero attempted scans. A JSON object in `data`, including `{}` or numeric-key objects, is not an array and fails before any scan.
 
-Each array member must be a JSON object with a positive instance ID, App ID, Node ID, non-empty name, and supported environment. Missing fields, empty objects, array members, and a malformed row after a valid row fail the entire listing. The command never treats those cases as an empty fleet or as a smaller authorized set.
+Each array member must be a JSON object with a positive instance ID, Project ID, Node ID, non-empty name, and supported environment. Missing fields, empty objects, array members, and a malformed row after a valid row fail the entire listing. The command never treats those cases as an empty fleet or as a smaller authorized set.
 
 Each instance uses the existing single-instance scan contract. A failed, incomplete, unreachable, or unavailable target is recorded and does not stop later captured targets. A listing transport or structured failure stops before any scan. Cancellation or an interrupt leaves unattempted targets unscanned and does not report them as complete.
 

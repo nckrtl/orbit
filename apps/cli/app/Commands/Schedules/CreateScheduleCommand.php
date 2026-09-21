@@ -25,18 +25,18 @@ final class CreateScheduleCommand extends ScheduleCommand
     protected $signature = 'schedule:create
         {name : Schedule name}
         {--node= : Positive Node ID}
-        {--instance= : Positive AppInstance ID}
+        {--instance= : Positive Instance ID}
         {--project= : Numeric Project ID}
         {--app= : Numeric Project ID (compatibility)}
         {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
         {--timeout=3600 : Execution timeout in seconds, from 1 to 86400}
-        {--no-start : Install an AppInstance Schedule with its timer disabled and stopped}
+        {--no-start : Install an Instance Schedule with its timer disabled and stopped}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Create one Node or AppInstance Schedule, or an App Schedule definition.';
+    protected $description = 'Create one Node or Instance Schedule, or a Project Schedule definition.';
 
     public function handle(
         GatewayConfigRepository $repository,
@@ -279,7 +279,7 @@ final class CreateScheduleCommand extends ScheduleCommand
 
         $instanceId = $this->positiveOptionId(
             $instance,
-            'AppInstance',
+            'Instance',
             'schedule.instance_id_invalid',
         );
 

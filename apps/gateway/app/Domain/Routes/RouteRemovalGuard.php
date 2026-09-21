@@ -20,7 +20,7 @@ final readonly class RouteRemovalGuard
         if ($app->routes()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_routes',
-                message: "App [{$app->slug}] still owns Routes.",
+                message: "Project [{$app->slug}] still owns Routes.",
                 status: 409,
             );
         }
@@ -89,7 +89,7 @@ final readonly class RouteRemovalGuard
         ) {
             throw new ResourceOperationException(
                 errorCode: 'analytics.tracking_hosts_exist',
-                message: 'The analytics role cannot be removed while an App instance has a tracking host.',
+                message: 'The analytics role cannot be removed while an Instance has a tracking host.',
                 status: 409,
             );
         }

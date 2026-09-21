@@ -4,7 +4,8 @@ export type RealtimeEvent = { type: string; id: number; at: string; data: Record
 
 const COLLECTIONS: Record<string, string> = {
     node: "nodes",
-    app: "apps",
+    app: "projects",
+    project: "projects",
     instance: "instances",
     process: "processes",
     schedule: "schedules",
@@ -46,7 +47,7 @@ export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
         return;
     }
 
-    // Deploy steps live inside their AppInstance; a deployment changes that instance's history.
+    // Deploy steps live inside their Instance; a deployment changes that instance's history.
     if (family === "deploy_step") {
         void client.invalidateQueries({ queryKey: ["instances"] });
     }

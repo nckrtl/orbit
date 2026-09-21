@@ -33,7 +33,7 @@ An extended attempt keeps the three cloned Nodes and constructs one Node from th
 
 The attempt record stores the normalized construction declaration, the complete physical Node inventory, its snapshot generation or generic-base inputs, and every image alias and fingerprint used for cold construction. Discovery and proof construct separate `app-prod-2` VMs and never adopt one from another attempt. A replacement proof constructs all three registered Nodes from the generic base and never adopts records, source, or runtime from the promoted generation.
 
-Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The `e2e-dev` App instance stays on `app-dev`; neither app-prod Node contains an App instance. The extension creates no legacy Instance or Workspace and no Route target or other graph edge that creates multi-target routing.
+Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The `e2e-dev` Instance stays on `app-dev`; neither app-prod Node contains an Instance. The extension creates no legacy Instance or Workspace and no Route target or other graph edge that creates multi-target routing.
 
 ## Topology states
 
@@ -132,7 +132,7 @@ Every Incus network named `oe-*` or `orbit-e2e-*` belongs to the harness and nev
 
 ### Construction and evidence
 
-A proof plan with `"snapshot_replacement": true` grants replacement authority before proof construction. The proof attempt remains issue-owned and uses normal setup, acceptance, manifest, capture, review, and exact-release records. It constructs only the registered Gateway, app-dev, and app-prod Nodes from the recorded generic base and exact candidate. Convergence must produce native App instance samples and App-owned Routes, and verification refuses legacy sample state or any inventory other than those three Nodes.
+A proof plan with `"snapshot_replacement": true` grants replacement authority before proof construction. The proof attempt remains issue-owned and uses normal setup, acceptance, manifest, capture, review, and exact-release records. It constructs only the registered Gateway, app-dev, and app-prod Nodes from the recorded generic base and exact candidate. Convergence must produce native Instance samples and Project-owned Routes, and verification refuses legacy sample state or any inventory other than those three Nodes.
 
 The promoted generation stays stopped and unchanged during construction, proof, capture, and review. After the verified merge, closeout constructs a clean replacement from merged main and the recorded inputs. It verifies that clean topology before it starts the installation transaction, so reviewer changes to the retained proof topology cannot enter the shared snapshot.
 

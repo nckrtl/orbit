@@ -13,12 +13,12 @@ final class ImportEnvironmentCommand extends EnvironmentCommand
 {
     #[\Override]
     protected $signature = 'env:import
-        {--instance= : Positive AppInstance ID or exact Route domain}
+        {--instance= : Positive Instance ID or exact Route domain}
         {--replace : Replace stored-key conflicts while retaining other stored keys}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Import the workload environment file into stored AppInstance configuration.';
+    protected $description = 'Import the workload environment file into stored Instance configuration.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

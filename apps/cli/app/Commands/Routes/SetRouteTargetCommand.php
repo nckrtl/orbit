@@ -14,10 +14,10 @@ final class SetRouteTargetCommand extends RouteCommand
     #[\Override]
     protected $signature = 'route:target:set
         {route : Numeric Route ID}
-        {target : Numeric AppInstance target ID}
-        {--targets=* : Additional ordered AppInstance IDs in the complete target set}
-        {--reassign=* : Detached AppInstance ID:destination Route ID}
-        {--remove=* : Detached AppInstance ID authorized for removal}
+        {target : Numeric Instance target ID}
+        {--targets=* : Additional ordered Instance IDs in the complete target set}
+        {--reassign=* : Detached Instance ID:destination Route ID}
+        {--remove=* : Detached Instance ID authorized for removal}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -30,7 +30,7 @@ final class SetRouteTargetCommand extends RouteCommand
             return self::FAILURE;
         }
 
-        $targetId = $this->positiveId('target', 'AppInstance', 'route.target_id_invalid');
+        $targetId = $this->positiveId('target', 'Instance', 'route.target_id_invalid');
         if ($targetId === null) {
             return self::FAILURE;
         }
@@ -39,7 +39,7 @@ final class SetRouteTargetCommand extends RouteCommand
         foreach ((array) $this->option('targets') as $value) {
             $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
             if (! is_int($id)) {
-                $this->renderGatewayFailure('route.target_id_invalid', 'AppInstance ID must be a positive integer.');
+                $this->renderGatewayFailure('route.target_id_invalid', 'Instance ID must be a positive integer.');
 
                 return self::FAILURE;
             }
@@ -61,7 +61,7 @@ final class SetRouteTargetCommand extends RouteCommand
         foreach ((array) $this->option('remove') as $value) {
             $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
             if (! is_int($id)) {
-                $this->renderGatewayFailure('route.target_id_invalid', 'AppInstance ID must be a positive integer.');
+                $this->renderGatewayFailure('route.target_id_invalid', 'Instance ID must be a positive integer.');
 
                 return self::FAILURE;
             }

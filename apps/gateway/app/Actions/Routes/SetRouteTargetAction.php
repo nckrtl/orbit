@@ -35,7 +35,7 @@ final readonly class SetRouteTargetAction
         if (! $route->isApp()) {
             throw new ResourceOperationException(
                 errorCode: 'route.kind_unsupported',
-                message: 'Only an App Route can own App instance targets.',
+                message: 'Only a Project Route can own Instance targets.',
                 status: 409,
             );
         }
@@ -82,7 +82,7 @@ final readonly class SetRouteTargetAction
                 if ($currentTargetIds !== $expectedTargetIds) {
                     throw new ResourceOperationException(
                         errorCode: 'env.owner_changed',
-                        message: 'The AppInstance environment owner changed during the operation.',
+                        message: 'The Instance environment owner changed during the operation.',
                         status: 409,
                     );
                 }
@@ -96,7 +96,7 @@ final readonly class SetRouteTargetAction
                 if ($target->app_id !== $locked->app_id) {
                     throw new ResourceOperationException(
                         errorCode: 'route.target_app_conflict',
-                        message: 'The Route target must belong to the Route App.',
+                        message: 'The Route target must belong to the Route Project.',
                         status: 409,
                     );
                 }

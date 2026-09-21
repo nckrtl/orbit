@@ -16,7 +16,6 @@ import {
     useFleet,
 } from "../api/queries";
 import type {
-    App,
     Database,
     DatabaseUser,
     Deployment,
@@ -28,6 +27,7 @@ import type {
     ManagedFirewallRule,
     Node,
     Process,
+    Project,
     Schedule,
 } from "../api/types";
 import {
@@ -36,7 +36,7 @@ import {
     instanceHealthy,
     instanceName,
     instanceNodeName,
-    instancesForApp,
+    instancesForProject,
     instancesForNode,
     nodeHealthy,
     nodeName,
@@ -47,7 +47,7 @@ import {
     processNodeName,
     processOwner,
     scheduleHealthy,
-    schedulesForApp,
+    schedulesForProject,
     schedulesForInstance,
 } from "../fleet/fleet";
 import { firewallLineTone, firewallPort, firewallSource } from "../fleet/firewall";
@@ -265,7 +265,7 @@ function intendedLine(rule: ManagedFirewallRule, index: number): FirewallLine {
 }
 
 function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
-    const columns = useMemo(() => instanceColumns("app"), []);
+    const columns = useMemo(() => instanceColumns("project"), []);
 
     return (
         <div
@@ -323,7 +323,7 @@ function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
     );
 }
 
-function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
+function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
     const columns = useMemo(() => instanceColumns("node"), []);
     const schedules = useMemo(() => scheduleColumns(fleet, "instance"), [fleet]);
 
@@ -333,11 +333,11 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
         >
             <Properties
                 properties={[
-                    { name: "Name", value: app.name },
-                    { name: "Slug", value: app.slug },
-                    { name: "Repository", value: app.repository_url },
-                    { name: "Default branch", value: app.default_branch },
-                    { name: "Root", value: app.root },
+                    { name: "Name", value: project.name },
+                    { name: "Slug", value: project.slug },
+                    { name: "Repository", value: project.repository_url },
+                    { name: "Default branch", value: project.default_branch },
+                    { name: "Root", value: project.root },
                 ]}
             />
             <Pane
@@ -346,7 +346,7 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
                 title="Instances"
                 className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={columns}
-                rows={instancesForApp(fleet, app.slug)}
+                rows={instancesForProject(fleet, project.slug)}
                 rowId={(i) => String(i.id)}
                 warn={(i) => !instanceHealthy(i)}
                 target={(row) => ({ kind: "instances", row })}
@@ -357,7 +357,7 @@ function AppPage({ fleet, app }: { fleet: Fleet; app: App }) {
                 title="Schedules"
                 className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={schedules}
-                rows={schedulesForApp(fleet, app.slug)}
+                rows={schedulesForProject(fleet, project.slug)}
                 rowId={(s) => String(s.id)}
                 warn={(s) => !scheduleHealthy(s)}
                 target={(row) => ({ kind: "schedules", row })}
@@ -419,7 +419,9 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const hasDeployments = (deployments.data?.length ?? 0) > 0;
     const analytics = useQuery(instanceAnalyticsQuery(instance.id)).data;
     const schedules = useMemo(() => scheduleColumns(fleet, "none"), [fleet]);
-    const app = fleet.apps.find((candidate) => candidate.id === instance.app.id);
+    const project = fleet.projects.find(
+        (candidate) => candidate.id === (instance.project ?? instance.app).id,
+    );
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
@@ -433,9 +435,12 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     properties={[
                         { name: "Name", value: instance.name },
                         {
-                            name: "App",
-                            value: instance.app.slug,
-                            onOpen: app === undefined ? undefined : () => go.record("apps", app),
+                            name: "Project",
+                            value: (instance.project ?? instance.app).slug,
+                            onOpen:
+                                project === undefined
+                                    ? undefined
+                                    : () => go.record("projects", project),
                         },
                         {
                             name: "Node",
@@ -699,13 +704,13 @@ export function RecordPage() {
                     )
                 );
             }
-            case "apps": {
-                const app = find(fleet.apps);
+            case "projects": {
+                const project = find(fleet.projects);
 
                 return (
-                    app && (
-                        <RecordLayout kind="apps" row={app}>
-                            <AppPage fleet={fleet} app={app} />
+                    project && (
+                        <RecordLayout kind="projects" row={project}>
+                            <ProjectPage fleet={fleet} project={project} />
                         </RecordLayout>
                     )
                 );

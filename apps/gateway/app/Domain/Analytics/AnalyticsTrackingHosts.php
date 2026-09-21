@@ -7,7 +7,7 @@ namespace App\Domain\Analytics;
 use App\Domain\Routes\ReservedPrivateHostname;
 use App\Domain\Routes\RouteDomain;
 
-/** The rules for the public hosts an App instance publishes for Plausible's script and event paths. */
+/** The rules for the public hosts an Instance publishes for Plausible's script and event paths. */
 final readonly class AnalyticsTrackingHosts
 {
     public const int MAXIMUM = 10;

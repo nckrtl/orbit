@@ -20,7 +20,7 @@ final class ListDeploymentsCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'List recorded deployment history for a production AppInstance, newest first.';
+    protected $description = 'List recorded deployment history for a production Instance, newest first.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

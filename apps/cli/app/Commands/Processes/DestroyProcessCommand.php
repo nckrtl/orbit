@@ -27,7 +27,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Destroy one process or App process definition.';
+    protected $description = 'Destroy one process or Project process definition.';
 
     #[\Override]
     public function handle(

@@ -17,7 +17,7 @@ final class ShowInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Show the analytics tracking hosts of an App instance.';
+    protected $description = 'Show the analytics tracking hosts of an Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -41,7 +41,7 @@ final class ShowInstanceAnalyticsCommand extends InstanceAnalyticsCommand
         );
 
         return $response instanceof InstanceAnalyticsResponse
-            ? $this->renderAnalytics($response, 'App instance analytics.')
+            ? $this->renderAnalytics($response, 'Instance analytics.')
             : self::FAILURE;
     }
 }

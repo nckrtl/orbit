@@ -93,7 +93,7 @@ final readonly class RouteTargetSetGuard
             if ($disposition->routeId !== null && $disposition->remove) {
                 $this->refuse(
                     'route.target_disposition_invalid',
-                    'A detached App instance must be reassigned or removed, not both.',
+                    'A detached Instance must be reassigned or removed, not both.',
                 );
             }
         }
@@ -102,7 +102,7 @@ final readonly class RouteTargetSetGuard
     private function assertUniqueTargets(SetRouteTargetsData $proposal): void
     {
         if (count($proposal->targetIds) !== count(array_unique($proposal->targetIds))) {
-            $this->refuse('route.target_conflict', 'A Route target set cannot contain a duplicate App instance.');
+            $this->refuse('route.target_conflict', 'A Route target set cannot contain a duplicate Instance.');
         }
 
         $dispositionIds = array_map(
@@ -111,13 +111,13 @@ final readonly class RouteTargetSetGuard
         );
 
         if (count($dispositionIds) !== count(array_unique($dispositionIds))) {
-            $this->refuse('route.target_conflict', 'A Route target set cannot contain a duplicate App instance.');
+            $this->refuse('route.target_conflict', 'A Route target set cannot contain a duplicate Instance.');
         }
 
         if (array_intersect($proposal->targetIds, $dispositionIds) !== []) {
             $this->refuse(
                 'route.target_disposition_invalid',
-                'A retained App instance cannot also have a detach disposition.',
+                'A retained Instance cannot also have a detach disposition.',
             );
         }
     }
@@ -142,7 +142,7 @@ final readonly class RouteTargetSetGuard
         if ($detached !== $accounted) {
             $this->refuse(
                 'route.target_disposition_required',
-                'A target-set change must account for every detached active App instance.',
+                'A target-set change must account for every detached active Instance.',
             );
         }
     }
@@ -154,7 +154,7 @@ final readonly class RouteTargetSetGuard
 
         foreach ($instances as $instance) {
             if ($instance->app_id !== $route->app_id) {
-                $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route App.');
+                $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route Project.');
             }
 
             if ($instance->status !== AppInstanceState::Active) {
@@ -223,7 +223,7 @@ final readonly class RouteTargetSetGuard
         if ($instance->status === AppInstanceState::Active && ! $disposition->remove && $disposition->routeId === null) {
             $this->refuse(
                 'route.target_disposition_required',
-                'A detached active App instance must be reassigned or authorized for removal.',
+                'A detached active Instance must be reassigned or authorized for removal.',
             );
         }
 
@@ -238,11 +238,11 @@ final readonly class RouteTargetSetGuard
         }
 
         if ($destination->id === $route->id) {
-            $this->refuse('route.target_disposition_invalid', 'A detached App instance cannot be reassigned to the same Route.');
+            $this->refuse('route.target_disposition_invalid', 'A detached Instance cannot be reassigned to the same Route.');
         }
 
         if ($destination->app_id !== $route->app_id) {
-            $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route App.');
+            $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route Project.');
         }
 
         if ($destination->provenance !== RouteProvenance::Explicit) {
@@ -252,7 +252,7 @@ final readonly class RouteTargetSetGuard
         if ($destination->cluster_id !== $instance->node->cluster_id) {
             $this->refuse(
                 'route.target_scope_conflict',
-                'A reassignment destination must stay in the App instance Cluster.',
+                'A reassignment destination must stay in the Instance Cluster.',
             );
         }
 

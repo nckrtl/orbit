@@ -63,13 +63,15 @@ export const scheduleListColumns = (fleet: Fleet): Column<Schedule>[] => [
     { header: "Last run", width: 20, value: (s) => s.last_run_status ?? "never" },
 ];
 
-export const instanceColumns = (show: "app" | "node"): Column<Instance>[] => [
-    ...(show === "app" ? [{ header: "App", width: 22, value: (i: Instance) => i.app.slug }] : []),
+export const instanceColumns = (show: "project" | "node"): Column<Instance>[] => [
+    ...(show === "project"
+        ? [{ header: "Project", width: 22, value: (i: Instance) => i.app.slug }]
+        : []),
     { header: "Name", width: 16, value: (i) => i.name },
     { header: "Environment", width: 16, value: (i) => i.environment },
     ...(show === "node"
         ? [{ header: "Node", width: 14, value: (i: Instance) => i.node.name }]
         : []),
-    { header: "Domain", width: show === "app" ? 32 : 40, value: (i) => i.domain ?? "—" },
+    { header: "Domain", width: show === "project" ? 32 : 40, value: (i) => i.domain ?? "—" },
     { header: "Status", width: 12, value: (i) => i.status },
 ];

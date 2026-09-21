@@ -17,7 +17,7 @@ import { type Crumb, PageHeader } from "../ui/PageHeader";
 import { setPageTarget } from "../ui/page";
 
 /**
- * The way to a record by what owns it, not by the clicks that led there: an App owns its instances,
+ * The way to a record by what owns it, not by the clicks that led there: a Project owns its instances,
  * an instance or a node owns its processes and schedules, and a node owns its firewall rules. Every
  * crumb but the last opens what it names, so the line also takes the reader back up.
  */
@@ -31,13 +31,15 @@ function crumbs(kind: Kind, row: AnyRecord, fleet: Fleet, go: ReturnType<typeof 
             return [];
         }
 
-        const app = fleet.apps.find((candidate) => candidate.id === instance.app.id);
+        const project = fleet.projects.find(
+            (candidate) => candidate.id === (instance.project ?? instance.app).id,
+        );
 
         return [
-            section("apps"),
+            section("projects"),
             {
-                label: instance.app.slug,
-                open: app === undefined ? undefined : () => go.record("apps", app),
+                label: (instance.project ?? instance.app).slug,
+                open: project === undefined ? undefined : () => go.record("projects", project),
             },
             { label: instance.name, open: () => go.record("instances", instance) },
         ];

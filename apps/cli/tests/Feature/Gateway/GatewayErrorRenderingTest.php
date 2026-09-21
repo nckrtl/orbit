@@ -698,7 +698,7 @@ it('renders local validation failures through the exact json boundary', function
         'process:create',
         ['name' => 'worker', '--instance' => 'validation-secret', '--command' => ['/usr/bin/php']],
         'process.target_id_invalid',
-        'AppInstance ID must be a positive integer.',
+        'Instance ID must be a positive integer.',
     ],
     'process runtime' => [
         'process:create',

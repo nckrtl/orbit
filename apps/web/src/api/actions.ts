@@ -4,7 +4,6 @@ import { api, GatewayError } from "./client";
 import { queryClient } from "./queryClient";
 import type {
     AnyRecord,
-    App,
     Database,
     DoctorReport,
     FirewallRule,
@@ -13,6 +12,7 @@ import type {
     Kind,
     Node,
     Process,
+    Project,
     Schedule,
 } from "./types";
 
@@ -48,7 +48,7 @@ const analyticsReport = (analytics: InstanceAnalytics): string =>
                     : `\n  DNS  ${host.dns.type} ${host.dns.name} -> ${host.dns.value}`),
         ),
         "",
-        "Add this tag to the App, and create the site in Plausible yourself:",
+        "Add this tag to the Project, and create the site in Plausible yourself:",
         analytics.snippet ?? "",
     ].join("\n");
 
@@ -171,20 +171,20 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                 ),
             ];
         }
-        case "apps": {
-            const app = row as App;
+        case "projects": {
+            const project = row as Project;
 
             return [
                 leaves(
                     "show",
-                    `orbit app:show ${app.slug}`,
-                    "Open the App record instead of running this from the menu.",
+                    `orbit project:show ${project.slug}`,
+                    "Open the Project record instead of running this from the menu.",
                 ),
             ];
         }
         case "instances": {
             const instance = row as Instance;
-            const target = `${instance.app.slug}/${instance.name}`;
+            const target = `${(instance.project ?? instance.app).slug}/${instance.name}`;
 
             return [
                 ...analyticsActions(instance, target),

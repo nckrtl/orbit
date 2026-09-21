@@ -33,7 +33,7 @@ Two request headers are optional.
 | `X-Orbit-Request-Id` | A UUID that the Gateway records as the request ID. Send one to correlate a request with its Activity and its response; the Gateway generates one otherwise. |
 | `X-Orbit-Client` | A short client name, such as `cli`, recorded with the Activity. |
 
-Path parameters are numeric IDs except where noted: Schedules use their UUID, Database connections use their slug, deploy steps and definitions use their name, and the environment endpoints accept either a positive App instance ID or the exact Route domain of the App instance.
+Path parameters are numeric IDs except where noted: Schedules use their UUID, Database connections use their slug, deploy steps and definitions use their name, and the environment endpoints accept either a positive Instance ID or the exact Route domain of the Instance.
 
 ## Read a response
 
@@ -58,7 +58,7 @@ Every refusal is one error envelope with a stable code.
 {
   "error": {
     "code": "route.target_conflict",
-    "message": "AppInstance 12 already belongs to Route 4.",
+    "message": "Instance 12 already belongs to Route 4.",
     "details": { "requested_route_id": 9, "existing_route_id": 4 },
     "request_id": "9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81"
   }

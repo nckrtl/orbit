@@ -94,7 +94,7 @@ describe("the fixture fleet", () => {
     it("counts each section and what needs a look in it", () => {
         expect(counts(fleet)).toEqual({
             nodes: [3, 1],
-            apps: [3, 0],
+            projects: [3, 0],
             instances: [4, 1],
             processes: [4, 1],
             schedules: [2, 1],
@@ -115,13 +115,13 @@ describe("the fixture fleet", () => {
         ]);
     });
 
-    it("narrows a list by node and by app", () => {
-        const names = (node?: string, app?: string) =>
-            listRows(fleet, "processes", node, app).map((row) => (row as Process).name);
+    it("narrows a list by node and by project", () => {
+        const names = (node?: string, project?: string) =>
+            listRows(fleet, "processes", node, project).map((row) => (row as Process).name);
 
         expect(names()).toEqual(["horizon", "vite", "queue", "valkey"]);
         expect(names("beast", "charlie-shop")).toEqual(["horizon", "vite", "queue"]);
-        // A Node process belongs to no App, so an app filter leaves it out.
+        // A Node process belongs to no Project, so a project filter leaves it out.
         expect(names(undefined, "acme")).toEqual([]);
         expect(names("app-prod")).toEqual([]);
     });

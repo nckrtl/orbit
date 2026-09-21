@@ -14,7 +14,7 @@ The existing node exporter preference controls service monitoring too. No extra 
 | Selected node | Added monitoring |
 | --- | --- |
 | Ingress with a published public Route | Native Caddy metrics |
-| App-prod with dedicated PHP App instances | One Cbox FPM Exporter service with explicit pools |
+| App-prod with dedicated PHP Instances | One Cbox FPM Exporter service with explicit pools |
 | Both roles | Both collectors |
 | Neither, or no eligible workloads yet | Existing node exporter and cAdvisor only |
 
@@ -28,13 +28,13 @@ The dashboard selects Caddy's outer `subroute` handler, as observed with Orbit's
 
 Caddy 2.9 and later support per-host collection. Prometheus retains published public host labels and metrics without a host label. Older Caddy versions, including Ubuntu's Caddy 2.6.2, instrument the outer `subroute` handler on Orbit's shared `0.0.0.0:443` listener. They report observations for the node, including direct responses and private traffic on that listener. The dedicated scrape listener is excluded. Orbit does not upgrade Caddy when metrics are enabled. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
 
-Ingress normally proxies to the Router. Its upstream-health metrics do not establish the health of each App instance. Traffic that never reaches Caddy requires an external probe.
+Ingress normally proxies to the Router. Its upstream-health metrics do not establish the health of each Instance. Traffic that never reaches Caddy requires an external probe.
 
 ## PHP capacity
 
 Cbox FPM Exporter **v3.1.1** is pinned by architecture and SHA-256. Orbit supplies recorded sockets, configuration paths, and matching PHP binaries. Filesystem discovery, CLI PHP monitoring, and Laravel collectors are disabled.
 
-The **Orbit PHP Capacity** dashboard groups pool data by node and App instance. It shows observed pool health, active workers, effective worker capacity, waiting requests, worker-limit events, slow requests when a threshold exists, and OPcache memory, hit rate, and manual resets.
+The **Orbit PHP Capacity** dashboard groups pool data by node and Instance. It shows observed pool health, active workers, effective worker capacity, waiting requests, worker-limit events, slow requests when a threshold exists, and OPcache memory, hit rate, and manual resets.
 
 Other collected pool metrics include idle and total workers, accepted connections, queue capacity, effective timeout settings, and OPcache free memory, waste, misses, and restart causes. Detailed PID-labelled worker series are dropped before storage. Cbox's average worker memory metric describes last-request PHP memory; it is not resident process memory and must not be used as RSS for automatic sizing.
 
@@ -52,7 +52,7 @@ Caddy listens on WireGuard port **9103**, exposing its metrics handler rather th
 
 Service jobs use a 15-second interval, a 12-second Prometheus timeout, and a 20,000-sample limit. Cbox has a 10-second collection deadline and 3-second pool timeout. Existing node exporter and cAdvisor intervals stay unchanged.
 
-Prometheus `up` describes the exporter endpoint. `phpfpm_up` describes pools Cbox observed. In v3.1.1, one unavailable pool can disappear while the other pools still report healthy; there is no reliable per-pool zero for that case. Check the expected App instance inventory when a series disappears. If every pool is unavailable, Cbox emits an aggregate failure series.
+Prometheus `up` describes the exporter endpoint. `phpfpm_up` describes pools Cbox observed. In v3.1.1, one unavailable pool can disappear while the other pools still report healthy; there is no reliable per-pool zero for that case. Check the expected Instance inventory when a series disappears. If every pool is unavailable, Cbox emits an aggregate failure series.
 
 Cbox can emit zero OPcache fields after a failed helper probe. Dashboard cache panels require `phpfpm_opcache_enabled == 1`, so failed or disabled-cache observations leave gaps rather than showing an empty cache. This does not distinguish a disabled cache from a failed probe. No notification delivery is added.
 

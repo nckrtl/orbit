@@ -142,7 +142,7 @@ describe('instance:transfer output', function (): void {
             '--force' => true,
         ]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: preview',
+            'Instance: preview',
             'ID 11',
             'Destination Node 8',
             'Destination path /srv/orbit/apps/shop/preview',

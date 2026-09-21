@@ -13,7 +13,7 @@ export async function demoFleet(): Promise<Fleet> {
 
     return {
         nodes,
-        apps: await get("/api/v1/apps"),
+        projects: await get("/api/v1/projects"),
         instances: await get("/api/v1/instances"),
         processes: await get("/api/v1/processes"),
         schedules: await get("/api/v1/schedules"),

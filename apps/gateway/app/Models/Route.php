@@ -83,7 +83,7 @@ final class Route extends Model
         return $this->kind === RouteKind::AnalyticsTracking;
     }
 
-    /** An App Route is the only kind that owns App instance targets and an operator-chosen domain or publication. */
+    /** A Project Route is the only kind that owns Instance targets and an operator-chosen domain or publication. */
     public function isApp(): bool
     {
         return $this->kind === RouteKind::App;

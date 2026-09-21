@@ -3,7 +3,6 @@ import { useLiveness } from "../realtime/liveness";
 import { get } from "./client";
 import { queryClient } from "./queryClient";
 import type {
-    App,
     Database,
     DatabaseUser,
     Deployment,
@@ -16,6 +15,7 @@ import type {
     ManagedFirewallRule,
     Node,
     Process,
+    Project,
     ProxyCliStatus,
     QueueReport,
     QueueState,
@@ -33,7 +33,10 @@ const nodesQuery = queryOptions({
 
 export const lists = {
     nodes: nodesQuery,
-    apps: queryOptions({ queryKey: ["apps"], queryFn: () => get<App[]>("/api/v1/apps") }),
+    projects: queryOptions({
+        queryKey: ["projects"],
+        queryFn: () => get<Project[]>("/api/v1/projects"),
+    }),
     instances: queryOptions({
         queryKey: ["instances"],
         queryFn: () => get<Instance[]>("/api/v1/instances"),
@@ -68,7 +71,7 @@ export const lists = {
 
 export type Fleet = {
     nodes: Node[];
-    apps: App[];
+    projects: Project[];
     instances: Instance[];
     processes: Process[];
     schedules: Schedule[];
@@ -82,9 +85,9 @@ export type Fleet = {
 const EMPTY: never[] = [];
 
 /** Every fleet-wide list. Realtime events patch these caches; they poll only while it is down. */
-/** Apps in alphabetical order of their name, whatever order the Gateway lists them in. */
-const byName = (apps: App[]): App[] =>
-    [...apps].sort((a, b) =>
+/** Projects in alphabetical order of their name, whatever order the Gateway lists them in. */
+const byName = (projects: Project[]): Project[] =>
+    [...projects].sort((a, b) =>
         (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }),
     );
 
@@ -92,7 +95,7 @@ export function useFleet(): Fleet {
     const live = useLiveness() === "live";
     const refetchInterval = live ? false : POLL_SECONDS * 1000;
     const nodes = useQuery({ ...lists.nodes, refetchInterval });
-    const apps = useQuery({ ...lists.apps, refetchInterval, select: byName });
+    const projects = useQuery({ ...lists.projects, refetchInterval, select: byName });
     const instances = useQuery({ ...lists.instances, refetchInterval });
     // No event carries a Process's CPU and memory, so this list reloads on its own clock.
     const processes = useQuery({ ...lists.processes, refetchInterval: 15_000 });
@@ -102,15 +105,15 @@ export function useFleet(): Fleet {
 
     return {
         nodes: nodes.data ?? EMPTY,
-        apps: apps.data ?? EMPTY,
+        projects: projects.data ?? EMPTY,
         instances: instances.data ?? EMPTY,
         processes: processes.data ?? EMPTY,
         schedules: schedules.data ?? EMPTY,
         databases: databases.data ?? EMPTY,
         firewall: firewall.data ?? EMPTY,
         processesLoaded: processes.data !== undefined || processes.isError,
-        loading: nodes.isPending || apps.isPending || instances.isPending,
-        error: nodes.error ?? apps.error ?? instances.error,
+        loading: nodes.isPending || projects.isPending || instances.isPending,
+        error: nodes.error ?? projects.error ?? instances.error,
     };
 }
 

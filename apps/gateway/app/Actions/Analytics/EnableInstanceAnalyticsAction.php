@@ -87,7 +87,7 @@ final readonly class EnableInstanceAnalyticsAction
     }
 
     /**
-     * A tracking host is served wherever the App instance's own domain is served, so it mirrors that
+     * A tracking host is served wherever the Instance's own domain is served, so it mirrors that
      * Route: a cluster-scoped public Route reaches the internet through the Ingress and the Router,
      * and a node-scoped private Route is served by the instance's own Node behind whatever edge
      * already fronts it.
@@ -99,7 +99,7 @@ final readonly class EnableInstanceAnalyticsAction
         if (! $route instanceof Route || $route->domain === '') {
             throw new ResourceOperationException(
                 errorCode: 'analytics.domain_required',
-                message: 'A tracking host needs an App instance that already serves a domain.',
+                message: 'A tracking host needs an Instance that already serves a domain.',
                 status: 422,
             );
         }

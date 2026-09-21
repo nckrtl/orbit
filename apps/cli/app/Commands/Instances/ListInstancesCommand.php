@@ -31,7 +31,7 @@ final class ListInstancesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress($connector, new ListAppInstancesRequest, AppInstancesResponse::class, ['List App instances', 'Loading App instances', 'Loaded App instances']);
+        $response = $this->sendWithProgress($connector, new ListAppInstancesRequest, AppInstancesResponse::class, ['List Instances', 'Loading Instances', 'Loaded Instances']);
 
         if (! $response instanceof AppInstancesResponse) {
             return self::FAILURE;
@@ -70,7 +70,7 @@ final class ListInstancesCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             [
                 'ID',
-                'App',
+                'Project',
                 'Node',
                 'Vite port',
                 'Name',
@@ -86,7 +86,7 @@ final class ListInstancesCommand extends GatewayCommand
                 'Removal',
             ],
             $rows,
-            'No App instances found.',
+            'No Instances found.',
         ));
         $this->writeHumanMessage("Request ID: {$response->requestId}");
 

@@ -81,7 +81,7 @@ final readonly class CreateRouteAction
         )) {
             throw new ResourceOperationException(
                 errorCode: 'route.instance_inactive',
-                message: 'A Route can be created only during AppInstance provisioning or after activation.',
+                message: 'A Route can be created only during Instance provisioning or after activation.',
                 status: 409,
             );
         }
@@ -101,7 +101,7 @@ final readonly class CreateRouteAction
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'route.retry_conflict',
-                    message: 'The AppInstance Route already exists with different immutable input.',
+                    message: 'The Instance Route already exists with different immutable input.',
                     status: 409,
                 );
             }
@@ -142,7 +142,7 @@ final readonly class CreateRouteAction
         if ($data->nodeId === null || $data->appId !== null || $data->appInstanceId !== null || $data->clusterId !== null) {
             throw new ResourceOperationException(
                 errorCode: 'route.scope_required',
-                message: 'A custom proxy Route requires a serving Node and no App target.',
+                message: 'A custom proxy Route requires a serving Node and no Project target.',
             );
         }
 
@@ -280,7 +280,7 @@ final readonly class CreateRouteAction
         if ($data->appId === null) {
             throw new ResourceOperationException(
                 errorCode: 'route.scope_required',
-                message: 'An App Route requires an App.',
+                message: 'A Project Route requires a Project.',
             );
         }
 
@@ -390,7 +390,7 @@ final readonly class CreateRouteAction
         if ($target->app_id !== $appId) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_app_conflict',
-                message: 'The Route target must belong to the Route App.',
+                message: 'The Route target must belong to the Route Project.',
                 status: 409,
             );
         }
@@ -480,7 +480,7 @@ final readonly class CreateRouteAction
             if ($association instanceof RouteTarget) {
                 return new ResourceOperationException(
                     errorCode: 'route.target_conflict',
-                    message: "AppInstance [{$appInstance->id}] is already associated with Route [{$association->route_id}].",
+                    message: "Instance [{$appInstance->id}] is already associated with Route [{$association->route_id}].",
                     status: 409,
                     previous: $exception,
                 );

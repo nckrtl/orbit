@@ -89,10 +89,10 @@ final class StoreProcessRequest extends FormRequest
                         }
                     }
                     if ($this->input('target_type') !== 'instance') {
-                        $validator->errors()->add('target_type', 'The preset requires an AppInstance.');
+                        $validator->errors()->add('target_type', 'The preset requires an Instance.');
                     }
                     if (($this->input('keep_alive') === true) && is_string($this->input('preset')) && ProcessPresets::refusesKeepAlive($this->input('preset'))) {
-                        $validator->errors()->add('keep_alive', 'This preset hibernates with the AppInstance and cannot keep-alive.');
+                        $validator->errors()->add('keep_alive', 'This preset hibernates with the Instance and cannot keep-alive.');
                     }
                 }
                 $this->validateSystemdExecutable($validator);

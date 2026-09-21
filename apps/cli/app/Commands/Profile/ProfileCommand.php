@@ -27,7 +27,7 @@ final class ProfileCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'profile
         {url? : Absolute HTTP or HTTPS URL to profile}
-        {--instance= : Numeric AppInstance ID to profile, using the URL the Gateway records for it}
+        {--instance= : Numeric Instance ID to profile, using the URL the Gateway records for it}
         {--path= : Path to profile on the --instance URL, defaulting to /}
         {--as-first-user : Authenticate the profiled request as the first user}
         {--user= : Authenticate the profiled request as the given primary key}
@@ -347,7 +347,7 @@ final class ProfileCommand extends GatewayCommand
             $connector,
             new ShowAppInstanceRequest($instanceId),
             AppInstanceResponse::class,
-            ['Show App instance', 'Fetching App instance', 'Fetched App instance'],
+            ['Show Instance', 'Fetching Instance', 'Fetched Instance'],
             dismiss: true,
         );
 
@@ -360,7 +360,7 @@ final class ProfileCommand extends GatewayCommand
         if ($base === null) {
             $this->renderGatewayFailure(
                 'instance.url_missing',
-                "App instance [{$instance->name}] has no URL to profile.",
+                "Instance [{$instance->name}] has no URL to profile.",
             );
 
             return null;

@@ -27,7 +27,7 @@ final readonly class ClearRouteTargetAction
         if (! $route->isApp()) {
             throw new ResourceOperationException(
                 errorCode: 'route.kind_unsupported',
-                message: 'Only an App Route can own App instance targets.',
+                message: 'Only a Project Route can own Instance targets.',
                 status: 409,
             );
         }
@@ -72,7 +72,7 @@ final readonly class ClearRouteTargetAction
             if ($currentTargetIds !== $expectedTargetIds) {
                 throw new ResourceOperationException(
                     errorCode: 'env.owner_changed',
-                    message: 'The AppInstance environment owner changed during the operation.',
+                    message: 'The Instance environment owner changed during the operation.',
                     status: 409,
                 );
             }

@@ -5,7 +5,7 @@ description: "How a Gateway registers its own read-only GitHub App, how an opera
 
 # GitHub App
 
-This reference is for operators whose Apps live in private `github.com` repositories. A Gateway reads those repositories through its own GitHub App. Orbit reads public repositories without it, so the App is optional. [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) owns the decision.
+This reference is for operators whose Projects live in private `github.com` repositories. A Gateway reads those repositories through its own GitHub App. Orbit reads public repositories without it, so the App is optional. [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) owns the decision.
 
 ## What the App is
 
@@ -30,7 +30,7 @@ On the install page, choose the account or organization and either all repositor
 
 ## How Orbit reads a repository
 
-Orbit reads an App repository when the Gateway resolves a default branch with `git ls-remote`, and when a Node clones or fetches source. Node reads happen for production provisioning, a production deployment, a development checkout, a repository or default-branch change, a clone of an App instance, and the published-commit check before a development checkout is removed.
+Orbit reads a Project repository when the Gateway resolves a default branch with `git ls-remote`, and when a Node clones or fetches source. Node reads happen for production provisioning, a production deployment, a development checkout, a repository or default-branch change, a clone of an Instance, and the published-commit check before a development checkout is removed.
 
 For each of these reads of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token. The token reads that one repository and expires after one hour. The Gateway passes it to `git` in the environment of that one command. The token is never part of the origin URL, the command arguments, `.git/config`, or a file on the Node.
 

@@ -167,7 +167,7 @@ describe('instance:clone output', function (): void {
             '--preview-name' => 'shop.com',
         ]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: production',
+            'Instance: production',
             'Target ID 29',
             'Configured branch release',
             'Preview domain shop.com.prod.orbit',
@@ -391,8 +391,8 @@ it('reports the created clone when the following release lookup fails', function
         expect(trim($output))->toBe(clone_cli_error('deployment.releases_unavailable', 'Releases are unavailable.', clone_cli_release_request_id()));
     } else {
         expect(instance_source_text($output))->toContain(
-            'App instance [production] (#29) was cloned; the selected release could not be read.',
+            'Instance [production] (#29) was cloned; the selected release could not be read.',
             'Clone request ID: '.clone_cli_request_id(), 'Releases are unavailable.',
-        )->not->toContain('App instance cloned.');
+        )->not->toContain('Instance cloned.');
     }
 })->with([false, true]);

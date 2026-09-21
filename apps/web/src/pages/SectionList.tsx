@@ -3,19 +3,19 @@ import { useMemo } from "react";
 import { type Fleet, useFleet } from "../api/queries";
 import type {
     AnyRecord,
-    App,
     Database,
     FirewallRule,
     Instance,
     Kind,
     Node,
     Process,
+    Project,
     Schedule,
 } from "../api/types";
 import {
     firewallHealthy,
     instanceHealthy,
-    instancesForApp,
+    instancesForProject,
     listRows,
     nodeHealthy,
     nodeName,
@@ -37,19 +37,23 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
     const columns: { [K in ListKind]: () => Column<never>[] } = {
         // The Nodes page draws its own two tables; see NodesList.
         nodes: (): Column<Node>[] => [],
-        apps: (): Column<App>[] => [
-            { header: "Name", width: 34, value: (a) => a.name },
-            { header: "Slug", width: 24, value: (a) => a.slug },
-            { header: "Default branch", width: 22, value: (a) => a.default_branch ?? "main" },
+        projects: (): Column<Project>[] => [
+            { header: "Name", width: 34, value: (project) => project.name },
+            { header: "Slug", width: 24, value: (project) => project.slug },
+            {
+                header: "Default branch",
+                width: 22,
+                value: (project) => project.default_branch ?? "main",
+            },
             {
                 header: "Instances",
                 width: 20,
-                value: (a) => String(instancesForApp(fleet, a.slug).length),
-                sort: (a) => instancesForApp(fleet, a.slug).length,
+                value: (project) => String(instancesForProject(fleet, project.slug).length),
+                sort: (project) => instancesForProject(fleet, project.slug).length,
             },
         ],
         instances: (): Column<Instance>[] => [
-            { header: "App", width: 18, value: (i) => i.app.slug },
+            { header: "Project", width: 18, value: (i) => (i.project ?? i.app).slug },
             { header: "Name", width: 14, value: (i) => i.name },
             { header: "Environment", width: 14, value: (i) => i.environment },
             { header: "Node", width: 12, value: (i) => i.node.name },
@@ -93,7 +97,7 @@ function columnsFor(section: ListKind, fleet: Fleet): Column<AnyRecord>[] {
 
 const WARN: { [K in ListKind]: (row: never) => boolean } = {
     nodes: (row: Node) => !nodeHealthy(row),
-    apps: () => false,
+    projects: () => false,
     instances: (row: Instance) => !instanceHealthy(row),
     processes: (row: Process) => !processHealthy(row),
     schedules: (row: Schedule) => !scheduleHealthy(row),
@@ -124,8 +128,8 @@ function RecordList() {
     const known = section in WARN;
     const kind = section as ListKind;
     const rows = useMemo(
-        () => (known ? listRows(fleet, kind, search.node, search.app) : []),
-        [fleet, kind, known, search.node, search.app],
+        () => (known ? listRows(fleet, kind, search.node, search.project) : []),
+        [fleet, kind, known, search.node, search.project],
     );
     const columns = useMemo(() => (known ? columnsFor(kind, fleet) : []), [fleet, kind, known]);
 
@@ -137,17 +141,17 @@ function RecordList() {
         );
     }
 
-    const cycle = (name: "node" | "app") => {
+    const cycle = (name: "node" | "project") => {
         const values =
             name === "node"
                 ? fleet.nodes.map((node) => node.name)
-                : fleet.apps.map((app) => app.slug);
+                : fleet.projects.map((project) => project.slug);
         const current = search[name];
         go.filter(section, name, values[current === undefined ? 0 : values.indexOf(current) + 1]);
     };
 
     const filters = FILTERED_SECTIONS.includes(section)
-        ? (["node", "app"] as const).map((name) => (
+        ? (["node", "project"] as const).map((name) => (
               <span
                   key={name}
                   className={`cursor-pointer ${search[name] === undefined ? "text-dim hover:text-fg" : "text-cyan"}`}

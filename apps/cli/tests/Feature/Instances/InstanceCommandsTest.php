@@ -80,7 +80,7 @@ describe('instance:register', function (): void {
         $mockClient = MockClient::global([RegisterAppInstanceRequest::class => registration_mock_response()]);
         expect(Artisan::call('instance:register', ['--yes' => true]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: default', 'Source layout checkout',
+            'Instance: default', 'Source layout checkout',
             'Managed path /home/orbit/apps/acme/default',
         );
         expect($mockClient->getLastRequest())->toBeInstanceOf(RegisterAppInstanceRequest::class)
@@ -474,7 +474,7 @@ describe('instance:create', function (): void {
 
         expect(Artisan::call('instance:create', ['project' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: dev',
+            'Instance: dev',
             'Source layout checkout',
             'Effective root public',
             'Selected branch dev',
@@ -615,7 +615,7 @@ describe('instance:show', function (): void {
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: dev ID 5 App orbit-docs Node beast Status active',
+            'Instance: dev ID 5 App orbit-docs Node beast Status active',
             'App orbit-docs',
             'Node beast',
             'Source layout checkout',
@@ -657,7 +657,7 @@ describe('instance:show', function (): void {
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'App instance: dev ID 5 App orbit-docs Node beast Status removing',
+            'Instance: dev ID 5 App orbit-docs Node beast Status removing',
             'Removal mode forced',
             'Removal progress 0/1 completed; 1 remaining',
             'Removal step runtime_cleanup',
