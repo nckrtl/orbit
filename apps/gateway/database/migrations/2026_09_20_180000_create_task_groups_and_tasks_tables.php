@@ -20,8 +20,8 @@ return new class extends Migration
             $table->string('reviewer_thread_id')->nullable();
             $table->string('pr_url')->nullable();
             $table->boolean('notify_coder')->default(false);
-            $table->string('implementer_model')->default('codex-luna-lite');
-            $table->string('reviewer_model')->default('claude-opus');
+            $table->string('implementer_model')->default('gpt-5.6-luna');
+            $table->string('reviewer_model')->default('claude-opus-5');
             $table->unsignedInteger('tokens')->nullable();
             $table->integer('line_diff')->nullable();
             $table->unsignedInteger('duration_ms')->nullable();

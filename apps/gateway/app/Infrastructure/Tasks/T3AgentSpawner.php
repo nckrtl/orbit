@@ -7,6 +7,7 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\T3Dispatcher;
 use App\Domain\Tasks\T3DispatchException;
+use App\Domain\Tasks\T3ModelCatalog;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\AppInstance;
@@ -35,8 +36,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
         return $this->spawnThread(
             $group,
             title: 'Orbit task #'.$group->id.' · Reviewer: '.$group->title,
-            model: $group->reviewer_model !== '' ? $group->reviewer_model : TaskAgentDefaults::ReviewerModel,
-            effort: TaskAgentDefaults::ReviewerEffort,
+            selection: $this->reviewerSelection($group),
             message: $this->reviewerPrompt($group),
         );
     }
@@ -54,8 +54,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
         return $this->spawnThread(
             $group,
             title: 'Orbit task #'.$group->id.' / subtask #'.$task->id.' · Implementer: '.$task->title,
-            model: $group->implementer_model !== '' ? $group->implementer_model : TaskAgentDefaults::ImplementerModel,
-            effort: TaskAgentDefaults::ImplementerEffort,
+            selection: $this->implementerSelection($group),
             message: $this->implementerPrompt($group, $task),
             taskId: $task->id,
         );
@@ -72,7 +71,7 @@ final readonly class T3AgentSpawner implements AgentSpawner
         }
 
         try {
-            $this->startTurn($node, $group->reviewer_thread_id, $this->reviewPrompt($task));
+            $this->startTurn($node, $group->reviewer_thread_id, $this->reviewPrompt($task), $this->reviewerSelection($group));
         } catch (T3DispatchException) {
         }
     }
@@ -92,11 +91,13 @@ final readonly class T3AgentSpawner implements AgentSpawner
         );
     }
 
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
     private function spawnThread(
         TaskGroup $group,
         string $title,
-        string $model,
-        string $effort,
+        array $selection,
         string $message,
         ?int $taskId = null,
     ): ?string {
@@ -110,7 +111,6 @@ final readonly class T3AgentSpawner implements AgentSpawner
         $threadId = (string) Str::uuid();
         $projectId = (string) Str::uuid();
         $createdAt = now()->toIso8601String();
-        $selection = $this->modelSelection($model, $effort);
 
         try {
             try {
@@ -155,18 +155,21 @@ final readonly class T3AgentSpawner implements AgentSpawner
             'node_id' => $node->id,
             'role' => $taskId === null ? 'reviewer' : 'implementer',
         ]);
-        $this->startOpeningTurn($node, $resolvedThreadId, $message);
+        $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection);
 
         return $resolvedThreadId;
     }
 
-    private function startOpeningTurn(Node $node, string $threadId, string $message): void
+    /**
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
+    private function startOpeningTurn(Node $node, string $threadId, string $message, array $selection): void
     {
         try {
-            $this->startTurn($node, $threadId, $message);
+            $this->startTurn($node, $threadId, $message, $selection);
         } catch (T3DispatchException) {
             try {
-                $this->startTurn($node, $threadId, $message);
+                $this->startTurn($node, $threadId, $message, $selection);
             } catch (T3DispatchException $exception) {
                 Log::warning('T3 thread.turn.start failed after the thread was created.', [
                     'thread_id' => $threadId,
@@ -176,14 +179,28 @@ final readonly class T3AgentSpawner implements AgentSpawner
         }
     }
 
-    private function startTurn(Node $node, string $threadId, string $message): void
+    /**
+     * T3 0.0.42 takes the prompt as a message object. A flat string decodes to
+     * an empty turn, and the thread then sits idle with nothing to work on.
+     *
+     * `modelSelection` repeats the thread's create-time selection because
+     * `meta.update` cannot move a thread to another provider instance.
+     *
+     * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
+     */
+    private function startTurn(Node $node, string $threadId, string $message, array $selection): void
     {
         $this->dispatcher->dispatch($node, [
             'type' => 'thread.turn.start',
             'commandId' => (string) Str::uuid(),
             'threadId' => $threadId,
-            'messageId' => (string) Str::uuid(),
-            'message' => $message,
+            'message' => [
+                'messageId' => (string) Str::uuid(),
+                'role' => 'user',
+                'text' => $message,
+                'attachments' => [],
+            ],
+            'modelSelection' => $selection,
             'createdAt' => now()->toIso8601String(),
         ]);
     }
@@ -191,15 +208,23 @@ final readonly class T3AgentSpawner implements AgentSpawner
     /**
      * @return array{instanceId: string, model: string, options: list<array{id: string, value: string}>}
      */
-    private function modelSelection(string $model, string $effort): array
+    private function reviewerSelection(TaskGroup $group): array
     {
-        return [
-            'instanceId' => $model,
-            'model' => $model,
-            'options' => [
-                ['id' => 'effort', 'value' => $effort],
-            ],
-        ];
+        return T3ModelCatalog::selection(
+            $group->reviewer_model !== '' ? $group->reviewer_model : TaskAgentDefaults::ReviewerModel,
+            TaskAgentDefaults::ReviewerEffort,
+        );
+    }
+
+    /**
+     * @return array{instanceId: string, model: string, options: list<array{id: string, value: string}>}
+     */
+    private function implementerSelection(TaskGroup $group): array
+    {
+        return T3ModelCatalog::selection(
+            $group->implementer_model !== '' ? $group->implementer_model : TaskAgentDefaults::ImplementerModel,
+            TaskAgentDefaults::ImplementerEffort,
+        );
     }
 
     private function node(TaskGroup $group): ?Node

@@ -36,7 +36,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `implementer_thread_id` | Task | Fresh implementer thread for that subtask |
 | `pr_url` | TaskGroup | Pull request opened after the last sign-off |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
-| `implementer_model` / `reviewer_model` | TaskGroup | Defaults: `codex-luna-lite` and `claude-opus` |
+| `implementer_model` / `reviewer_model` | TaskGroup | Defaults: `gpt-5.6-luna` and `claude-opus-5` |
 | `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
 
 Group statuses: `queued`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `pending`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
@@ -119,9 +119,24 @@ The Gateway stores each session's group, optional subtask, role, Node, and T3 th
 
 Agents run on the T3 server of the Node that owns that Instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server. A successful dispatch needs a sequence. Commands that have no thread, including `project.create`, may omit `threadId`. `project.create` `defaultModelSelection` and `thread.create` `modelSelection` send options as `{id, value}` objects, never a bare map such as `{effort: high}`.
 
+`thread.turn.start` sends `message` as an object with `messageId`, `role` `user`, `text`, and `attachments`. A flat `message` string decodes to an empty turn, and the agent then sits idle with nothing to work on. Every turn also repeats the thread's `modelSelection`, because T3 binds a thread to its provider instance at create time and `meta.update` cannot move it.
+
 When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged. The spawn still returns the created thread id.
 
-Each subtask gets a fresh implementer (`codex-luna-lite`, low effort). The group keeps one reviewer thread (`claude-opus`, high effort). When a subtask settles, the scheduler marks it `reviewing` and sends "please review" to the reviewer thread. After the reviewer signs off, the Gateway commits in the shared checkout when git can create a commit, completes that subtask, and starts the next implementer. After the last subtask, the group moves to `settling`.
+Each subtask gets a fresh implementer (`gpt-5.6-luna`, low effort). The group keeps one reviewer thread (`claude-opus-5`, high effort). When a subtask settles, the scheduler marks it `reviewing` and sends "please review" to the reviewer thread. After the reviewer signs off, the Gateway commits in the shared checkout when git can create a commit, completes that subtask, and starts the next implementer. After the last subtask, the group moves to `settling`.
+
+### Model catalog
+
+A `modelSelection` names the T3 provider instance, not the model. The Gateway resolves the stored model slug to its catalog entry, so operators never patch these values on a running Gateway.
+
+| Role | `instanceId` | `model` | Effort option |
+| --- | --- | --- | --- |
+| Implementer | `codex` | `gpt-5.6-luna` | `reasoningEffort`, `low` |
+| Reviewer | `claudeAgent` | `claude-opus-5` | `effort`, `high` |
+
+Each provider names its reasoning option itself. Codex reads `reasoningEffort` and ignores a plain `effort`, which leaves the model on its medium default. Claude reads `effort`.
+
+Groups created before the catalog was verified still store `codex-luna-lite` or `claude-opus`. The Gateway resolves those retired slugs to `gpt-5.6-luna` and `claude-opus-5`.
 
 ## Pull request and settle metrics
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\T3Dispatcher;
 use App\Domain\Tasks\T3DispatchException;
+use App\Domain\Tasks\T3ModelCatalog;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -148,14 +149,14 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
     $implementerProject = $dispatcher->commands[3];
     $implementerCreate = $dispatcher->commands[4];
     $reviewerSelection = [
-        'instanceId' => TaskAgentDefaults::ReviewerModel,
-        'model' => TaskAgentDefaults::ReviewerModel,
-        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ReviewerEffort]],
+        'instanceId' => 'claudeAgent',
+        'model' => 'claude-opus-5',
+        'options' => [['id' => 'effort', 'value' => 'high']],
     ];
     $implementerSelection = [
-        'instanceId' => TaskAgentDefaults::ImplementerModel,
-        'model' => TaskAgentDefaults::ImplementerModel,
-        'options' => [['id' => 'effort', 'value' => TaskAgentDefaults::ImplementerEffort]],
+        'instanceId' => 'codex',
+        'model' => 'gpt-5.6-luna',
+        'options' => [['id' => 'reasoningEffort', 'value' => 'low']],
     ];
 
     expect($reviewerCreate['title'])->toStartWith('Orbit task #'.$group->id.' · Reviewer:')
@@ -165,8 +166,77 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
         ->and($implementerCreate['modelSelection'])->toBe($implementerSelection)
         ->and($reviewerCreate['worktreePath'])->toBe('/srv/orbit/apps/orbit/task-1')
         ->and($reviewerCreate['branch'])->toBe('task-1')
-        ->and($dispatcher->commands[2]['message'])->toContain('long-lived reviewer')
-        ->and($dispatcher->commands[5]['message'])->toContain('Implement this subtask');
+        ->and($dispatcher->commands[2]['message']['role'])->toBe('user')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('long-lived reviewer')
+        ->and($dispatcher->commands[2]['message']['attachments'])->toBe([])
+        ->and($dispatcher->commands[2]['message']['messageId'])->toBeString()->not->toBe('')
+        ->and($dispatcher->commands[2])->not->toHaveKey('messageId')
+        ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
+        ->and($dispatcher->commands[5]['message']['role'])->toBe('user')
+        ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
+        ->and($dispatcher->commands[5]['message']['attachments'])->toBe([])
+        ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection);
+});
+
+it('maps stored task models onto the verified T3 provider catalog', function (string $model, string $effort, array $selection): void {
+    expect(T3ModelCatalog::selection($model, $effort))->toBe($selection);
+})->with([
+    'implementer' => ['gpt-5.6-luna', 'low', [
+        'instanceId' => 'codex',
+        'model' => 'gpt-5.6-luna',
+        'options' => [['id' => 'reasoningEffort', 'value' => 'low']],
+    ]],
+    'reviewer' => ['claude-opus-5', 'high', [
+        'instanceId' => 'claudeAgent',
+        'model' => 'claude-opus-5',
+        'options' => [['id' => 'effort', 'value' => 'high']],
+    ]],
+    'retired implementer slug' => ['codex-luna-lite', 'low', [
+        'instanceId' => 'codex',
+        'model' => 'gpt-5.6-luna',
+        'options' => [['id' => 'reasoningEffort', 'value' => 'low']],
+    ]],
+    'retired reviewer slug' => ['claude-opus', 'high', [
+        'instanceId' => 'claudeAgent',
+        'model' => 'claude-opus-5',
+        'options' => [['id' => 'effort', 'value' => 'high']],
+    ]],
+]);
+
+it('defaults task agents to the verified catalog models and efforts', function (): void {
+    expect([
+        TaskAgentDefaults::ImplementerModel,
+        TaskAgentDefaults::ImplementerEffort,
+        TaskAgentDefaults::ReviewerModel,
+        TaskAgentDefaults::ReviewerEffort,
+    ])->toBe(['gpt-5.6-luna', 'low', 'claude-opus-5', 'high']);
+});
+
+it('spawns retired stored model slugs on their catalog entries', function (): void {
+    $group = t3_spawner_group();
+    $group->update(['implementer_model' => 'codex-luna-lite', 'reviewer_model' => 'claude-opus']);
+    [$spawner, $dispatcher] = t3_spawner_stack();
+
+    $spawner->spawnReviewer($group->fresh(['tasks', 'taskable']) ?? $group);
+    $spawner->spawnImplementer($group->tasks->firstOrFail()->fresh(['taskGroup.taskable']) ?? $group->tasks->firstOrFail());
+
+    $selections = array_map(
+        static fn (array $command): array => $command['modelSelection'],
+        array_values(array_filter($dispatcher->commands, static fn (array $command): bool => $command['type'] === 'thread.create')),
+    );
+
+    expect($selections)->toBe([
+        [
+            'instanceId' => 'claudeAgent',
+            'model' => 'claude-opus-5',
+            'options' => [['id' => 'effort', 'value' => 'high']],
+        ],
+        [
+            'instanceId' => 'codex',
+            'model' => 'gpt-5.6-luna',
+            'options' => [['id' => 'reasoningEffort', 'value' => 'low']],
+        ],
+    ]);
 });
 
 it('posts T3 model options as id and value JSON objects', function (): void {
@@ -181,23 +251,38 @@ it('posts T3 model options as id and value JSON objects', function (): void {
 
     expect($threadId)->not->toBeNull();
 
-    Http::assertSent(function (Request $request): bool {
+    $reviewerSelection = [
+        'instanceId' => 'claudeAgent',
+        'model' => 'claude-opus-5',
+        'options' => [['id' => 'effort', 'value' => 'high']],
+    ];
+
+    Http::assertSent(function (Request $request) use ($reviewerSelection): bool {
         $payload = json_decode($request->body(), true);
 
         return is_array($payload)
             && ($payload['type'] ?? null) === 'project.create'
-            && ($payload['defaultModelSelection']['options'] ?? null) === [
-                ['id' => 'effort', 'value' => 'high'],
-            ];
+            && ($payload['defaultModelSelection'] ?? null) === $reviewerSelection;
     });
-    Http::assertSent(function (Request $request): bool {
+    Http::assertSent(function (Request $request) use ($reviewerSelection): bool {
         $payload = json_decode($request->body(), true);
 
         return is_array($payload)
             && ($payload['type'] ?? null) === 'thread.create'
-            && ($payload['modelSelection']['options'] ?? null) === [
-                ['id' => 'effort', 'value' => 'high'],
-            ];
+            && ($payload['modelSelection'] ?? null) === $reviewerSelection;
+    });
+    Http::assertSent(function (Request $request) use ($reviewerSelection): bool {
+        $payload = json_decode($request->body(), true);
+
+        return is_array($payload)
+            && ($payload['type'] ?? null) === 'thread.turn.start'
+            && ($payload['modelSelection'] ?? null) === $reviewerSelection
+            && is_array($payload['message'] ?? null)
+            && ($payload['message']['role'] ?? null) === 'user'
+            && is_string($payload['message']['text'] ?? null)
+            && str_contains($payload['message']['text'], 'long-lived reviewer')
+            && ($payload['message']['attachments'] ?? null) === []
+            && is_string($payload['message']['messageId'] ?? null);
     });
 });
 
@@ -213,7 +298,14 @@ it('sends please review to the stored reviewer thread and commits on sign-off', 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
-        ->and($dispatcher->commands[0]['message'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message']['attachments'])->toBe([])
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe([
+            'instanceId' => 'claudeAgent',
+            'model' => 'claude-opus-5',
+            'options' => [['id' => 'effort', 'value' => 'high']],
+        ])
         ->and($sha)->toBe(str_repeat('b', 40))
         ->and($signer->commits)->toBe(1);
 });
