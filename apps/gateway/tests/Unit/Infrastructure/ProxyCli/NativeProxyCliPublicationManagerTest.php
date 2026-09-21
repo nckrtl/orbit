@@ -58,11 +58,13 @@ it('removes the Caddy site and certificate over SSH, then converges DNS without 
     expect($events)->toBe(['ssh:caddy-remove', 'ssh:certificate-remove', 'dns:converge-empty']);
 });
 
-it('renders a site that proxies proxycli.orbit to the loopback collector', function (): void {
+it('renders a site that proxies collector.proxycli.orbit to the loopback collector', function (): void {
     $site = new ProxyCliCaddySiteRenderer()->render(8787);
 
     expect($site)->toStartWith('# Managed by Orbit: proxycli')
-        ->toContain('proxycli.orbit {')
+        ->toContain("collector.proxycli.orbit {\n")
+        ->not
+        ->toMatch('/(?<!collector\.)proxycli\.orbit \{/')
         ->toContain('bind __ORBIT_PROXYCLI_BIND__')
         ->toContain('tls /etc/caddy/orbit-proxycli-cert-current/proxycli.pem /etc/caddy/orbit-proxycli-cert-current/proxycli.key')
         ->toContain('reverse_proxy 127.0.0.1:8787');

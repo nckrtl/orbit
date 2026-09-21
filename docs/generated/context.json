@@ -95,7 +95,8 @@
                 "0091",
                 "0095",
                 "0103",
-                "0104"
+                "0104",
+                "0109"
             ]
         },
         {
@@ -2803,7 +2804,8 @@
                 "0070",
                 "0080",
                 "0104",
-                "0108"
+                "0108",
+                "0109"
             ]
         },
         {
@@ -2912,6 +2914,28 @@
                 "0069",
                 "0104",
                 "0108"
+            ]
+        },
+        {
+            "path": "docs/decisions/0109-publish-the-proxycli-collector-on-a-subdomain.md",
+            "title": "ADR 0109: Publish the proxycli collector on a subdomain",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0104",
+                "0109"
             ]
         },
         {
@@ -3054,7 +3078,8 @@
                 "0105",
                 "0106",
                 "0107",
-                "0108"
+                "0108",
+                "0109"
             ]
         },
         {
@@ -3944,7 +3969,8 @@
             ],
             "governing_adrs": [
                 "0104",
-                "0108"
+                "0108",
+                "0109"
             ]
         },
         {
@@ -3967,7 +3993,8 @@
                 "Route",
                 "Router",
                 "Tool",
-                "Web root"
+                "Web root",
+                "proxycli"
             ],
             "governing_adrs": [
                 "0009",
@@ -4132,10 +4159,12 @@
                 "Gateway",
                 "Node",
                 "Process",
+                "Route",
                 "proxycli"
             ],
             "governing_adrs": [
-                "0104"
+                "0104",
+                "0109"
             ]
         },
         {

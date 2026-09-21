@@ -5,7 +5,7 @@ description: "Move CLIProxyAPI quota collection from hand-rolled Processes to th
 
 # Cut over proxy-quota collectors
 
-This page tells an operator how to replace hand-rolled `proxy-quota-*` Processes and a `proxy-cli-usage.test` hostname with the Orbit `proxycli` extension so exactly one collector remains. [proxycli](/reference/proxycli) owns the extension. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records why Orbit does not keep both pollers.
+This page tells an operator how to replace hand-rolled `proxy-quota-*` Processes and a `proxy-cli-usage.test` hostname with the Orbit `proxycli` extension so exactly one collector remains. [proxycli](/reference/proxycli) owns the extension. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records why Orbit does not keep both pollers. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) owns the collector hostname.
 
 ## Before you start
 
@@ -31,7 +31,7 @@ orbit proxycli:enable --node=<cliproxy-node> --cache-connection=valkey --cliprox
 ```
 
 5. Confirm `orbit proxycli:status` shows one enabled collector and a `collected_at` timestamp.
-6. Point CodexBar at `https://proxycli.orbit` with the read token from Gateway settings. Do not give CodexBar the management key.
+6. Point CodexBar at `https://collector.proxycli.orbit` with the read token from Gateway settings. Do not give CodexBar the management key. Publish CLIProxyAPI management on apex `proxycli.orbit` as a custom proxy Route to `http://127.0.0.1:8317` when that UI stays on the same Node.
 7. Refresh the Orbit Quota page twice. The collector lock must prevent a second upstream fetch.
 
 ## Prove one collector
@@ -43,7 +43,7 @@ Use these checks after enable. Each one must show a single collector and no extr
 | `orbit process:list --node=<cliproxy-node>` | One Process named `proxycli` is running. No `proxy-quota-*` Process is running. |
 | Valkey `GET orbit:proxycli:lock` during a poll | One lock holder. |
 | CLIProxyAPI Management API access log | Quota `api-call` traffic only from the collector interval, not from UI refresh or account toggle. |
-| `https://proxycli.orbit/v1/quota-stats` | CodexBar-compatible JSON from the snapshot. |
+| `https://collector.proxycli.orbit/v1/quota-stats` | CodexBar-compatible JSON from the snapshot. |
 | Account toggle in the web UI | CLIProxyAPI `PATCH /auth-files/status` then a cache recompile. No quota `api-call`. |
 
 If two pollers appear, disable `proxycli`, stop the leftover Process, and enable again only after the old unit is gone.

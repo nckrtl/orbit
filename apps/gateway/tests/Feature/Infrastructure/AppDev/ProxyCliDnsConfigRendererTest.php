@@ -9,7 +9,7 @@ use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Models\Node;
 
-it('publishes proxycli.orbit on the collector Node, not the Gateway', function (): void {
+it('publishes collector.proxycli.orbit on the collector Node, not the Gateway or the apex', function (): void {
     $gateway = Node::query()->create([
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
@@ -39,12 +39,14 @@ it('publishes proxycli.orbit on the collector Node, not the Gateway', function (
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
 
     expect($configuration)
-        ->toContain('host-record=proxycli.orbit,10.44.0.8')
+        ->toContain('host-record=collector.proxycli.orbit,10.44.0.8')
         ->not
-        ->toContain('host-record=proxycli.orbit,10.44.0.1'.PHP_EOL);
+        ->toContain('host-record=proxycli.orbit,')
+        ->not
+        ->toContain('host-record=collector.proxycli.orbit,10.44.0.1'.PHP_EOL);
 });
 
-it('omits proxycli.orbit when the fleet feature is disabled', function (): void {
+it('omits collector.proxycli.orbit when the fleet feature is disabled', function (): void {
     $node = Node::query()->create([
         'name' => 'beast',
         'status' => LifecycleStatus::Active,
@@ -59,5 +61,9 @@ it('omits proxycli.orbit when the fleet feature is disabled', function (): void 
 
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
 
-    expect($configuration)->not->toContain('proxycli.orbit');
+    expect($configuration)
+        ->not
+        ->toContain('collector.proxycli.orbit')
+        ->not
+        ->toContain('host-record=proxycli.orbit,');
 });
