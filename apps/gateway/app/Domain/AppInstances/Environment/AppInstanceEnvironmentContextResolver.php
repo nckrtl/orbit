@@ -66,6 +66,8 @@ final readonly class AppInstanceEnvironmentContextResolver
             ! $route->isAuthoritative()
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
+            || $route->failed_step !== null
+            || $route->error_code !== null
             || ($route->replacement_step !== null && ! new PublicRouteEligibility()->publicEdgeIsLive($route))
         ) {
             $this->conflict();

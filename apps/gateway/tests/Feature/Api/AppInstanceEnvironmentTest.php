@@ -374,6 +374,38 @@ it('returns 409 while a public Route is in an activation step', function (): voi
         ->assertJsonPath('error.code', 'env.owner_unavailable');
 });
 
+it('returns 409 when a retained terminal step carries failed activation evidence', function (): void {
+    environment_api_make_public($this->route);
+    $this->route->update([
+        'replacement_step' => RouteReplacementStep::IngressFirewall,
+        'failed_step' => 'ingress-firewall',
+        'error_code' => 'route.publication_failed',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$this->instance->id}/environment/KEY", ['value' => 'value'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.owner_unavailable');
+});
+
+it('synchronizes a finished public Route while retaining its terminal replacement step', function (): void {
+    environment_api_make_public($this->route);
+    $this->route->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
+    $this->instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'base64:stored-key']);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call(
+            'POST',
+            "/api/v1/instances/{$this->instance->id}/environment/sync",
+            server: ['CONTENT_TYPE' => 'application/json'],
+            content: '{}',
+        )
+        ->assertOk()
+        ->assertJsonPath('data.operation', 'sync');
+});
+
 it('synchronizes by the existing selector with a narrow value-free result', function (): void {
     $this->instance
         ->environmentValues()
