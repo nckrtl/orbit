@@ -9,9 +9,9 @@ use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
-use App\Infrastructure\Ai\Choice;
-use App\Infrastructure\Ai\ChoiceAnswer;
-use App\Infrastructure\Ai\Classification;
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Choice;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassifier
 {

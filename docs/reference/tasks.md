@@ -149,7 +149,7 @@ Jev Choice options:
 
 Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `escalate_coder`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents a next action.
 
-Gateway introduces `config/ai.php` for this Choice. Commander only stored `TYPESAFE_API_KEY` and `TOOLBAR_TYPESAFE_ENABLED`. It had no Laravel AI package and no application code that read those keys. laravel/ai 1.x Classification cannot install beside the current `laravel/mcp` pin, so Gateway owns the Classification + Choice + fake client and does not depend on the `laravel/ai` package. The client posts to TypeSafe `POST /v1/systemone`.
+Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
 Run the tick with `php artisan tasks:tick` while the extension is enabled. Ordinary drains, continues, relays, and noops do not notify Coder. A refused drain, continue, or relay escalates to Coder instead of succeeding silently.
 
