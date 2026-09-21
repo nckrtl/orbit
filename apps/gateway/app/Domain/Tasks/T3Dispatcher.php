@@ -16,7 +16,7 @@ interface T3Dispatcher
 {
     /**
      * @param  array<string, mixed>  $command
-     * @return array{sequence: int, thread_id: string}
+     * @return array{sequence: int, thread_id: string} thread_id is empty when the command has no thread
      */
     public function dispatch(Node $node, array $command): array;
 }

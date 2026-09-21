@@ -973,7 +973,7 @@ it('retains failed_step evidence at each untargeted removal boundary and resumes
         ->and($retried->id)
         ->toBe($route->id)
         ->and(array_slice($projector->events, $completed))
-        ->toBe(['dns', 'certificates', 'caddy', 'firewall'])
+        ->toBe(['dns', 'caddy', 'certificates', 'firewall'])
         ->and($unrelated->fresh())
         ->not->toBeNull();
 })->with([

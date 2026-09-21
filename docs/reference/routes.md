@@ -438,7 +438,7 @@ A Node or Cluster TLD change fully reconciles those generated private Routes. A 
 
 ### Remove an untargeted private Route
 
-`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then removes Route-owned DNS records, certificates, workload and Router Caddy fragments, and firewall entries, and deletes the Route record last.
+`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then removes Route-owned DNS records, withdraws workload and Router Caddy fragments while their certificates remain, removes those certificates, removes firewall entries, and deletes the Route record last. MCP `route-destroy` sends the Route id as a tool argument; the server places it on the path. A DELETE body may repeat that path id, and the Gateway treats it as path identity rather than an unsupported field.
 
 A failure at a projection step or at final record deletion keeps the Route inspectable with bounded `failed_step` and `error_code`. Retry uses the same destroy request, revalidates completed work, and resumes at the earliest unverified step. It does not restore removed projections, delete unrelated Routes or workloads, or accept a conflicting target mutation.
 

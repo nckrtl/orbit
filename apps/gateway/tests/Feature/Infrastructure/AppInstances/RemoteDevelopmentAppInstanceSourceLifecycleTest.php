@@ -189,6 +189,26 @@ it('uses an existing explicit branch for any instance identity', function (): vo
         ->toBe(trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/dev'])->stdout));
 });
 
+it('creates a task-named branch from the default branch when the remote task branch is missing', function (): void {
+    $instance = orb76_source_instance(
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'task-12',
+        'task-12',
+    );
+
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+
+    expect($resolution->branch)
+        ->toBe('task-12')
+        ->and($resolution->startingCommit)
+        ->toBe(trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/main'])->stdout))
+        ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'symbolic-ref', '--short', 'HEAD'])->stdout))
+        ->toBe('task-12');
+});
+
 it('refuses a missing explicit branch without falling back', function (): void {
     $instance = orb76_source_instance(
         $this->orbitApp,

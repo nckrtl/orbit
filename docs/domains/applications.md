@@ -46,11 +46,11 @@ The instance name and Node's [apps root](/reference/node-settings) determine the
 | --- | --- | --- |
 | `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The App `default_branch` |
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
-| Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
+| Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>`, or a new `<branch>` from `default_branch` when `<branch>` matches the instance name and the remote branch is missing |
 
 `instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory and no shared worktree metadata.
 
-The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route.
+The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch that differs from the instance name returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route. When the explicit branch matches the instance name and the remote branch is missing, Orbit creates that branch from the fetched `default_branch` commit.
 
 Orbit records the branch-selection intent, selected branch, and starting commit before it provisions the application endpoint.
 

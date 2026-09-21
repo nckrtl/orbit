@@ -78,7 +78,7 @@ A claimed group moves from `queued` to `reserved`. InstanceProvisioning then ass
 
 ## Shared App instance
 
-One fresh App instance belongs to the group. Every subtask reuses it. The instance name and feature branch are `task-{group id}`.
+One fresh App instance belongs to the group. Every subtask reuses it. The instance name and feature branch are `task-{group id}`. When `origin/task-{group id}` is missing, the provisioner creates that branch from the Project `default_branch` and checks it out in the shared workspace.
 
 | Intent | When | Result |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ The provisioner honors `visitable`. It does not invent a Route for a non-visitab
 
 ## T3 agents
 
-Agents run on the T3 server of the Node that owns that App instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server.
+Agents run on the T3 server of the Node that owns that App instance. The Gateway posts a flat command to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with `headers: []` on every body. `ORBIT_T3_PORT` defaults to `3773`. `ORBIT_T3_TOKEN` is an optional bearer for that Node's T3 server. A successful dispatch needs a sequence. Commands that have no thread, including `project.create`, may omit `threadId`. When `project.create` returns that an active project already exists for the workspace root, the Gateway adopts that project id and continues with `thread.create`.
 
 Each subtask gets a fresh implementer (`codex-luna-lite`, low effort). The group keeps one reviewer thread (`claude-opus`, high effort). When a subtask settles, the scheduler marks it `reviewing` and sends "please review" to the reviewer thread. After the reviewer signs off, the Gateway commits in the shared checkout when git can create a commit, completes that subtask, and starts the next implementer. After the last subtask, the group moves to `settling`.
 

@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Tests\Support\FakeRouteRemovalProjector;
 
 /** @param array<string, mixed> $params */
 function mcp_call(mixed $test, string $method, array $params = [], string $endpoint = '/mcp'): TestResponse
@@ -83,6 +87,44 @@ describe('POST /mcp', function (): void {
 
         expect(array_column($document['data'], 'name'))->toContain('gateway')
             ->and($document['meta']['request_id'])->toBeString();
+    });
+
+    it('places a DELETE path parameter from the tool arguments onto the Route', function (): void {
+        app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
+        $app = OrbitApp::query()->create([
+            'name' => 'MCP routes',
+            'slug' => 'mcp-routes',
+            'repository_url' => 'https://example.test/mcp-routes.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $node = Node::query()->create([
+            'name' => 'mcp-route-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => 'mcp.test',
+            'public_ssh_host' => '192.0.2.40',
+            'wireguard_ip' => '10.44.0.40',
+            'user' => 'orbit',
+        ]);
+        $created = $this->postJson('/api/v1/routes', [
+            'app_id' => $app->id,
+            'domain' => 'mcp-destroy.example.test',
+            'publication' => 'private',
+            'node_id' => $node->id,
+        ])->assertCreated();
+        $routeId = $created->json('data.id');
+
+        $response = mcp_call($this, 'tools/call', [
+            'name' => 'route-destroy',
+            'arguments' => ['route' => $routeId],
+        ]);
+        $document = json_decode($response->json('result.content.0.text'), true);
+
+        expect($response->json('result.isError'))->toBeFalse()
+            ->and($document['data']['id'])->toBe($routeId)
+            ->and(Route::query()->whereKey($routeId)->exists())->toBeFalse();
     });
 
     it('places path, query, and body inputs where the operation expects them', function (): void {

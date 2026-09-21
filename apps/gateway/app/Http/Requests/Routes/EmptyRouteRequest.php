@@ -27,9 +27,14 @@ final class EmptyRouteRequest extends FormRequest
         }
 
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($content, []);
+            app(TopLevelJsonObjectInspector::class)->inspect(
+                $content,
+                array_keys($this->route()?->parameters() ?? []),
+            );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+
+        return [];
     }
 }

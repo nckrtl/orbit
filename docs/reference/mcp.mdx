@@ -28,7 +28,7 @@ The caller is the Node whose WireGuard address the connection comes from, the sa
 
 ## Tools
 
-A tool's name is the operation's identifier in the [API reference](/api/overview), `<family>-<verb>`: `node-list`, `instance-show`, `process-restart`, `route-create`. Its input is one object that holds the operation's path parameters, query parameters, and JSON body fields together; the server places each value where the operation expects it. Its annotations mark a `GET` as read-only and a `DELETE` as destructive.
+A tool's name is the operation's identifier in the [API reference](/api/overview), `<family>-<verb>`: `node-list`, `instance-show`, `process-restart`, `route-create`. Its input is one object that holds the operation's path parameters, query parameters, and JSON body fields together; the server places each value where the operation expects it. A `DELETE` path parameter such as `route` on `route-destroy` therefore travels in the tool arguments and on the path. If the same id also appears in the JSON body, the API treats it as path identity. Its annotations mark a `GET` as read-only and a `DELETE` as destructive.
 
 A successful call returns the API's JSON document as text, usually `{"data": ..., "meta": {"request_id": ...}}`. A failed call returns an MCP tool error whose text is the API error envelope with the HTTP status added:
 

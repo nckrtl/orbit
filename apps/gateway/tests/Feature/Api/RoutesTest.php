@@ -218,7 +218,7 @@ it('removes Route-owned projections for an untargeted Route and preserves unrela
     expect(Route::query()->whereKey($routeModel->id)->exists())
         ->toBeFalse()
         ->and($this->removal->events)
-        ->toBe(['dns', 'certificates', 'caddy', 'firewall'])
+        ->toBe(['dns', 'caddy', 'certificates', 'firewall'])
         ->and($this->removal->routeIds)
         ->toBe([$routeModel->id, $routeModel->id, $routeModel->id, $routeModel->id])
         ->and(Route::query()->whereKey($unrelated->json('data.id'))->exists())
@@ -229,6 +229,22 @@ it('removes Route-owned projections for an untargeted Route and preserves unrela
         ->not->toBeNull()
         ->and($this->node->fresh())
         ->not->toBeNull();
+});
+
+it('accepts the Route id in a DELETE body and still binds the path', function (): void {
+    $created = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'domain' => 'mcp-delete.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated();
+    $routeId = $created->json('data.id');
+
+    $this->deleteJson("/api/v1/routes/{$routeId}", ['route' => $routeId])->assertOk();
+
+    expect(Route::query()->whereKey($routeId)->exists())->toBeFalse()
+        ->and($this->removal->events)
+        ->toBe(['dns', 'caddy', 'certificates', 'firewall']);
 });
 
 it('releases the hostname after untargeted removal and leaves the Route absent on identical retry', function (): void {

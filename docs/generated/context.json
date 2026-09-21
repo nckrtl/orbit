@@ -2768,6 +2768,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Route",
                 "Task"
             ],
@@ -3965,6 +3966,7 @@
                 "Process",
                 "Route",
                 "Router",
+                "Tool",
                 "Web root"
             ],
             "governing_adrs": [
@@ -4038,6 +4040,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Route",
                 "Task",
                 "Tool"
