@@ -20,13 +20,13 @@ LIVE Orbit task groups sat idle or waiting for T3 input until a human or Coder d
 
 Commander `/fast/apps/commander/main` only has the environment keys `TYPESAFE_API_KEY` and `TOOLBAR_TYPESAFE_ENABLED`. It has no `laravel/ai` package, no `config/ai.php`, and no application code that reads those keys. Gateway must introduce Laravel AI Classification and the TypeSafe Jev provider itself. Copying a Commander AI stack would invent a source that does not exist.
 
-T3 0.0.42 already taught the wire: `thread.turn.start` `message` is a struct, not a flat string; `turn.start` includes `modelSelection`; Codex option id is `reasoningEffort`; the driver is fixed at `thread.create`; pending input is often visible on subscribeThread activities, not only on the HTTP snapshot.
+T3 0.0.42 already taught the wire: `thread.turn.start` `message` is a struct, not a flat string; `turn.start` includes `modelSelection`; Codex option id is `reasoningEffort`; the driver is fixed at `thread.create`. When the HTTP snapshot omits a pending request id, subscribeThread activities still expose it.
 
 What matters is a fail-closed Choice over observed task-thread facts, mechanical execution of that Choice, and a Coder notify path that stays silent unless the scheduler escalates or the group is CLEAN-ready.
 
 ## Decision
 
-- A scheduler tick observes only `running` and `reviewing` Task groups. It builds one structured observation per stored reviewer or implementer thread id. Non-task threads never appear. Facts include session status, pending approval and user-input request ids, last assistant and user text excerpts, whether the workspace has new commits since thread start, and `pr_url` / CI summary when Gateway already has them.
+- A scheduler tick observes only `running` and `reviewing` Task groups. It builds one structured observation per stored reviewer or implementer thread id. A thread that is not a reviewer or implementer task thread stays out of the observation. Facts include session status, pending approval and user-input request ids, last assistant and user text excerpts, whether the workspace has new commits since thread start, and `pr_url` / CI summary when Gateway already has them.
 - Observation reads the T3 HTTP snapshot and merge subscribeThread activity projections when those projections are present. Pending user-input ids come from activities when the snapshot omits them.
 - Gateway depends on `laravel/ai` and introduces `config/ai.php` with TypeSafe as the classification provider. The key is `TYPESAFE_API_KEY`. Missing key fails closed with a clear error and never invents a next action. Pest fakes Classification so CI never calls TypeSafe. laravel/ai 1.x Classification cannot be installed while laravel/boost pins `laravel/mcp` below 1.0. Gateway therefore owns the Classification + Choice + fake client that matches that 1.x shape and posts to TypeSafe `POST /v1/systemone`.
 - One Choice over the observation selects `next_action` among `drain_approval`, `drain_user_input`, `continue_implementer`, `relay_review_to_implementer`, `mark_subtask_done`, `settle_group`, `escalate_coder`, and `noop`. Confidence below the configured threshold becomes `escalate_coder`.
@@ -38,7 +38,7 @@ What matters is a fail-closed Choice over observed task-thread facts, mechanical
 
 - Keep a human or Coder in every idle drain: rejected because LIVE groups sat until someone noticed them.
 - Copy Commander's Laravel AI stack: rejected because Commander has no `laravel/ai` package, no `config/ai.php`, and no application code that reads `TYPESAFE_API_KEY`.
-- Generate the next action with an unconstrained LLM: rejected because Jev Choice plus a confidence gate is the typed, fail-closed contract Nick asked for.
+- Generate the next action with an unconstrained LLM: rejected because Nick asked for a typed Jev Choice that fails closed when confidence is below the gate.
 - Route through Commander or Tom-on-Mini: rejected because Commander is sunset as the task runner and Tom is out of scope.
 - Invent answers when `TYPESAFE_API_KEY` is missing: rejected because a missing key must fail closed.
 
@@ -46,7 +46,7 @@ What matters is a fail-closed Choice over observed task-thread facts, mechanical
 
 - An enabled Gateway with `TYPESAFE_API_KEY` ticks running and reviewing groups, observes their T3 task threads, asks Jev for one next action, and executes it.
 - A missing TypeSafe key refuses classification with a clear error. The tick does not invent `drain_approval`, `continue_implementer`, or settle.
-- Low-confidence Choices escalate to Coder. CLEAN-ready settle still posts the existing settle webhook when `notify_coder` is true.
+- Low-confidence Choices escalate to Coder. When a group settles and is ready for CLEAN, the existing settle webhook still posts if `notify_coder` is true.
 - Fleet key mint for TypeSafe stays an Ops step after CLEAN.
 
 ## Affects

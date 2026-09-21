@@ -5,7 +5,7 @@ description: "How the Gateway tasks extension stores TaskGroup features, provisi
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension stores a Commander-style feature group, provisions its shared Instance, starts T3 agents, routes idle and pending-input sessions with TypeSafe Jev, opens the pull request, notifies Coder on escalate or CLEAN-ready settle, and removes the instance after merge. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. The Gateway stores the group, provisions its shared Instance, starts T3 agents, and routes idle and pending-input sessions with TypeSafe Jev. It then opens the pull request, notifies Coder on escalate or a settle that is ready for CLEAN, and removes the instance after merge. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 

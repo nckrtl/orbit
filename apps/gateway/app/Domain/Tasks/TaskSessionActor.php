@@ -97,7 +97,11 @@ final readonly class TaskSessionActor
             return;
         }
 
-        $excerpt = $reviewer?->lastAssistantText ?? $reviewer?->lastUserText ?? 'The reviewer asked you to continue.';
+        $excerpt = 'The reviewer asked you to continue.';
+
+        if ($reviewer instanceof TaskThreadObservation) {
+            $excerpt = $reviewer->lastAssistantText ?? $reviewer->lastUserText ?? $excerpt;
+        }
 
         $this->startTurn(
             $group,
