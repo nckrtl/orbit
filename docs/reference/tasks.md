@@ -179,6 +179,8 @@ Gateway uses `laravel/ai` Classification with its official TypeSafe provider in 
 
 Run the tick with `php artisan tasks:tick` while the extension is enabled. Ordinary drains, continues, relays, and noops do not notify Coder. A refused drain, continue, or relay escalates to Coder instead of succeeding silently.
 
+The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+
 ## Pull request and settle metrics
 
 After the last reviewer sign-off the Gateway opens the GitHub pull request and stores `pr_url`.
