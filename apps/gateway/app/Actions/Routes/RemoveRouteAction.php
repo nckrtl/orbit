@@ -9,8 +9,8 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteAssociationGuard;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
@@ -90,13 +90,13 @@ final readonly class RemoveRouteAction
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupDns($locked);
             });
-            $failureStep = RouteRemovalStep::Certificates;
-            $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
-                $this->projection->cleanupCertificates($locked);
-            });
             $failureStep = RouteRemovalStep::Caddy;
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupCaddy($locked);
+            });
+            $failureStep = RouteRemovalStep::Certificates;
+            $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
+                $this->projection->cleanupCertificates($locked);
             });
             $failureStep = RouteRemovalStep::Firewall;
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
@@ -128,7 +128,7 @@ final readonly class RemoveRouteAction
 
     private function assertStandaloneRemovalAllowed(Route $route): void
     {
-        if ($route->public_publication === RoutePublicPublication::Active) {
+        if (new PublicRouteEligibility()->publicEdgeIsLive($route)) {
             $this->reconciliation->refuse();
         }
 
@@ -251,8 +251,8 @@ final readonly class RemoveRouteAction
     {
         return match ($step) {
             RouteRemovalStep::Dns => 0,
-            RouteRemovalStep::Certificates => 1,
-            RouteRemovalStep::Caddy => 2,
+            RouteRemovalStep::Caddy => 1,
+            RouteRemovalStep::Certificates => 2,
             RouteRemovalStep::Firewall => 3,
             RouteRemovalStep::Record => 4,
         };

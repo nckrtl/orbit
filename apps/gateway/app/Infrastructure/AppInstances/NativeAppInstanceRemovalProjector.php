@@ -9,7 +9,7 @@ use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -119,7 +119,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
-        if ($appInstance->environment === 'production' && $appInstance->production_php_service !== null) {
+        if ($appInstance->placedOnAppProd() && $appInstance->production_php_service !== null) {
             $this->productionPhp()->remove($appInstance);
         } else {
             $this->php->converge($appInstance->node);
@@ -171,7 +171,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             $this->certificates->removeRouteRouter($route, $router);
         }
 
-        if ($appInstance->environment === 'development') {
+        if ($appInstance->placedOnAppDev()) {
             $this->firewall->remove($appInstance->node, $route->id);
         }
 
@@ -185,8 +185,8 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             return;
         }
 
-        if ($route->targets->isNotEmpty()) {
-            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+        if ($route->targets->count() <= 1 && $route->status !== RouteStatus::Retiring) {
+            $route->update(['status' => RouteStatus::Retiring]);
         }
 
         $this->publicEdge()->removePublicEdge($route);

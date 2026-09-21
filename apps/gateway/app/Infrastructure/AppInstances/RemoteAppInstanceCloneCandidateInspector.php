@@ -223,12 +223,12 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
             );
         }
 
-        if ($candidate->environment === 'development') {
+        if ($candidate->placedOnAppDev()) {
             $basePath = $candidate->checkout_path;
             $executionUser = $node->user;
             $configuredBranch = $candidate->branch;
             $expectedSource = $candidate->checkout_path;
-        } elseif ($candidate->environment === 'production') {
+        } elseif ($candidate->placedOnAppProd()) {
             if (! $candidate->usesProductionReleaseLayout()) {
                 throw $this->conflict(
                     'instance.clone_candidate_release_missing',

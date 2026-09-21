@@ -11,12 +11,15 @@ import type {
     FirewallRule,
     Instance,
     InstanceAnalytics,
+    InstanceAnalyticsStats,
     LiveFirewallSnapshot,
     ManagedFirewallRule,
     Node,
     Process,
+    ProxyCliStatus,
     QueueReport,
     QueueState,
+    QuotaProvider,
     Schedule,
 } from "./types";
 
@@ -175,12 +178,53 @@ export const liveFirewallQuery = (nodeId: number) =>
         retry: false,
     });
 
+const disabledProxyCli = (): ProxyCliStatus => ({
+    enabled: false,
+    hostname: "collector.proxycli.orbit",
+    node_id: null,
+    cache_connection: null,
+    collected_at: null,
+});
+
+/** Fleet proxycli status. A disabled or unreachable feature hides the Quota section. */
+export const proxycliStatusQuery = queryOptions({
+    queryKey: ["proxycli-status"],
+    queryFn: () => get<ProxyCliStatus>("/api/v1/proxycli").catch(() => disabledProxyCli()),
+    retry: false,
+});
+
+/** Provider pools from the Valkey snapshot. A refresh never starts an upstream poll. */
+export const proxycliProvidersQuery = queryOptions({
+    queryKey: ["proxycli-providers"],
+    queryFn: () => get<QuotaProvider[]>("/api/v1/proxycli/providers"),
+    refetchInterval: POLL_SECONDS * 1000,
+    retry: false,
+});
+
+export const proxycliProviderQuery = (provider: string) =>
+    queryOptions({
+        queryKey: ["proxycli-providers", provider],
+        queryFn: () =>
+            get<QuotaProvider>(`/api/v1/proxycli/providers/${encodeURIComponent(provider)}`),
+        refetchInterval: POLL_SECONDS * 1000,
+        retry: false,
+    });
+
 /** The tracking hosts an instance publishes for the analytics role. They change only on enable and disable. */
 export const instanceAnalyticsQuery = (id: number) =>
     queryOptions({
         queryKey: ["instance-analytics", id],
         queryFn: () => get<InstanceAnalytics>(`/api/v1/instances/${id}/analytics`),
         staleTime: 60_000,
+        retry: false,
+    });
+
+/** Live visitors, period counts, and top pages for an instance that publishes a tracking host. */
+export const instanceAnalyticsStatsQuery = (id: number) =>
+    queryOptions({
+        queryKey: ["instance-analytics-stats", id],
+        queryFn: () => get<InstanceAnalyticsStats>(`/api/v1/instances/${id}/analytics/stats`),
+        refetchInterval: 10_000,
         retry: false,
     });
 

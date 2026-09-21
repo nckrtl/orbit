@@ -76,7 +76,6 @@ abstract class RouteCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Route: {$route->domain}", [
             ...$details,
             'Publication' => $route->publication,
-            'Public publication' => $route->publicPublication,
             'Status' => $route->status,
             'Generation basis Node' => $route->generationBasisNodeId,
             'Replaces Route' => $route->replacesRouteId,

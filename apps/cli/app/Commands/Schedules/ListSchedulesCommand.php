@@ -21,7 +21,8 @@ final class ListSchedulesCommand extends ScheduleCommand
 
     #[\Override]
     protected $signature = 'schedule:list
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

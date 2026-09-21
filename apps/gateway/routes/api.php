@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\ProxyCliController;
 use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
 use App\Http\Controllers\Api\ResolveDependencyInstanceController;
@@ -45,6 +46,8 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
+use App\Http\Controllers\Api\TaskGroupsController;
+use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
@@ -202,11 +205,40 @@ Route::prefix('v1')->group(function (): void {
         )
             ->scopeBindings()
             ->name('firewall:remove');
+        Route::get('projects', [AppsController::class, 'index'])->name('project:list');
+        Route::get('projects/{app}', [AppsController::class, 'show'])->name('project:show');
+        Route::post('projects', [AppsController::class, 'store'])->name('project:create');
+        Route::patch('projects/{app}', [AppsController::class, 'update'])->name('project:update');
+        Route::delete('projects/{app}', [AppsController::class, 'destroy'])->name('project:destroy');
         Route::get('apps', [AppsController::class, 'index'])->name('app:list');
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
         Route::post('apps', [AppsController::class, 'store'])->name('app:create');
         Route::patch('apps/{app}', [AppsController::class, 'update'])->name('app:update');
         Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:destroy');
+        Route::prefix('projects/{app}/process-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
+                ->name('project:process-definition:list');
+            Route::post('/', [AppRuntimeDefinitionsController::class, 'processStore'])
+                ->name('project:process-definition:create');
+            Route::get('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processShow'])
+                ->name('project:process-definition:show');
+            Route::put('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processUpdate'])
+                ->name('project:process-definition:update');
+            Route::delete('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processDestroy'])
+                ->name('project:process-definition:destroy');
+        });
+        Route::prefix('projects/{app}/schedule-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [AppRuntimeDefinitionsController::class, 'scheduleIndex'])
+                ->name('project:schedule-definition:list');
+            Route::post('/', [AppRuntimeDefinitionsController::class, 'scheduleStore'])
+                ->name('project:schedule-definition:create');
+            Route::get('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleShow'])
+                ->name('project:schedule-definition:show');
+            Route::put('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleUpdate'])
+                ->name('project:schedule-definition:update');
+            Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
+                ->name('project:schedule-definition:destroy');
+        });
         Route::prefix('apps/{app}/process-definitions')->scopeBindings()->group(function (): void {
             Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
                 ->name('process:list');
@@ -236,6 +268,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
         Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
         Route::post('instances/{instance}/dependencies/update', [AppInstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
+        Route::get('instances/{instance}/analytics/stats', [InstanceAnalyticsController::class, 'stats'])->whereNumber('instance')->name('instance:analytics:stats');
         Route::get('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'show'])->whereNumber('instance')->name('instance:analytics:show');
         Route::post('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'enable'])->whereNumber('instance')->name('instance:analytics:enable');
         Route::delete('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'disable'])->whereNumber('instance')->name('instance:analytics:disable');
@@ -432,9 +465,22 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
             ->whereNumber('tool')
             ->name('tool:remove');
+        Route::post('proxycli', [ProxyCliController::class, 'store'])->name('proxycli:enable');
+        Route::delete('proxycli', [ProxyCliController::class, 'destroy'])->name('proxycli:disable');
+        Route::get('proxycli', [ProxyCliController::class, 'status'])->name('proxycli:status');
+        Route::get('proxycli/providers', [ProxyCliController::class, 'index'])->name('proxycli:list');
+        Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
+            ->where('provider', '[a-z][a-z0-9-]*')
+            ->name('proxycli:show');
+        Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
+            ->where('account', '[A-Za-z0-9._-]+')
+            ->name('proxycli:update');
         Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
         Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:disable');
         Route::post('analytics/update', [AnalyticsController::class, 'update'])->name('analytics:update');
+        Route::get('analytics/credentials', [AnalyticsController::class, 'credentials'])->name('analytics:credentials');
+        Route::put('analytics/credentials', [AnalyticsController::class, 'setCredentials'])->name('analytics:credentials:set');
+        Route::delete('analytics/credentials', [AnalyticsController::class, 'unsetCredentials'])->name('analytics:credentials:unset');
         Route::get('metrics/status', [MetricsController::class, 'status'])->name('metrics:status');
         Route::get('metrics/credentials', [MetricsController::class, 'credentials'])->name('metrics:credentials');
         Route::post('metrics/credentials/reset', [MetricsController::class, 'reset'])->name(
@@ -445,5 +491,19 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('metrics/exporters/{node}', [MetricsController::class, 'disableExporter'])
             ->whereNumber('node')
             ->name('metrics:exporter:disable');
+        Route::post('tasks/enable', [TasksController::class, 'enable'])->name('tasks:enable');
+        Route::post('tasks/disable', [TasksController::class, 'disable'])->name('tasks:disable');
+        Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
+        Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
+        Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');
+        Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
+            ->whereNumber('group')
+            ->name('tasks:show');
+        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'addTask'])
+            ->whereNumber('group')
+            ->name('tasks:add');
+        Route::post('task-groups/{group}/complete', [TaskGroupsController::class, 'complete'])
+            ->whereNumber('group')
+            ->name('tasks:complete');
     });
 });

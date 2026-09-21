@@ -28,7 +28,7 @@ final class UpdateScheduleDefinitionRequest extends GatewayRequest implements Ha
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/schedule-definitions/".rawurlencode($this->name);
+        return "/api/v1/projects/{$this->appId}/schedule-definitions/".rawurlencode($this->name);
     }
 
     protected function defaultHeaders(): array

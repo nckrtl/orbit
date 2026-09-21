@@ -8,12 +8,10 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Route;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final readonly class PublishPublicRouteAction
@@ -31,7 +29,7 @@ final readonly class PublishPublicRouteAction
 
     /**
      * Takes the Route off the public edge and keeps its publication. A Route that is always public
-     * uses this before removal, because an active public edge cannot be removed with its Route.
+     * uses this before removal, because a live public edge cannot be removed with its Route.
      */
     public function withdraw(Route $route): Route
     {
@@ -40,8 +38,14 @@ final readonly class PublishPublicRouteAction
                 ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
                 ->findOrFail($route->id);
 
-            if ($route->public_publication === RoutePublicPublication::Active) {
-                $route->update(['public_publication' => RoutePublicPublication::Inactive]);
+            $shouldRemove = $this->eligibility->canActivate($route) || $this->eligibility->publicEdgeIsLive($route);
+
+            if ($route->status !== RouteStatus::Retiring) {
+                $route->update(['status' => RouteStatus::Retiring]);
+                $route->refresh();
+            }
+
+            if ($shouldRemove) {
                 $this->edge->removePublicEdge($route);
             }
 
@@ -72,7 +76,6 @@ final readonly class PublishPublicRouteAction
             || ! $this->eligibility->canActivate($route)
         ) {
             $route->update([
-                'public_publication' => RoutePublicPublication::Inactive,
                 'replacement_step' => null,
                 'failed_step' => null,
                 'error_code' => null,
@@ -91,7 +94,9 @@ final readonly class PublishPublicRouteAction
             $this->forward($route, RouteReplacementStep::PublicEdgeVerified, fn () => $this->edge->verifyPublicEdge($route));
             $failureStep = RouteReplacementStep::PublicActivated->value;
             $this->forward($route, RouteReplacementStep::PublicActivated, function () use ($route): void {
-                $this->markActive($route);
+                $this->assertReadyForPublicHandler($route);
+                $route->update(['replacement_step' => RouteReplacementStep::PublicActivated]);
+                $route->refresh();
                 $this->edge->activatePublicHandler($route);
             });
             $failureStep = RouteReplacementStep::IngressFirewall->value;
@@ -99,18 +104,19 @@ final readonly class PublishPublicRouteAction
         } catch (Throwable $exception) {
             $this->recordFailure($route, $failureStep, $this->errorCode($exception));
 
-            if ($this->rank($route->refresh()->replacement_step) < $this->rank(RouteReplacementStep::PublicActivated)) {
+            if (
+                $failureStep === RouteReplacementStep::PublicActivated->value
+                || $this->eligibility->publicActivationRank($route->refresh()->replacement_step)
+                    < $this->eligibility->publicActivationRank(RouteReplacementStep::PublicActivated)
+            ) {
                 $this->edge->rollbackPublicEdge($route);
-                $route->update([
-                    'public_publication' => RoutePublicPublication::Inactive,
-                ]);
             }
 
             throw $exception;
         }
 
         $route->update([
-            'replacement_step' => null,
+            'replacement_step' => RouteReplacementStep::IngressFirewall,
             'failed_step' => null,
             'error_code' => null,
         ]);
@@ -120,25 +126,26 @@ final readonly class PublishPublicRouteAction
 
     private function deactivate(Route $route): Route
     {
-        if ($route->public_publication === RoutePublicPublication::Active) {
-            $route->update(['public_publication' => RoutePublicPublication::Inactive]);
-            $this->edge->removePublicEdge($route);
-        }
+        $shouldRemove = $this->eligibility->canActivate($route) || $this->eligibility->publicEdgeIsLive($route);
 
         $route->update([
             'publication' => RoutePublication::Private,
-            'public_publication' => RoutePublicPublication::Inactive,
             'replacement_step' => null,
             'failed_step' => null,
             'error_code' => null,
         ]);
+        $route->refresh();
+
+        if ($shouldRemove) {
+            $this->edge->removePublicEdge($route);
+        }
 
         return $route->refresh()->load('targets');
     }
 
     private function forward(Route $route, RouteReplacementStep $step, callable $operation): void
     {
-        if ($this->rank($route->replacement_step) >= $this->rank($step)) {
+        if ($this->eligibility->publicActivationRank($route->replacement_step) >= $this->eligibility->publicActivationRank($step)) {
             return;
         }
 
@@ -151,21 +158,15 @@ final readonly class PublishPublicRouteAction
         $route->refresh();
     }
 
-    private function markActive(Route $route): void
+    private function assertReadyForPublicHandler(Route $route): void
     {
         if ($route->status === RouteStatus::Pending) {
             throw new ResourceOperationException(
                 errorCode: 'route.publication_inactive',
-                message: 'Public publication stays inactive until the Route is active.',
+                message: 'A public edge stays unpublished until the Route is active.',
                 status: 409,
             );
         }
-
-        DB::transaction(static function () use ($route): void {
-            $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
-            $locked->update(['public_publication' => RoutePublicPublication::Active]);
-            $route->setRawAttributes($locked->refresh()->getAttributes(), true);
-        });
     }
 
     private function recordFailure(Route $route, string $step, string $errorCode): void
@@ -186,17 +187,5 @@ final readonly class PublishPublicRouteAction
         return property_exists($exception, 'errorCode') && is_string($exception->errorCode)
             ? $exception->errorCode
             : 'route.publication_failed';
-    }
-
-    private function rank(?RouteReplacementStep $step): int
-    {
-        return match ($step) {
-            RouteReplacementStep::IngressCertificate => 1,
-            RouteReplacementStep::IngressCaddy => 2,
-            RouteReplacementStep::PublicEdgeVerified => 3,
-            RouteReplacementStep::PublicActivated => 4,
-            RouteReplacementStep::IngressFirewall => 5,
-            default => 0,
-        };
     }
 }

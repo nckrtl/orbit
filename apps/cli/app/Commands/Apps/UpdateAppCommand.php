@@ -13,27 +13,29 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 final class UpdateAppCommand extends GatewayCommand
 {
     #[\Override]
-    protected $signature = 'app:update
-        {app : Numeric app ID}
-        {--slug= : New App slug}
+    protected $signature = 'project:update
+        {project : Numeric project ID}
+        {--type= : New Project type}
+        {--slug= : New Project slug}
         {--repository= : New repository access URL}
         {--default-branch= : New stored default branch}
         {--root= : New relative web root}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Update an app.';
+    protected $description = 'Update a project.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->positiveId('app', 'App', 'app.id_invalid');
+        $appId = $this->positiveId('project', 'Project', 'app.id_invalid');
 
         if ($appId === null) {
             return self::FAILURE;
         }
 
+        $type = $this->stringOption('type');
         $slug = $this->stringOption('slug');
         $repositoryUrl = $this->stringOption('repository');
         $defaultBranch = $this->stringOption('default-branch');
@@ -42,7 +44,7 @@ final class UpdateAppCommand extends GatewayCommand
         if ($slug !== null && (strlen($slug) > 63 || preg_match('/[\x00-\x1F\x7F]/', $slug) === 1)) {
             return $this->renderGatewayFailure(
                 'app.slug_invalid',
-                'App slug is invalid.',
+                'Project slug is invalid.',
             );
         }
 
@@ -53,10 +55,17 @@ final class UpdateAppCommand extends GatewayCommand
             );
         }
 
-        if ($slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null) {
+        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package'], true)) {
+            return $this->renderGatewayFailure(
+                'project.type_invalid',
+                'Project type must be monorepo, laravel-app, or laravel-package.',
+            );
+        }
+
+        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null) {
             return $this->renderGatewayFailure(
                 'app.update_required',
-                'Provide at least one App update.',
+                'Provide at least one Project update.',
             );
         }
 
@@ -70,13 +79,14 @@ final class UpdateAppCommand extends GatewayCommand
             $connector,
             new UpdateAppRequest(
                 appId: $appId,
+                type: $type,
                 slug: $slug,
                 repositoryUrl: $repositoryUrl,
                 defaultBranch: $defaultBranch,
                 root: $root,
             ),
             AppResponse::class,
-            ['Update App', 'Updating App', 'Updated App'],
+            ['Update Project', 'Updating Project', 'Updated Project'],
         );
 
         if (! $app instanceof AppResponse) {
@@ -89,7 +99,7 @@ final class UpdateAppCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->writeHumanMessage("App [{$app->slug}] updated.");
+        $this->writeHumanMessage("Project [{$app->slug}] updated.");
         $this->writeHumanMessage("Request ID: {$app->requestId}");
 
         return self::SUCCESS;

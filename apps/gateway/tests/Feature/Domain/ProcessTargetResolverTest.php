@@ -63,7 +63,7 @@ it('derives production placement from the dedicated identity and current release
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
-    $instance->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+    $instance->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
 
     $target = app(ProcessTargetResolver::class)->forStart(process_target_process($instance));
 

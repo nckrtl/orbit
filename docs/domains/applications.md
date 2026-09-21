@@ -1,36 +1,37 @@
 ---
 title: "Applications"
-description: "How Orbit creates or adopts, configures, and exposes an App instance on one Node, from App creation to removal."
+description: "How Orbit creates or adopts, configures, and exposes an Instance on one Node, from Project creation to removal."
 ---
 
 # Applications
 
-Create an App instance on a Node you choose, or register an existing checkout. The App stores shared source defaults. Each App instance has its own location and Route. The supported App instance commands are `instance:create`, `instance:list`, `instance:show`, `instance:transfer`, and `instance:destroy`. Those commands resolve App instances owned by their App and Node. The fleet operator prepares incompatible legacy deployments outside Orbit. Orbit provides no conversion command, API, or SDK operation.
+Create an Instance on a Node you choose, or register an existing checkout. The Project stores shared source defaults and a type that decides routing and PHP-FPM. Each Instance has its own location. A `laravel-app` Instance also has one Route. The supported Instance commands are `instance:create`, `instance:list`, `instance:show`, `instance:transfer`, and `instance:destroy`. Those commands resolve Instances owned by their Project and Node. The fleet operator prepares incompatible legacy deployments outside Orbit. Orbit provides no conversion command, API, or SDK operation.
 
-[ADR 0009](/decisions/0009-clustered-app-instance-routing) defines the development source boundary. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines stable default identity, [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) defines owned source layouts, and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) defines explicit branch selection. [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) defines production placement, and [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) defines its release layout.
+[ADR 0105](/decisions/0105-name-applications-as-project-and-instance) names Project and Instance. [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) owns type. [ADR 0009](/decisions/0009-clustered-app-instance-routing) defines the development source boundary. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines stable default identity, [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) defines owned source layouts, and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) defines explicit branch selection. [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) defines app-prod placement, and [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) defines its release layout.
 
-## Create an App
+## Create a Project
 
-New Apps require a repository URL and a normalized relative web root. The `app:create` command accepts an optional default branch:
+New Projects require a type, a repository URL, and a normalized relative web root. The `project:create` command accepts an optional default branch:
 
 ```text
-orbit app:create \
+orbit project:create \
   acme \
+  laravel-app \
   git@github.com:acme/site.git \
   --default-branch=main \
   --root=public
 ```
 
-When you omit the default branch, the Gateway reads the remote default branch once and stores it. A later remote default change does not rewrite the App.
+When you omit the default branch, the Gateway reads the remote default branch once and stores it. A later remote default change does not rewrite the Project.
 
-An App can return null for `default_branch` and root when its source defaults are incomplete. New App instance creation fails with `app.source_defaults_incomplete`. Use `app:update` to set complete source defaults on an existing App.
+A Project can return null for `default_branch` and root when its source defaults are incomplete. New Instance creation fails with `app.source_defaults_incomplete`. Use `project:update` to set complete source defaults on an existing Project.
 
-## Create a development App instance
+## Create an app-dev Instance
 
-Select an active Node with an active `app-dev` role. Use `default` for the App's default development source:
+Select an active Node with an active `app-dev` role. Use `default` for the Project's default development source:
 
 ```text
-orbit instance:create <app-id> <node-id> default
+orbit instance:create <project-id> <node-id> default
 ```
 
 Use another name for a named source, or use `--branch` when either identity must select a different existing remote branch:
@@ -45,11 +46,11 @@ The instance name and Node's [apps root](/reference/node-settings) determine the
 | --- | --- | --- |
 | `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The App `default_branch` |
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
-| Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
+| Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>`, or a new `<branch>` from `default_branch` when `<branch>` matches the instance name and the remote branch is missing |
 
 `instance:create` stores the source layout as `checkout`. Each checkout has its own `.git` directory and no shared worktree metadata.
 
-The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route.
+The API and PHP software development kit (SDK) accept optional `branch` input. API, SDK, and command-line interface (CLI) JSON responses return `selected_branch` and nullable `branch_override`. Explicit input stays in `branch_override`, even when it matches `default_branch`; inherited selection returns null. A missing explicit branch that differs from the instance name returns `instance.branch_resolution_failed`. Orbit selects no fallback and activates no App instance or Route. When the explicit branch matches the instance name and the remote branch is missing, Orbit creates that branch from the fetched `default_branch` commit.
 
 Orbit records the branch-selection intent, selected branch, and starting commit before it provisions the application endpoint.
 

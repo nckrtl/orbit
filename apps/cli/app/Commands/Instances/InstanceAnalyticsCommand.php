@@ -32,12 +32,12 @@ abstract class InstanceAnalyticsCommand extends GatewayCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Host', 'Route', 'Status', 'Public'],
+            ['Host', 'Route', 'Status', 'Publication'],
             array_map(static fn (array $host): array => [
                 $host['host'],
                 (string) $host['route_id'],
                 $host['error_code'] === null ? $host['status'] : "{$host['status']} ({$host['error_code']})",
-                $host['public_publication'],
+                $host['publication'],
             ], $response->hosts),
         ));
 

@@ -26,7 +26,7 @@ final readonly class AppRepositoryUpdatePlanner
         $production = [];
 
         foreach ($instances as $instance) {
-            if ($instance->environment === 'production') {
+            if ($instance->placedOnAppProd()) {
                 $production[] = $instance;
 
                 continue;

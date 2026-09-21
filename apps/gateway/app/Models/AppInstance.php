@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\LifecycleStatus;
+use App\Models\Relations\DualSafeMorphMany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -83,6 +88,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, AppInstanceTransfer> $transfers
  * @property-read Collection<int, AppInstanceDependencyObservation> $dependencyObservations
  * @property-read Collection<int, AppInstanceDependencyScanAttempt> $dependencyScanAttempts
+ * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class AppInstance extends Model
 {
@@ -156,6 +162,19 @@ final class AppInstance extends Model
         'runtime_definitions_captured_at',
         'status',
     ];
+
+    public const string MorphAlias = 'instance';
+
+    /** @return list<string> */
+    public static function morphTypes(): array
+    {
+        return [self::MorphAlias, self::class];
+    }
+
+    public static function isMorphType(mixed $type): bool
+    {
+        return is_string($type) && in_array($type, self::morphTypes(), true);
+    }
 
     /** @return BelongsTo<App, $this> */
     public function app(): BelongsTo
@@ -250,11 +269,90 @@ final class AppInstance extends Model
         return $this->hasMany(AppInstanceDependencyScanAttempt::class);
     }
 
+    /** @return MorphMany<TaskGroup, $this> */
+    public function taskGroups(): MorphMany
+    {
+        return $this->morphMany(TaskGroup::class, 'taskable');
+    }
+
+    public function usesProductionReleaseLayout(): bool
+    {
+        return
+            $this->placedOnAppProd()
+            && is_string($this->production_home)
+            && str_starts_with($this->checkout_path, "{$this->production_home}/releases/");
+    }
+
+    public function placedOnAppProd(): bool
+    {
+        if ($this->hasActiveRole(RoleName::AppProd)) {
+            return true;
+        }
+
+        if ($this->hasActiveRole(RoleName::AppDev)) {
+            return false;
+        }
+
+        return $this->environment === 'production';
+    }
+
+    public function placedOnAppDev(): bool
+    {
+        if ($this->hasActiveRole(RoleName::AppDev)) {
+            return true;
+        }
+
+        if ($this->hasActiveRole(RoleName::AppProd)) {
+            return false;
+        }
+
+        return $this->environment === 'development';
+    }
+
+    public function requiresRoute(): bool
+    {
+        $this->loadMissing('app');
+
+        return $this->app->type === ProjectType::LaravelApp;
+    }
+
+    public function servesPhp(): bool
+    {
+        $this->loadMissing('app');
+
+        if ($this->app->type->servesPhpByDefault()) {
+            return true;
+        }
+
+        return $this->app->type === ProjectType::Monorepo
+            && $this->authoritativeRoute() !== null
+            && $this->source_is_laravel === true;
+    }
+
+    public function defaultAppEnv(): string
+    {
+        return $this->placedOnAppProd() ? 'production' : 'development';
+    }
+
+    public function configuredAppEnv(): string
+    {
+        $value = $this->environmentValues()
+            ->where('env_key', 'APP_ENV')
+            ->first()
+            ?->env_value;
+
+        if (is_string($value) && $value !== '' && $value !== '{{app_instance.environment}}') {
+            return $value;
+        }
+
+        return $this->defaultAppEnv();
+    }
+
     public function effectiveRoot(): ?string
     {
         $root = $this->root ?? $this->app->root;
 
-        if ($this->environment === 'production' && is_string($this->production_home) && is_string($root)) {
+        if ($this->placedOnAppProd() && is_string($this->production_home) && is_string($root)) {
             $base = $this->usesProductionReleaseLayout()
                 ? "{$this->production_home}/current"
                 : $this->production_home;
@@ -265,12 +363,19 @@ final class AppInstance extends Model
         return $root;
     }
 
-    public function usesProductionReleaseLayout(): bool
+    private function hasActiveRole(RoleName $role): bool
     {
-        return
-            $this->environment === 'production'
-            && is_string($this->production_home)
-            && str_starts_with($this->checkout_path, "{$this->production_home}/releases/");
+        $this->loadMissing('node.roles');
+        $node = $this->getRelation('node');
+
+        if (! $node instanceof Node) {
+            return false;
+        }
+
+        return $node->roles->contains(
+            static fn (mixed $assigned): bool => $assigned->role === $role
+                && $assigned->status === LifecycleStatus::Active,
+        );
     }
 
     /** @return array<string, string> */
@@ -294,5 +399,14 @@ final class AppInstance extends Model
             'source_is_laravel' => 'boolean',
             'status' => AppInstanceState::class,
         ];
+    }
+
+    /**
+     * @param  Builder<Model>  $query
+     * @return MorphMany<Model, Model>
+     */
+    protected function newMorphMany($query, $parent, $type, $id, $localKey)
+    {
+        return new DualSafeMorphMany($query, $parent, $type, $id, $localKey, self::morphTypes());
     }
 }

@@ -19,7 +19,8 @@ final class ShowProcessCommand extends ProcessCommand
     #[\Override]
     protected $signature = 'process:show
         {name : Process definition name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -39,7 +40,7 @@ final class ShowProcessCommand extends ProcessCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
-                'The --app option is required.',
+                'The --project or --app option is required.',
             );
         }
 

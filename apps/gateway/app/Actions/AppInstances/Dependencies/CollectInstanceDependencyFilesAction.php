@@ -29,7 +29,7 @@ final readonly class CollectInstanceDependencyFilesAction
     public function execute(AppInstance $instance): CollectedDependencyFiles
     {
         $node = $instance->node;
-        $production = $instance->environment === 'production';
+        $production = $instance->placedOnAppProd();
         $path = $production ? $instance->production_home : $instance->checkout_path;
         $user = $production ? $instance->production_user : $node->user;
         if (! in_array($instance->environment, ['development', 'production'], true)

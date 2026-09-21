@@ -98,11 +98,15 @@ final readonly class AddProcessAction
                 $this->assertPresetAdmission($data, $target);
             }
             $attributes = $this->specifications->attributes($data, $target);
-            $process = Process::query()->firstOrNew([
-                'owner_type' => $data->targetType->modelClass(),
-                'owner_id' => $data->targetId,
-                'name' => $data->name,
-            ]);
+            $process = Process::query()
+                ->whereIn('owner_type', $data->targetType->storedTypes())
+                ->where('owner_id', $data->targetId)
+                ->where('name', $data->name)
+                ->first() ?? new Process([
+                    'owner_type' => $data->targetType->storedType(),
+                    'owner_id' => $data->targetId,
+                    'name' => $data->name,
+                ]);
             $created = ! $process->exists;
             $desiredState = $process->desired_state;
 
@@ -230,7 +234,7 @@ final readonly class AddProcessAction
         }
 
         $siblings = Process::query()
-            ->where('owner_type', AppInstance::class)
+            ->whereIn('owner_type', AppInstance::morphTypes())
             ->where('owner_id', $data->targetId)
             ->where('name', '!=', $data->name)
             ->get();

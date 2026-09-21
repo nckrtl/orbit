@@ -16,7 +16,7 @@ final class CreateInstanceCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'instance:create
-        {app : Numeric app ID}
+        {project : Numeric Project ID}
         {node : Numeric node ID}
         {name : AppInstance name; default is reserved for the default development source}
         {--root= : Optional relative web-root override}
@@ -37,7 +37,7 @@ HELP;
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->positiveId('app', 'App', 'app.id_invalid');
+        $appId = $this->positiveId('project', 'Project', 'app.id_invalid');
 
         if ($appId === null) {
             return self::FAILURE;

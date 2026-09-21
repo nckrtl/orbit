@@ -27,7 +27,7 @@ final class CreateScheduleDefinitionRequest extends GatewayRequest implements Ha
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/apps/{$this->appId}/schedule-definitions";
+        return "/api/v1/projects/{$this->appId}/schedule-definitions";
     }
 
     protected function defaultHeaders(): array

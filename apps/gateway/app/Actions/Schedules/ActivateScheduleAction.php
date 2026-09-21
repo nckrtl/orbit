@@ -25,7 +25,7 @@ final readonly class ActivateScheduleAction
 
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
     {
-        if ($schedule->target_type !== AppInstance::class) {
+        if (! AppInstance::isMorphType($schedule->target_type)) {
             throw new ResourceOperationException(
                 ScheduleErrorCode::TargetInvalid->value,
                 'Only an AppInstance Schedule can be activated.',

@@ -14,6 +14,7 @@ final readonly class AppResponse
         public int $id,
         public string $name,
         public string $slug,
+        public string $type,
         public string $repositoryUrl,
         public ?string $defaultBranch,
         public ?string $root,
@@ -35,6 +36,7 @@ final readonly class AppResponse
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             slug: is_string($data['slug'] ?? null) ? $data['slug'] : '',
+            type: is_string($data['type'] ?? null) ? $data['type'] : 'laravel-app',
             repositoryUrl: is_string($data['repository_url'] ?? null)
                 ? $redactor->redactText($data['repository_url'])
                 : '',
@@ -52,6 +54,7 @@ final readonly class AppResponse
             'id' => $this->id,
             'name' => $this->name,
             'slug' => $this->slug,
+            'type' => $this->type,
             'repository_url' => $this->repositoryUrl,
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,

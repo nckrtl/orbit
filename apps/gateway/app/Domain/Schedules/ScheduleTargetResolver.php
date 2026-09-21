@@ -56,7 +56,7 @@ final readonly class ScheduleTargetResolver
             return $this->forSchedule($schedule);
         }
 
-        if ($schedule->target_type !== AppInstance::class) {
+        if (! AppInstance::isMorphType($schedule->target_type)) {
             $this->unavailable();
         }
 
@@ -116,9 +116,9 @@ final readonly class ScheduleTargetResolver
 
     public function typeForModel(string $model): ScheduleTargetType
     {
-        return match ($model) {
-            Node::class => ScheduleTargetType::Node,
-            AppInstance::class => ScheduleTargetType::AppInstance,
+        return match (true) {
+            $model === Node::class => ScheduleTargetType::Node,
+            AppInstance::isMorphType($model) => ScheduleTargetType::AppInstance,
             default => $this->invalid(),
         };
     }
@@ -155,12 +155,12 @@ final readonly class ScheduleTargetResolver
             $this->unavailable();
         }
 
-        if ($instance->environment === 'development') {
+        if ($instance->placedOnAppDev()) {
             $account = $this->account($instance->node, $instance->node->user);
             $this->assertAccount($account, $instance->node);
             $workingDirectory = $instance->checkout_path;
             $loginShell = true;
-        } elseif ($instance->environment === 'production') {
+        } elseif ($instance->placedOnAppProd()) {
             $user = $instance->production_user;
             $home = $instance->production_home;
 

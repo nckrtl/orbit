@@ -37,7 +37,7 @@ final readonly class UpdateInstanceDependenciesAction
                 if ($current === null || ! $this->available($current)) {
                     return $this->refused($instance->id, 'dependencies.instance_unavailable');
                 }
-                if ($current->environment === 'production') {
+                if ($current->placedOnAppProd()) {
                     return $this->refused($current->id, 'dependencies.production_update_forbidden');
                 }
 

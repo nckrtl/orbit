@@ -38,7 +38,7 @@ final class ScheduleData extends Data
     {
         return new self(
             id: $schedule->id,
-            targetType: $schedule->target_type === AppInstance::class
+            targetType: AppInstance::isMorphType($schedule->target_type)
                 ? ScheduleTargetType::AppInstance->value
                 : ScheduleTargetType::Node->value,
             targetId: $schedule->target_id,

@@ -59,13 +59,13 @@ describe('instance contract', function (): void {
     });
 
     it('renders a created development instance', function (): void {
-        $arguments = ['app' => '1', 'node' => '1', 'name' => 'dev'];
+        $arguments = ['project' => '1', 'node' => '1', 'name' => 'dev'];
         run_instance_contract('instances/instance-create/created', 'instance:create', $arguments, 'instances/instance-create/created.human.txt', 0);
         run_instance_contract('instances/instance-create/created', 'instance:create', [...$arguments, '--json' => true], 'instances/instance-create/created.json', 0);
     });
 
     it('renders the candidate-required refusal', function (): void {
-        $arguments = ['app' => '1', 'node' => '3', 'name' => 'release-name'];
+        $arguments = ['project' => '1', 'node' => '3', 'name' => 'release-name'];
         run_instance_contract('instances/instance-create/candidate-required', 'instance:create', $arguments, 'instances/instance-create/candidate-required.human.txt', 1);
         run_instance_contract('instances/instance-create/candidate-required', 'instance:create', [...$arguments, '--json' => true], 'instances/instance-create/candidate-required.json', 1);
     });

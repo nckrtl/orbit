@@ -46,31 +46,31 @@ function run_app_contract(string|array $fixtures, string $command, array $argume
     expect_output(Artisan::output(), $expected);
 }
 
-describe('app contract', function (): void {
+describe('project contract', function (): void {
     it('renders app:list from the recorded response', function (): void {
-        run_app_contract('apps/app-list/default', 'app:list', [], 'apps/app-list/default.human.txt', 0);
-        run_app_contract('apps/app-list/default', 'app:list', ['--json' => true], 'apps/app-list/default.json', 0);
+        run_app_contract('apps/app-list/default', 'project:list', [], 'apps/app-list/default.human.txt', 0);
+        run_app_contract('apps/app-list/default', 'project:list', ['--json' => true], 'apps/app-list/default.json', 0);
     });
 
     it('renders app:list with several apps', function (): void {
-        run_app_contract('apps/app-list/several', 'app:list', [], 'apps/app-list/several.human.txt', 0);
-        run_app_contract('apps/app-list/several', 'app:list', ['--json' => true], 'apps/app-list/several.json', 0);
-        run_app_contract(['apps/app-show/charlie-shop', 'instances/instance-list/charlie-shop'], 'app:show', ['app' => '3'], 'apps/app-show/charlie-shop.human.txt', 0);
+        run_app_contract('apps/app-list/several', 'project:list', [], 'apps/app-list/several.human.txt', 0);
+        run_app_contract('apps/app-list/several', 'project:list', ['--json' => true], 'apps/app-list/several.json', 0);
+        run_app_contract(['apps/app-show/charlie-shop', 'instances/instance-list/charlie-shop'], 'project:show', ['project' => '3'], 'apps/app-show/charlie-shop.human.txt', 0);
     });
 
     it('renders app:show from the recorded response', function (): void {
-        run_app_contract(['apps/app-show/default', 'instances/instance-list/default'], 'app:show', ['app' => '1'], 'apps/app-show/default.human.txt', 0);
-        run_app_contract('apps/app-show/default', 'app:show', ['app' => '1', '--json' => true], 'apps/app-show/default.json', 0);
+        run_app_contract(['apps/app-show/default', 'instances/instance-list/default'], 'project:show', ['project' => '1'], 'apps/app-show/default.human.txt', 0);
+        run_app_contract('apps/app-show/default', 'project:show', ['project' => '1', '--json' => true], 'apps/app-show/default.json', 0);
     });
 
     it('renders a created app', function (): void {
-        $arguments = ['slug' => 'acme', 'repository' => 'git@github.com:acme/site.git', '--default-branch' => 'main'];
-        run_app_contract('apps/app-create/created', 'app:create', $arguments, 'apps/app-create/created.human.txt', 0);
-        run_app_contract('apps/app-create/created', 'app:create', [...$arguments, '--json' => true], 'apps/app-create/created.json', 0);
+        $arguments = ['slug' => 'acme', 'type' => 'laravel-app', 'repository' => 'git@github.com:acme/site.git', '--default-branch' => 'main'];
+        run_app_contract('apps/app-create/created', 'project:create', $arguments, 'apps/app-create/created.human.txt', 0);
+        run_app_contract('apps/app-create/created', 'project:create', [...$arguments, '--json' => true], 'apps/app-create/created.json', 0);
     });
 
     it('renders a removed app', function (): void {
-        run_app_contract('apps/app-destroy/removed', 'app:destroy', ['app' => '1', '--yes' => true], 'apps/app-destroy/removed.human.txt', 0);
-        run_app_contract('apps/app-destroy/removed', 'app:destroy', ['app' => '1', '--yes' => true, '--json' => true], 'apps/app-destroy/removed.json', 0);
+        run_app_contract('apps/app-destroy/removed', 'project:destroy', ['project' => '1', '--yes' => true], 'apps/app-destroy/removed.human.txt', 0);
+        run_app_contract('apps/app-destroy/removed', 'project:destroy', ['project' => '1', '--yes' => true, '--json' => true], 'apps/app-destroy/removed.json', 0);
     });
 });

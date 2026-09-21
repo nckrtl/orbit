@@ -53,6 +53,7 @@ final readonly class CreateAppAction
             $app = OrbitApp::query()->create([
                 'slug' => $data->slug,
                 'name' => $data->name,
+                'type' => $data->type,
                 'repository_url' => $repositoryUrl,
                 'default_branch' => $defaultBranch,
                 'root' => $root,
@@ -118,6 +119,7 @@ final readonly class CreateAppAction
     ): void {
         if (
             $app->name === $data->name
+            && $app->type === $data->type
             && $app->repository_url === $repositoryUrl
             && ($defaultBranch === null
             || $app->default_branch === $defaultBranch)

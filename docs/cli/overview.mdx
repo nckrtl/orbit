@@ -39,8 +39,8 @@ Commands are grouped by the record they manage. Each family has its own page wit
 | [`metrics`](/cli/metrics) | The Prometheus and Grafana role and its exporters. |
 | [`analytics`](/cli/analytics) | The Plausible version the analytics role runs. |
 | [`dns`](/cli/dns) | A local development TLD resolver override on the operator machine. |
-| [`app`](/cli/app) | Application records with one repository each. |
-| [`instance`](/cli/instance) | App instances: development checkouts and production releases on one Node. |
+| [`project`](/cli/project) | Project records with one repository and type each. |
+| [`instance`](/cli/instance) | Instances: development checkouts and production releases of a Project on one Node. |
 | [`route`](/cli/route) | Hostnames that reach an App instance. |
 | [`env`](/cli/env) | Stored App instance environment configuration and its `.env` projection. |
 | [`database`](/cli/database) | The registry of mysql, pgsql, sqlite, and redis connections, including MySQL user create and list through a Node Process. |
@@ -114,11 +114,12 @@ A successful command exits with `0`. A handled failure returns the command's doc
 
 ## Enable an extension
 
-Some command families are hidden until you enable them on the operator machine. Extension state is local and changes nothing on the Gateway.
+Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `herdr` family stays local. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
 
 ```bash
 orbit extension:list
 orbit extension:enable herdr
+orbit extension:enable proxycli
 ```
 
 The [extension family](/cli/extension) lists the available extensions.

@@ -13,6 +13,7 @@ use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\VpDevPreset;
 use App\Models\Process;
 use InvalidArgumentException;
+use SensitiveParameter;
 
 final readonly class SystemdProcessRenderer
 {
@@ -82,6 +83,7 @@ final readonly class SystemdProcessRenderer
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
+            ...$this->managedEnvironmentDirectives($process),
             ...$environmentProjection['directives'],
             ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->appInstance?->id), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
@@ -102,6 +104,77 @@ final readonly class SystemdProcessRenderer
             'WantedBy=multi-user.target',
             '',
         ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function managedEnvironmentDirectives(#[SensitiveParameter] Process $process): array
+    {
+        if (! array_key_exists('environment', $process->runtime_config)) {
+            return [];
+        }
+
+        $directives = [];
+
+        foreach ($this->stringMap($process->runtime_config['environment']) as $name => $value) {
+            if ($this->isReservedEnvironmentName($name)) {
+                continue;
+            }
+
+            $directives[] = 'Environment='.$name.'='.$this->escapeDirectivePath($value);
+        }
+
+        return $directives;
+    }
+
+    private function isReservedEnvironmentName(string $name): bool
+    {
+        return in_array($name, [
+            'PATH',
+            'NODE_USE_SYSTEM_CA',
+            'VITE_DEV_SERVER_CERT',
+            'VITE_DEV_SERVER_KEY',
+            'ORBIT_DEV_SERVER_ORIGIN',
+            'ORBIT_DEV_SERVER_HOST',
+            'ORBIT_DEV_SERVER_PATH',
+            'ORBIT_DEV_SERVER_PORT',
+            AgentationEndpoint::URL_KEY,
+            AgentationEndpoint::PORT_KEY,
+        ], true);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function stringMap(#[SensitiveParameter] mixed $value): array
+    {
+        if (! is_array($value)) {
+            throw new InvalidArgumentException('A systemd environment must be a string map.');
+        }
+
+        $items = [];
+
+        foreach ($value as $name => $item) {
+            if (! is_string($name) || ! is_string($item)) {
+                throw new InvalidArgumentException('Systemd environment values must be strings.');
+            }
+
+            if (
+                preg_match('/\A[A-Za-z_][A-Za-z0-9_]*\z/D', $name) !== 1
+                || str_contains($item, "\0")
+                || str_contains($item, "\r")
+                || str_contains($item, "\n")
+            ) {
+                throw new InvalidArgumentException('A systemd environment needs safe names and single-line values.');
+            }
+
+            $items[$name] = $item;
+        }
+
+        ksort($items);
+
+        return $items;
     }
 
     /** @return array{directives: list<string>, commandPrefix: list<string>} */

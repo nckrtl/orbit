@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Apps\CreateAppAction;
 use App\Data\Apps\CreateAppData;
+use App\Domain\Projects\ProjectType;
 use App\Models\App as OrbitApp;
 
 it('rejects an unsafe repository origin before app persistence', function (): void {
@@ -11,6 +12,7 @@ it('rejects an unsafe repository origin before app persistence', function (): vo
     $data = new CreateAppData(
         name: 'Acme',
         slug: 'acme',
+        type: ProjectType::LaravelApp,
         repositoryUrl: "ssh://git:{$sentinel}@example.test/acme/site.git",
         defaultBranch: 'main',
         root: 'public',

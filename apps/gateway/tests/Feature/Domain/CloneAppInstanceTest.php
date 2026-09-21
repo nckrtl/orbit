@@ -177,14 +177,16 @@ it('prepares an independent production target and activates its explicit private
         ])
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)
-        ->toBe("APP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n")
+        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n")
         ->and($this->writer->observedRouteStatus)->toBe(RouteStatus::Pending)
         ->and($this->writer->observedTargetStatus)->toBe(AppInstanceState::SourceResolved);
 
     $sourceValues = $this->candidate->environmentValues()->orderBy('env_key')->get();
     $targetValues = $target->environmentValues()->orderBy('env_key')->get();
-    expect($targetValues->pluck('env_key', 'env_key')->all())->toBe($sourceValues->pluck('env_key', 'env_key')->all())
-        ->and($targetValues->pluck('env_value', 'env_key')->all())->toBe($sourceValues->pluck('env_value', 'env_key')->all())
+    expect($targetValues->pluck('env_value', 'env_key')->except(['APP_DEBUG', 'APP_ENV'])->all())
+        ->toBe($sourceValues->pluck('env_value', 'env_key')->except(['APP_DEBUG', 'APP_ENV'])->all())
+        ->and($targetValues->firstWhere('env_key', 'APP_ENV')?->env_value)->toBe('production')
+        ->and($targetValues->firstWhere('env_key', 'APP_DEBUG')?->env_value)->toBe('false')
         ->and($targetValues->pluck('id')->intersect($sourceValues->pluck('id'))->all())->toBeEmpty()
         ->and($this->lock->owners)->toContain([$this->candidate->id], [$this->candidate->id, $target->id]);
 });
@@ -238,7 +240,7 @@ it('prepares a Cluster-scoped preview with the production Node TLD', function ()
         ->and($route->targets->sole()->app_instance_id)->toBe($target->id)
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)
-        ->toBe("APP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n");
+        ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n");
 });
 
 it('refuses a Cluster-scoped destination without an active Router before reservation', function (): void {
@@ -314,7 +316,7 @@ it('prepares no PHP runtime or SQLite database when neither applies', function (
         ->and($result['appInstance']->production_php_service)->toBeNull()
         ->and($this->projection->calls)->toBe(['certificate', 'firewall', 'certificate', 'firewall'])
         ->and($this->sqlite->calls)->toBeEmpty()
-        ->and($this->writer->contents)->toBe('');
+        ->and($this->writer->contents)->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\n");
 });
 
 it('keeps every failed production projection inactive at its last completed checkpoint', function (

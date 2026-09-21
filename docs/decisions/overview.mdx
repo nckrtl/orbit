@@ -34,10 +34,10 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0022](/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge) | Track the issue workspace and delete it before merge | Accepted 2026-09-03 |
 | [0023](/decisions/0023-separate-hostname-selection-from-cluster-routing) | Separate hostname selection from Cluster routing | Accepted 2026-09-04 |
 | [0024](/decisions/0024-follow-generated-route-targets) | Make generated Route identity follow its target | Accepted 2026-09-04 |
-| [0025](/decisions/0025-stabilize-the-default-appinstance-identity) | Stabilize the default AppInstance identity | Accepted 2026-09-05 |
+| [0025](/decisions/0025-stabilize-the-default-appinstance-identity) | Stabilize the default AppInstance identity | Accepted 2026-09-05; amended by 0105 |
 | [0026](/decisions/0026-identify-each-app-by-one-repository) | Identify each App by one repository | Accepted 2026-09-05 |
 | [0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) | Adopt local Git sources into AppInstance ownership | Accepted 2026-09-05 |
-| [0028](/decisions/0028-require-one-route-per-active-appinstance) | Require one Route per active AppInstance | Accepted 2026-09-05 |
+| [0028](/decisions/0028-require-one-route-per-active-appinstance) | Require one Route per active AppInstance | Accepted 2026-09-05; amended by 0106 |
 | [0029](/decisions/0029-manage-laravel-application-urls-through-orbit) | Manage Laravel application URLs through Orbit | Accepted 2026-09-05 |
 | [0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) | Complete AppInstance provisioning without application health gates | Accepted 2026-09-05 |
 | [0031](/decisions/0031-clone-initial-production-source-during-provisioning) | Clone initial production source during provisioning | Accepted 2026-09-05 |
@@ -54,9 +54,9 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0042](/decisions/0042-provision-tool-managers-on-demand) | Provision Tool Managers on demand | Accepted 2026-09-08 |
 | [0043](/decisions/0043-manage-homebrew-core-formulae) | Manage Homebrew Core formulae | Accepted 2026-09-08 |
 | [0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) | Own AppInstance environment configuration in Orbit | Accepted 2026-09-09 |
-| [0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) | Isolate production PHP-FPM by Unix user | Accepted 2026-09-10 |
-| [0046](/decisions/0046-own-production-release-deployment-in-orbit) | Own production release deployment in Orbit | Accepted 2026-09-10 |
-| [0047](/decisions/0047-create-production-appinstances-from-candidates) | Create production AppInstances from candidates | Accepted 2026-09-10 |
+| [0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) | Isolate production PHP-FPM by Unix user | Accepted 2026-09-10; amended by 0106 and 0107 |
+| [0046](/decisions/0046-own-production-release-deployment-in-orbit) | Own production release deployment in Orbit | Accepted 2026-09-10; amended by 0107 |
+| [0047](/decisions/0047-create-production-appinstances-from-candidates) | Create production AppInstances from candidates | Accepted 2026-09-10; amended by 0106 and 0107 |
 | [0048](/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances) | Copy App process and schedule definitions into AppInstances | Accepted 2026-09-10 |
 | [0049](/decisions/0049-keep-delivery-artifacts-off-the-merge-head) | Keep delivery artifacts off the merge head | Accepted 2026-09-10 |
 | [0050](/decisions/0050-release-successful-proof-resources-before-landing) | Release successful proof resources before landing | Accepted 2026-09-10 |
@@ -75,7 +75,7 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes) | Prefer active Cluster TLDs for generated Routes | Accepted 2026-09-13 |
 | [0064](/decisions/0064-name-application-endpoints-as-domains) | Name application endpoints as domains | Accepted 2026-09-13 |
 | [0065](/decisions/0065-replace-routes-when-domains-change) | Replace Routes when domains change | Accepted 2026-09-13 |
-| [0066](/decisions/0066-transfer-development-appinstances-between-nodes) | Transfer development AppInstances between Nodes | Accepted 2026-09-13 |
+| [0066](/decisions/0066-transfer-development-appinstances-between-nodes) | Transfer development AppInstances between Nodes | Accepted 2026-09-13; amended by 0107 |
 | [0067](/decisions/0067-serve-development-servers-on-the-route-origin) | Serve development servers on the Route origin | Accepted 2026-09-13 |
 | [0068](/decisions/0068-accept-only-apps-path-node-storage-setting) | Accept only apps.path as the node storage setting path | Accepted 2026-09-13 |
 | [0069](/decisions/0069-allow-node-process-targets) | Allow Process targets of AppInstance or managed Node | Accepted 2026-09-13 |
@@ -105,6 +105,17 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0093](/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge) | Show live UFW and desired rules that match converge | Proposed |
 | [0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) | Project WireGuard hub config onto the VPN node | Proposed |
 | [0095](/decisions/0095-relocate-relocatable-singleton-roles) | Relocate relocatable singleton roles as one Orbit action | Proposed |
+| [0096](/decisions/0096-run-plausible-through-an-analytics-role) | Run Plausible through an analytics role | Proposed |
+| [0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) | Publish analytics tracking hosts for App instances | Proposed |
 | [0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) | Read GitHub repositories through a Gateway-owned GitHub App | Proposed |
 | [0099](/decisions/0099-collect-role-specific-service-metrics) | Collect role-specific service metrics | Proposed |
 | [0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) | Install Caddy from the pinned Caddy apt source | Proposed |
+| [0101](/decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress) | Keep one Route publication field and terminate public Ingress with Let's Encrypt | Proposed |
+| [0102](/decisions/0102-read-app-instance-analytics-through-a-fleet-driver) | Read App instance analytics through a fleet driver | Proposed |
+| [0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) | Absorb Commander tasks as a Gateway extension | Proposed |
+| [0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) | Own CLIProxyAPI quota through the proxycli extension | Proposed; amended by 0109 |
+| [0105](/decisions/0105-name-applications-as-project-and-instance) | Name applications as Project and Instance | Proposed |
+| [0106](/decisions/0106-derive-instance-capabilities-from-project-type) | Derive Instance capabilities from Project type | Proposed |
+| [0107](/decisions/0107-key-isolation-and-releases-to-node-role) | Key isolation and releases to Node role | Proposed |
+| [0108](/decisions/0108-persist-managed-environment-on-systemd-processes) | Persist managed environment on systemd Processes | Proposed |
+| [0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) | Publish the proxycli collector on collector.proxycli.orbit | Proposed |

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use SensitiveParameter;
@@ -13,17 +15,25 @@ use SensitiveParameter;
  * @property int $id
  * @property string $name
  * @property string $slug
+ * @property ProjectType $type
  * @property string $repository_url
  * @property string $repository_identity
  * @property string|null $default_branch
  * @property string|null $root
  * @property array<string, mixed>|null $defaults
+ * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class App extends Model
 {
+    /** @var array<string, mixed> */
+    #[\Override]
+    protected $attributes = [
+        'type' => 'laravel-app',
+    ];
+
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'slug', 'repository_url', 'default_branch', 'root', 'defaults'];
+    protected $fillable = ['name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults'];
 
     /** @var list<string> */
     #[\Override]
@@ -73,9 +83,23 @@ final class App extends Model
         return $this->hasMany(AppUpdate::class);
     }
 
+    /** @return HasMany<TaskGroup, $this> */
+    public function taskGroups(): HasMany
+    {
+        return $this->hasMany(TaskGroup::class);
+    }
+
+    public function isWebServing(): bool
+    {
+        return $this->type->isWebServing();
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
-        return ['defaults' => 'array'];
+        return [
+            'defaults' => 'array',
+            'type' => ProjectType::class,
+        ];
     }
 }

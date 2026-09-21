@@ -14,7 +14,7 @@ final readonly class CascadeAppInstanceSchedulesAction
     public function execute(int $appInstanceId): void
     {
         Schedule::query()
-            ->where('target_type', AppInstance::class)
+            ->whereIn('target_type', AppInstance::morphTypes())
             ->where('target_id', $appInstanceId)
             ->orderBy('id')
             ->get()

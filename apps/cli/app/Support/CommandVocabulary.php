@@ -44,6 +44,7 @@ final readonly class CommandVocabulary
         'metrics' => ['status'],
         'node' => ['relocate', 'rename'],
         'process' => ['logs', 'restart', 'start', 'stop'],
+        'proxycli' => ['status'],
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
@@ -52,6 +53,7 @@ final readonly class CommandVocabulary
 
     /** @var list<string> */
     public const array NOUN_ENDING_COMMANDS = [
+        'analytics:credentials',
         'metrics:credentials',
         'node:metrics',
         'node:settings',

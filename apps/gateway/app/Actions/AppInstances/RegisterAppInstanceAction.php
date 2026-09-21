@@ -25,11 +25,13 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\ProjectTypeClassifier;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\RelativeWebRoot;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -680,6 +682,12 @@ final readonly class RegisterAppInstanceAction
         $result = $this->createApp->execute(new CreateAppData(
             name: $data->appName ?? $slug,
             slug: $slug,
+            type: new ProjectTypeClassifier()->classify([
+                'slug' => $slug,
+                'repository_identity' => GitRepositoryIdentity::derive($facts->repositoryUrl),
+                'root' => $root,
+                'has_production_php' => false,
+            ]),
             repositoryUrl: $facts->repositoryUrl,
             defaultBranch: GitBranchName::validate($defaultBranch),
             root: RelativeWebRoot::validate($root),

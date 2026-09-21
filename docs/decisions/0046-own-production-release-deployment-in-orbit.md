@@ -10,7 +10,7 @@ In the context of production AppInstances deployed by an operating agent, facing
 
 ## Status
 
-Accepted on 2026-09-10. Supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production release ownership and serving layout, [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning) and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) for ongoing production source ownership, and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) for production setup-step ownership and automatic execution after provisioning. Extends [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) for deployment coordination.
+Accepted on 2026-09-10. Supersedes [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production release ownership and serving layout, [ADR 0031](/decisions/0031-clone-initial-production-source-during-provisioning) and [ADR 0032](/decisions/0032-preserve-explicit-appinstance-branch-selection) for ongoing production source ownership, and [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) for production setup-step ownership and automatic execution after provisioning. Extends [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit) and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) for deployment coordination. Amended by [ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role): release layout and deploy follow app-prod Node role, not configured `APP_ENV`.
 
 ## Context
 

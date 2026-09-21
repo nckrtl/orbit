@@ -16,7 +16,6 @@ use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -276,7 +275,7 @@ final readonly class ConvergeRouteAction
 
             $production = array_values(array_filter(
                 $targets,
-                static fn (AppInstance $instance): bool => $instance->environment === 'production',
+                static fn (AppInstance $instance): bool => $instance->placedOnAppProd(),
             ));
 
             if ($production !== []) {
@@ -326,7 +325,7 @@ final readonly class ConvergeRouteAction
                     $replacement,
                     RouteReplacementStep::PublicActivated,
                     function () use ($replacement): void {
-                        $replacement->update(['public_publication' => RoutePublicPublication::Active]);
+                        $replacement->update(['replacement_step' => RouteReplacementStep::PublicActivated]);
                         $this->projection->activatePublicHandler($replacement);
                     },
                 );
@@ -343,10 +342,12 @@ final readonly class ConvergeRouteAction
             if (
                 $replacement->refresh()->status === RouteStatus::Activating
                 && $replacement->publication === RoutePublication::Public
-                && $this->forwardRank($replacement->replacement_step)
-                    < $this->forwardRank(RouteReplacementStep::PublicActivated)
+                && (
+                    $failureStep === 'public-activated'
+                    || $this->forwardRank($replacement->replacement_step)
+                        < $this->forwardRank(RouteReplacementStep::PublicActivated)
+                )
             ) {
-                $replacement->update(['public_publication' => RoutePublicPublication::Inactive]);
                 $this->projection->rollbackPublicEdge($replacement);
             }
 
@@ -620,7 +621,7 @@ final readonly class ConvergeRouteAction
 
             $production = array_values(array_filter(
                 $targets,
-                static fn (AppInstance $instance): bool => $instance->environment === 'production',
+                static fn (AppInstance $instance): bool => $instance->placedOnAppProd(),
             ));
 
             if ($production !== []) {
@@ -728,7 +729,7 @@ final readonly class ConvergeRouteAction
             foreach ($targets as $appInstance) {
                 $this->projection->cleanup($appInstance, $retired);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Candidate,
@@ -746,7 +747,9 @@ final readonly class ConvergeRouteAction
             DB::transaction(function () use ($route): void {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $locked->update([
-                    'replacement_step' => null,
+                    'replacement_step' => $locked->publication === RoutePublication::Public
+                        ? RouteReplacementStep::IngressFirewall
+                        : null,
                     'failed_step' => null,
                     'error_code' => null,
                 ]);
@@ -769,7 +772,7 @@ final readonly class ConvergeRouteAction
                 $this->projection->rollbackCertificates($appInstance, $route);
                 $this->projection->rollbackCaddy($appInstance, $route);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Authoritative,
@@ -825,7 +828,7 @@ final readonly class ConvergeRouteAction
                 // staging scopes are named after it, not after the Route being retired.
                 $this->projection->cleanup($appInstance, $replacement);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Candidate,
@@ -848,7 +851,9 @@ final readonly class ConvergeRouteAction
                 $lockedReplacement->update([
                     'status' => RouteStatus::Active,
                     'replaces_route_id' => null,
-                    'replacement_step' => null,
+                    'replacement_step' => $lockedReplacement->publication === RoutePublication::Public
+                        ? RouteReplacementStep::IngressFirewall
+                        : null,
                     'failed_step' => null,
                     'error_code' => null,
                 ]);
@@ -878,7 +883,7 @@ final readonly class ConvergeRouteAction
                 $this->projection->rollbackCertificates($appInstance, $replacement);
                 $this->projection->rollbackCaddy($appInstance, $replacement);
 
-                if ($appInstance->environment === 'production') {
+                if ($appInstance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
                         $appInstance,
                         AppInstanceEnvironmentRouteDomain::Authoritative,

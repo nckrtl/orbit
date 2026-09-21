@@ -43,7 +43,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 $query
                     ->where(function ($query) use ($context): void {
                         $query
-                            ->where('owner_type', AppInstance::class)
+                            ->whereIn('owner_type', AppInstance::morphTypes())
                             ->whereIn(
                                 'owner_id',
                                 AppInstance::query()

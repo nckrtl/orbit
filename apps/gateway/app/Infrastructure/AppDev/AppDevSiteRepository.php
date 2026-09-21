@@ -9,8 +9,6 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
-use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\AppInstance;
@@ -481,8 +479,7 @@ final readonly class AppDevSiteRepository
 
     private function publishesIngress(Route $route): bool
     {
-        return $route->publication === RoutePublication::Public
-            && $route->public_publication === RoutePublicPublication::Active;
+        return $this->eligibility->publicEdgeIsLive($route);
     }
 
     private function composedPublicSite(AppInstance $instance, Route $route, Node $ingress): AppDevSite

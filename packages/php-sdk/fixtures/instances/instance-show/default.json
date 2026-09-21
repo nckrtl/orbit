@@ -7,11 +7,19 @@
         "data": {
             "id": 1,
             "app_id": 1,
+            "project_id": 1,
             "node_id": 1,
             "app": {
                 "id": 1,
                 "name": "Acme",
-                "slug": "acme"
+                "slug": "acme",
+                "type": "laravel-app"
+            },
+            "project": {
+                "id": 1,
+                "name": "Acme",
+                "slug": "acme",
+                "type": "laravel-app"
             },
             "node": {
                 "id": 1,
@@ -41,7 +49,6 @@
                 "domain": "dev.acme.test",
                 "provenance": "generated",
                 "publication": "private",
-                "public_publication": "inactive",
                 "status": "active",
                 "failed_step": null,
                 "error_code": null,

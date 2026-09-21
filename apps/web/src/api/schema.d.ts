@@ -44,6 +44,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show analytics Stats API credentials
+         * @description Returns whether a Plausible Stats API key is stored. The key itself is never returned.
+         */
+        get: operations["analytics-credentials"];
+        /**
+         * Store the analytics Stats API key
+         * @description Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.
+         */
+        put: operations["analytics-credentials-set"];
+        post?: never;
+        /**
+         * Clear the analytics Stats API key
+         * @description Clears the stored Plausible Stats API key.
+         */
+        delete: operations["analytics-credentials-unset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/analytics/update": {
         parameters: {
             query?: never;
@@ -71,16 +99,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List Apps
-         * @description List apps.
-         */
+        /** List Apps */
         get: operations["app-list"];
         put?: never;
-        /**
-         * Create an App
-         * @description Create an app.
-         */
+        /** Create an App */
         post: operations["app-create"];
         delete?: never;
         options?: never;
@@ -95,24 +117,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Show an App
-         * @description Show an app.
-         */
+        /** Show an App */
         get: operations["app-show"];
         put?: never;
         post?: never;
-        /**
-         * Remove an App
-         * @description Remove an app.
-         */
+        /** Remove an App */
         delete: operations["app-destroy"];
         options?: never;
         head?: never;
-        /**
-         * Update an App
-         * @description Update an app.
-         */
+        /** Update an App */
         patch: operations["app-update"];
         trace?: never;
     };
@@ -929,6 +942,26 @@ export interface paths {
          * @description Remove the analytics tracking hosts of an App instance.
          */
         delete: operations["instance-analytics-disable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instances/{instance}/analytics/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read App instance analytics stats
+         * @description Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the App instance's tracked site. `available` is false when the analytics role is not active or the App instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.
+         */
+        get: operations["instance-analytics-stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1848,6 +1881,250 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Projects
+         * @description List projects.
+         */
+        get: operations["project-list"];
+        put?: never;
+        /**
+         * Create a Project
+         * @description Create a project.
+         */
+        post: operations["project-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{app}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a Project
+         * @description Show a project.
+         */
+        get: operations["project-show"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a Project
+         * @description Remove a project.
+         */
+        delete: operations["project-destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a Project
+         * @description Update a project.
+         */
+        patch: operations["project-update"];
+        trace?: never;
+    };
+    "/api/v1/projects/{app}/process-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List process definitions
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        get: operations["app-project-process-definition-list-definition"];
+        put?: never;
+        /**
+         * Create a process definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        post: operations["app-project-process-definition-create-definition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{app}/process-definitions/{process_definition}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a process definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        get: operations["app-project-process-definition-show-definition"];
+        /**
+         * Replace a process definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        put: operations["app-project-process-definition-update-definition"];
+        post?: never;
+        /**
+         * Remove a process definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        delete: operations["app-project-process-definition-destroy-definition"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{app}/schedule-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Schedule definitions
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        get: operations["app-project-schedule-definition-list-definition"];
+        put?: never;
+        /**
+         * Create a Schedule definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        post: operations["app-project-schedule-definition-create-definition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a Schedule definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        get: operations["app-project-schedule-definition-show-definition"];
+        /**
+         * Replace a Schedule definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        put: operations["app-project-schedule-definition-update-definition"];
+        post?: never;
+        /**
+         * Remove a Schedule definition
+         * @description App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.
+         */
+        delete: operations["app-project-schedule-definition-destroy-definition"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxycli": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show proxycli status
+         * @description Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.
+         */
+        get: operations["proxycli-status"];
+        put?: never;
+        /**
+         * Enable proxycli
+         * @description Deploys one collector Process and publishes https://collector.proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.
+         */
+        post: operations["proxycli-enable"];
+        /**
+         * Disable proxycli
+         * @description Stops the collector Process, withdraws collector.proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.
+         */
+        delete: operations["proxycli-disable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxycli/accounts/{account}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a proxycli account
+         * @description Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.
+         */
+        patch: operations["proxycli-update"];
+        trace?: never;
+    };
+    "/api/v1/proxycli/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List proxycli providers
+         * @description Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.
+         */
+        get: operations["proxycli-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxycli/providers/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a proxycli provider
+         * @description Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.
+         */
+        get: operations["proxycli-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/realtime": {
         parameters: {
             query?: never;
@@ -2092,6 +2369,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Task groups
+         * @description Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.
+         */
+        get: operations["tasks-list"];
+        put?: never;
+        /**
+         * Create a Task group
+         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.
+         */
+        post: operations["tasks-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a Task group
+         * @description Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.
+         */
+        get: operations["tasks-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a Task group
+         * @description Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
+         */
+        post: operations["tasks-complete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a Task
+         * @description Appends one Task to a Task group at the next position. Requires Gateway access. Returns `tasks.disabled` while the extension is off.
+         */
+        post: operations["tasks-add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Tasks
+         * @description Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, and complete return `tasks.disabled`.
+         */
+        post: operations["tasks-disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Tasks
+         * @description Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.
+         */
+        post: operations["tasks-enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show Tasks status
+         * @description Returns whether the Gateway tasks extension is enabled.
+         */
+        get: operations["tasks-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tool-managers": {
         parameters: {
             query?: never;
@@ -2227,6 +2648,8 @@ export interface components {
             id?: number;
             name?: string;
             slug?: string;
+            /** @enum {string} */
+            type?: "monorepo" | "laravel-app" | "laravel-package";
             repository_url?: string;
             default_branch?: string | null;
             root?: string | null;
@@ -2362,8 +2785,10 @@ export interface components {
         AppInstance: {
             id?: number;
             app_id?: number;
+            project_id?: number;
             node_id?: number;
             app?: components["schemas"]["AppIdentity"];
+            project?: components["schemas"]["AppIdentity"];
             node?: components["schemas"]["NodeIdentity"];
             name?: string;
             environment?: string;
@@ -2391,6 +2816,8 @@ export interface components {
             id?: number;
             name?: string;
             slug?: string;
+            /** @enum {string} */
+            type?: "monorepo" | "laravel-app" | "laravel-package";
         };
         NodeIdentity: {
             id?: number;
@@ -2406,7 +2833,6 @@ export interface components {
             domain?: string;
             provenance?: string;
             publication?: string;
-            public_publication?: string;
             status?: string;
             failed_step?: string | null;
             error_code?: string | null;
@@ -2647,6 +3073,39 @@ export interface components {
             output?: string;
             truncated?: boolean;
         };
+        TaskGroup: {
+            id?: number;
+            app_id?: number;
+            app?: string;
+            taskable_type?: string | null;
+            taskable_id?: number | null;
+            title?: string;
+            brief?: string;
+            /** @enum {string} */
+            status?: "queued" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            reviewer_thread_id?: string | null;
+            pr_url?: string | null;
+            notify_coder?: boolean;
+            implementer_model?: string;
+            reviewer_model?: string;
+            tokens?: number | null;
+            line_diff?: number | null;
+            duration_ms?: number | null;
+            tasks?: components["schemas"]["Task"][];
+        };
+        Task: {
+            id?: number;
+            task_group_id?: number;
+            position?: number;
+            title?: string;
+            brief?: string;
+            /** @enum {string} */
+            status?: "pending" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
+            implementer_thread_id?: string | null;
+            tokens?: number | null;
+            line_diff?: number | null;
+            duration_ms?: number | null;
+        };
         ToolManager: {
             id?: number | null;
             node_id?: number;
@@ -2748,6 +3207,150 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while a Stats API key is stored. The key itself is never returned. */
+                            configured?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-credentials-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    api_key: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while a Stats API key is stored. The key itself is never returned. */
+                            configured?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "analytics-credentials-unset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description True while a Stats API key is stored. The key itself is never returned. */
+                            configured?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2862,14 +3465,12 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Optional display name */
                     name?: string;
-                    /** @description Unique app slug */
                     slug: string;
+                    /** @enum {string} */
+                    type: "monorepo" | "laravel-app" | "laravel-package";
                     repository_url: string;
-                    /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
-                    /** @description Relative web root */
                     root: string;
                     defaults?: unknown[] | null;
                 };
@@ -3039,12 +3640,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description New App slug */
+                    /** @enum {string} */
+                    type: "monorepo" | "laravel-app" | "laravel-package";
                     slug: string;
                     repository_url: string;
-                    /** @description New stored default branch */
                     default_branch: string;
-                    /** @description New relative web root */
                     root: string;
                 };
             };
@@ -5695,7 +6295,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    app_id: number;
+                    app_id?: number;
+                    project_id?: number;
                     node_id: number;
                     /** @description AppInstance name; default is reserved for the default development source */
                     name: string;
@@ -5778,6 +6379,7 @@ export interface operations {
                     /** @description Adopt the checkout and every linked worktree */
                     include_worktrees?: boolean;
                     app_id?: number;
+                    project_id?: number;
                     /** @description Confirmed App display name */
                     app_name?: string;
                     /** @description Confirmed App slug */
@@ -6211,7 +6813,11 @@ export interface operations {
                                 host?: string;
                                 route_id?: number;
                                 status?: string;
-                                public_publication?: string;
+                                /**
+                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @enum {string}
+                                 */
+                                publication?: "private" | "public";
                                 failed_step?: string | null;
                                 error_code?: string | null;
                                 script_url?: string;
@@ -6286,7 +6892,11 @@ export interface operations {
                                 host?: string;
                                 route_id?: number;
                                 status?: string;
-                                public_publication?: string;
+                                /**
+                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @enum {string}
+                                 */
+                                publication?: "private" | "public";
                                 failed_step?: string | null;
                                 error_code?: string | null;
                                 script_url?: string;
@@ -6373,7 +6983,11 @@ export interface operations {
                                 host?: string;
                                 route_id?: number;
                                 status?: string;
-                                public_publication?: string;
+                                /**
+                                 * @description Mirrors the App instance Route publication. Public-edge readiness is status, failed_step, and Doctor.
+                                 * @enum {string}
+                                 */
+                                publication?: "private" | "public";
                                 failed_step?: string | null;
                                 error_code?: string | null;
                                 script_url?: string;
@@ -6412,6 +7026,73 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "instance-analytics-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description False when the analytics role is not active or the App instance publishes no tracking host. Every other field is then absent. */
+                            available: boolean;
+                            /** @description False when the panel may show but the driver could not obtain stats. Visitor fields are then absent. */
+                            readable?: boolean;
+                            /** @enum {string} */
+                            driver?: "plausible_ce";
+                            /** @description The App instance's authoritative public domain, which is the Plausible site. */
+                            site_domain?: string | null;
+                            live_visitors?: number;
+                            visitors?: {
+                                /** @description Plausible's `day` period: today in the site timezone. */
+                                past_24h?: number;
+                                past_7d?: number;
+                                past_30d?: number;
+                            };
+                            /** @description Up to ten paths for the last 30 days, most visitors first. */
+                            pages?: {
+                                path?: string;
+                                visitors?: number;
+                            }[];
+                            error_code?: string | null;
+                            error?: string | null;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9834,6 +10515,1228 @@ export interface operations {
             };
         };
     };
+    "project-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["App"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optional display name */
+                    name?: string;
+                    /** @description Unique project slug */
+                    slug: string;
+                    /**
+                     * @description Project type (monorepo, laravel-app, or laravel-package)
+                     * @enum {string}
+                     */
+                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    repository_url: string;
+                    /** @description Stored default branch; resolve the remote default when omitted */
+                    default_branch?: string;
+                    /** @description Relative web root */
+                    root: string;
+                    defaults?: unknown[] | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["App"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["App"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["App"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["App"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description New Project type
+                     * @enum {string}
+                     */
+                    type: "monorepo" | "laravel-app" | "laravel-package";
+                    /** @description New Project slug */
+                    slug: string;
+                    repository_url: string;
+                    /** @description New stored default branch */
+                    default_branch: string;
+                    /** @description New relative web root */
+                    root: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["App"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-process-definition-list-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-process-definition-create-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    environments: ("development" | "production")[];
+                    spec: {
+                        /** @enum {string} */
+                        runtime: "systemd" | "docker";
+                        command: string[];
+                        /** @description Conditionally required. */
+                        image?: string | null;
+                        working_directory?: string;
+                        environment?: string[];
+                        ports?: string[];
+                        volumes?: {
+                            source: string;
+                            target: string;
+                            read_only?: boolean;
+                        }[];
+                        /** @enum {string} */
+                        restart_policy?: "never" | "on-failure" | "always" | "unless-stopped";
+                        keep_alive?: boolean;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-process-definition-show-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+                /** @description Process definition name, unique within the App. */
+                process_definition: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-process-definition-update-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+                /** @description Process definition name, unique within the App. */
+                process_definition: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    environments: ("development" | "production")[];
+                    spec: {
+                        /** @enum {string} */
+                        runtime: "systemd" | "docker";
+                        command: string[];
+                        /** @description Conditionally required. */
+                        image?: string | null;
+                        working_directory?: string;
+                        environment?: string[];
+                        ports?: string[];
+                        volumes?: {
+                            source: string;
+                            target: string;
+                            read_only?: boolean;
+                        }[];
+                        /** @enum {string} */
+                        restart_policy?: "never" | "on-failure" | "always" | "unless-stopped";
+                        keep_alive?: boolean;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-process-definition-destroy-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+                /** @description Process definition name, unique within the App. */
+                process_definition: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-schedule-definition-list-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-schedule-definition-create-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    environments: ("development" | "production")[];
+                    spec: {
+                        command: string;
+                        calendar: string;
+                        timeout_seconds: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-schedule-definition-show-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+                /** @description Schedule definition name, unique within the App. */
+                schedule_definition: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-schedule-definition-update-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+                /** @description Schedule definition name, unique within the App. */
+                schedule_definition: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    environments: ("development" | "production")[];
+                    spec: {
+                        command: string;
+                        calendar: string;
+                        timeout_seconds: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "app-project-schedule-definition-destroy-definition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric App ID. */
+                app: number;
+                /** @description Schedule definition name, unique within the App. */
+                schedule_definition: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AppRuntimeDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    node_id: string;
+                    /** @description Redis Database connection slug for shared Valkey */
+                    cache_connection: string;
+                    /**
+                     * Format: uri
+                     * @description CLIProxyAPI Management API origin
+                     */
+                    cliproxy_url: string;
+                    cliproxy_management_key: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Disable the account */
+                    disabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>[];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "realtime-show": {
         parameters: {
             query?: never;
@@ -10785,6 +12688,466 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-list": {
+        parameters: {
+            query?: {
+                app_id?: number;
+                status?: "queued" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskGroup"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    app_id: number;
+                    title: string;
+                    brief: string;
+                    notify_coder?: boolean;
+                    notify_on_settle?: boolean;
+                    tasks?: {
+                        title: string;
+                        brief: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskGroup"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskGroup"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskGroup"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskGroup"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    title: string;
+                    brief: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

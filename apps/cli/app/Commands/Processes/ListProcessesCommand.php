@@ -21,7 +21,8 @@ final class ListProcessesCommand extends TargetedProcessCommand
     protected $signature = 'process:list
         {--instance= : Positive AppInstance ID}
         {--node= : Node ID or registered name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

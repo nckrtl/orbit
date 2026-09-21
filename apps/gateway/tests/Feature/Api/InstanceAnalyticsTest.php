@@ -3,18 +3,15 @@
 declare(strict_types=1);
 
 use App\Actions\AppInstances\RemoveAppInstanceAction;
-use App\Actions\Routes\CreateRouteAction;
-use App\Data\Routes\CreateRouteData;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -113,7 +110,7 @@ describe('instance:analytics:enable', function (): void {
                     'host' => 'analytics.shop.example.com',
                     'route_id' => $route->id,
                     'status' => 'active',
-                    'public_publication' => 'active',
+                    'publication' => 'public',
                     'failed_step' => null,
                     'error_code' => null,
                     'script_url' => 'https://analytics.shop.example.com/js/script.js',
@@ -133,9 +130,8 @@ describe('instance:analytics:enable', function (): void {
             ->and($route->node_id)->toBeNull()
             ->and($route->cluster_id)->toBe($this->cluster->id)
             ->and($route->publication)->toBe(RoutePublication::Public)
-            ->and($route->public_publication)->toBe(RoutePublicPublication::Active)
             ->and($route->status)->toBe(RouteStatus::Active)
-            ->and($route->replacement_step)->toBeNull()
+            ->and($route->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
             ->and($route->targets()->count())->toBe(0)
             ->and(RouteAnalyticsTracking::query()->sole()->getAttributes())
             ->toMatchArray(['route_id' => $route->id, 'app_instance_id' => $this->instance->id])
@@ -177,7 +173,7 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonPath('data.enabled', true)
             ->assertJsonPath('data.hosts.0.host', 'analytics.shop.example.com')
             ->assertJsonPath('data.hosts.0.status', 'active')
-            ->assertJsonPath('data.hosts.0.public_publication', 'active');
+            ->assertJsonPath('data.hosts.0.publication', 'public');
 
         $route = Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->sole();
 
@@ -187,7 +183,7 @@ describe('instance:analytics:enable', function (): void {
             ->and($route->cluster_id)->toBe($this->cluster->id)
             ->and($route->node_id)->toBeNull()
             ->and($route->publication)->toBe(RoutePublication::Public)
-            ->and($route->public_publication)->toBe(RoutePublicPublication::Active)
+            ->and($route->status)->toBe(RouteStatus::Active)
             ->and($this->edge->calls)->toBe([
                 'ingress-certificate',
                 'ingress-caddy',
@@ -233,7 +229,7 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonCount(2, 'data.hosts')
             ->assertJsonPath('data.hosts.0.route_id', $kept->id)
             ->assertJsonPath('data.hosts.1.host', 'plausible.shop.example.com')
-            ->assertJsonPath('data.hosts.1.public_publication', 'active');
+            ->assertJsonPath('data.hosts.1.publication', 'public');
 
         expect(Route::query()->whereKey($dropped->id)->exists())->toBeFalse()
             ->and(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->pluck('domain')->all())
@@ -241,7 +237,7 @@ describe('instance:analytics:enable', function (): void {
             ->and(RouteAnalyticsTracking::query()->count())->toBe(2)
             ->and($this->edge->calls)->toContain('remove-public-edge')
             ->and($this->removal->routeIds)->toBe(array_fill(0, 4, $dropped->id))
-            ->and($this->removal->events)->toBe(['dns', 'certificates', 'caddy', 'firewall']);
+            ->and($this->removal->events)->toBe(['dns', 'caddy', 'certificates', 'firewall']);
     });
 
     it('stays off the public edge without error while the cluster has no active Ingress', function (): void {
@@ -250,13 +246,13 @@ describe('instance:analytics:enable', function (): void {
         $this->postJson($this->url)
             ->assertOk()
             ->assertJsonPath('data.hosts.0.status', 'active')
-            ->assertJsonPath('data.hosts.0.public_publication', 'inactive');
+            ->assertJsonPath('data.hosts.0.publication', 'public');
 
         $this->ingress->roles()->update(['status' => LifecycleStatus::Active]);
 
         $this->postJson($this->url)
             ->assertOk()
-            ->assertJsonPath('data.hosts.0.public_publication', 'active');
+            ->assertJsonPath('data.hosts.0.publication', 'public');
         expect($this->projector->routeIds)->toHaveCount(1);
     });
 
@@ -269,13 +265,13 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonPath('data.hosts.0.status', 'failed')
             ->assertJsonPath('data.hosts.0.failed_step', 'projection')
             ->assertJsonPath('data.hosts.0.error_code', 'route.test_projection')
-            ->assertJsonPath('data.hosts.0.public_publication', 'inactive');
+            ->assertJsonPath('data.hosts.0.publication', 'public');
 
         $this->postJson($this->url)
             ->assertOk()
             ->assertJsonPath('data.hosts.0.status', 'active')
             ->assertJsonPath('data.hosts.0.failed_step', null)
-            ->assertJsonPath('data.hosts.0.public_publication', 'active');
+            ->assertJsonPath('data.hosts.0.publication', 'public');
         expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(1);
     });
 
@@ -286,14 +282,14 @@ describe('instance:analytics:enable', function (): void {
 
         $route = Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->sole();
         expect($route->status)->toBe(RouteStatus::Active)
-            ->and($route->public_publication)->toBe(RoutePublicPublication::Inactive)
+            ->and($route->publication)->toBe(RoutePublication::Public)
             ->and($this->edge->calls)->toContain('rollback-public-edge');
 
         $this->postJson($this->url)
             ->assertOk()
             ->assertJsonPath('data.hosts.0.route_id', $route->id)
-            ->assertJsonPath('data.hosts.0.public_publication', 'active');
-        expect($route->refresh()->replacement_step)->toBeNull()
+            ->assertJsonPath('data.hosts.0.publication', 'public');
+        expect($route->refresh()->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
             ->and($this->projector->routeIds)->toBe([$route->id]);
     });
 
@@ -347,7 +343,7 @@ describe('instance:analytics:enable', function (): void {
             ->assertOk()
             ->assertJsonPath('data.enabled', true)
             ->assertJsonPath('data.hosts.0.host', 'analytics.private.example.com')
-            ->assertJsonPath('data.hosts.0.public_publication', 'inactive');
+            ->assertJsonPath('data.hosts.0.publication', 'private');
 
         $tracking = Route::query()
             ->where('kind', RouteKind::AnalyticsTracking->value)
@@ -359,7 +355,7 @@ describe('instance:analytics:enable', function (): void {
             ->and($tracking->node_id)->toBe($owner->node_id)
             ->and($tracking->cluster_id)->toBe($owner->cluster_id)
             ->and($tracking->status)->toBe(RouteStatus::Active)
-            ->and($tracking->public_publication)->toBe(RoutePublicPublication::Inactive)
+            ->and($tracking->publication)->toBe(RoutePublication::Private)
             ->and($this->projector->routeIds)->toContain($tracking->id)
             // A private host never reaches the public edge, so it publishes nothing there.
             ->and($this->edge->calls)->toBe([]);
@@ -441,8 +437,8 @@ describe('instance:analytics:disable', function (): void {
             ->and(RouteAnalyticsTracking::query()->pluck('app_instance_id')->all())->toBe([$other->id])
             ->and($this->edge->calls)->toBe(['remove-public-edge', 'remove-public-edge'])
             ->and($this->removal->events)->toBe([
-                'dns', 'certificates', 'caddy', 'firewall',
-                'dns', 'certificates', 'caddy', 'firewall',
+                'dns', 'caddy', 'certificates', 'firewall',
+                'dns', 'caddy', 'certificates', 'firewall',
             ])
             ->and(Route::query()->whereKey($this->appRoute->id)->exists())->toBeTrue();
 
@@ -526,88 +522,3 @@ describe('guards around a tracking host', function (): void {
             ->and(RouteAnalyticsTracking::query()->count())->toBe(1);
     });
 });
-
-function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cluster, RoleName $role): Node
-{
-    $octet = substr($wireguardIp, strrpos($wireguardIp, '.') + 1);
-    $node = Node::query()->create([
-        'name' => $name,
-        'status' => LifecycleStatus::Active,
-        'platform' => 'linux',
-        'architecture' => 'x86_64',
-        'public_ssh_host' => "192.0.2.{$octet}",
-        'wireguard_ip' => $wireguardIp,
-        'lan_ip' => $cluster instanceof Cluster ? "10.10.0.{$octet}" : null,
-        'cluster_id' => $cluster?->id,
-        'user' => 'orbit',
-    ]);
-    $node->roles()->create([
-        'cluster_id' => in_array($role, [RoleName::Router, RoleName::Ingress], true) ? $cluster?->id : null,
-        'role' => $role,
-        'status' => LifecycleStatus::Active,
-    ]);
-
-    return $node;
-}
-
-function instance_analytics_instance(OrbitApp $app, Node $node, string $name): AppInstance
-{
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
-        'node_id' => $node->id,
-        'name' => $name,
-        'checkout_path' => "/srv/orbit/apps/{$app->slug}/{$name}",
-        'branch' => $name,
-        'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
-        'environment' => 'production',
-        'source_is_laravel' => false,
-        'provisioning_step' => 'active',
-        'production_home' => "/var/www/{$app->slug}-{$name}",
-        'production_user' => "orbit-{$app->slug}",
-        'selected_php_version' => '8.5',
-    ]);
-}
-
-/** A Node holds one production App instance of an App, so every further instance gets a Node of its own. */
-function instance_analytics_extra_instance(string $name): AppInstance
-{
-    static $octet = 60;
-    $octet++;
-
-    return instance_analytics_instance(
-        test()->orbitApp,
-        instance_analytics_node("edge-{$name}", "10.44.0.{$octet}", test()->cluster, RoleName::AppProd),
-        $name,
-    );
-}
-
-function instance_analytics_app_route(
-    AppInstance $instance,
-    string $domain,
-    RoutePublication $publication,
-    bool $activate = true,
-): Route {
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $instance->app_id,
-        domain: $domain,
-        publication: $publication,
-        appInstanceId: $instance->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-
-    if ($activate) {
-        $route->update(['status' => RouteStatus::Active]);
-    }
-
-    return $route->refresh();
-}
-
-final readonly class InstanceAnalyticsProjectionOwner implements DevelopmentProjectionOperationLock
-{
-    public function run(Closure $operation): mixed
-    {
-        return $operation();
-    }
-}

@@ -10,7 +10,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
-use App\Domain\Routes\RoutePublicPublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -116,7 +115,7 @@ describe('analytics tracking Route sites', function (): void {
 
         expect($ingress)
             ->toStartWith("analytics.shop.example.com {\n")
-            ->toContain("tls /etc/caddy/orbit-certificates/route-{$id}-ingress/current/cert.pem")
+            ->not->toContain("tls /etc/caddy/orbit-certificates/route-{$id}-ingress/current/cert.pem")
             ->toContain('reverse_proxy https://10.10.0.20 {')
             ->toContain('header_up Host analytics.shop.example.com')
             ->toContain('header_up X-Forwarded-For {remote_host}')
@@ -140,10 +139,9 @@ describe('analytics tracking Route sites', function (): void {
 
         expect($sites)->toHaveCount(1)
             ->and($sites->sole()->nodeId)->toBe($this->router->id)
-            ->and(new AppDevCaddyConfigRenderer()->render($sites))->toBe(<<<CADDY
+            ->and(new AppDevCaddyConfigRenderer()->render($sites))->toBe(<<<'CADDY'
                 analytics.shop.example.com {
                     bind 0.0.0.0
-                    tls /etc/caddy/orbit-certificates/route-{$id}-ingress/current/cert.pem /etc/caddy/orbit-certificates/route-{$id}-ingress/current/key.pem
                     handle /js/* {
                         reverse_proxy http://10.44.0.40:8000
                     }
@@ -302,12 +300,10 @@ function analytics_projection_node(
 
 function analytics_projection_publish(Route $route): void
 {
-    $route->update(['status' => RouteStatus::Active]);
     $route->update([
-        'public_publication' => RoutePublicPublication::Active,
+        'status' => RouteStatus::Active,
         'replacement_step' => RouteReplacementStep::PublicActivated,
     ]);
-    $route->update(['replacement_step' => null]);
 }
 
 final class AnalyticsProjectionSshExecutor implements SshExecutor

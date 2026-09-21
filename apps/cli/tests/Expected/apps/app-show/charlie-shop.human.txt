@@ -1,11 +1,13 @@
-Fetching App...
-Fetching App instances...
+Fetching Project...
+Fetching Instances...
 
-┌  App: charlie-shop
+┌  Project: charlie-shop
 │
 ├  ID               3
 │
 ├  Name             Charlie shop
+│
+├  Type             laravel-app
 │
 ├  Repository       git@github.com:charlie/shop.git
 │

@@ -55,6 +55,60 @@
       }
     },
     {
+      "name": "analytics-credentials",
+      "title": "Show analytics Stats API credentials",
+      "description": "Returns whether a Plausible Stats API key is stored. The key itself is never returned.",
+      "method": "GET",
+      "path": "/api/v1/analytics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "analytics-credentials-set",
+      "title": "Store the analytics Stats API key",
+      "description": "Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.",
+      "method": "PUT",
+      "path": "/api/v1/analytics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 8
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "api_key"
+        ]
+      }
+    },
+    {
+      "name": "analytics-credentials-unset",
+      "title": "Clear the analytics Stats API key",
+      "description": "Clears the stored Plausible Stats API key.",
+      "method": "DELETE",
+      "path": "/api/v1/analytics/credentials",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "analytics-update",
       "title": "Pin the Plausible version",
       "description": "Pin another Plausible version for the analytics role.",
@@ -81,7 +135,7 @@
     {
       "name": "app-create",
       "title": "Create an App",
-      "description": "Create an app.",
+      "description": "Create an App",
       "method": "POST",
       "path": "/api/v1/apps",
       "path_inputs": [],
@@ -92,14 +146,20 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 255,
-            "description": "Optional display name"
+            "maxLength": 255
           },
           "slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63,
-            "description": "Unique app slug"
+            "maxLength": 63
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "monorepo",
+              "laravel-app",
+              "laravel-package"
+            ]
           },
           "repository_url": {
             "type": "string",
@@ -107,13 +167,11 @@
           },
           "default_branch": {
             "type": "string",
-            "maxLength": 255,
-            "description": "Stored default branch; resolve the remote default when omitted"
+            "maxLength": 255
           },
           "root": {
             "type": "string",
-            "maxLength": 255,
-            "description": "Relative web root"
+            "maxLength": 255
           },
           "defaults": {
             "type": [
@@ -125,6 +183,7 @@
         "additionalProperties": false,
         "required": [
           "slug",
+          "type",
           "repository_url",
           "root"
         ]
@@ -133,7 +192,7 @@
     {
       "name": "app-destroy",
       "title": "Remove an App",
-      "description": "Remove an app.",
+      "description": "Remove an App",
       "method": "DELETE",
       "path": "/api/v1/apps/{app}",
       "path_inputs": [
@@ -159,7 +218,7 @@
     {
       "name": "app-list",
       "title": "List Apps",
-      "description": "List apps.",
+      "description": "List Apps",
       "method": "GET",
       "path": "/api/v1/apps",
       "path_inputs": [],
@@ -548,6 +607,616 @@
       }
     },
     {
+      "name": "app-project-process-definition-create-definition",
+      "title": "Create a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "POST",
+      "path": "/api/v1/projects/{app}/process-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "systemd",
+                  "docker"
+                ]
+              },
+              "command": {
+                "type": "array",
+                "maxItems": 64,
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "maxLength": 255,
+                "description": "Conditionally required."
+              },
+              "working_directory": {
+                "type": "string",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "maxLength": 4096
+              },
+              "environment": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "ports": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                }
+              },
+              "volumes": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "maxLength": 4096
+                    },
+                    "target": {
+                      "type": "string",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "maxLength": 4096
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target"
+                  ]
+                }
+              },
+              "restart_policy": {
+                "type": "string",
+                "enum": [
+                  "never",
+                  "on-failure",
+                  "always",
+                  "unless-stopped"
+                ]
+              },
+              "keep_alive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "command"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-project-process-definition-destroy-definition",
+      "title": "Remove a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{app}/process-definitions/{process_definition}",
+      "path_inputs": [
+        "app",
+        "process_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "process_definition": {
+            "type": "string",
+            "description": "Process definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "process_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-project-process-definition-list-definition",
+      "title": "List process definitions",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/process-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "app-project-process-definition-show-definition",
+      "title": "Show a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/process-definitions/{process_definition}",
+      "path_inputs": [
+        "app",
+        "process_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "process_definition": {
+            "type": "string",
+            "description": "Process definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "process_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-project-process-definition-update-definition",
+      "title": "Replace a process definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "PUT",
+      "path": "/api/v1/projects/{app}/process-definitions/{process_definition}",
+      "path_inputs": [
+        "app",
+        "process_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "process_definition": {
+            "type": "string",
+            "description": "Process definition name, unique within the App."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "systemd",
+                  "docker"
+                ]
+              },
+              "command": {
+                "type": "array",
+                "maxItems": 64,
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "maxLength": 255,
+                "description": "Conditionally required."
+              },
+              "working_directory": {
+                "type": "string",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "maxLength": 4096
+              },
+              "environment": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              },
+              "ports": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "string",
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                }
+              },
+              "volumes": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "maxLength": 4096
+                    },
+                    "target": {
+                      "type": "string",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "maxLength": 4096
+                    },
+                    "read_only": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "target"
+                  ]
+                }
+              },
+              "restart_policy": {
+                "type": "string",
+                "enum": [
+                  "never",
+                  "on-failure",
+                  "always",
+                  "unless-stopped"
+                ]
+              },
+              "keep_alive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "runtime",
+              "command"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "process_definition",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-project-schedule-definition-create-definition",
+      "title": "Create a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "POST",
+      "path": "/api/v1/projects/{app}/schedule-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "calendar": {
+                "type": "string",
+                "pattern": "^[\\x20-\\x7E]+$",
+                "maxLength": 255
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "maximum": 86400,
+                "minimum": 1
+              }
+            },
+            "required": [
+              "command",
+              "calendar",
+              "timeout_seconds"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
+      "name": "app-project-schedule-definition-destroy-definition",
+      "title": "Remove a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+      "path_inputs": [
+        "app",
+        "schedule_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "schedule_definition": {
+            "type": "string",
+            "description": "Schedule definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "schedule_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-project-schedule-definition-list-definition",
+      "title": "List Schedule definitions",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/schedule-definitions",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "app-project-schedule-definition-show-definition",
+      "title": "Show a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+      "path_inputs": [
+        "app",
+        "schedule_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "schedule_definition": {
+            "type": "string",
+            "description": "Schedule definition name, unique within the App."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "schedule_definition"
+        ]
+      }
+    },
+    {
+      "name": "app-project-schedule-definition-update-definition",
+      "title": "Replace a Schedule definition",
+      "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
+      "method": "PUT",
+      "path": "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+      "path_inputs": [
+        "app",
+        "schedule_definition"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "schedule_definition": {
+            "type": "string",
+            "description": "Schedule definition name, unique within the App."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "environments": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "development",
+                "production"
+              ]
+            }
+          },
+          "spec": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "calendar": {
+                "type": "string",
+                "pattern": "^[\\x20-\\x7E]+$",
+                "maxLength": 255
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "maximum": 86400,
+                "minimum": 1
+              }
+            },
+            "required": [
+              "command",
+              "calendar",
+              "timeout_seconds"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "schedule_definition",
+          "name",
+          "environments",
+          "spec"
+        ]
+      }
+    },
+    {
       "name": "app-schedule-create-definition",
       "title": "Create a Schedule definition",
       "description": "App-owned definitions carry the runtime specification that production preparation copies into a new App instance. Changing a definition changes App configuration only.",
@@ -788,7 +1457,7 @@
     {
       "name": "app-show",
       "title": "Show an App",
-      "description": "Show an app.",
+      "description": "Show an App",
       "method": "GET",
       "path": "/api/v1/apps/{app}",
       "path_inputs": [
@@ -814,7 +1483,7 @@
     {
       "name": "app-update",
       "title": "Update an App",
-      "description": "Update an app.",
+      "description": "Update an App",
       "method": "PATCH",
       "path": "/api/v1/apps/{app}",
       "path_inputs": [
@@ -830,11 +1499,18 @@
             "minimum": 1,
             "description": "Numeric App ID."
           },
+          "type": {
+            "type": "string",
+            "enum": [
+              "monorepo",
+              "laravel-app",
+              "laravel-package"
+            ]
+          },
           "slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63,
-            "description": "New App slug"
+            "maxLength": 63
           },
           "repository_url": {
             "type": "string",
@@ -842,18 +1518,17 @@
           },
           "default_branch": {
             "type": "string",
-            "maxLength": 255,
-            "description": "New stored default branch"
+            "maxLength": 255
           },
           "root": {
             "type": "string",
-            "maxLength": 255,
-            "description": "New relative web root"
+            "maxLength": 255
           }
         },
         "additionalProperties": false,
         "required": [
           "app",
+          "type",
           "slug",
           "repository_url",
           "default_branch",
@@ -2224,6 +2899,32 @@
       }
     },
     {
+      "name": "instance-analytics-stats",
+      "title": "Read App instance analytics stats",
+      "description": "Returns live visitors, visitors for Plausible's day, 7-day, and 30-day periods, and the top ten pages for the App instance's tracked site. `available` is false when the analytics role is not active or the App instance has no tracking host. A failed Stats API read is `readable: false` with no visitor numbers.",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/analytics/stats",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-clone",
       "title": "Clone an App instance",
       "description": "Clone a candidate into a prepared production App instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
@@ -2293,6 +2994,9 @@
           "app_id": {
             "type": "integer"
           },
+          "project_id": {
+            "type": "integer"
+          },
           "node_id": {
             "type": "integer"
           },
@@ -2324,7 +3028,6 @@
         },
         "additionalProperties": false,
         "required": [
-          "app_id",
           "node_id",
           "name"
         ]
@@ -2823,6 +3526,9 @@
             "description": "Adopt the checkout and every linked worktree"
           },
           "app_id": {
+            "type": "integer"
+          },
+          "project_id": {
             "type": "integer"
           },
           "app_name": {
@@ -4068,6 +4774,335 @@
       }
     },
     {
+      "name": "project-create",
+      "title": "Create a Project",
+      "description": "Create a project.",
+      "method": "POST",
+      "path": "/api/v1/projects",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Optional display name"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "Unique project slug"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "monorepo",
+              "laravel-app",
+              "laravel-package"
+            ],
+            "description": "Project type (monorepo, laravel-app, or laravel-package)"
+          },
+          "repository_url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "default_branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Stored default branch; resolve the remote default when omitted"
+          },
+          "root": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Relative web root"
+          },
+          "defaults": {
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "type",
+          "repository_url",
+          "root"
+        ]
+      }
+    },
+    {
+      "name": "project-destroy",
+      "title": "Remove a Project",
+      "description": "Remove a project.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{app}",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "project-list",
+      "title": "List Projects",
+      "description": "List projects.",
+      "method": "GET",
+      "path": "/api/v1/projects",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "project-show",
+      "title": "Show a Project",
+      "description": "Show a project.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "project-update",
+      "title": "Update a Project",
+      "description": "Update a project.",
+      "method": "PATCH",
+      "path": "/api/v1/projects/{app}",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric App ID."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "monorepo",
+              "laravel-app",
+              "laravel-package"
+            ],
+            "description": "New Project type"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "maxLength": 63,
+            "description": "New Project slug"
+          },
+          "repository_url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "default_branch": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New stored default branch"
+          },
+          "root": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "New relative web root"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "type",
+          "slug",
+          "repository_url",
+          "default_branch",
+          "root"
+        ]
+      }
+    },
+    {
+      "name": "proxycli-disable",
+      "title": "Disable proxycli",
+      "description": "Stops the collector Process, withdraws collector.proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
+      "method": "DELETE",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-enable",
+      "title": "Enable proxycli",
+      "description": "Deploys one collector Process and publishes https://collector.proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.",
+      "method": "POST",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cache_connection": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Redis Database connection slug for shared Valkey"
+          },
+          "cliproxy_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 512,
+            "description": "CLIProxyAPI Management API origin"
+          },
+          "cliproxy_management_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "cache_connection",
+          "cliproxy_url",
+          "cliproxy_management_key"
+        ]
+      }
+    },
+    {
+      "name": "proxycli-list",
+      "title": "List proxycli providers",
+      "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/providers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-show",
+      "title": "Show a proxycli provider",
+      "description": "Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/providers/{provider}",
+      "path_inputs": [
+        "provider"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "provider"
+        ]
+      }
+    },
+    {
+      "name": "proxycli-status",
+      "title": "Show proxycli status",
+      "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
+      "method": "GET",
+      "path": "/api/v1/proxycli",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-update",
+      "title": "Update a proxycli account",
+      "description": "Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.",
+      "method": "PATCH",
+      "path": "/api/v1/proxycli/accounts/{account}",
+      "path_inputs": [
+        "account"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "disabled": {
+            "type": "boolean",
+            "description": "Disable the account"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "account",
+          "disabled"
+        ]
+      }
+    },
+    {
       "name": "realtime-show",
       "title": "Show the Reverb connection",
       "description": "Returns the Reverb WebSocket URL, app key, and channel name a client needs to subscribe to record-change events, or null values when broadcasting is not configured.",
@@ -4526,6 +5561,235 @@
         "required": [
           "schedule"
         ]
+      }
+    },
+    {
+      "name": "tasks-add",
+      "title": "Add a Task",
+      "description": "Appends one Task to a Task group at the next position. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "title",
+          "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-complete",
+      "title": "Complete a Task group",
+      "description": "Marks a settling Task group completed and removes its shared App instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/complete",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
+      "name": "tasks-create",
+      "title": "Create a Task group",
+      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
+      "method": "POST",
+      "path": "/api/v1/task-groups",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "notify_coder": {
+            "type": "boolean"
+          },
+          "notify_on_settle": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                }
+              },
+              "required": [
+                "title",
+                "brief"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app_id",
+          "title",
+          "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-disable",
+      "title": "Disable Tasks",
+      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, and complete return `tasks.disabled`.",
+      "method": "POST",
+      "path": "/api/v1/tasks/disable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-enable",
+      "title": "Enable Tasks",
+      "description": "Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.",
+      "method": "POST",
+      "path": "/api/v1/tasks/enable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-list",
+      "title": "List Task groups",
+      "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. Returns `tasks.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-groups",
+      "path_inputs": [],
+      "query_inputs": [
+        "app_id",
+        "status"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "reserved",
+              "running",
+              "reviewing",
+              "settling",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-show",
+      "title": "Show a Task group",
+      "description": "Shows one Task group and its Tasks in position order. Returns `tasks.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
+      }
+    },
+    {
+      "name": "tasks-status",
+      "title": "Show Tasks status",
+      "description": "Returns whether the Gateway tasks extension is enabled.",
+      "method": "GET",
+      "path": "/api/v1/tasks/status",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     },
     {

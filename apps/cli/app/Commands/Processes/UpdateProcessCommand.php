@@ -20,7 +20,8 @@ final class UpdateProcessCommand extends ProcessCommand
     #[\Override]
     protected $signature = 'process:update
         {name : Process definition name}
-        {--app= : Numeric App ID}
+        {--project= : Numeric Project ID}
+        {--app= : Numeric Project ID (compatibility)}
         {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
@@ -115,7 +116,7 @@ final class UpdateProcessCommand extends ProcessCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
-                'The --app option is required.',
+                'The --project or --app option is required.',
             );
         }
 

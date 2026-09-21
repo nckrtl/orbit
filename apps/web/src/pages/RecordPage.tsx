@@ -61,7 +61,9 @@ import { type Column, Pane } from "../ui/Pane";
 import { Properties, type Property } from "../ui/Properties";
 import { Status } from "../ui/Status";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
+import { AnalyticsPanel } from "./AnalyticsPanel";
 import { QueuePanel } from "./QueuePanel";
+import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
 
 const GAPS = "gap-x-[1ch] gap-y-[16px]";
@@ -392,7 +394,9 @@ function analyticsProperties(analytics: InstanceAnalytics | undefined): Property
         ...analytics.hosts.map((host, index) => ({
             name: index === 0 ? "Analytics" : "",
             value:
-                host.public_publication === "active" ? host.host : `${host.host} · ${host.status}`,
+                host.status === "active" && host.error_code === null
+                    ? host.host
+                    : `${host.host} · ${host.status}`,
             warn: host.error_code !== null,
             onOpen: host.error_code === null ? () => openInNewTab(host.script_url) : undefined,
         })),
@@ -419,8 +423,8 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
-        // A column, not a grid: the queue panel is only there for an instance with Horizon, and the log takes what is left either way.
-        <div className={`w-full min-w-0 max-w-full flex flex-col md:h-full ${GAPS}`}>
+        // A column, not a grid: analytics and queue panels are only there when available, and the log takes what is left either way.
+        <div className={`w-full min-w-0 max-w-full flex h-full flex-col ${GAPS}`}>
             {/* The deployment history sits beside the properties, and only once there is one. */}
             <div
                 className={`w-full min-w-0 max-w-full flex flex-col md:grid md:max-h-[40vh] ${hasDeployments ? "md:grid-cols-2" : "md:grid-cols-1"} ${GAPS}`}
@@ -496,6 +500,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     target={(row) => ({ kind: "schedules", row })}
                 />
             </div>
+            <AnalyticsPanel instance={instance} />
             <QueuePanel instance={instance} />
             <LogPane
                 title="Application log"
@@ -678,6 +683,10 @@ export function RecordPage() {
         rows.find((row) => String(row.id) === id);
 
     const page = (() => {
+        if (section === "quota") {
+            return <QuotaProviderPage />;
+        }
+
         switch (section) {
             case "nodes": {
                 const node = find(fleet.nodes);

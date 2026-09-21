@@ -83,6 +83,7 @@
               "reference/deployments",
               "reference/instance-logs",
               "reference/instance-queue",
+              "reference/instance-analytics-stats",
               "reference/instance-dependencies",
               "reference/instance-dependency-contracts",
               "reference/appinstance-removal",
@@ -105,7 +106,9 @@
               "reference/metrics",
               "reference/service-metrics",
               "reference/analytics",
+              "reference/proxycli",
               "reference/herdr-sessions",
+              "reference/tasks",
               "reference/local-resolver-overrides",
               "reference/cli-binaries",
               "reference/events",
@@ -135,7 +138,8 @@
               "solutions/migrate-unmanaged-executor-hostname",
               "solutions/sqlite-wal-default",
               "solutions/realtime-reverb",
-              "solutions/relocate-gateway-role"
+              "solutions/relocate-gateway-role",
+              "solutions/cutover-proxycli"
             ]
           }
         ]
@@ -166,6 +170,7 @@
           {
             "group": "Applications",
             "pages": [
+              "cli/project",
               "cli/app",
               "cli/instance",
               "cli/route",
@@ -185,6 +190,7 @@
               "cli/top",
               "cli/extension",
               "cli/herdr",
+              "cli/proxycli",
               "cli/workspace"
             ]
           }
@@ -292,6 +298,9 @@
             "group": "Analytics",
             "openapi": "/openapi.json",
             "pages": [
+              "DELETE /api/v1/analytics/credentials",
+              "GET /api/v1/analytics/credentials",
+              "PUT /api/v1/analytics/credentials",
               "POST /api/v1/analytics/update"
             ]
           },
@@ -307,7 +316,28 @@
             ]
           },
           {
-            "group": "App instances",
+            "group": "Projects",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/projects",
+              "POST /api/v1/projects",
+              "DELETE /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}",
+              "PATCH /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}/process-definitions",
+              "POST /api/v1/projects/{app}/process-definitions",
+              "DELETE /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "PUT /api/v1/projects/{app}/process-definitions/{process_definition}",
+              "GET /api/v1/projects/{app}/schedule-definitions",
+              "POST /api/v1/projects/{app}/schedule-definitions",
+              "DELETE /api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+              "GET /api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+              "PUT /api/v1/projects/{app}/schedule-definitions/{schedule_definition}"
+            ]
+          },
+          {
+            "group": "Instances",
             "openapi": "/openapi.json",
             "pages": [
               "GET /api/v1/deployments/{deployment}",
@@ -323,6 +353,7 @@
               "DELETE /api/v1/instances/{instance}/analytics",
               "GET /api/v1/instances/{instance}/analytics",
               "POST /api/v1/instances/{instance}/analytics",
+              "GET /api/v1/instances/{instance}/analytics/stats",
               "DELETE /api/v1/instances/{instance}/database-connections/{database_connection}",
               "PUT /api/v1/instances/{instance}/database-connections/{database_connection}",
               "GET /api/v1/instances/{instance}/dependencies",
@@ -417,6 +448,20 @@
             ]
           },
           {
+            "group": "Tasks",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/task-groups",
+              "POST /api/v1/task-groups",
+              "GET /api/v1/task-groups/{group}",
+              "POST /api/v1/task-groups/{group}/complete",
+              "POST /api/v1/task-groups/{group}/tasks",
+              "POST /api/v1/tasks/disable",
+              "POST /api/v1/tasks/enable",
+              "GET /api/v1/tasks/status"
+            ]
+          },
+          {
             "group": "Doctor",
             "openapi": "/openapi.json",
             "pages": [
@@ -442,6 +487,18 @@
               "GET /api/v1/herdr/sessions/{session}",
               "POST /api/v1/herdr/sessions/{session}/observation-grants",
               "POST /api/v1/herdr/sessions/{session}/restart"
+            ]
+          },
+          {
+            "group": "proxycli",
+            "openapi": "/openapi.json",
+            "pages": [
+              "DELETE /api/v1/proxycli",
+              "GET /api/v1/proxycli",
+              "POST /api/v1/proxycli",
+              "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/providers",
+              "GET /api/v1/proxycli/providers/{provider}"
             ]
           },
           {
@@ -574,7 +631,16 @@
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
               "decisions/0099-collect-role-specific-service-metrics",
-              "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source"
+              "decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
+              "decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress",
+              "decisions/0102-read-app-instance-analytics-through-a-fleet-driver",
+              "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
+              "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
+              "decisions/0105-name-applications-as-project-and-instance",
+              "decisions/0106-derive-instance-capabilities-from-project-type",
+              "decisions/0107-key-isolation-and-releases-to-node-role",
+              "decisions/0108-persist-managed-environment-on-systemd-processes",
+              "decisions/0109-publish-the-proxycli-collector-on-a-subdomain"
             ]
           }
         ]

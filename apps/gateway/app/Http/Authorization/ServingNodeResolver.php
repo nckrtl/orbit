@@ -273,11 +273,11 @@ final readonly class ServingNodeResolver
         $process = $request->route('process');
 
         if ($process instanceof Process) {
-            return match ($process->owner_type) {
-                AppInstance::class => [Node::query()->findOrFail(
+            return match (true) {
+                AppInstance::isMorphType($process->owner_type) => [Node::query()->findOrFail(
                     AppInstance::query()->findOrFail($process->owner_id)->node_id,
                 )],
-                Node::class => [Node::query()->findOrFail($process->owner_id)],
+                $process->owner_type === Node::class => [Node::query()->findOrFail($process->owner_id)],
                 default => throw new ResourceOperationException(
                     errorCode: 'process.target_unsupported',
                     message: 'The Process owner is not a supported AppInstance or Node.',
@@ -364,9 +364,9 @@ final readonly class ServingNodeResolver
         $schedule = $request->route('schedule');
 
         if ($schedule instanceof Schedule) {
-            return match ($schedule->target_type) {
-                Node::class => [Node::query()->findOrFail($schedule->target_id)],
-                AppInstance::class => [Node::query()->findOrFail(
+            return match (true) {
+                $schedule->target_type === Node::class => [Node::query()->findOrFail($schedule->target_id)],
+                AppInstance::isMorphType($schedule->target_type) => [Node::query()->findOrFail(
                     AppInstance::query()->findOrFail($schedule->target_id)->node_id,
                 )],
                 default => [],

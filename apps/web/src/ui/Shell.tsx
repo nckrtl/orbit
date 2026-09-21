@@ -9,8 +9,8 @@ import { useLiveness, usePollingReason } from "../realtime/liveness";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
-    NAV,
     navFor,
+    useNav,
     SECTION_TITLES,
     SECTIONS,
     type Section,
@@ -27,6 +27,7 @@ declare const __ORBIT_GATEWAY__: string | null;
 function Sidebar({ section, id }: { section: Section; id: string | undefined }) {
     const go = useGo();
     const fleet = useFleet();
+    const nav = useNav();
     const hovered = useUi((state) => state.hover === "nav" && state.focus === null);
     const totals = counts(fleet);
     const active = navFor(section, id, fleet);
@@ -38,8 +39,9 @@ function Sidebar({ section, id }: { section: Section; id: string | undefined }) 
             className="w-[18ch]"
             onMouseDown={() => ui.set({ hover: "nav", focus: null })}
         >
-            {NAV.map((key) => {
-                const [count, warn] = key === "dashboard" ? [null, 0] : totals[key];
+            {nav.map((key) => {
+                const [count, warn] =
+                    key === "dashboard" || key === "quota" ? [null, 0] : totals[key];
 
                 return (
                     <div
@@ -64,7 +66,7 @@ function Sidebar({ section, id }: { section: Section; id: string | undefined }) 
     );
 }
 
-function footerHint(section: Section, onList: boolean, onForm: boolean): string {
+function footerHint(section: Section, onList: boolean, onForm: boolean, navCount: number): string {
     const { menu, focus } = ui.get();
 
     if (menu !== null) {
@@ -85,13 +87,14 @@ function footerHint(section: Section, onList: boolean, onForm: boolean): string 
         return "←→ sidebar or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions";
     }
 
-    return `↑↓ sections · → into the page · 1-4 jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
+    return `↑↓ sections · → into the page · 1-${navCount} jump${section === "nodes" ? " · c or + create" : ""}${FILTERED_SECTIONS.includes(section) ? " · n/p filters" : ""}`;
 }
 
 /** The screen: the sidebar beside the open page, and one footer line with the key hints and the Gateway's WebSocket status. */
 export function Shell() {
     const liveness = useLiveness();
     const pollingReason = usePollingReason();
+    const nav = useNav();
     const { pathname } = useLocation();
     const [first, second] = pathname.split("/").filter(Boolean);
     const section = (SECTIONS as readonly string[]).includes(first ?? "")
@@ -256,7 +259,12 @@ export function Shell() {
             </div>
             <footer className="flex gap-[2ch] whitespace-nowrap px-[1ch] text-dim">
                 <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">
-                    {footerHint(section, second === undefined, pathname === "/nodes/create")}
+                    {footerHint(
+                        section,
+                        second === undefined,
+                        pathname === "/nodes/create",
+                        nav.length,
+                    )}
                     {message !== "" && <span className="selectable text-fg"> │ {message}</span>}
                 </span>
                 <span className="flex items-center gap-[1ch]">

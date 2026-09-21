@@ -282,7 +282,7 @@ it('records seven sanitized operator Activities and no completion Activity', fun
 
     foreach ($activities->where('command', '!=', 'schedule:list') as $activity) {
         expect(data_get($activity->properties, 'schedule.id'))->toBe($scheduleId)
-            ->and($activity->subject_type)->toBe(AppInstance::class)
+            ->and($activity->subject_type)->toBe('instance')
             ->and($activity->subject_id)->toBe($this->instance->id)
             ->and($activity->target_node_id)->toBe($this->targetNode->id);
     }

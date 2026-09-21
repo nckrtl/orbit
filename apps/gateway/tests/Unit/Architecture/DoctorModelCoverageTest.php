@@ -38,6 +38,8 @@ use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
+use App\Models\Task;
+use App\Models\TaskGroup;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -84,6 +86,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppUpdate::class,
         DatabaseUser::class,
         HerdrObservationNonce::class,
+        Task::class,
+        TaskGroup::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

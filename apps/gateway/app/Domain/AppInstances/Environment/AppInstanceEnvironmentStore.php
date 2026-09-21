@@ -246,6 +246,22 @@ final readonly class AppInstanceEnvironmentStore
         });
     }
 
+    public function forceAppProdLaravelMode(AppInstance $target): void
+    {
+        $target->loadMissing('node.roles');
+
+        if (! $target->placedOnAppProd()) {
+            return;
+        }
+
+        foreach (['APP_ENV' => 'production', 'APP_DEBUG' => 'false'] as $key => $value) {
+            AppInstanceEnvironmentValue::query()->updateOrCreate(
+                ['app_instance_id' => $target->id, 'env_key' => $key],
+                ['env_value' => $value],
+            );
+        }
+    }
+
     public function cloneSynchronizationCapacity(AppInstanceEnvironmentContext $expected): int
     {
         /** @var int $requiredCapacity */

@@ -28,7 +28,7 @@ final readonly class ScheduleTargetUseGuard
     {
         if (
             Schedule::query()
-                ->where('target_type', AppInstance::class)
+                ->whereIn('target_type', AppInstance::morphTypes())
                 ->where('target_id', $instance->id)
                 ->exists()
         ) {

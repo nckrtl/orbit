@@ -6,6 +6,8 @@ import type {
     ManagedFirewallRule,
     Node,
     Process,
+    QuotaAccount,
+    QuotaProvider,
     Schedule,
 } from "../api/types";
 
@@ -73,6 +75,33 @@ export function createDemoGateway() {
     const instances = list<Instance>("GET /api/v1/instances");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
     const trackedInstances = new Set<string>();
+    const quotaAccounts: QuotaAccount[] = [
+        {
+            id: "plus.json",
+            provider: "codex",
+            label: "plus",
+            disabled: false,
+            status: "ok",
+            windows: [
+                {
+                    label: "7d",
+                    used_percent: 40,
+                    remaining_percent: 60,
+                    resets_at: "2026-09-27T00:00:00Z",
+                },
+                { label: "5h", used_percent: 10, remaining_percent: 90, resets_at: null },
+            ],
+            error: null,
+        },
+    ];
+    const quotaProviders = (): QuotaProvider[] => [
+        {
+            provider: "codex",
+            windows: quotaAccounts[0]?.windows ?? [],
+            accounts: quotaAccounts,
+        },
+    ];
+    let proxycliEnabled = false;
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
     const nodeById = (id: string): Node | undefined =>
@@ -157,6 +186,68 @@ export function createDemoGateway() {
 
     const routes: [Method, RegExp, (params: string[], body: Record<string, unknown>) => Answer][] =
         [
+            [
+                "GET",
+                /^\/api\/v1\/proxycli$/,
+                () =>
+                    ok({
+                        enabled: proxycliEnabled,
+                        hostname: "collector.proxycli.orbit",
+                        node_id: proxycliEnabled ? 2 : null,
+                        cache_connection: proxycliEnabled ? "valkey" : null,
+                        collected_at: proxycliEnabled ? "2026-09-20T12:00:00Z" : null,
+                    }),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/proxycli\/providers$/,
+                () =>
+                    proxycliEnabled
+                        ? ok(quotaProviders())
+                        : failure(409, "proxycli.disabled", "The proxycli extension is disabled."),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/proxycli\/providers\/([^/]+)$/,
+                ([provider = ""]) => {
+                    if (!proxycliEnabled) {
+                        return failure(
+                            409,
+                            "proxycli.disabled",
+                            "The proxycli extension is disabled.",
+                        );
+                    }
+
+                    const pool = quotaProviders().find((row) => row.provider === provider);
+
+                    return pool === undefined ? notFound("Provider") : ok(pool);
+                },
+            ],
+            [
+                "PATCH",
+                /^\/api\/v1\/proxycli\/accounts\/([^/]+)$/,
+                ([account = ""], body) => {
+                    if (!proxycliEnabled) {
+                        return failure(
+                            409,
+                            "proxycli.disabled",
+                            "The proxycli extension is disabled.",
+                        );
+                    }
+
+                    const row = quotaAccounts.find(
+                        (candidate) => candidate.id === decodeURIComponent(account),
+                    );
+
+                    if (row === undefined) {
+                        return notFound("Account");
+                    }
+
+                    row.disabled = body.disabled === true;
+
+                    return ok(row);
+                },
+            ],
             ["GET", /^\/api\/v1\/realtime$/, () => ok(recordedFixture("unconfigured").body.data)],
             ["GET", /^\/api\/v1\/nodes$/, () => ok(nodes)],
             ["GET", /^\/api\/v1\/apps$/, () => ok(list("GET /api/v1/apps"))],
@@ -211,6 +302,44 @@ export function createDemoGateway() {
                             : [],
                     ),
             ],
+            [
+                "GET",
+                /^\/api\/v1\/instances\/(\d+)\/analytics\/stats$/,
+                ([id = ""]) => {
+                    if (!trackedInstances.has(id)) {
+                        return ok({ available: false });
+                    }
+
+                    const domain =
+                        instances.find((candidate) => String(candidate.id) === id)?.domain ?? null;
+
+                    // Instance 2 is the fixture instance without Horizon; use it for the failed read.
+                    if (id === "2") {
+                        return ok({
+                            available: true,
+                            readable: false,
+                            driver: "plausible_ce",
+                            site_domain: domain,
+                            error_code: "analytics.stats_key_missing",
+                            error: "No Plausible Stats API key is stored. Create one in Plausible and store it with analytics:credentials.",
+                        });
+                    }
+
+                    return ok({
+                        available: true,
+                        readable: true,
+                        driver: "plausible_ce",
+                        site_domain: domain,
+                        live_visitors: 2,
+                        visitors: { past_24h: 18, past_7d: 91, past_30d: 340 },
+                        pages: [
+                            { path: "/", visitors: 120 },
+                            { path: "/pricing", visitors: 40 },
+                            { path: "/docs", visitors: 18 },
+                        ],
+                    });
+                },
+            ],
             ...(["GET", "POST", "DELETE"] as const).map(
                 (method): [Method, RegExp, (match: string[]) => Answer] => [
                     method,
@@ -237,7 +366,7 @@ export function createDemoGateway() {
                                           host,
                                           route_id: 900 + Number(id),
                                           status: "active",
-                                          public_publication: "active",
+                                          publication: "public",
                                           failed_step: null,
                                           error_code: null,
                                           script_url: `https://${host}/js/script.js`,
@@ -460,5 +589,11 @@ export function createDemoGateway() {
         );
     };
 
-    return { transport, requests };
+    return {
+        transport,
+        requests,
+        enableProxyCli(): void {
+            proxycliEnabled = true;
+        },
+    };
 }

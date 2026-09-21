@@ -55,6 +55,14 @@ App instance commands manage App instances and Routes. Runtime publication, Cadd
 
 A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server on a Node. Orbit can manage its process or adopt an existing server whose lifecycle stays external. Both modes let Commander view recorded panes through temporary, read-only `terminal.observe` access.
 
+## Tasks
+
+The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared App instance. After MCP create, the Gateway claims the group, provisions that instance on an `app-dev` Node, and starts T3 reviewer and implementer threads on the instance-owning Node. After the last sign-off it opens the pull request, fills settle metrics, and posts the opt-in Coder webhook. `tasks:complete` removes the instance after merge. Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the boundary.
+
+## proxycli
+
+The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://collector.proxycli.orbit` for CodexBar. The Orbit web app reads the same snapshot. Apex `proxycli.orbit` stays free for a CLIProxyAPI management Route. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) owns the hostname split.
+
 ## Database connections
 
 The Gateway stores named MySQL, PostgreSQL, SQLite, and Redis connections. Register a host or SQLite path, or create a MySQL user and database through a Node Docker Process and register that connection, then attach the connection to an App instance to populate its stored environment. Registration needs no `database` role. Node processes manage database containers. Query, tables, schema, and describe use PDO for mysql, pgsql, and sqlite: mysql and pgsql on the Gateway, sqlite on the owning Node through a hidden Orbit CLI command. Redis has no PDO inspector, so those commands refuse a redis connection. See [Database connections](/reference/database-connections) and [ADR 0081](/decisions/0081-query-registered-databases-through-pdo).

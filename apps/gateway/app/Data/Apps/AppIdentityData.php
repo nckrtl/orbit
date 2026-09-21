@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Data\Apps;
 
+use App\Domain\Projects\ProjectType;
 use App\Models\App;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** The identity of a related App, so a client can name it without a second request. */
+/** The identity of a related Project, so a client can name it without a second request. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppIdentityData extends Data
 {
@@ -17,10 +18,11 @@ final class AppIdentityData extends Data
         public int $id,
         public string $name,
         public string $slug,
+        public ProjectType $type,
     ) {}
 
     public static function fromModel(App $app): self
     {
-        return new self(id: $app->id, name: $app->name, slug: $app->slug);
+        return new self(id: $app->id, name: $app->name, slug: $app->slug, type: $app->type);
     }
 }

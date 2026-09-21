@@ -254,7 +254,7 @@ final readonly class CommandActivityTargetResolver
         }
 
         return OrbitProcess::query()
-            ->where('owner_type', $type->modelClass())
+            ->whereIn('owner_type', $type->storedTypes())
             ->where('owner_id', $request->integer('target_id'))
             ->where('name', $name)
             ->first();
@@ -282,9 +282,9 @@ final readonly class CommandActivityTargetResolver
         }
 
         if ($process instanceof OrbitProcess) {
-            return match ($process->owner_type) {
-                AppInstance::class => AppInstance::query()->find($process->owner_id),
-                Node::class => Node::query()->find($process->owner_id),
+            return match (true) {
+                AppInstance::isMorphType($process->owner_type) => AppInstance::query()->find($process->owner_id),
+                $process->owner_type === Node::class => Node::query()->find($process->owner_id),
                 default => null,
             };
         }
@@ -314,9 +314,9 @@ final readonly class CommandActivityTargetResolver
         }
 
         if ($schedule instanceof Schedule) {
-            return match ($schedule->target_type) {
-                Node::class => Node::query()->find($schedule->target_id),
-                AppInstance::class => AppInstance::query()->find($schedule->target_id),
+            return match (true) {
+                $schedule->target_type === Node::class => Node::query()->find($schedule->target_id),
+                AppInstance::isMorphType($schedule->target_type) => AppInstance::query()->find($schedule->target_id),
                 default => null,
             };
         }

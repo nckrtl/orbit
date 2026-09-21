@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { proxycliStatusQuery } from "../api/queries";
 import type { AnyRecord, Deployment, Kind } from "../api/types";
 import { ui } from "./store";
 
@@ -12,16 +14,24 @@ export const SECTIONS = [
     "schedules",
     "databases",
     "firewall",
+    "quota",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
-/** The sections the sidebar lists. The others have no list of their own: their records open from what owns them. */
+/** The sections the sidebar lists while proxycli is disabled. Quota is appended only after fleet enable. */
 export const NAV = [
     "dashboard",
     "nodes",
     "apps",
     "databases",
 ] as const satisfies readonly Section[];
+
+/** Sidebar entries for this Gateway: the default four, plus Quota while the fleet feature is on. */
+export function useNav(): readonly Section[] {
+    const enabled = useQuery(proxycliStatusQuery).data?.enabled === true;
+
+    return enabled ? [...NAV, "quota"] : NAV;
+}
 
 type Owned = { id: number | string; target_type: string };
 
@@ -33,7 +43,7 @@ export function navFor(
     section: Section,
     id: string | undefined,
     owned: { processes: Owned[]; schedules: Owned[] },
-): (typeof NAV)[number] {
+): Section {
     switch (section) {
         case "instances":
             return "apps";
@@ -58,6 +68,7 @@ export const SECTION_TITLES: Record<Section, string> = {
     schedules: "Schedules",
     databases: "Databases",
     firewall: "Firewall",
+    quota: "Quota",
 };
 
 export const FILTERED_SECTIONS: readonly string[] = ["instances", "processes", "schedules"];
@@ -75,6 +86,13 @@ export function useGo() {
                 void (section === "dashboard"
                     ? router.navigate({ to: "/" })
                     : router.navigate({ to: "/$section", params: { section } }));
+            },
+            quota(provider: string): void {
+                reset();
+                void router.navigate({
+                    to: "/$section/$id",
+                    params: { section: "quota", id: provider },
+                });
             },
             record(kind: Kind, row: AnyRecord): void {
                 reset();

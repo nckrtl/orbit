@@ -110,8 +110,15 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
 
                     if [ -n "$branch_override" ]; then
                         branch=$branch_override
-                        source_ref="refs/remotes/origin/$branch"
-                        git -C "$checkout" show-ref --verify --quiet "$source_ref"
+                        if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+                            source_ref="refs/remotes/origin/$branch"
+                        elif [ "$instance_name" != default ] && [ "$branch_override" = "$instance_name" ]; then
+                            source_ref="refs/remotes/origin/$default_branch"
+                            git -C "$checkout" show-ref --verify --quiet "$source_ref"
+                        else
+                            source_ref="refs/remotes/origin/$branch"
+                            git -C "$checkout" show-ref --verify --quiet "$source_ref"
+                        fi
                     elif [ "$instance_name" = default ]; then
                         branch=$default_branch
                         source_ref="refs/remotes/origin/$branch"

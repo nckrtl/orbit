@@ -132,14 +132,32 @@ stage_phar="$stage_cli_dir/builds/orbit.phar"
 mkdir -p "$cli_dir/builds"
 cp "$stage_phar" "$cli_dir/builds/orbit.phar"
 
-(
-    cd "$cli_dir"
-    "$phpacker_bin" build "$platform" "$architecture" \
-        --src=./builds/orbit.phar \
-        --dest=./builds/dist \
-        --php=8.5 \
-        --no-interaction
-)
+# PHPacker reads $_ENV['GITHUB_TOKEN'] when it asks GitHub for php-bin.
+# PHP only fills $_ENV when variables_order includes E. A token also
+# avoids the unauthenticated rate limit that fails hosted linux-x64 builds.
+if [ -n "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+    export GITHUB_TOKEN="$GH_TOKEN"
+fi
+
+phpacker_build() {
+    (
+        cd "$cli_dir"
+        php -d variables_order=EGPCS "$phpacker_bin" build "$platform" "$architecture" \
+            --src=./builds/orbit.phar \
+            --dest=./builds/dist \
+            --php=8.5 \
+            --no-interaction
+    )
+}
+
+attempt=1
+until phpacker_build; do
+    if [ "$attempt" -ge 4 ]; then
+        fail "PHPacker failed to fetch php-bin after ${attempt} attempts."
+    fi
+    sleep $((attempt * 4))
+    attempt=$((attempt + 1))
+done
 
 binary_path="$dist_root/${platform}/${platform}-${architecture}"
 

@@ -72,11 +72,15 @@ final readonly class AddScheduleAction
 
         /** @var array{schedule: Schedule, created: bool} $admission */
         $admission = DB::transaction(function () use ($data, $target): array {
-            $schedule = Schedule::query()->firstOrNew([
-                'target_type' => $data->targetType->modelClass(),
-                'target_id' => $data->targetId,
-                'name' => $data->name,
-            ]);
+            $schedule = Schedule::query()
+                ->whereIn('target_type', $data->targetType->storedTypes())
+                ->where('target_id', $data->targetId)
+                ->where('name', $data->name)
+                ->first() ?? new Schedule([
+                    'target_type' => $data->targetType->storedType(),
+                    'target_id' => $data->targetId,
+                    'name' => $data->name,
+                ]);
             $created = ! $schedule->exists;
 
             if ($schedule->exists && ! $this->matches($schedule, $data)) {
@@ -156,7 +160,7 @@ final readonly class AddScheduleAction
     private function matches(Schedule $schedule, #[SensitiveParameter] AddScheduleData $data): bool
     {
         return
-            $schedule->target_type === $data->targetType->modelClass()
+            in_array($schedule->target_type, $data->targetType->storedTypes(), true)
             && $schedule->target_id === $data->targetId
             && $schedule->name === $data->name
             && hash_equals($schedule->calendar, $data->calendar)

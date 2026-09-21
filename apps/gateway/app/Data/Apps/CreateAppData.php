@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Apps;
 
+use App\Domain\Projects\ProjectType;
+
 final readonly class CreateAppData
 {
     /**
@@ -12,6 +14,7 @@ final readonly class CreateAppData
     public function __construct(
         public string $name,
         public string $slug,
+        public ProjectType $type,
         public string $repositoryUrl,
         public ?string $defaultBranch,
         public string $root,

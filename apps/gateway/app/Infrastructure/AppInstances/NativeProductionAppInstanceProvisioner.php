@@ -37,7 +37,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         if (
             $existing instanceof AppInstance
             && $existing->status === AppInstanceState::Active
-            && $existing->environment === 'production'
+            && $existing->placedOnAppProd()
         ) {
             $expectedUser = "orbit-app-{$app->id}";
             $expectedHome = "/home/{$expectedUser}";
@@ -83,7 +83,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         }
 
         if (
-            $appInstance->environment !== 'production'
+            ! $appInstance->placedOnAppProd()
             || $appInstance->node_id !== $node->id
             || $appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value
             || $appInstance->checkout_path !== $expectedCheckout
