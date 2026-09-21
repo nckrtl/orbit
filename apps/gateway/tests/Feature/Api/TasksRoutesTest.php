@@ -190,7 +190,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
 
     $added = $this->postJson("/api/v1/task-groups/{$id}/tasks", [
         'title' => 'Scheduler',
-        'brief' => 'Claim under ceilings. Accept when the third group stays queued.',
+        'brief' => 'Claim under the Node ceiling. Accept when more than three groups on the same App activate.',
     ]);
 
     $added
@@ -202,7 +202,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Reserved);
 });
 
-it('leaves a fourth create queued when the App already has three active groups', function (): void {
+it('reserves a fourth create when the App already has three active groups', function (): void {
     tasks_gateway();
     enable_tasks();
     $app = tasks_app('full-create');
@@ -218,10 +218,10 @@ it('leaves a fourth create queued when the App already has three active groups',
     $this->postJson('/api/v1/task-groups', [
         'app_id' => $app->id,
         'title' => 'Four',
-        'brief' => 'Must wait for a ceiling slot.',
+        'brief' => 'Must not wait for a Project ceiling.',
     ])
         ->assertCreated()
-        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.status', 'reserved')
         ->assertJsonPath('data.title', 'Four');
 });
 

@@ -89,10 +89,9 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 | Ceiling | Limit |
 | --- | --- |
-| Active groups per Project | 3 |
 | Active groups per Node | 10 |
 
-A group without an Instance counts toward the Project ceiling only. The Node ceiling applies once `taskable` points at an Instance on that Node.
+There is no per-Project ceiling. Many groups on the same Project can activate until a Node reaches ten active groups. A group without an Instance can activate. The Node ceiling applies once `taskable` points at an Instance on that Node.
 
 A claimed group moves from `queued` to `reserved`. InstanceProvisioning then assigns the shared Instance on an active Linux `app-dev` Node that still has capacity. When that assignment fits the Node ceiling, the group becomes `running`, AgentSpawner starts the long-lived reviewer and the first implementer, and the Gateway stores the thread ids. When no eligible Node exists, or T3 refuses `project.create` or `thread.create`, the group stays `reserved` or `running` without thread ids. After a successful `thread.create`, a refused `thread.turn.start` still stores the thread id.
 

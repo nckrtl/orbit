@@ -94,7 +94,7 @@ function queued_group(OrbitApp $app, string $title, ?AppInstance $instance = nul
     return $group->fresh(['tasks', 'taskable']) ?? $group;
 }
 
-it('reserves the oldest queued group that still fits the App ceiling', function (): void {
+it('reserves more than three queued groups on the same App', function (): void {
     $app = scheduler_app('ceiling-app');
     $first = queued_group($app, 'One');
     $second = queued_group($app, 'Two');
@@ -107,12 +107,11 @@ it('reserves the oldest queued group that still fits the App ceiling', function 
         ->and($first->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
         ->and($scheduler->claimNext()?->id)->toBe($second->id)
         ->and($scheduler->claimNext()?->id)->toBe($third->id)
-        ->and($scheduler->claimNext())->toBeNull()
-        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Queued)
-        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(TaskCeilings::PerApp);
+        ->and($scheduler->claimNext()?->id)->toBe($fourth->id)
+        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
 });
 
-it('does not count completed groups toward the App ceiling', function (): void {
+it('does not keep a queued group waiting when existing groups on the App are completed', function (): void {
     $app = scheduler_app('completed-app');
     TaskGroup::query()->create([
         'app_id' => $app->id,
@@ -126,7 +125,7 @@ it('does not count completed groups toward the App ceiling', function (): void {
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
 });
 
-it('keeps a fourth group queued when three reserved groups already occupy the App', function (): void {
+it('reserves a fourth group when three reserved groups already occupy the App', function (): void {
     $app = scheduler_app('full-app');
     foreach (['A', 'B', 'C'] as $title) {
         TaskGroup::query()->create([
@@ -138,7 +137,30 @@ it('keeps a fourth group queued when three reserved groups already occupy the Ap
     }
     $queued = queued_group($app, 'Overflow');
 
-    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+    expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($queued->id)
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
+});
+
+it('keeps a queued group on the same App waiting when the Node is at the ceiling', function (): void {
+    $app = scheduler_app('same-app-node');
+    $node = scheduler_node('same-app-node', '10.44.0.96');
+
+    foreach (range(1, TaskCeilings::PerNode) as $index) {
+        $placed = scheduler_instance($app, $node, "same-slot-{$index}");
+        $group = TaskGroup::query()->create([
+            'app_id' => $app->id,
+            'title' => "Active {$index}",
+            'brief' => 'Occupies the node',
+            'status' => TaskGroupStatus::Running,
+        ]);
+        $group->taskable()->associate($placed);
+        $group->save();
+    }
+
+    $queued = queued_group($app, 'Blocked', scheduler_instance($app, $node, 'overflow'));
+
+    expect(app(TaskConcurrencyGuard::class)->activeForNode($node->id))->toBe(TaskCeilings::PerNode)
+        ->and(app(TaskScheduler::class)->claimNext())->toBeNull()
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
 });
 

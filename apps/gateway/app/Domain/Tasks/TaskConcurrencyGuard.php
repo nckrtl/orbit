@@ -12,10 +12,6 @@ final readonly class TaskConcurrencyGuard
 {
     public function canActivate(TaskGroup $group): bool
     {
-        if ($this->activeForApp($group->app_id, $group->id) >= TaskCeilings::PerApp) {
-            return false;
-        }
-
         $nodeId = $this->nodeId($group);
 
         if ($nodeId === null) {
@@ -23,13 +19,6 @@ final readonly class TaskConcurrencyGuard
         }
 
         return $this->activeForNode($nodeId, $group->id) < TaskCeilings::PerNode;
-    }
-
-    public function activeForApp(int $appId, ?int $exceptGroupId = null): int
-    {
-        return $this->activeQuery($exceptGroupId)
-            ->where('app_id', $appId)
-            ->count();
     }
 
     public function activeForNode(int $nodeId, ?int $exceptGroupId = null): int

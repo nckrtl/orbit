@@ -642,7 +642,8 @@
               "decisions/0106-derive-instance-capabilities-from-project-type",
               "decisions/0107-key-isolation-and-releases-to-node-role",
               "decisions/0108-persist-managed-environment-on-systemd-processes",
-              "decisions/0109-publish-the-proxycli-collector-on-a-subdomain"
+              "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
+              "decisions/0110-limit-task-activation-to-ten-groups-per-node"
             ]
           }
         ]
