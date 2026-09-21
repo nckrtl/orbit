@@ -437,8 +437,8 @@ describe('instance:analytics:disable', function (): void {
             ->and(RouteAnalyticsTracking::query()->pluck('app_instance_id')->all())->toBe([$other->id])
             ->and($this->edge->calls)->toBe(['remove-public-edge', 'remove-public-edge'])
             ->and($this->removal->events)->toBe([
-                'dns', 'certificates', 'caddy', 'firewall',
-                'dns', 'certificates', 'caddy', 'firewall',
+                'dns', 'caddy', 'certificates', 'firewall',
+                'dns', 'caddy', 'certificates', 'firewall',
             ])
             ->and(Route::query()->whereKey($this->appRoute->id)->exists())->toBeTrue();
 
