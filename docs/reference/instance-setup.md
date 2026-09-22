@@ -17,7 +17,7 @@ Record each command on the Project before creating an Instance.
 
 ```bash
 orbit instance:setup-step:create install-php --project=4 --command='composer install --no-interaction'
-orbit instance:setup-step:create install-js --project=4 --command='npm ci' --after=install-php
+orbit instance:setup-step:create install-js --project=4 --command='vp install' --after=install-php
 orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f database/database.sqlite'
 ```
 
@@ -41,17 +41,19 @@ orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f dat
 | `timeout_seconds` | Whole seconds from 1 through 900. The default is 600. |
 | `before`, `after` | Exclusive placement by step name within the same list. Omit both to append. |
 
-The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 900 seconds, or a list whose timeouts sum to more than 3,600 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total. Authorized reads return commands. Activity records omit command text and command output.
+The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 900 seconds, or a list whose timeouts sum to more than 3,600 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total. The API command also has a shared 900-second deadline, including provisioning and cleanup. A configured list total does not extend that deadline. Keep normal setup and teardown comfortably below it. Authorized reads return commands. Activity records omit command text and command output.
 
 An empty list skips that phase.
 
 ## Run setup
 
-`instance:create` runs the setup list after the source, PHP selection, Laravel URL configuration, and Route are ready. Each command runs from the instance directory on the Instance Node, through the fixed non-interactive shell used for deploy steps, as the Node's managed runtime user. Orbit runs the list from the first step. Command output follows the [deployment command output limits](/reference/deployments#use-deployment-commands).
+`instance:create` runs the setup list after the source, PHP selection, Laravel URL configuration, and Route are ready. Each command runs from the instance directory on the Instance Node, through the fixed non-interactive shell used for deploy steps, as the Node's managed runtime user. Orbit runs the list from the first step. Commands travel through protected standard input. Their output is discarded; errors name the failed step. A timeout stops the command process group before Orbit continues. Commands must not detach background processes.
+
+Setup holds the same source and environment operation locks as removal. A second operation waits, then checks the current Instance state.
 
 The first command that exits non-zero or times out stops the remaining setup commands. Orbit then runs the full teardown list, including when setup stopped before the last step. It then removes the Instance and deletes the checkout created for that attempt, including a dirty or unpublished tree. A teardown command that fails during this removal does not keep the Instance. The command exits non-zero with `instance.setup_step_failed` and the setup step name. When a teardown command also failed, the error includes that teardown step name.
 
-The failed attempt leaves no Instance. The next `instance:create` starts on an empty placement. Provisioning checkpoints before setup still resume. A setup failure is not one of those checkpoints.
+When command failure and cleanup are confirmed, the failed attempt leaves no Instance. A lost SSH connection, an exhausted API deadline, or a cleanup failure retains the Instance and reports an unconfirmed outcome or incomplete cleanup. Inspect it before retrying. The Instance records setup as failed; `instance:create` refuses to report success until `instance:setup` succeeds. The next `instance:create` starts on an empty placement. Provisioning checkpoints before setup still resume. A setup failure is not one of those checkpoints.
 
 An identical `instance:create` for an Instance that is already active returns that Instance and does not run setup.
 
@@ -61,13 +63,13 @@ An identical `instance:create` for an Instance that is already active returns th
 orbit instance:setup <instance>
 ```
 
-`instance:setup` runs the current setup list against one development Instance, from the first step. A failed command leaves the Instance in place and returns `instance.setup_step_failed`.
+`instance:setup` runs the current setup list against one active development Instance, from the first step. A failed command leaves the Instance in place and returns `instance.setup_step_failed`.
 
 `instance:clone` does not run the setup list.
 
 ## Run teardown
 
-`instance:destroy` of a development Instance confirms removal and preflights the source under the [removal rules](/reference/appinstance-removal). After preflight accepts the source, Orbit runs the teardown list from the instance directory. It then deletes the Route, source, and Instance record.
+`instance:destroy` of a development Instance confirms removal and preflights the source under the [removal rules](/reference/appinstance-removal). After preflight accepts the source, Orbit runs the teardown list from the instance directory. After teardown, Orbit checks the same source ownership again and captures a fresh removal snapshot before deleting the Route, source, and Instance record. Teardown may remove application files, but must preserve the checkout, its Git identity, and its registered worktree set. Each member of a forced checkout removal runs its own teardown list.
 
 The first teardown command that exits non-zero or times out stops removal. The Route, source, and Instance record stay. The command exits non-zero with `instance.teardown_step_failed` and the step name. Fix the command, or destroy that step, then run `instance:destroy` again.
 
@@ -79,5 +81,5 @@ These codes identify the command that failed. The surrounding sections state whe
 
 | Code | Result |
 | --- | --- |
-| `instance.setup_step_failed` | A setup command exited non-zero or timed out. After `instance:create`, the Instance has been removed. After `instance:register --setup` or `instance:setup`, the Instance remains. |
+| `instance.setup_step_failed` | A setup command failed or timed out. Create triggers cleanup when execution is confirmed; register and explicit setup retain the Instance. |
 | `instance.teardown_step_failed` | A teardown command exited non-zero or timed out during `instance:destroy`. The Instance remains. |

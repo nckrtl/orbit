@@ -31,10 +31,8 @@ trait RendersLifecycleSteps
         return $this->stringArgument('name', 'Step name', 'lifecycle_step.name_required');
     }
 
-    protected function lifecycleTimeout(): int|false|null
+    protected function lifecycleTimeout(mixed $timeout): int|false|null
     {
-        $timeout = $this->option('timeout');
-
         if ($timeout === null) {
             return null;
         }

@@ -25,6 +25,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -43,9 +44,11 @@ use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 
@@ -73,6 +76,46 @@ beforeEach(function (): void {
         $this->orb183Content,
         app(RouteStateResolver::class),
     );
+});
+
+it('captures teardown file changes after normal source preflight', function (): void {
+    $instance = orb181_coordinator_instance();
+    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
+        expect($this->orb181Inspector->calls)->not->toBeEmpty();
+        $this->orb181Inspector->contentVersions[$instance->id] = 1;
+        $this->orb181Inspector->normalUnsafeIds[] = $instance->id;
+
+        return 0;
+    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $removal = $this->orb181Coordinator->execute($instance, false);
+    expect($removal->status->value)->toBe('completed')->and($transport->inputs)->toHaveCount(1);
+});
+
+it('refuses source identity changes made by teardown', function (): void {
+    $instance = orb181_coordinator_instance();
+    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
+        $this->orb181Inspector->observedCommits[$instance->id] = str_repeat('b', 40);
+
+        return 0;
+    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
+        ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
+});
+
+it('keeps the route and checkout after a teardown command fails', function (): void {
+    $instance = orb181_coordinator_instance();
+    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: static fn (): int => 1);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
+        ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and($instance->routes()->count())->toBe(1)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
 });
 
 it('accepts exactly one independent checkout and completes every durable step', function (bool $force): void {
@@ -934,6 +977,9 @@ function orb182_coordinator_member(AppInstance $checkout, string $name): AppInst
 
 final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRemoval
 {
+    /** @var array<int, int> */
+    public array $contentVersions = [];
+
     /** @var list<string> */
     public array $calls = [];
 
@@ -992,6 +1038,10 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
             'source_identity' => "test:{$appInstance->id}",
             'linked_worktree_paths' => $paths,
         ];
+
+        if (isset($this->contentVersions[$appInstance->id])) {
+            $payload['content_version'] = $this->contentVersions[$appInstance->id];
+        }
 
         return new AppInstanceSourceInventory(
             appInstanceId: $appInstance->id,

@@ -222,7 +222,29 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         [$members, $inventories] = $this->deletionSet($snapshot, $force);
 
         if ($runTeardown) {
-            ($this->lifecycle ?? app(ProjectLifecycleRunner::class))->run($snapshot, LifecyclePhase::Teardown);
+            $ranTeardown = false;
+
+            foreach ($members as $member) {
+                $ranTeardown = ($this->lifecycle ?? app(ProjectLifecycleRunner::class))->run($member, LifecyclePhase::Teardown) || $ranTeardown;
+            }
+
+            foreach ($ranTeardown ? $members : [] as $member) {
+                $this->assertMemberPathAvailable($member);
+                $after = $this->inspect($member, true);
+                $before = $inventories[$member->id];
+
+                foreach (['layout', 'repositoryIdentity', 'checkoutPath', 'root', 'branch', 'startingCommit', 'commonRepositoryPath', 'sourceIdentity', 'linkedWorktreePaths'] as $field) {
+                    if ($before->{$field} !== $after->{$field}) {
+                        throw new ResourceOperationException(
+                            errorCode: 'instance.remove_refused',
+                            message: 'Teardown changed the source ownership. The Instance remains.',
+                            status: 409,
+                        );
+                    }
+                }
+
+                $inventories[$member->id] = $after;
+            }
         }
 
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);

@@ -1309,3 +1309,10 @@ function orbitProductCommandNames(): array
         ->values()
         ->all();
 }
+
+it('refuses a malformed lifecycle timeout before contacting the Gateway', function (string $command): void {
+    MockClient::destroyGlobal();
+    $this->artisan($command, ['name' => 'install', '--project' => '1', '--command' => 'true', '--timeout' => 'invalid', '--json' => true])
+        ->expectsOutputToContain('lifecycle_step.timeout_invalid')
+        ->assertFailed();
+})->with(['instance:setup-step:create', 'instance:setup-step:update', 'instance:teardown-step:create', 'instance:teardown-step:update']);

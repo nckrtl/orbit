@@ -38,7 +38,7 @@ class CreateSetupStepCommand extends GatewayCommand
         $projectId = $this->projectId();
         $name = $this->lifecycleName();
         $command = $this->stringOption('command');
-        $timeout = $this->lifecycleTimeout();
+        $timeout = $this->lifecycleTimeout($this->option('timeout'));
 
         if ($projectId === null || $name === null || $timeout === false) {
             if ($timeout === false) {

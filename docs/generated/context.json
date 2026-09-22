@@ -3981,6 +3981,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Setup step",

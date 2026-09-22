@@ -99,7 +99,7 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 The Gateway records each provisioning boundary, so an identical retry resumes an incomplete creation. A retry that adds, removes, or changes `--branch` returns `instance.placement_conflict`. A missing remote branch that differs from the instance name returns `instance.branch_resolution_failed`. When `--branch` matches the instance name and the remote branch is missing, Orbit creates that branch from `default_branch`.
 
 <Note>
-Active means Orbit prepared the source, selected any PHP runtime, aligned a Laravel `APP_URL`, published the Route, and ran the Project setup steps. An empty setup list counts as success. The application can still fail for a reason outside those steps.
+Active describes prepared source, PHP runtime, Laravel configuration, and Route publication. A successful create response also confirms the Project setup steps; a retained setup failure appears in the Instance failure fields. An empty setup list counts as success. The application can still fail for a reason outside those steps.
 </Note>
 
 A setup command that exits non-zero or times out removes the new Instance after the teardown list runs. The checkout from that attempt is deleted. [Instance setup and teardown](/reference/instance-setup) owns the failure codes and the retry boundary.

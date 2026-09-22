@@ -32,11 +32,14 @@ final readonly class ProjectLifecycleStepStore
         ?string $before,
         ?string $after,
     ): LifecycleStep {
-        $placed = $this->insert($this->ordered($app, $phase), $step, $before, $after);
-        $this->assertValid($placed);
-        $this->persist($app, $phase, $placed);
+        return DB::transaction(function () use ($app, $phase, $step, $before, $after): LifecycleStep {
+            OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            $placed = $this->insert($this->ordered($app, $phase), $step, $before, $after);
+            $this->assertValid($placed);
+            $this->persist($app, $phase, $placed);
 
-        return $step;
+            return $step;
+        }, 5);
     }
 
     public function update(
@@ -50,40 +53,46 @@ final readonly class ProjectLifecycleStepStore
         bool $hasCommand,
         bool $hasTimeout,
     ): LifecycleStep {
-        $existing = $this->ordered($app, $phase);
-        $index = $this->indexByName($existing, $name, $phase);
-        $current = $existing[$index];
-        array_splice($existing, $index, 1);
+        return DB::transaction(function () use ($app, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout): LifecycleStep {
+            OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            $existing = $this->ordered($app, $phase);
+            $index = $this->indexByName($existing, $name, $phase);
+            $current = $existing[$index];
+            array_splice($existing, $index, 1);
 
-        try {
-            $updated = new LifecycleStep(
-                $current->name,
-                $hasCommand ? (string) $command : $current->command,
-                $hasTimeout ? (int) $timeoutSeconds : $current->timeoutSeconds,
-            );
-        } catch (InvalidArgumentException) {
-            $this->invalid('A lifecycle step is invalid.');
-        }
+            try {
+                $updated = new LifecycleStep(
+                    $current->name,
+                    $hasCommand ? (string) $command : $current->command,
+                    $hasTimeout ? (int) $timeoutSeconds : $current->timeoutSeconds,
+                );
+            } catch (InvalidArgumentException) {
+                $this->invalid('A lifecycle step is invalid.');
+            }
 
-        $placed = $before === null && $after === null
-            ? $this->restore($existing, $index, $updated)
-            : $this->insert($existing, $updated, $before, $after);
-        $this->assertValid($placed);
-        $this->persist($app, $phase, $placed);
+            $placed = $before === null && $after === null
+                ? $this->restore($existing, $index, $updated)
+                : $this->insert($existing, $updated, $before, $after);
+            $this->assertValid($placed);
+            $this->persist($app, $phase, $placed);
 
-        return $updated;
+            return $updated;
+        }, 5);
     }
 
     public function destroy(OrbitApp $app, LifecyclePhase $phase, string $name): LifecycleStep
     {
-        $existing = $this->ordered($app, $phase);
-        $index = $this->indexByName($existing, $name, $phase);
-        $removed = $existing[$index];
-        array_splice($existing, $index, 1);
-        $this->assertValid($existing);
-        $this->persist($app, $phase, $existing);
+        return DB::transaction(function () use ($app, $phase, $name): LifecycleStep {
+            OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            $existing = $this->ordered($app, $phase);
+            $index = $this->indexByName($existing, $name, $phase);
+            $removed = $existing[$index];
+            array_splice($existing, $index, 1);
+            $this->assertValid($existing);
+            $this->persist($app, $phase, $existing);
 
-        return $removed;
+            return $removed;
+        }, 5);
     }
 
     /**
@@ -180,23 +189,21 @@ final readonly class ProjectLifecycleStepStore
     /** @param list<LifecycleStep> $steps */
     private function persist(OrbitApp $app, LifecyclePhase $phase, array $steps): void
     {
-        DB::transaction(function () use ($app, $phase, $steps): void {
-            ProjectLifecycleStep::query()
-                ->where('app_id', $app->id)
-                ->where('phase', $phase->value)
-                ->delete();
+        ProjectLifecycleStep::query()
+            ->where('app_id', $app->id)
+            ->where('phase', $phase->value)
+            ->delete();
 
-            foreach ($steps as $position => $step) {
-                ProjectLifecycleStep::query()->create([
-                    'app_id' => $app->id,
-                    'phase' => $phase->value,
-                    'name' => $step->name,
-                    'command' => $step->command,
-                    'timeout_seconds' => $step->timeoutSeconds,
-                    'position' => $position,
-                ]);
-            }
-        });
+        foreach ($steps as $position => $step) {
+            ProjectLifecycleStep::query()->create([
+                'app_id' => $app->id,
+                'phase' => $phase->value,
+                'name' => $step->name,
+                'command' => $step->command,
+                'timeout_seconds' => $step->timeoutSeconds,
+                'position' => $position,
+            ]);
+        }
     }
 
     private function toDomain(ProjectLifecycleStep $row): LifecycleStep

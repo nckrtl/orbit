@@ -25,7 +25,7 @@ Production preparation already runs deploy steps. Production removal retains app
 - A Project owns two ordered lists of named command rows: setup steps and teardown steps. Each row has a name unique within its list, a command string, and a timeout.
 - The CLI, Gateway, and SDK must expose each list with `create`, `update`, `destroy`, and `list` under `instance:setup-step` and `instance:teardown-step`. `--project` selects the Project. The Gateway must order an unplaced step at the end of its list and must place a step with exclusive `--before` or `--after`.
 - Orbit must not write a script file into the checkout. Orbit runs each stored command string from the instance directory through the fixed non-interactive shell used for deploy steps.
-- `instance:create` must run the Project setup list after source, PHP selection, Laravel URL configuration, and Route publication. The first command that exits non-zero or times out stops the remaining setup commands. Orbit then runs the full teardown list and removes the Instance, including the checkout created for that attempt, whether or not a teardown command fails. The failed attempt leaves no Instance to resume.
+- `instance:create` must run the Project setup list after source, PHP selection, Laravel URL configuration, and Route publication. The first command that exits non-zero or times out stops the remaining setup commands. Orbit then runs the full teardown list and removes the Instance, including the checkout created for that attempt, whether or not a teardown command fails. Confirmed command failure triggers cleanup. A transport failure, exhausted API deadline, changed source ownership, or cleanup failure retains the Instance for inspection.
 - An identical `instance:create` for an already active Instance returns that Instance and does not run setup.
 - `instance:register` must not run setup unless the caller passes `--setup`. A failed `--setup` command leaves the Instance and the checkout in place.
 - `instance:setup` runs the current setup list against one development Instance and leaves that Instance in place when a command fails.
@@ -51,11 +51,13 @@ Production preparation already runs deploy steps. Production removal retains app
 - Editing a Project step changes the next `instance:create`, `instance:setup`, and development `instance:destroy`.
 - Provisioning checkpoints before setup still resume. A setup failure is not a checkpoint.
 - Create rollback deletes the checkout from that attempt when setup left it dirty or unpublished, without a separate `--force` confirmation.
-- Create rollback runs the full teardown list even when setup stopped on an earlier command. A teardown failure during that rollback does not retain the Instance.
+- Create rollback runs the full teardown list even when setup stopped on an earlier command. A confirmed teardown command failure during rollback does not retain the Instance. Unconfirmed execution or incomplete cleanup does.
 - `instance:register --setup` and `instance:setup` report the failed step and keep the Instance.
 - A teardown failure during development removal reports that step and keeps the Instance. The operator fixes or destroys the step, then runs `instance:destroy` again.
 - Commands run again from the first step on every `instance:setup` and on every new create.
 - Production Instances do not run these lists.
+- The shared API deadline still applies to provisioning, setup, and cleanup. Commands use protected input, discard output, and terminate their process group on timeout.
+- Setup and removal share source and environment locks. Removal captures fresh source evidence after teardown and refuses changed source ownership.
 
 ## Affects
 

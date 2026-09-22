@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Instances;
 
 use JsonSerializable;
+use LogicException;
 use SensitiveParameter;
 
 final readonly class LifecycleStepResponse implements JsonSerializable
@@ -41,6 +42,24 @@ final readonly class LifecycleStepResponse implements JsonSerializable
     /** @return array{name: string, command: string, timeout_seconds: int} */
     public function jsonSerialize(): array
     {
-        return $this->toArray();
+        return $this->__debugInfo();
+    }
+
+    /** @return array{name: string, command: string, timeout_seconds: int} */
+    public function __debugInfo(): array
+    {
+        return ['name' => $this->name, 'command' => '[COMMAND]', 'timeout_seconds' => $this->timeoutSeconds];
+    }
+
+    /** @return array<never, never> */
+    public function __serialize(): array
+    {
+        throw new LogicException('Orbit lifecycle step responses cannot be serialized.');
+    }
+
+    /** @param array<array-key, mixed> $data */
+    public function __unserialize(#[SensitiveParameter] array $data): void
+    {
+        throw new LogicException('Orbit lifecycle step responses cannot be unserialized.');
     }
 }

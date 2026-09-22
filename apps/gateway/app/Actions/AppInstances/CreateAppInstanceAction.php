@@ -13,6 +13,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -53,6 +54,7 @@ final readonly class CreateAppInstanceAction
         private ?MetricsFleetReconciler $metrics = null,
         private ?ProjectLifecycleRunner $lifecycle = null,
         private ?RemoveAppInstanceAction $remover = null,
+        private ?AppInstanceEnvironmentOperationLock $environmentOperations = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -77,7 +79,6 @@ final readonly class CreateAppInstanceAction
             ->where('app_id', $app->id)
             ->where('name', $data->name)
             ->first();
-        $wasActive = $existing instanceof AppInstance && $existing->status === AppInstanceState::Active;
 
         if ($existing instanceof AppInstance) {
             $this->assertDefaultIdentityAvailable($existing, $app);
@@ -114,29 +115,41 @@ final readonly class CreateAppInstanceAction
             $created = true;
         }
 
-        $result = $this->sourceLock->synchronized(
-            $appInstance->node_id,
-            function () use ($appInstance, $created, $data): AppInstance {
-                try {
-                    $this->provisioner->reserve($appInstance, $data->domain);
-                    $resolved = $this->resumeSource($appInstance, ! $created);
+        $result = ($this->environmentOperations ?? app(AppInstanceEnvironmentOperationLock::class))->run(
+            [$appInstance->id],
+            fn (): AppInstance => $this->sourceLock->synchronized(
+                $appInstance->node_id,
+                function () use ($appInstance, $created, $data): AppInstance {
+                    $wasActive = $appInstance->refresh()->status === AppInstanceState::Active;
 
-                    return $this->provisioner->complete(
-                        $resolved,
-                        $data->domain,
-                        $data->recoverSourceProfile,
-                    );
-                } catch (Throwable $exception) {
-                    $this->recordFailure($appInstance, $exception);
+                    if ($wasActive && $appInstance->failed_step === 'setup') {
+                        throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
+                    }
 
-                    throw $exception;
-                }
-            },
+                    try {
+                        $this->provisioner->reserve($appInstance, $data->domain);
+                        $resolved = $this->resumeSource($appInstance, ! $created);
+
+                        $result = $this->provisioner->complete(
+                            $resolved,
+                            $data->domain,
+                            $data->recoverSourceProfile,
+                        );
+
+                    } catch (Throwable $exception) {
+                        $this->recordFailure($appInstance, $exception);
+
+                        throw $exception;
+                    }
+
+                    if (! $wasActive) {
+                        $this->finishSetup($result);
+                    }
+
+                    return $result;
+                },
+            ),
         );
-
-        if (! $wasActive && ! $result->placedOnAppProd()) {
-            $this->finishSetup($result);
-        }
 
         return $this->announceCreated(['appInstance' => $result, 'created' => $created]);
     }
@@ -149,10 +162,24 @@ final readonly class CreateAppInstanceAction
             $runner->run($instance, LifecyclePhase::Setup);
         } catch (ResourceOperationException $setupFailure) {
             $details = $setupFailure->details;
+            $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.setup_step_failed']);
+
+            if (($details['outcome'] ?? null) === 'unconfirmed') {
+                throw $setupFailure;
+            }
 
             try {
                 $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown);
             } catch (ResourceOperationException $teardownFailure) {
+                if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.setup_step_failed',
+                        message: 'Setup failed and teardown could not be confirmed. The Instance remains.',
+                        status: 422,
+                        details: [...$details, 'cleanup' => 'unconfirmed'],
+                    );
+                }
+
                 $step = $teardownFailure->details['step'] ?? null;
 
                 if (is_string($step) && $step !== '') {
@@ -160,7 +187,16 @@ final readonly class CreateAppInstanceAction
                 }
             }
 
-            ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, true, false);
+            try {
+                ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, true, false);
+            } catch (Throwable) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.setup_step_failed',
+                    message: 'Setup failed and cleanup is incomplete. Inspect the Instance before retrying removal.',
+                    status: 422,
+                    details: [...$details, 'cleanup' => 'incomplete'],
+                );
+            }
 
             throw new ResourceOperationException(
                 errorCode: 'instance.setup_step_failed',

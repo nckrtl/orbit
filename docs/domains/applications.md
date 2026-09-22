@@ -149,9 +149,9 @@ After activation, an operator can explicitly import the recorded `.env` or updat
 
 The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certificate, firewall, or publication boundary and does not return a provisioned Instance. Secret environment values, certificate material, and private keys do not appear in command arguments, errors, API responses, activity data, or debug output.
 
-Active means Orbit prepared the source, PHP runtime if needed, supported Laravel configuration, Route, and the Project's setup steps. An empty setup list counts as success. The application can still fail for a reason outside those steps.
+Active describes prepared source, PHP runtime, Laravel configuration, and Route publication. A successful create response also confirms the Project setup steps; a retained setup failure appears in the Instance failure fields. An empty setup list counts as success. The application can still fail for a reason outside those steps.
 
-A setup command that exits non-zero removes the new Instance after running the teardown list. Retrying creation for an active Instance with a recorded profile returns it unchanged and does not run setup again. `instance:setup` runs the current setup list against an Instance that already exists.
+A confirmed setup command failure triggers teardown and removal of the new Instance. Unconfirmed execution or incomplete cleanup retains the Instance and records the failure. Retrying creation for an active Instance with a recorded profile returns it unchanged and does not run setup again. `instance:setup` runs the current setup list against an Instance that already exists.
 
 ## Reconcile a Project update
 
