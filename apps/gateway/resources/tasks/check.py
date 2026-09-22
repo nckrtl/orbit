@@ -18,6 +18,19 @@ PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-s
 COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 PROFILE = 'orbit-composer-v2'
 MAX_SOURCE_BYTES = 12000
+TIA_GRAPH = r'''
+$root = $argv[1];
+require $root.'/vendor/autoload.php';
+if (! class_exists(Pest\Plugins\Tia\Storage::class)) { exit; }
+$override = getenv('ORBIT_TIA_DIRECTORY');
+if (is_string($override) && $override !== '') {
+    Pest\Plugins\Tia\Storage::useDirectory($override);
+}
+$path = Pest\Plugins\Tia\Storage::tempDir($root).'/graph.json';
+if (is_file($path) && ! is_link($path) && filesize($path) <= 16000000) {
+    echo file_get_contents($path);
+}
+'''
 
 
 def digest(value):
@@ -72,8 +85,17 @@ def identity(root, projects=PROJECTS):
 def snapshot(root, destination, manifest, projects):
     subprocess.run(['git', 'clone', '--shared', '--no-checkout', '--quiet', str(root), str(destination)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['git', '-C', str(destination), 'checkout', '-B', 'orbit-verification', '--quiet',
+    branch = git(root, 'rev-parse', '--abbrev-ref', 'HEAD').decode().strip()
+    subprocess.run(['git', '-C', str(destination), 'checkout', '-B', branch if branch != 'HEAD' else 'orbit-verification', '--quiet',
                     git(root, 'rev-parse', 'HEAD').decode().strip()], check=True)
+    try:
+        default = git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD').decode().strip()
+        commit = git(root, 'rev-parse', default).decode().strip()
+    except subprocess.CalledProcessError:
+        pass
+    else:
+        git(destination, 'update-ref', default, commit)
+        git(destination, 'symbolic-ref', 'refs/remotes/origin/HEAD', default)
     for name, entry in manifest.items():
         target = destination / name
         if target.is_symlink() or target.is_file():
@@ -92,6 +114,28 @@ def snapshot(root, destination, manifest, projects):
         if not vendor.is_dir() or vendor.is_symlink():
             raise ValueError('The task checkout needs installed project dependencies.')
         subprocess.run(['cp', '-a', '--reflink=auto', str(vendor), str(destination / project / 'vendor')], check=True)
+
+
+def seed_tia_cache(root, project, destination):
+    graph = destination / 'graph.json'
+    if graph.exists() or graph.is_symlink() or not (root / project / 'vendor/autoload.php').is_file():
+        return
+    try:
+        content = subprocess.check_output(['php', '-r', TIA_GRAPH, str(root / project)],
+                                          cwd=root, stderr=subprocess.DEVNULL, timeout=10)
+        if len(content) > 16_000_000 or not isinstance(json.loads(content), dict):
+            return
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # Pest validates the copied graph against the snapshot before selecting tests.
+    with tempfile.NamedTemporaryFile(dir=destination) as output:
+        output.write(content)
+        output.flush()
+        try:
+            os.link(output.name, graph)
+        except FileExistsError:
+            pass
 
 
 def evidence_from_report(snapshot_root, project, report, references):
@@ -181,6 +225,7 @@ def run(root, references, projects=PROJECTS, commands=COMMANDS, seconds=840):
             raise ValueError('Task inputs changed while preparing verification.')
         snapshot_inputs = files(candidate)
         for project in projects:
+            seed_tia_cache(root, project, cache / project)
             for command in commands:
                 if time.monotonic() - started >= seconds:
                     raise TimeoutError('Task checks exceeded their deadline.')

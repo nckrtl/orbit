@@ -107,6 +107,38 @@ print(history.read_text())
             self.assertTrue(self.run_checks()['passed'])
         self.assertTrue(self.run_checks()['passed'])
 
+    def test_snapshot_preserves_branch_and_default_baseline_reference(self):
+        subprocess.run(['git', '-C', str(self.root), 'checkout', '--quiet', '-b', 'task-branch'], check=True)
+        subprocess.run(['git', '-C', str(self.root), 'update-ref', 'refs/remotes/origin/main', 'HEAD'], check=True)
+        subprocess.run(['git', '-C', str(self.root), 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], check=True)
+        candidate = Path(self.temp.name) / 'snapshot'
+        runner.snapshot(self.root, candidate, runner.files(self.root), (PROJECT,))
+        self.assertEqual(b'task-branch\n', runner.git(candidate, 'branch', '--show-current'))
+        self.assertEqual(b'refs/remotes/origin/main\n', runner.git(candidate, 'symbolic-ref', 'refs/remotes/origin/HEAD'))
+        self.assertEqual(runner.git(self.root, 'rev-parse', 'HEAD'), runner.git(candidate, 'rev-parse', 'origin/main'))
+
+    def test_existing_pest_history_seeds_an_independent_copy_and_never_overwrites_progress(self):
+        autoload = Path(runner.__file__).resolve().parents[2] / 'vendor/autoload.php'
+        (self.project / 'vendor/autoload.php').write_text('<?php require ' + runner.json.dumps(str(autoload)) + ';')
+        seeded = self.project / '.seeded-tia'
+        seeded.mkdir()
+        source = seeded / 'graph.json'
+        initial = b'{"schema":1,"baselines":{"main":{"results":{}}}}'
+        source.write_bytes(initial)
+        destination = self.runtime / 'verification-tia'
+        with patch.dict(runner.os.environ, {'ORBIT_TIA_DIRECTORY': '.seeded-tia'}):
+            runner.seed_tia_cache(self.root, PROJECT, destination)
+            self.assertEqual(initial, (destination / 'graph.json').read_bytes())
+            source.write_bytes(b'{"schema":1,"baselines":{"new-main":{}}}')
+            runner.seed_tia_cache(self.root, PROJECT, destination)
+            self.assertEqual(initial, (destination / 'graph.json').read_bytes())
+            (destination / 'graph.json').write_bytes(b'{"verification":"progress"}')
+            self.assertNotEqual(source.read_bytes(), (destination / 'graph.json').read_bytes())
+            source.write_bytes(b'not a graph')
+            missing = self.runtime / 'invalid-seed'
+            runner.seed_tia_cache(self.root, PROJECT, missing)
+            self.assertFalse((missing / 'graph.json').exists())
+
     def test_shell_edits_untracked_files_modes_and_deletions_change_identity(self):
         for mutation in ('content', 'untracked', 'mode', 'delete'):
             before = self.identity()

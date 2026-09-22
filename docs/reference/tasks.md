@@ -114,6 +114,8 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
+For Orbit monorepo work, `source_resolved` confirms the checkout and branch only. The automatic task provisioner does not run `bin/worktree-create` or `bin/bootstrap`. It does not guarantee installed project dependencies or seeded TIA caches. The manual worktree command includes that preparation. Automatic workspace readiness must be completed before enabling the verification pilot on newly provisioned Orbit task workspaces.
+
 ## Agent viewer
 
 The task group page shows an Agents section below Subtasks. Vertical tabs select the shared reviewer or an implementer. A subtask page shows its implementer conversations and the shared reviewer. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
@@ -201,7 +203,7 @@ The Gateway registers `tasks:tick` every ten seconds when the tasks extension is
 
 ## Task verification pilot
 
-The pilot is disabled by default. It supports the Orbit monorepo and local PHP test evidence. Enable it only after the held-out evaluation in [ADR 0115](/decisions/0115-verify-task-evidence-before-review#smallest-experiment-and-release-condition) passes. There is no default Noul threshold and no measured model-quality claim.
+The pilot is disabled by default. It supports the Orbit monorepo and local PHP test evidence. Enable it only after the held-out evaluation in [ADR 0115](/decisions/0115-verify-task-evidence-before-review#smallest-experiment-and-release-condition) passes. The [live diagnostic](/decisions/0115-verify-task-evidence-before-review#live-noul-diagnostic) passed on a small author-labeled corpus; independent labels and review remain required. There is no default Noul threshold or established production error rate.
 
 Set `ORBIT_TASKS_VERIFICATION_APP_IDS` to the comma-separated App IDs in the pilot and `ORBIT_TASKS_VERIFICATION_NOUL_THRESHOLD` to an evaluated probability greater than `0.5` and at most `1`. New tasks for those Apps require one to three criteria. Existing tasks retain their contract. Removing an App from the setting does not remove verification from its existing pilot tasks. A missing threshold refuses pilot task creation with `tasks.verification_not_calibrated` (409).
 
@@ -245,7 +247,7 @@ Both operations require Gateway access and an enabled tasks extension. Verificat
 
 Gateway sends its runner over pinned SSH to the assigned Node. The runner copies tracked and untracked source into an isolated checkout and copies installed dependencies. It leaves the agent's Git index unchanged. Scratch checkouts use Orbit runtime storage because Node `/tmp` filesystems can be too small for installed dependencies. 
 
-Profile `orbit-composer-v2` runs `composer validate --strict`, `composer check`, and `composer test:affected` in CLI, Docs, Gateway, E2E, and PHP SDK order. Tests run through Pest TIA once per project. Gateway's quality check does not run a second test suite. The runner preserves a private TIA cache for each checkout and project across disposable snapshots. It uses a local snapshot branch so Pest can save its dependency graph. A concurrent check of the same checkout is refused. Missing or invalidated history can still require all tests to run.
+Profile `orbit-composer-v2` runs `composer validate --strict`, `composer check`, and `composer test:affected` in CLI, Docs, Gateway, E2E, and PHP SDK order. Tests run through Pest TIA once per project. Gateway's quality check does not run a second test suite. The runner seeds a private TIA cache from the history already supplied to the task checkout by worktree bootstrap, then preserves it across disposable snapshots. It keeps the source branch and default-branch reference so Pest can reuse and update that graph. A concurrent check of the same checkout is refused. Missing or invalidated history can still require all tests to run.
 
 The runner then reruns each distinct referenced test file with Pest's JUnit output and `--no-tia`. Only an exact, unambiguous passing test with assertions supplies evidence. JUnit output from the parallel full suite is not used because the inspected Pest version failed to merge one real Gateway report.
 
