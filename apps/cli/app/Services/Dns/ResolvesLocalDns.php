@@ -11,7 +11,7 @@ interface ResolvesLocalDns
     public function available(): bool;
 
     /** @return array{status: string, changed: bool} */
-    public function resolve(string $name, string $target): array;
+    public function resolve(string $name, string $target, string $kind): array;
 
     /** @return array{status: string, changed: bool} */
     public function reset(string $name): array;

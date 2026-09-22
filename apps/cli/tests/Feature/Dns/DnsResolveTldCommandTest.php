@@ -12,7 +12,7 @@ beforeEach(function (): void {
 
         public bool $available = true;
 
-        /** @var list<array{tld: string, target: string}> */
+        /** @var list<array{tld: string, target: string, kind: string}> */
         public array $resolveCalls = [];
 
         /** @var list<string> */
@@ -35,9 +35,9 @@ beforeEach(function (): void {
         }
 
         /** @return array{status: string, changed: bool} */
-        public function resolve(string $name, string $target): array
+        public function resolve(string $name, string $target, string $kind): array
         {
-            $this->resolveCalls[] = ['tld' => $name, 'target' => $target];
+            $this->resolveCalls[] = ['tld' => $name, 'target' => $target, 'kind' => $kind];
 
             return $this->resolveResult;
         }
@@ -72,7 +72,7 @@ it('configures a caller-local TLD resolver override', function (): void {
         ->assertExitCode(0);
 
     expect($this->resolver->resolveCalls)->toBe([
-        ['tld' => 'beast', 'target' => '10.44.0.7'],
+        ['tld' => 'beast', 'target' => '10.44.0.7', 'kind' => 'tld'],
     ]);
 });
 
@@ -104,7 +104,7 @@ it('configures an exact private Route resolver override', function (): void {
         ->assertExitCode(0);
 
     expect($this->resolver->resolveCalls)->toBe([
-        ['tld' => 'shop.app.beast', 'target' => '10.44.0.8'],
+        ['tld' => 'shop.app.beast', 'target' => '10.44.0.8', 'kind' => 'hostname'],
     ]);
 });
 

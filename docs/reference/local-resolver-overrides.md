@@ -32,6 +32,8 @@ An exact-name override to the Cluster Router address keeps the Router path for t
 
 When both overrides exist, the exact-name record answers that Route name and the wildcard TLD record answers the remaining names under the TLD. The CLI restores Gateway or wildcard resolution for that name when the operator resets the exact-name record, and it leaves the wildcard record unchanged. The CLI leaves every exact-name override in place when the operator resets the wildcard TLD record.
 
+An exact-name record does not answer descendants of that name. Repeating an exact-name install replaces an older wildcard-style mapping for that hostname, even when the target address has not changed.
+
 ## Commands
 
 The CLI writes a Homebrew dnsmasq mapping and a macOS `/etc/resolver` file for the supplied name.

@@ -67,7 +67,7 @@ final class DnsResolveTldCommand extends GatewayCommand
             );
         }
 
-        $result = $resolver->resolve($name, $target);
+        $result = $resolver->resolve($name, $target, $kind);
 
         if (in_array($result['status'], ['write_failed', 'refresh_failed'], strict: true)) {
             return $this->resolverFailure($result['status']);

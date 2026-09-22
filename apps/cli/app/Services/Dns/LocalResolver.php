@@ -54,14 +54,15 @@ final readonly class LocalResolver implements ResolvesLocalDns
     }
 
     /** @return array{status: string, changed: bool} */
-    public function resolve(string $name, string $target): array
+    public function resolve(string $name, string $target, string $kind): array
     {
         try {
             $this->assertSafeName($name);
             $configurationDirectory = $this->dnsmasqConfigurationDirectory();
-            $overrideIsCurrent = $this->overrideIsCurrent($name, $target, $configurationDirectory);
+            $mapping = $this->mapping($name, $target, $kind);
+            $overrideIsCurrent = $this->overrideIsCurrent($name, $mapping, $configurationDirectory);
 
-            if ($overrideIsCurrent && $this->servesTarget($name, $target)) {
+            if ($overrideIsCurrent && $this->servesTarget($name, $target, $kind)) {
                 return ['status' => 'already_resolved', 'changed' => false];
             }
         } catch (Throwable) {
@@ -74,25 +75,24 @@ final readonly class LocalResolver implements ResolvesLocalDns
 
         try {
             $this->files->ensureDirectoryExists($configurationDirectory);
-            $existingTarget = $this->existingTarget($name);
+            $mappingChanged = ! $this->mappingIsCurrent($name, $mapping);
             $masterChanged = $this->syncMasterConfiguration($name, $configurationDirectory);
             $resolverChanged = $this->syncSystemResolver($name);
-            $mappingChanged = $existingTarget !== $target;
 
             if ($mappingChanged) {
-                $this->files->put($this->configurationPath($name), "address=/{$name}/{$target}\n");
+                $this->files->put($this->configurationPath($name), $mapping);
             }
 
             $changed = $masterChanged || $resolverChanged || $mappingChanged;
 
-            if (! $changed && $this->servesTarget($name, $target)) {
+            if (! $changed && $this->servesTarget($name, $target, $kind)) {
                 return ['status' => 'already_resolved', 'changed' => false];
             }
         } catch (Throwable) {
             return ['status' => 'write_failed', 'changed' => false];
         }
 
-        if (! $this->refreshDnsmasq() || ! $this->servesTarget($name, $target)) {
+        if (! $this->refreshDnsmasq() || ! $this->servesTarget($name, $target, $kind)) {
             return ['status' => 'refresh_failed', 'changed' => true];
         }
 
@@ -148,27 +148,24 @@ final readonly class LocalResolver implements ResolvesLocalDns
         return ['status' => 'reset', 'changed' => true];
     }
 
-    private function existingTarget(string $name): ?string
+    private function mapping(string $name, string $target, string $kind): string
+    {
+        return match ($kind) {
+            'tld' => "address=/{$name}/{$target}\n",
+            'hostname' => "host-record={$name},{$target}\n",
+            default => throw new RuntimeException('The resolver name kind is invalid.'),
+        };
+    }
+
+    private function mappingIsCurrent(string $name, string $mapping): bool
     {
         $configurationPath = $this->configurationPath($name);
 
         if (! $this->files->exists($configurationPath)) {
-            return null;
+            return false;
         }
 
-        $matches = [];
-
-        if (
-            preg_match(
-                '/^address=\/\.?'.preg_quote($name, delimiter: '/').'\/([^\r\n#]+)\s*$/m',
-                $this->files->get($configurationPath),
-                $matches,
-            ) !== 1
-        ) {
-            return null;
-        }
-
-        return trim($matches[1]);
+        return trim($this->files->get($configurationPath)) === trim($mapping);
     }
 
     private function syncMasterConfiguration(string $tld, string $configurationDirectory): bool
@@ -228,9 +225,9 @@ final readonly class LocalResolver implements ResolvesLocalDns
         return implode("\n", $nextLines)."\n";
     }
 
-    private function overrideIsCurrent(string $tld, string $target, string $configurationDirectory): bool
+    private function overrideIsCurrent(string $tld, string $mapping, string $configurationDirectory): bool
     {
-        if ($this->existingTarget($tld) !== $target) {
+        if (! $this->mappingIsCurrent($tld, $mapping)) {
             return false;
         }
 
@@ -358,12 +355,12 @@ final readonly class LocalResolver implements ResolvesLocalDns
         }
     }
 
-    private function servesTarget(string $name, string $target): bool
+    private function servesTarget(string $name, string $target, string $kind): bool
     {
         $query = [
             'dig',
             '@127.0.0.1',
-            "orbit-local-resolver-health.{$name}",
+            $kind === 'hostname' ? $name : "orbit-local-resolver-health.{$name}",
             '+short',
         ];
 
