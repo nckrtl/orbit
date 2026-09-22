@@ -70,9 +70,66 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
         'tasks:add' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
+        'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
     ]);
+});
+
+it('creates and reads typed task comments with review metadata', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('comments');
+    $group = $this->postJson('/api/v1/task-groups', [
+        'app_id' => $app->id,
+        'title' => 'Comments',
+        'brief' => 'Record comments.',
+        'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
+    ])->assertCreated()->json('data');
+
+    $taskId = $group['tasks'][0]['id'];
+    $payload = [
+        'type' => 'approved',
+        'body' => 'Looks good.',
+        'author' => 'reviewer@example.test',
+        'review_attempt' => 2,
+        'reviewer_thread_id' => 'review-thread-2',
+        'driver_turn' => 'turn-17',
+    ];
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", $payload)
+        ->assertCreated()
+        ->assertJsonPath('data.type', 'approved')
+        ->assertJsonPath('data.body', 'Looks good.')
+        ->assertJsonPath('data.author', $payload['author'])
+        ->assertJsonPath('data.review_attempt', 2)
+        ->assertJsonPath('data.reviewer_thread_id', 'review-thread-2')
+        ->assertJsonPath('data.driver_turn', 'turn-17')
+        ->assertJsonPath('data.task_id', $taskId);
+
+    $this->getJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments")
+        ->assertOk()
+        ->assertJsonPath('data.0.body', 'Looks good.');
+});
+
+it('rejects invalid comment types and incomplete reviewer outcomes', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('invalid-comments');
+    $group = $this->postJson('/api/v1/task-groups', [
+        'app_id' => $app->id, 'title' => 'Comments', 'brief' => 'Record comments.',
+        'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
+    ])->assertCreated()->json('data');
+    $taskId = $group['tasks'][0]['id'];
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+        'type' => 'unknown', 'body' => 'Nope', 'author' => 'tester',
+    ])->assertStatus(422);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+        'type' => 'approved', 'body' => 'Missing metadata', 'author' => 'tester',
+    ])->assertStatus(422);
 });
 
 it('declares Gateway access for enable disable status create and add', function (): void {

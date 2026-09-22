@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Tasks\TaskStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -63,6 +64,12 @@ final class Task extends Model
     public function implementerThread(): BelongsTo
     {
         return $this->belongsTo(AgentThread::class, 'implementer_agent_thread_id');
+    }
+
+    /** @return HasMany<TaskComment, $this> */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class);
     }
 
     /** @return array<string, string> */
