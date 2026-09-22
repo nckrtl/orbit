@@ -62,7 +62,7 @@ export function supportedOpusMimeType(): string | null {
     return OPUS_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type)) ?? null;
 }
 
-let sharedMicrophone: MediaStream | null = null;
+let sharedMicrophone: { pending: Promise<MediaStream> } | { stream: MediaStream } | null = null;
 
 export async function warmMicrophone(): Promise<void> {
     try {
@@ -73,12 +73,12 @@ export async function warmMicrophone(): Promise<void> {
 }
 
 export function releaseMicrophone(): void {
-    if (!sharedMicrophone) {
-        return;
-    }
-
-    stopTracks(sharedMicrophone);
+    const microphone = sharedMicrophone;
     sharedMicrophone = null;
+
+    if (microphone && "stream" in microphone) {
+        stopTracks(microphone.stream);
+    }
 }
 
 export async function dictate(options: DictateOptions): Promise<string> {
@@ -140,14 +140,41 @@ function pickOpusMime(codec?: string): string | null {
     return mime;
 }
 
-async function acquireMicrophone(): Promise<MediaStream> {
-    if (sharedMicrophone?.active) {
-        return sharedMicrophone;
+function acquireMicrophone(): Promise<MediaStream> {
+    if (sharedMicrophone) {
+        if ("pending" in sharedMicrophone) {
+            return sharedMicrophone.pending;
+        }
+
+        if (sharedMicrophone.stream.active) {
+            return Promise.resolve(sharedMicrophone.stream);
+        }
     }
 
-    sharedMicrophone = await requestMicrophone();
+    const acquisition = {
+        pending: requestMicrophone().then(
+            (stream) => {
+                if (sharedMicrophone !== acquisition) {
+                    stopTracks(stream);
+                    throw new DOMException("Aborted", "AbortError");
+                }
 
-    return sharedMicrophone;
+                sharedMicrophone = { stream };
+
+                return stream;
+            },
+            (error: unknown) => {
+                if (sharedMicrophone === acquisition) {
+                    sharedMicrophone = null;
+                }
+
+                throw error;
+            },
+        ),
+    };
+    sharedMicrophone = acquisition;
+
+    return acquisition.pending;
 }
 
 async function requestMicrophone(): Promise<MediaStream> {

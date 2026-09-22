@@ -4,8 +4,20 @@ import { dictate, releaseMicrophone, warmMicrophone } from "../src/annotation/di
 function fakeStream() {
     const stop = vi.fn();
     const stream = { active: true, getTracks: () => [{ stop }] } as unknown as MediaStream;
+    stop.mockImplementation(() => Object.assign(stream, { active: false }));
 
     return { stream, stop };
+}
+
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+    });
+
+    return { promise, resolve, reject };
 }
 
 /** Runs with mocked media and sockets in Node and Chromium; never requests real audio. */
@@ -244,5 +256,181 @@ export function dictationLifecycleTests() {
                 expect(onLevels).toHaveBeenLastCalledWith([0.08, 0.08, 0.08, 0.08]);
             },
         );
+
+        describe("microphone acquisition", () => {
+            it("shares a pending permission request between warm and dictation callers", async () => {
+                const pending = deferred<MediaStream>();
+                getUserMedia.mockReturnValue(pending.promise);
+                const warm = warmMicrophone();
+                const warmAgain = warmMicrophone();
+                const stop = new AbortController();
+                stop.abort();
+                const result = dictate({
+                    wsUrl: "wss://mock.invalid/dictation",
+                    stopSignal: stop.signal,
+                });
+
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                pending.resolve(microphone.stream);
+
+                await Promise.all([warm, warmAgain]);
+                await expect(result).resolves.toBe("hello");
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                expect(microphone.stop).not.toHaveBeenCalled();
+            });
+
+            it("stops a late permission result after release without opening a capture or socket", async () => {
+                const pending = deferred<MediaStream>();
+                getUserMedia.mockReturnValue(pending.promise);
+                const warm = warmMicrophone();
+                const result = dictate({ wsUrl: "wss://mock.invalid/dictation" });
+                const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" });
+
+                releaseMicrophone();
+                pending.resolve(microphone.stream);
+
+                await warm;
+                await rejected;
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                expect(microphone.stop).toHaveBeenCalledOnce();
+                expect(sockets).toHaveLength(0);
+                expect(recorders).toHaveLength(0);
+                expect(contexts).toHaveLength(0);
+                releaseMicrophone();
+                expect(microphone.stop).toHaveBeenCalledOnce();
+            });
+
+            it.each(["old first", "new first"])(
+                "keeps a new acquisition when released requests resolve %s",
+                async (order) => {
+                    const oldRequest = deferred<MediaStream>();
+                    const newRequest = deferred<MediaStream>();
+                    const oldMicrophone = fakeStream();
+                    getUserMedia
+                        .mockReturnValueOnce(oldRequest.promise)
+                        .mockReturnValueOnce(newRequest.promise);
+                    const oldWarm = warmMicrophone();
+                    releaseMicrophone();
+                    const newWarm = warmMicrophone();
+                    expect(getUserMedia).toHaveBeenCalledTimes(2);
+
+                    if (order === "old first") {
+                        oldRequest.resolve(oldMicrophone.stream);
+                        await oldWarm;
+                        newRequest.resolve(microphone.stream);
+                        await newWarm;
+                    } else {
+                        newRequest.resolve(microphone.stream);
+                        await newWarm;
+                        oldRequest.resolve(oldMicrophone.stream);
+                        await oldWarm;
+                    }
+
+                    await warmMicrophone();
+                    expect(getUserMedia).toHaveBeenCalledTimes(2);
+                    expect(oldMicrophone.stop).toHaveBeenCalledOnce();
+                    expect(microphone.stop).not.toHaveBeenCalled();
+                    releaseMicrophone();
+                    expect(microphone.stop).toHaveBeenCalledOnce();
+                    expect(oldMicrophone.stop).toHaveBeenCalledOnce();
+                },
+            );
+
+            it("does not clear a newer pending acquisition when a released request fails", async () => {
+                const oldRequest = deferred<MediaStream>();
+                const newRequest = deferred<MediaStream>();
+                getUserMedia
+                    .mockReturnValueOnce(oldRequest.promise)
+                    .mockReturnValueOnce(newRequest.promise);
+                const oldWarm = warmMicrophone();
+                releaseMicrophone();
+                const newWarm = warmMicrophone();
+
+                oldRequest.reject(new DOMException("Denied", "NotAllowedError"));
+                await oldWarm;
+                const joinedWarm = warmMicrophone();
+                expect(getUserMedia).toHaveBeenCalledTimes(2);
+                newRequest.resolve(microphone.stream);
+                await Promise.all([newWarm, joinedWarm]);
+
+                releaseMicrophone();
+                expect(microphone.stop).toHaveBeenCalledOnce();
+            });
+
+            it.each([
+                [
+                    new DOMException("Denied", "NotAllowedError"),
+                    "denied",
+                    "Microphone access was denied.",
+                ],
+                [
+                    new DOMException("Denied", "PermissionDeniedError"),
+                    "denied",
+                    "Microphone access was denied.",
+                ],
+                [new Error("Unavailable"), "mic", "Could not start the microphone."],
+            ])("permits retry after acquisition fails with %s", async (error, code, message) => {
+                const pending = deferred<MediaStream>();
+                getUserMedia.mockReturnValueOnce(pending.promise);
+                const warm = warmMicrophone();
+                const result = dictate({ wsUrl: "wss://mock.invalid/dictation" });
+                const rejected = expect(result).rejects.toMatchObject({ code, message });
+                pending.reject(error);
+
+                await warm;
+                await rejected;
+                expect(getUserMedia).toHaveBeenCalledOnce();
+                expect(sockets).toHaveLength(0);
+                await warmMicrophone();
+                expect(getUserMedia).toHaveBeenCalledTimes(2);
+                releaseMicrophone();
+                expect(microphone.stop).toHaveBeenCalledOnce();
+            });
+
+            it("preserves the unsupported microphone error and permits retry", async () => {
+                vi.stubGlobal("navigator", {});
+
+                await expect(
+                    dictate({ wsUrl: "wss://mock.invalid/dictation" }),
+                ).rejects.toMatchObject({
+                    code: "unsupported",
+                    message: "Microphone is not available in this browser.",
+                });
+
+                vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+                await warmMicrophone();
+                expect(getUserMedia).toHaveBeenCalledOnce();
+            });
+
+            it("releases the active stream once and allows a fresh acquisition", async () => {
+                await warmMicrophone();
+                await warmMicrophone();
+                expect(getUserMedia).toHaveBeenCalledOnce();
+
+                releaseMicrophone();
+                releaseMicrophone();
+                expect(microphone.stop).toHaveBeenCalledOnce();
+                const next = fakeStream();
+                getUserMedia.mockResolvedValue(next.stream);
+                await warmMicrophone();
+                expect(getUserMedia).toHaveBeenCalledTimes(2);
+                expect(next.stop).not.toHaveBeenCalled();
+                releaseMicrophone();
+                expect(next.stop).toHaveBeenCalledOnce();
+            });
+
+            it("reacquires a stream whose tracks have ended", async () => {
+                await warmMicrophone();
+                Object.assign(microphone.stream, { active: false });
+                const next = fakeStream();
+                getUserMedia.mockResolvedValue(next.stream);
+
+                await warmMicrophone();
+
+                expect(getUserMedia).toHaveBeenCalledTimes(2);
+                releaseMicrophone();
+                expect(next.stop).toHaveBeenCalledOnce();
+            });
+        });
     });
 }
