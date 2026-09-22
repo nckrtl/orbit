@@ -48,6 +48,8 @@ The Gateway checks source ownership and the active Route when present before cha
 
 Preflight compares the recorded checkout with its source layout, Project repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
 
+Branch checks compare the full `refs/heads/` identity with the recorded literal branch, including during finalization and retry. A same-name tag does not change that identity. A null branch requires an actually detached `HEAD`; another symbolic ref is not detached source.
+
 The Gateway answers a refused development source preflight with the code that names the failed check, in normal and forced mode alike.
 
 | Code | Refused check |

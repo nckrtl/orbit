@@ -351,6 +351,62 @@ it('names the refused identity check without waiving it in normal or forced remo
     'forced branch' => ['branch', true, 'instance.source_branch_mismatch'],
 ]);
 
+it('keeps inspection and direct removal independent of a same-name tag', function (bool $afterInspection, bool $force): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'preview');
+    $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'sibling');
+    $remoteRefs = orb76_run(['git', '--git-dir='.$this->repository, 'show-ref'])->stdout;
+    $siblingRefs = orb76_run(['git', '-C', $sibling->checkout_path, 'show-ref'])->stdout;
+    $inventory = $afterInspection ? $this->removal->inspect($instance, $force) : null;
+    orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'preview']);
+
+    $inventory ??= $this->removal->inspect($instance, $force);
+    $this->removal->remove($instance, $inventory, $force);
+
+    expect($inventory->branch)->toBe('preview');
+    expect(file_exists($instance->checkout_path))->toBeFalse();
+    expect(file_get_contents($sibling->checkout_path.'/README.md'))->toBe("main\n");
+    expect(orb76_run(['git', '--git-dir='.$this->repository, 'show-ref'])->stdout)->toBe($remoteRefs);
+    expect(orb76_run(['git', '-C', $sibling->checkout_path, 'show-ref'])->stdout)->toBe($siblingRefs);
+})->with(['before inspection' => false, 'after inspection' => true])->with(['normal' => false, 'forced' => true]);
+
+it('refuses an ambiguous display-name false match before inspection or direct deletion', function (bool $afterInspection, bool $force): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'preview');
+    orb76_run(['git', '-C', $instance->checkout_path, 'branch', '-m', 'heads/preview']);
+    $instance->update(['branch' => 'heads/preview']);
+    $inventory = $this->removal->inspect($instance, $force);
+    orb76_run(['git', '-C', $instance->checkout_path, 'branch', '-m', 'preview']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'preview']);
+    $refs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
+
+    expect(fn () => $afterInspection
+        ? $this->removal->remove($instance, $inventory, $force)
+        : $this->removal->inspect($instance, $force))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_branch_mismatch');
+        });
+
+    expect(file_get_contents($instance->checkout_path.'/README.md'))->toBe("main\n");
+    expect(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)->toBe($refs);
+})->with(['inspection' => false, 'direct deletion' => true])->with(['normal' => false, 'forced' => true]);
+
+it('refuses non-head or malformed symbolic source state without treating it as detachment', function (string $mutation): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'preview');
+    orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'preview']);
+    if ($mutation === 'tag') {
+        orb76_run(['git', '-C', $instance->checkout_path, 'symbolic-ref', 'HEAD', 'refs/tags/preview']);
+        $instance->update(['branch' => 'tags/preview']);
+    } else {
+        file_put_contents($instance->checkout_path.'/.git/HEAD', "ref: invalid symbolic state\n");
+        $instance->update(['branch' => null]);
+    }
+    $head = file_get_contents($instance->checkout_path.'/.git/HEAD');
+
+    expect(fn () => $this->removal->inspect($instance, true))->toThrow(RuntimeConvergenceException::class);
+
+    expect(file_get_contents($instance->checkout_path.'/.git/HEAD'))->toBe($head);
+    expect(file_get_contents($instance->checkout_path.'/README.md'))->toBe("main\n");
+})->with(['tag', 'malformed']);
+
 it('refuses a checkout with shared Git administration as a layout mismatch in either mode', function (bool $force): void {
     $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $sharedGitDirectory = $this->sandbox.'/shared.git';
@@ -1550,6 +1606,45 @@ it('refuses an immediate forced finalization race', function (): void {
         ->and(is_dir($instance->checkout_path))
         ->toBeTrue();
 });
+
+it('finalizes the recorded branch when a same-name tag appears after revalidation', function (bool $force): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'preview');
+    $member = orb180_record_source($this->removal, $instance, $force);
+    $remoteRefs = orb76_run(['git', '--git-dir='.$this->repository, 'show-ref'])->stdout;
+    $this->transport->beforeFinalization = static function () use ($instance): void {
+        orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'preview']);
+    };
+
+    expect($this->removal->finalize($member))->toBeString();
+
+    expect(file_exists($instance->checkout_path))->toBeFalse();
+    expect($this->removal->revalidate($member))->toBe(AppInstanceSourceRevalidationState::Completed);
+    expect(orb76_run(['git', '--git-dir='.$this->repository, 'show-ref'])->stdout)->toBe($remoteRefs);
+})->with(['normal' => false, 'forced' => true]);
+
+it('revalidates and finalizes a worktree with a same-name tag from present or quarantined source', function (bool $quarantined): void {
+    [$checkout, $instance, $sibling] = orb180_worktree_source(
+        $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'preview',
+    );
+    $member = orb180_record_source($this->removal, $instance, false);
+    orb76_run(['git', '-C', $checkout->checkout_path, 'tag', 'preview']);
+    $refs = orb76_run(['git', '-C', $checkout->checkout_path, 'show-ref'])->stdout;
+    $physical = $instance->checkout_path;
+    if ($quarantined) {
+        $physical = orb180_quarantine_path($member);
+        orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'move', $instance->checkout_path, $physical]);
+    }
+
+    expect($this->removal->revalidate($member))->toBe($quarantined
+        ? AppInstanceSourceRevalidationState::Quarantined
+        : AppInstanceSourceRevalidationState::Present);
+    expect($this->removal->finalize($member))->toBeString();
+
+    expect(file_exists($physical))->toBeFalse();
+    expect(file_get_contents($sibling.'/README.md'))->toBe("main\n");
+    expect(file_get_contents($checkout->checkout_path.'/README.md'))->toBe("main\n");
+    expect(orb76_run(['git', '-C', $checkout->checkout_path, 'show-ref'])->stdout)->toBe($refs);
+})->with(['present' => false, 'quarantined' => true]);
 
 it('refuses control bytes during recorded recovery and destructive revalidation', function (string $boundary): void {
     $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'control');

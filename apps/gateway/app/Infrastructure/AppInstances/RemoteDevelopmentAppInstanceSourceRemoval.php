@@ -1566,8 +1566,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     ;;
                 *) exit 1 ;;
             esac
-            current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
-            test "$current_branch" = "$branch"
+            if current_ref=$(git -C "$physical" symbolic-ref --quiet HEAD); then
+                test "$current_ref" = "refs/heads/$branch"
+            else
+                test "$?" = 1
+                test -z "$branch"
+            fi
             test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
             origin_with_marker=$(git -C "$physical" remote get-url origin && printf x)
             origin=${origin_with_marker%x}
@@ -1736,8 +1740,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 *) exit "$failure" ;;
             esac
             failure=14
-            branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-            test "$branch" = "$expected_branch"
+            if current_ref=$(git -C "$checkout" symbolic-ref --quiet HEAD); then
+                test "$current_ref" = "refs/heads/$expected_branch"
+            else
+                test "$?" = 1
+                test -z "$expected_branch"
+            fi
+            branch=$expected_branch
             failure=1
             dirty=
             if [ "$inspect_content" = 1 ]; then
@@ -1830,8 +1839,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
             test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
             failure=14
-            current_branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
-            test "$current_branch" = "$expected_branch"
+            if current_ref=$(git -C "$checkout" symbolic-ref --quiet HEAD); then
+                test "$current_ref" = "refs/heads/$expected_branch"
+            else
+                test "$?" = 1
+                test -z "$expected_branch"
+            fi
             failure=21
             test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
             failure=13
