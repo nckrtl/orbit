@@ -287,6 +287,35 @@ describe('fleet dependency scan', function (): void {
         'malformed row after valid row' => [fleet_cli_listing_json('['.fleet_cli_listed_instance_json(17, 'first', 'production', 'first.example.test').',{}]')],
     ]);
 
+    it('preserves safe listing refusal correlation without starting a scan', function (string $body, ?string $header, ?string $expectedId): void {
+        $mock = MockClient::global([
+            ListAppInstancesRequest::class => MockResponse::make($body, 200, $header === null ? [] : ['X-Orbit-Request-Id' => $header]),
+            ScanInstanceDependenciesRequest::class => static function (): never {
+                throw new RuntimeException('scan should not run');
+            },
+        ]);
+        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--json' => true]))->toBe(1);
+        $expected = ['error' => [
+            'code' => 'gateway.request_failed',
+            'message' => str_starts_with($body, '{"data": correlation-secret')
+                ? 'Gateway response is not valid JSON.'
+                : 'Gateway response contains invalid collection data.',
+            'request_id' => $expectedId,
+        ]];
+        expect(trim(Artisan::output()))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+            ->and(Artisan::output())->not->toContain('correlation-secret', "\e", 'Working', 'Scanning')
+            ->and($mock->getRecordedResponses())->toHaveCount(1)
+            ->and($mock->getLastPendingRequest()?->getRequest())->toBeInstanceOf(ListAppInstancesRequest::class);
+    })->with([
+        'metadata takes precedence' => ['{"data":null,"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}', '22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111'],
+        'metadata only' => ['{"data":null,"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}', null, '11111111-1111-4111-8111-111111111111'],
+        'missing metadata' => ['{"data":null}', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+        'invalid metadata' => ['{"data":null,"meta":{"request_id":"correlation-secret"}}', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+        'non-scalar metadata' => ['{"data":null,"meta":{"request_id":[]}}', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+        'malformed JSON' => ['{"data": correlation-secret', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+        'both invalid' => ['{"data":null,"meta":{"request_id":"correlation-secret"}}', 'correlation-secret', null],
+    ]);
+
     it('scans captured targets in list order and continues after one failure', function (): void {
         $scanned = [];
         $mock = MockClient::global([

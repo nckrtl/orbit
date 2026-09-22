@@ -490,13 +490,17 @@ abstract class GatewayCommand extends Command
         }
 
         if (! $dto instanceof $responseClass) {
-            throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response');
+            throw new GatewayApiException(
+                message: 'Gateway response is invalid.',
+                errorCode: 'gateway.invalid_response',
+                requestId: $this->responseRequestId($response),
+            );
         }
 
         return $dto;
     }
 
-    private function responseRequestId(Response $response): ?string
+    protected function responseRequestId(Response $response): ?string
     {
         try {
             $metaRequestId = $response->json('meta.request_id');

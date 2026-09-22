@@ -532,6 +532,33 @@ it('renders one bounded json envelope for an unexpected gateway dto type', funct
         ->toBe($expectedPayload);
 });
 
+it('keeps validated response correlation for wrong DTO failures', function (
+    string $body, ?string $header, ?string $expectedId,
+): void {
+    MockClient::global([
+        UnexpectedGatewayDtoRequest::class => MockResponse::make($body, 200, $header === null ? [] : ['X-Orbit-Request-Id' => $header]),
+    ]);
+    $command = app(UnexpectedGatewayDtoCommand::class);
+    $command->setLaravel(app());
+    $tester = new CommandTester($command);
+
+    expect($tester->execute(['--json' => true], ['interactive' => false]))->toBe(1)
+        ->and(trim($tester->getDisplay()))->toBe(json_encode(['error' => [
+            'code' => 'gateway.invalid_response',
+            'message' => 'Gateway response is invalid.',
+            'request_id' => $expectedId,
+        ]], JSON_THROW_ON_ERROR))
+        ->and($tester->getDisplay())->not->toContain('correlation-secret', 'unexpected-dto-secret', "\e");
+})->with([
+    'metadata takes precedence' => ['{"data":[],"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}', '22222222-2222-4222-8222-222222222222', '11111111-1111-4111-8111-111111111111'],
+    'metadata only' => ['{"data":[],"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}', null, '11111111-1111-4111-8111-111111111111'],
+    'missing metadata' => ['{"data":[]}', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+    'invalid metadata' => ['{"data":[],"meta":{"request_id":"correlation-secret"}}', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+    'non-scalar metadata' => ['{"data":[],"meta":{"request_id":[]}}', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+    'malformed JSON' => ['{"data": correlation-secret', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
+    'both invalid' => ['{"data":[],"meta":{"request_id":"correlation-secret"}}', 'correlation-secret', null],
+]);
+
 it('renders local validation failures through the exact json boundary', function (
     string $command,
     array $arguments,

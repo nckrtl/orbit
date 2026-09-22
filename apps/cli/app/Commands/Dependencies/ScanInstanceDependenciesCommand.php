@@ -166,7 +166,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             throw new GatewayApiException('Could not reach the gateway.', 'gateway.unreachable');
         }
 
-        $requestId = $this->listingRequestId($response);
+        $requestId = $this->responseRequestId($response);
         $this->guardCompleteListing($response, $requestId);
 
         try {
@@ -255,31 +255,6 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
     private function listingEnvironment(mixed $value): bool
     {
         return $value === 'development' || $value === 'production';
-    }
-
-    private function listingRequestId(Response $response): ?string
-    {
-        try {
-            $decoded = json_decode($response->body(), false, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $decoded = null;
-        }
-
-        $candidate = $decoded instanceof stdClass && isset($decoded->meta) && $decoded->meta instanceof stdClass
-            ? ($decoded->meta->request_id ?? null)
-            : null;
-        $candidate ??= $response->header('X-Orbit-Request-Id');
-        if (
-            is_string($candidate)
-            && preg_match(
-                '/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/iD',
-                $candidate,
-            ) === 1
-        ) {
-            return $candidate;
-        }
-
-        return null;
     }
 
     /** @return array<string, mixed> */
