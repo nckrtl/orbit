@@ -357,6 +357,33 @@ it('refuses normal checkout cascade then removes the immutable worktree-first se
         ->toBe(0);
 });
 
+it('completes Instance cleanup with an Agentation parent and its later watcher', function (): void {
+    $instance = orb181_coordinator_instance();
+    $processes = [];
+
+    foreach (['agentation-mcp', 'antigravity-watch'] as $preset) {
+        $processes[] = Process::query()->create([
+            'owner_type' => AppInstance::MorphAlias,
+            'owner_id' => $instance->id,
+            'name' => $preset,
+            'runtime' => 'systemd',
+            'working_directory' => $instance->checkout_path,
+            'runtime_config' => ['command' => ['/bin/true'], 'preset' => $preset],
+            'restart_policy' => 'always',
+            'desired_state' => 'running',
+            'status' => LifecycleStatus::Active,
+        ]);
+    }
+
+    $removal = $this->orb181Coordinator->execute($instance, false);
+
+    expect($removal->status->value)->toBe('completed');
+    expect($removal->members->sole()->runtime_cleaned_at)->not->toBeNull();
+    expect($this->orb131ProcessRuntime->removed)->toBe([$processes[1]->id, $processes[0]->id]);
+    $this->assertModelMissing($instance);
+    $this->assertDatabaseCount('processes', 0);
+});
+
 it('returns force guidance before inspecting unsafe checkout content', function (): void {
     [$checkout, $first, $second] = orb182_coordinator_graph();
     $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];

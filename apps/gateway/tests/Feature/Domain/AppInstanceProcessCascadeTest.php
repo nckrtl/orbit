@@ -8,6 +8,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -67,6 +68,57 @@ it('retains failed cleanup for retry and repeats only unfinished Process removal
         'owner_id' => $target->id,
     ]);
 });
+
+it('removes a preset watcher before its earlier parent and keeps other Process order stable', function (string $ownerType): void {
+    $target = orb131_cascade_instance('target');
+    $first = orb131_cascade_process($target->id, 'first', LifecycleStatus::Active);
+    $parent = orb131_cascade_preset($target, 'agentation-mcp', $ownerType);
+    $middle = orb131_cascade_process($target->id, 'middle', LifecycleStatus::Active);
+    $watcher = orb131_cascade_preset($target, 'antigravity-watch', $ownerType);
+    $last = orb131_cascade_process($target->id, 'last', LifecycleStatus::Active);
+    $runtime = new Orb131CascadeRuntimeManager;
+    $remove = new RemoveProcessAction($runtime, new ProcessTargetResolver);
+
+    expect(fn () => $remove->execute($parent))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('process.has_dependent');
+    });
+    expect($runtime->removed)->toBe([]);
+
+    new CascadeAppInstanceProcessesAction($remove)->execute($target->id);
+
+    expect($runtime->removed)->toBe([$watcher->id, $first->id, $parent->id, $middle->id, $last->id]);
+    $this->assertDatabaseCount('processes', 0);
+})->with([AppInstance::class, AppInstance::MorphAlias]);
+
+it('retains the parent when watcher cleanup fails and completes the cascade on retry', function (): void {
+    $target = orb131_cascade_instance('retry');
+    $parent = orb131_cascade_preset($target, 'agentation-mcp');
+    $watcher = orb131_cascade_preset($target, 'antigravity-watch');
+    $runtime = new Orb131CascadeRuntimeManager;
+    $runtime->failureId = $watcher->id;
+    $cascade = new CascadeAppInstanceProcessesAction(new RemoveProcessAction($runtime, new ProcessTargetResolver));
+
+    expect(fn () => $cascade->execute($target->id))
+        ->toThrow(ProcessOperationException::class, 'Exact Process ownership could not be verified.');
+
+    expect($runtime->removed)->toBe([$watcher->id]);
+    $this->assertDatabaseHas('processes', ['id' => $parent->id, 'status' => 'active']);
+    $this->assertDatabaseHas('processes', ['id' => $watcher->id, 'status' => 'failed', 'error_code' => 'process.ownership_conflict']);
+
+    $runtime->failureId = null;
+    $cascade->execute($target->id);
+
+    expect($runtime->removed)->toBe([$watcher->id, $watcher->id, $parent->id]);
+    $this->assertDatabaseCount('processes', 0);
+});
+
+function orb131_cascade_preset(AppInstance $instance, string $preset, string $ownerType = AppInstance::class): Process
+{
+    $process = orb131_cascade_process($instance->id, $preset, LifecycleStatus::Active, $ownerType);
+    $process->update(['runtime_config' => ['command' => ['/bin/true'], 'preset' => $preset]]);
+
+    return $process;
+}
 
 function orb131_cascade_instance(string $suffix): AppInstance
 {

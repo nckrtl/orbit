@@ -20,6 +20,7 @@ final readonly class CascadeAppInstanceProcessesAction
             ->where('owner_id', $appInstanceId)
             ->orderBy('id')
             ->get()
+            ->sortBy(static fn (Process $process): int => $process->isAntigravityWatch() ? 0 : 1)
             ->each(fn (Process $process) => $this->remove->execute($process));
     }
 }
