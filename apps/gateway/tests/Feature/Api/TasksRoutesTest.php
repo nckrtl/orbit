@@ -89,28 +89,41 @@ it('creates and reads typed task comments with review metadata', function (): vo
     ])->assertCreated()->json('data');
 
     $taskId = $group['tasks'][0]['id'];
-    $payload = [
-        'type' => 'approved',
-        'body' => 'Looks good.',
-        'author' => 'reviewer@example.test',
-        'review_attempt' => 2,
-        'reviewer_thread_id' => 'review-thread-2',
-        'driver_turn' => 'turn-17',
-    ];
+    foreach (['ready_for_review', 'assistance_requested', 'resolution'] as $type) {
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+            'type' => $type,
+            'body' => "Body for {$type}.",
+            'author' => 'agent@example.test',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', $type)
+            ->assertJsonPath('data.body', "Body for {$type}.")
+            ->assertJsonPath('data.author', 'agent@example.test')
+            ->assertJsonPath('data.task_id', $taskId)
+            ->assertJsonPath('data.task_group_id', $group['id'])
+            ->assertJsonPath('data.posted_at', fn (mixed $value): bool => is_string($value));
+    }
 
-    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", $payload)
-        ->assertCreated()
-        ->assertJsonPath('data.type', 'approved')
-        ->assertJsonPath('data.body', 'Looks good.')
-        ->assertJsonPath('data.author', $payload['author'])
-        ->assertJsonPath('data.review_attempt', 2)
-        ->assertJsonPath('data.reviewer_thread_id', 'review-thread-2')
-        ->assertJsonPath('data.driver_turn', 'turn-17')
-        ->assertJsonPath('data.task_id', $taskId);
+    foreach (['changes_requested', 'approved'] as $type) {
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+            'type' => $type,
+            'body' => "Body for {$type}.",
+            'author' => 'reviewer@example.test',
+            'review_attempt' => 2,
+            'reviewer_thread_id' => 'review-thread-2',
+            'driver_turn' => 'turn-17',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', $type)
+            ->assertJsonPath('data.review_attempt', 2)
+            ->assertJsonPath('data.reviewer_thread_id', 'review-thread-2')
+            ->assertJsonPath('data.driver_turn', 'turn-17');
+    }
 
     $this->getJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments")
         ->assertOk()
-        ->assertJsonPath('data.0.body', 'Looks good.');
+        ->assertJsonCount(5, 'data')
+        ->assertJsonPath('data.0.type', 'approved');
 });
 
 it('rejects invalid comment types and incomplete reviewer outcomes', function (): void {
