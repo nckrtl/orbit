@@ -148,6 +148,8 @@ An interactive call prompts for confirmation (defaulting to No): `Remove Tool [p
 
 Interactive decline, Ctrl-C, or EOF before the removal exits with `input.cancelled` and makes no mutation.
 
+Removal stays on the Gateway selected before confirmation. Switching the active profile in another terminal while the prompt is open does not change that target.
+
 | Condition | Result | Tool row |
 | --- | --- | --- |
 | The package is already absent | Removal succeeds without another manager removal | Deleted |

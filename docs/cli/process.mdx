@@ -268,6 +268,8 @@ Systemd units are named `orbit-process-{id}-{name}.service` and containers `orbi
 
 Destroying a definition leaves every existing Instance copy in place.
 
+Destruction stays on the Gateway selected before confirmation. Switching the active profile in another terminal while the prompt is open does not change that target.
+
 ## Related
 
 - [`schedule`](/cli/schedule) records recurring commands; Process commands do not operate on Schedules.

@@ -186,6 +186,8 @@ orbit schedule:destroy <schedule> [--app=APP] [--yes] [--json]
 After confirmation the Gateway marks the Schedule `removing`, disables and stops its timer, lets an active command finish, and then removes the exact timer, service, script, and record. A failure leaves the Schedule `removing`, and repeating the command resumes cleanup.
 </Warning>
 
+Destruction stays on the Gateway selected before confirmation. Switching the active profile in another terminal while the prompt is open does not change that target.
+
 ## Error codes
 
 The Gateway returns these stable codes for Schedule operations.

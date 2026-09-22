@@ -58,7 +58,7 @@ final class RemoveToolCommand extends ToolActionCommand
             }
         }
 
-        return parent::handle($repository, $connectors);
+        return $this->handleTool($connector, $toolId);
     }
 
     #[\Override]

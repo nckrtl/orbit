@@ -9,6 +9,7 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ProgressOutcome;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 
@@ -30,6 +31,11 @@ abstract class ToolActionCommand extends ToolCommand
             return self::FAILURE;
         }
 
+        return $this->handleTool($connector, $toolId);
+    }
+
+    protected function handleTool(GatewayConnector $connector, int $toolId): int
+    {
         $tool = $this->sendWithProgress(
             $connector,
             $this->request($toolId),

@@ -47,7 +47,9 @@ final class DestroyProcessCommand extends ProcessActionCommand
                 return self::FAILURE;
             }
 
-            if ($this->gatewayConnector($repository, $connectors) === null) {
+            $connector = $this->gatewayConnector($repository, $connectors);
+
+            if ($connector === null) {
                 return self::FAILURE;
             }
 
@@ -58,7 +60,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
                 return self::FAILURE;
             }
 
-            return parent::handle($repository, $connectors);
+            return $this->handleProcess($connector, $processId);
         }
 
         $name = $this->stringArgument('process', 'Process definition name', 'process.name_required');

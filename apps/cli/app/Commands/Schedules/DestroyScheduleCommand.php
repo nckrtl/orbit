@@ -47,7 +47,9 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
                 return self::FAILURE;
             }
 
-            if ($this->gatewayConnector($repository, $connectors) === null) {
+            $connector = $this->gatewayConnector($repository, $connectors);
+
+            if ($connector === null) {
                 return self::FAILURE;
             }
 
@@ -58,7 +60,7 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
                 return self::FAILURE;
             }
 
-            return parent::handle($repository, $connectors);
+            return $this->handleSchedule($connector, $scheduleId);
         }
 
         $name = $this->stringArgument('schedule', 'Schedule definition name', 'schedule.name_required');

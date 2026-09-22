@@ -21,6 +21,7 @@ process = subprocess.Popen(sys.argv[1:4], stdin=slave, stdout=slave, stderr=slav
 output = bytearray()
 keys = [base64.b64decode(key) for key in configuration['keys']]
 ready = False
+gateway_switched = False
 last_key = 0
 started = time.monotonic()
 while process.poll() is None:
@@ -35,6 +36,12 @@ while process.poll() is None:
             if error.errno != errno.EIO:
                 raise
     ready = ready or configuration['prompt'].encode() in output
+    if ready and not gateway_switched and 'switch_gateway' in configuration:
+        subprocess.run([sys.argv[1], os.path.join(os.path.dirname(sys.argv[2]), '../../../orbit'),
+                        'gateway:use', configuration['switch_gateway'], '--json'],
+                       env={**os.environ, 'ORBIT_HOME': configuration['home'], 'PAO_DISABLE': '1'},
+                       capture_output=True, check=True, timeout=5)
+        gateway_switched = True
     if ready and keys and time.monotonic() - last_key > 0.15:
         os.write(master, keys.pop(0))
         last_key = time.monotonic()
@@ -58,4 +65,5 @@ restored = after == before
 os.close(master)
 os.close(slave)
 print(json.dumps({'status': process.returncode, 'raw': base64.b64encode(output).decode(),
-                  'restored': restored, 'termios_diff': repr([(i, a, b) for i, (a, b) in enumerate(zip(before, after)) if a != b]), 'prompt_seen': ready, 'keys_remaining': len(keys)}))
+                  'restored': restored, 'termios_diff': repr([(i, a, b) for i, (a, b) in enumerate(zip(before, after)) if a != b]), 'prompt_seen': ready, 'keys_remaining': len(keys),
+                  'gateway_switched': gateway_switched}))

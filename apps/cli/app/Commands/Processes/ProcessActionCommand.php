@@ -6,6 +6,7 @@ namespace App\Commands\Processes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 
@@ -27,6 +28,11 @@ abstract class ProcessActionCommand extends ProcessCommand
             return self::FAILURE;
         }
 
+        return $this->handleProcess($connector, $processId);
+    }
+
+    protected function handleProcess(GatewayConnector $connector, int $processId): int
+    {
         $process = $this->sendWithProgress(
             $connector,
             $this->request($processId),
