@@ -287,6 +287,8 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     user=$1
                     relative_root=$2
                     checkout=$3
+                    # The production user may not be able to traverse the SSH login home.
+                    cd /
                     composer="$checkout/composer.json"
                     artisan="$checkout/artisan"
                     candidate="$checkout/$relative_root"

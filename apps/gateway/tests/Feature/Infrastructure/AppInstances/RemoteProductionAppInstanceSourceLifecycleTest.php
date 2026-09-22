@@ -15,6 +15,9 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('prepares the recorded user and home and resolves only the App default branch', function (): void {
@@ -340,6 +343,108 @@ it('refuses to inspect a recorded production checkout outside the home or its re
     'parent traversal' => '/home/orbit-app-1/releases/..',
     'nested release path' => '/home/orbit-app-1/releases/initial/public',
 ]);
+
+it('classifies owned source independently of the inherited working directory permissions', function (int $mode): void {
+    if ($mode === 0 && posix_geteuid() === 0) {
+        $this->markTestSkipped('A root process can traverse a mode-000 directory.');
+    }
+
+    [$directory, $user] = production_classification_native_fixture();
+
+    try {
+        $result = production_classification_native_read($directory, $user, $mode);
+
+        expect($result->getExitCode())->toBe(0, $result->getErrorOutput());
+        expect($result->getOutput())->toBe("COMPOSER\tregular\t".base64_encode('{"require":{"php":"^8.4","laravel/framework":"^13.0"}}')."\n");
+    } finally {
+        chmod($directory.'/cwd', 0700);
+        new Filesystem()->deleteDirectory($directory);
+    }
+})->with(['accessible working directory' => 0700, 'inaccessible working directory' => 0]);
+
+it('fails classification when the production user cannot enumerate a source subtree', function (): void {
+    if (posix_geteuid() === 0) {
+        $this->markTestSkipped('A root process can traverse a mode-000 directory.');
+    }
+
+    [$directory, $user] = production_classification_native_fixture();
+    mkdir($directory.'/checkout/unreadable', 0000);
+
+    try {
+        $result = production_classification_native_read($directory, $user, 0700);
+
+        expect($result->getExitCode())->not->toBe(0);
+        expect($result->getOutput())->toBe('');
+        expect($result->getErrorOutput())->toContain('Permission denied');
+    } finally {
+        chmod($directory.'/checkout/unreadable', 0700);
+        new Filesystem()->deleteDirectory($directory);
+    }
+});
+
+it('rejects native checkout ownership that does not match the production user', function (): void {
+    [$directory] = production_classification_native_fixture();
+    $foreignUser = posix_geteuid() === 0 ? 'nobody' : 'root';
+
+    try {
+        $result = production_classification_native_read($directory, $foreignUser, 0700);
+
+        expect($result->getExitCode())->toBe(0, $result->getErrorOutput());
+        expect($result->getOutput())->toBe("UNSAFE\n");
+    } finally {
+        new Filesystem()->deleteDirectory($directory);
+    }
+});
+
+/** @return array{string, string} */
+function production_classification_native_fixture(): array
+{
+    $account = posix_getpwuid(posix_geteuid());
+    if ($account === false) {
+        throw new RuntimeException('The source fixture needs the current Unix account.');
+    }
+
+    $directory = sys_get_temp_dir().'/orbit-production-classification-'.Str::uuid();
+    mkdir($directory, 0700);
+    mkdir($directory.'/cwd', 0700);
+    mkdir($directory.'/checkout', 0700);
+    mkdir($directory.'/checkout/public', 0700);
+    file_put_contents($directory.'/checkout/composer.json', '{"require":{"php":"^8.4","laravel/framework":"^13.0"}}');
+    file_put_contents($directory.'/checkout/artisan', '<?php');
+
+    return [$directory, $account['name']];
+}
+
+function production_classification_native_read(string $directory, string $user, int $cwdMode): Process
+{
+    [$source, $ssh, $instance] = production_source_lifecycle([new CommandResult(0, "NONE\n", '', 1, false)]);
+    $instance->production_user = $user;
+    $instance->production_home = $directory.'/checkout';
+    $instance->checkout_path = $directory.'/checkout';
+    $source->inspectProfile($instance);
+    $command = $ssh->commands[0];
+
+    // Only privilege switching is adapted; filesystem reads use the emitted script and native commands.
+    $fixture = <<<'BASH'
+        sudo() {
+            test "$1" = -u && test "$3" = -H || return 64
+            shift 3
+            command "$@"
+        }
+        chmod "$FIXTURE_CWD_MODE" -- "$PWD"
+
+        BASH;
+    $result = new Process(
+        $command->arguments,
+        cwd: $directory.'/cwd',
+        env: ['FIXTURE_CWD_MODE' => decoct($cwdMode), 'LC_ALL' => 'C'],
+        input: $fixture.$command->input,
+        timeout: 10,
+    );
+    $result->run();
+
+    return $result;
+}
 
 /**
  * @param  list<CommandResult>  $results

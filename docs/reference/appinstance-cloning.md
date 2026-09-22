@@ -71,6 +71,8 @@ The candidate must have no staged, unstaged, nonignored untracked, or submodule 
 
 The Gateway reconstructs the selected Project repository branch beneath the target's owned production release directory. It does not copy the candidate working directory and does not select the target's `current` release link.
 
+Source classification reads the recorded checkout as the target's production user, independently of the SSH login user's home permissions. It rejects foreign ownership, unreadable source trees, and unsafe Composer or Laravel metadata before continuing clone preparation. It does not change login-home permissions or run application code.
+
 Orbit copies every stored candidate environment entry into an independently encrypted target value. Literal values such as `APP_KEY` and reference expressions remain unchanged in storage. Target synchronization resolves `{{app_instance.domain}}` and `{{app_instance.environment}}` against the new Instance after the reusable remote preflight succeeds. The clone copies no source `.env` bytes, cached Laravel configuration, or local environment-file edits.
 
 Orbit copies the Project's production Process and Schedule definitions into independent Instance-owned records. It installs those copies in stopped state and does not use candidate-specific overrides. A PHP source receives a dedicated target runtime from Orbit defaults; a non-PHP source receives no PHP runtime. Candidate dependencies, ignored logs, caches, and local PHP-FPM tuning do not transfer.
