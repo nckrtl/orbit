@@ -94,7 +94,9 @@ Caddy on the Instance Node looks for `app-instance-{id}.awake` under `/dev/shm/o
 
 A request carrying `X-Orbit-Probe: 1` is exempt from both halves of that mechanism: it never enters the wake handle, so it starts nothing, and `log_skip` keeps it out of the access log, so it never becomes the activity the sweep reads. `log_skip` needs Caddy 2.8 or newer, which is why Orbit installs Caddy from [its own pinned package source](/reference/node-provisioning#package-sources) rather than the Ubuntu archive. [`profile --instance`](/cli/profile) sends that header, which is what lets an operator measure a sleeping Instance without changing whether it sleeps. A request without the header behaves exactly as described above.
 
-The Gateway accepts that call only from the Instance's Node. It returns an HTML progress page with status 401 and a two-second refresh, then starts the desired-running Instance Processes after that response. Caddy returns that non-2xx page to the client and does not proxy the site.
+The Gateway accepts that call only from the Instance's Node. It returns an HTML progress page with status 401, then starts the desired-running Instance Processes after that response. Caddy returns that non-2xx page to the client and does not proxy the site. The page is a black screen with the animated Orbit mark. It sets `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`.
+
+Caddy's `forward_auth` sends the browser's original path and query as `X-Forwarded-Uri`. A script on the page requests that same-origin path once a second. The script keeps waiting while the response header is `pending`. It loads that path once the header is missing or the response is a redirect. That load is the first application request. An unsafe forwarded value, including an absolute URL, falls back to `/`.
 
 When the durable cold marker is set, the Gateway restores missing reconstructable dependencies before it starts Processes. Composer runs `composer install --no-interaction --prefer-dist`. JavaScript restore runs `vp install --frozen-lockfile` so Vite+ selects the project's package manager. Soft wake without a cold marker starts Processes only. The Gateway uses the cold wake timeout for restore and the ordinary wake timeout for Process readiness.
 
@@ -104,7 +106,7 @@ For an `agentation-mcp` preset Process, the Gateway waits for `/health` on the a
 
 After restore, when needed, and after every desired-running Process is running, the Gateway clears the cold marker and then writes the awake marker. A keep-alive Process that is already running is already ready. The next browser refresh finds the marker and Caddy proxies that request, so the first application request already has Vite and its peers.
 
-A concurrent wake receives the same progress page. A failed restore or start keeps the cold marker and stores the error. The next intercept returns an HTML failure page with status 503 and a five-second retry, then starts again. Soft and cold wakes share those pages.
+A concurrent wake receives the same progress page. A failed restore or start keeps the cold marker and stores the error. The next intercept returns an HTML failure page with status 503, the same animated mark, the stored error, and a Try again link. That page sets `X-Orbit-Runtime-Activation-State: failed` and does not poll. Try again requests the original path with `orbit-wake-retry=1`, and the Gateway starts another wake. Soft and cold wakes share those pages.
 
 After host reboot the tmpfs awake markers are gone. App-dev Instance Process units are not enabled for boot, so the first HTTP request wakes the desired-running group.
 

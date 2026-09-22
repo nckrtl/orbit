@@ -1032,8 +1032,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['204'] = {'description': 'The caller may reach Grafana.'}
     elif route['name'] == 'runtime-activation:app-instance':
         responses['200'] = {'description': 'Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake Instance.'}
-        responses['401'] = {'description': 'An HTML progress page with a two-second refresh while the Gateway starts the desired-running Processes.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
-        responses['503'] = {'description': 'An HTML failure page with a five-second retry after a failed start.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
+        responses['401'] = {'description': 'An HTML progress page with the animated Orbit mark. The browser polls the original path once a second while X-Orbit-Runtime-Activation-State is pending.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
+        responses['503'] = {'description': 'An HTML failure page with the animated Orbit mark, the stored error, and a Try again link. It does not poll.', 'content': {'text/html': {'schema': {'type': 'string'}}}}
     else:
         data, is_list = data_schema_for(route)
         if is_list:
