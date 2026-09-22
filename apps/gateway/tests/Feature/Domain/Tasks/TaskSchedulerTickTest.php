@@ -5,8 +5,11 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskJevDecision;
+use App\Domain\Tasks\TaskJevOutcome;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
@@ -14,9 +17,11 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -120,11 +125,8 @@ it('drains a pending approval chosen by the faked Choice', function (): void {
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toHaveCount(1)
-        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::DrainApproval)
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
-        ->and($dispatcher->commands[0]['requestId'])->toBe('approval-tick')
-        ->and($dispatcher->commands[0]['decision'])->toBe('acceptForSession')
+        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+        ->and($dispatcher->commands)->toHaveCount(0)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -153,6 +155,11 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
         {
             $this->reason = $decision->reason;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -179,10 +186,9 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decisions[0]->reason)->toBe('T3 approval respond failed.')
-        ->and($notifier->reason)->toBe('T3 approval respond failed.')
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
+        ->and($decisions[0]->reason)->toContain('composer check')
+        ->and($notifier->reason)->toContain('composer check')
+        ->and($dispatcher->commands)->toHaveCount(0)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -229,11 +235,11 @@ it('advances the current subtask when Jev marks it done', function (): void {
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::MarkSubtaskDone)
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
         ->and($dispatcher->commands)->toBe([])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
-        ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($spawner->reviews)->toBe(1);
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Running)
+        ->and($spawner->reviews)->toBe(0);
 });
 
 it('notifies Coder when classification fails closed', function (): void {
@@ -249,6 +255,11 @@ it('notifies Coder when classification fails closed', function (): void {
         public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->reason = $decision->reason;
+        }
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
         }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
@@ -268,13 +279,18 @@ it('notifies Coder when classification fails closed', function (): void {
                 'TYPESAFE_API_KEY is missing. Task session routing will not invent a next action.',
             );
         }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            throw new LogicException('Not expected.');
+        }
     });
 
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decisions[0]->reason)->toContain('TYPESAFE_API_KEY is missing')
-        ->and($notifier->reason)->toContain('TYPESAFE_API_KEY is missing')
+        ->and($decisions[0]->reason)->toContain('composer check')
+        ->and($notifier->reason)->toContain('composer check')
         ->and($dispatcher->commands)->toBe([])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
@@ -296,6 +312,11 @@ it('dispatches nothing when Jev selects noop', function (): void {
         {
             $this->called = true;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->called = true;
+        }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -312,15 +333,146 @@ it('dispatches nothing when Jev selects noop', function (): void {
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::Noop)
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
         ->and($dispatcher->commands)->toBe([])
-        ->and($notifier->called)->toBeFalse();
+        ->and($notifier->called)->toBeTrue();
 });
 
 it('runs the artisan tick while the extension is enabled', function (): void {
     app(TaskExtensionState::class)->enable();
 
     $this->artisan('tasks:tick')
-        ->expectsOutput('Routed [0] task groups.')
+        ->expectsOutput('Routed [0] tasks and started [0] groups.')
         ->assertSuccessful();
 });
+
+it('does not classify or advance a task while its T3 thread is active', function (string $status): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class($status) implements T3ThreadReader
+    {
+        public function __construct(private string $status) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => $threadId === 'implementer-thread' ? $this->status : 'idle'],
+                'messages' => [['role' => 'assistant', 'text' => 'Done. Ready for review.']],
+            ]];
+        }
+    });
+    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
+    {
+        public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            throw new LogicException('Active tasks must not call Jev.');
+        }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            throw new LogicException('Active tasks must not call Jev.');
+        }
+    });
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([])
+        ->and($dispatcher->commands)->toBe([])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->tasks()->first()?->status)->toBe(TaskStatus::Running);
+})->with(['starting', 'running']);
+
+it('ignores tasks that are not in progress even when they have a thread', function (TaskStatus $status): void {
+    $group = tick_group();
+    $task = $group->tasks->first();
+    $task->update(['status' => $status]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            throw new LogicException('Only in-progress tasks should be inspected.');
+        }
+    });
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([])
+        ->and($task->fresh()->status)->toBe($status);
+    Classification::assertNothingClassified();
+})->with([TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled]);
+
+it('does not classify an in-progress task without an attached session', function (): void {
+    $group = tick_group();
+    $group->tasks->first()->update(['implementer_agent_thread_id' => null]);
+    AgentThread::query()->where('task_id', $group->tasks->first()->id)->delete();
+    app(TaskExtensionState::class)->enable();
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toBe([]);
+    Classification::assertNothingClassified();
+});
+
+it('targets the idle in-progress task while another task is working', function (TaskSessionNextAction $action): void {
+    $group = tick_group();
+    $workingTask = $group->tasks->first();
+    $workingTask->update(['status' => TaskStatus::Reviewing]);
+    $idleTask = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Second task',
+        'brief' => 'Finish the second task.',
+        'status' => TaskStatus::Running,
+    ]);
+    test_agent_thread($group, 'second-task-session', $idleTask);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(AgentSpawner::class, new NullAgentSpawner);
+    $reader = new class implements T3ThreadReader
+    {
+        /** @var list<string> */
+        public array $requested = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->requested[] = $threadId;
+
+            return ['thread' => [
+                'session' => ['status' => $threadId === 'implementer-thread' ? 'running' : 'idle'],
+                'messages' => [['role' => 'assistant', 'text' => 'Ready for the next step.']],
+            ]];
+        }
+    };
+    app()->instance(T3ThreadReader::class, $reader);
+    $classifier = new class($action) implements TaskSessionClassifier
+    {
+        /** @var list<TaskSessionObservation> */
+        public array $observations = [];
+
+        public function __construct(private TaskSessionNextAction $action) {}
+
+        public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            $this->observations[] = $observation;
+
+            return new TaskSessionDecision($this->action, 0.95, 'Route the observed task.');
+        }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            return new TaskJevDecision(TaskJevOutcome::AssistanceRequired, 1.0, 'Legacy test classifier.');
+        }
+    };
+    app()->instance(TaskSessionClassifier::class, $classifier);
+
+    $decisions = app(TaskScheduler::class)->tick();
+
+    expect($decisions)->toHaveCount(1)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
+        ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
+})->with([TaskSessionNextAction::ContinueImplementer, TaskSessionNextAction::MarkSubtaskDone]);

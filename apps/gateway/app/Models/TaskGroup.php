@@ -27,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property TaskGroupStatus $status
  * @property int|null $reviewer_agent_thread_id
  * @property string|null $pr_url
+ * @property bool $assistance_requested
+ * @property string|null $assistance_reason
  * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
@@ -67,6 +69,7 @@ final class TaskGroup extends Model
         'status',
         'reviewer_agent_thread_id',
         'pr_url',
+        'assistance_requested', 'assistance_reason',
         'notify_coder',
         'implementer_model',
         'reviewer_model',
@@ -108,6 +111,7 @@ final class TaskGroup extends Model
     {
         return [
             'notify_coder' => 'boolean',
+            'assistance_requested' => 'boolean',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
             'status' => TaskGroupStatus::class,

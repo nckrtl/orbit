@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, implement a complete PR, a
 
 # Feature delivery
 
-The [contributor guide](/contributor-guide) explains architecture, documentation, implementation, and PR submission. This reference covers review evidence, merge responsibilities, and local verification tools. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records the delivery decision.
+The [contributor guide](/contributor-guide) explains architecture, documentation, implementation, and PR submission. This reference covers review evidence, merge responsibilities, and local verification tools. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records the delivery decision. Task completion gates are defined by [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review).
 
 ## CI and local verification
 
@@ -22,6 +22,12 @@ Lint establishes document structure, language, links, and generated context cons
 Run checks in each changed project during development. Root `composer check` runs checks across all projects on a clean commit and saves logs under `orbit-checks` in the Git common directory.
 
 The repository maintainer configures branch protection to require `Required checks` and maintainer review. Workflow files define the checks; GitHub repository settings enforce them.
+
+## Orbit task completion evidence
+
+The Gateway task workflow uses typed comments and the AgentThread transcript. An implementer posts `ready_for_review` after a successful `composer check`; Jev inspects the command output in the last five thread entries, including tool output. A completion claim without that output does not pass the gate. Reviewers post `changes_requested` or `approved`, and the Gateway preserves the full comment body and attempt metadata while it relays findings or checks the commit and pull request.
+
+Assistance is part of the same task history. An `assistance_requested` comment flags the task and parent group without releasing its capacity. A non-empty `resolution` comment clears the flag and continues the AgentThread idempotently. Delivery failures preserve the blocked state and the resolution for retry. These comments and transcript entries are the evidence; the workflow has no separate validation-evidence API.
 
 ## Orbit review on Incus
 

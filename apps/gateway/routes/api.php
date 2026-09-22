@@ -507,6 +507,10 @@ Route::prefix('v1')->group(function (): void {
         Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'addTask'])
             ->whereNumber('group')
             ->name('tasks:add');
+        Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
+        Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:comment:list');
         Route::post('task-groups/{group}/cancel', [TaskGroupsController::class, 'cancel'])
             ->whereNumber('group')
             ->name('tasks:cancel');

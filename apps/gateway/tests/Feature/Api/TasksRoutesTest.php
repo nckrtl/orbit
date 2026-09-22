@@ -70,9 +70,79 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
         'tasks:add' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
+        'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
     ]);
+});
+
+it('creates and reads typed task comments with review metadata', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('comments');
+    $group = $this->postJson('/api/v1/task-groups', [
+        'app_id' => $app->id,
+        'title' => 'Comments',
+        'brief' => 'Record comments.',
+        'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
+    ])->assertCreated()->json('data');
+
+    $taskId = $group['tasks'][0]['id'];
+    foreach (['ready_for_review', 'assistance_requested', 'resolution'] as $type) {
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+            'type' => $type,
+            'body' => "Body for {$type}.",
+            'author' => 'agent@example.test',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', $type)
+            ->assertJsonPath('data.body', "Body for {$type}.")
+            ->assertJsonPath('data.author', 'agent@example.test')
+            ->assertJsonPath('data.task_id', $taskId)
+            ->assertJsonPath('data.task_group_id', $group['id'])
+            ->assertJsonPath('data.posted_at', fn (mixed $value): bool => is_string($value));
+    }
+
+    foreach (['changes_requested', 'approved'] as $type) {
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+            'type' => $type,
+            'body' => "Body for {$type}.",
+            'author' => 'reviewer@example.test',
+            'review_attempt' => 2,
+            'reviewer_thread_id' => 'review-thread-2',
+            'driver_turn' => 'turn-17',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.type', $type)
+            ->assertJsonPath('data.review_attempt', 2)
+            ->assertJsonPath('data.reviewer_thread_id', 'review-thread-2')
+            ->assertJsonPath('data.driver_turn', 'turn-17');
+    }
+
+    $this->getJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments")
+        ->assertOk()
+        ->assertJsonCount(5, 'data')
+        ->assertJsonPath('data.0.type', 'approved');
+});
+
+it('rejects invalid comment types and incomplete reviewer outcomes', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('invalid-comments');
+    $group = $this->postJson('/api/v1/task-groups', [
+        'app_id' => $app->id, 'title' => 'Comments', 'brief' => 'Record comments.',
+        'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
+    ])->assertCreated()->json('data');
+    $taskId = $group['tasks'][0]['id'];
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+        'type' => 'unknown', 'body' => 'Nope', 'author' => 'tester',
+    ])->assertStatus(422);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
+        'type' => 'approved', 'body' => 'Missing metadata', 'author' => 'tester',
+    ])->assertStatus(422);
 });
 
 it('declares Gateway access for enable disable status create and add', function (): void {
@@ -234,7 +304,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertCreated()
         ->assertJsonPath('data.title', 'Absorb Commander')
         ->assertJsonPath('data.app', 'commander-demo')
-        ->assertJsonPath('data.status', 'reserved')
+        ->assertJsonPath('data.status', 'queued')
         ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.reviewer_model', 'claude-opus-5')
@@ -268,7 +338,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.status', 'pending');
 
     expect(Task::query()->where('task_group_id', $id)->count())->toBe(3)
-        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Reserved);
+        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Queued);
 });
 
 it('creates a fourth group when the App already has three active groups', function (): void {
@@ -281,7 +351,7 @@ it('creates a fourth group when the App already has three active groups', functi
             'app_id' => $app->id,
             'title' => $title,
             'brief' => "{$title} brief",
-        ])->assertCreated()->assertJsonPath('data.status', 'reserved');
+        ])->assertCreated()->assertJsonPath('data.status', 'queued');
     }
 
     $this->postJson('/api/v1/task-groups', [
@@ -290,7 +360,7 @@ it('creates a fourth group when the App already has three active groups', functi
         'brief' => 'No per-Project ceiling holds this group.',
     ])
         ->assertCreated()
-        ->assertJsonPath('data.status', 'reserved')
+        ->assertJsonPath('data.status', 'queued')
         ->assertJsonPath('data.title', 'Four');
 });
 

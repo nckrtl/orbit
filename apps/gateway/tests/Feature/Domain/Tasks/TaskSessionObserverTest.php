@@ -82,6 +82,7 @@ function observer_reader(array $snapshots): T3ThreadReader
 
 it('marks an idle implementer observation with the last turn text', function (): void {
     $group = observer_group();
+    $group->tasks->first()->update(['status' => TaskStatus::Reviewing]);
     $reader = observer_reader([
         'implementer-thread' => [
             'thread' => [
@@ -123,7 +124,7 @@ it('marks an idle implementer observation with the last turn text', function ():
         }
     };
 
-    $observation = new TaskSessionObserver(test_agent_observer($reader), $diff)->observe($group);
+    $observation = new TaskSessionObserver(test_agent_observer($reader), $diff)->observe($group, $group->tasks->first());
     $implementer = $observation->thread(TaskThreadRole::Implementer);
 
     expect($observation->threads)->toHaveCount(2)
@@ -160,10 +161,86 @@ it('reads a pending user-input request id from subscribeThread activities', func
         ],
     ]);
 
-    $observation = new TaskSessionObserver(test_agent_observer($reader), new NullTaskWorkspaceDiffReader)->observe($group);
+    $observation = new TaskSessionObserver(test_agent_observer($reader), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks->first());
     $implementer = $observation->thread(TaskThreadRole::Implementer);
 
     expect($implementer?->idle)->toBeFalse()
         ->and($implementer?->pendingUserInputId)->toBe('input-req-77')
         ->and($implementer?->sessState)->toBe('asking_for_input');
+});
+
+it('defers a task with an active T3 session before inspecting context', function (string $status, string $activeThread): void {
+    $group = observer_group();
+    $group->tasks->first()->update(['status' => TaskStatus::Reviewing]);
+    $snapshots = [
+        'implementer-thread' => ['thread' => ['session' => ['status' => 'idle']]],
+        'reviewer-thread' => ['thread' => ['session' => ['status' => 'idle']]],
+    ];
+    $snapshots[$activeThread] = [
+        'thread' => [
+            'session' => ['status' => $status],
+            'latestTurn' => ['state' => 'completed'],
+            'pendingApprovals' => [['requestId' => 'old-approval']],
+            'pendingUserInputs' => [['requestId' => 'old-input']],
+            'messages' => [
+                ['role' => 'assistant', 'text' => 'Done. Ready for review.'],
+            ],
+        ],
+    ];
+    $diff = new class implements TaskWorkspaceDiffReader
+    {
+        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        {
+            throw new LogicException('Active tasks must not inspect workspace commits.');
+        }
+
+        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        {
+            return null;
+        }
+
+        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        {
+            return 0;
+        }
+    };
+
+    $observation = new TaskSessionObserver(test_agent_observer(observer_reader($snapshots)), $diff)->observe($group, $group->tasks->first());
+
+    expect($observation->threads)->toBe([]);
+})->with(['starting', 'running'])->with(['implementer-thread', 'reviewer-thread']);
+
+it('checks sessions attached to every task even after finding an active session', function (): void {
+    $group = observer_group();
+    $group->tasks->first()->update(['status' => TaskStatus::Reviewing]);
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Second task',
+        'brief' => 'Inspect this task too.',
+        'status' => TaskStatus::Running,
+    ]);
+    test_agent_thread($group, 'second-task-session', $task);
+    $reader = new class implements T3ThreadReader
+    {
+        /** @var list<string> */
+        public array $requested = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->requested[] = $threadId;
+
+            return ['thread' => ['session' => ['status' => 'running']]];
+        }
+    };
+
+    foreach ($group->tasks()->get() as $attachedTask) {
+        new TaskSessionObserver(test_agent_observer($reader), new NullTaskWorkspaceDiffReader)->observe($group, $attachedTask);
+    }
+
+    expect($reader->requested)->toBe([
+        'reviewer-thread',
+        'implementer-thread',
+        'second-task-session',
+    ]);
 });

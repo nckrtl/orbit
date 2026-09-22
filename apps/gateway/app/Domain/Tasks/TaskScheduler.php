@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 final readonly class TaskScheduler
 {
@@ -19,6 +21,10 @@ final readonly class TaskScheduler
         private AgentSpawner $spawner,
         private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
+        private TaskWorkspaceDiffReader $diff,
+        private TaskWorkspaceStateReader $workspace,
+        private TaskPullRequestWatcher $pullRequestWatcher,
+        private CompleteTaskGroupAction $completeGroup,
         private CoderSettleNotifier $coder,
         private TaskExtensionState $extension,
         private TaskSessionObserver $observer,
@@ -37,49 +43,262 @@ final readonly class TaskScheduler
 
         $groups = TaskGroup::query()
             ->with(['app', 'tasks', 'taskable'])
-            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing])
+            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
             ->orderBy('id')
             ->get();
+
+        foreach ($groups as $group) {
+            if ($group->status !== TaskGroupStatus::Settling || ! is_string($group->pr_url) || $group->pr_url === '') {
+                continue;
+            }
+            $status = $this->pullRequestWatcher->status($group);
+            if ($status === 'merged') {
+                try {
+                    $this->completeGroup->execute($group);
+                } catch (Throwable $exception) {
+                    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: '.$exception->getMessage()]);
+                }
+            } elseif ($status === 'closed') {
+                $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
+            }
+        }
 
         $decisions = [];
 
         foreach ($groups as $group) {
-            $observation = $this->observer->observe($group);
+            $tasks = $group->tasks
+                ->filter(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true))
+                ->sortBy(static fn (Task $task): array => [$task->position, $task->id]);
 
-            if ($observation->threads === [] && $observation->available) {
-                continue;
+            foreach ($tasks as $task) {
+                $task = $task->fresh();
+
+                if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
+                    continue;
+                }
+                if ($task->assistance_requested || $group->assistance_requested) {
+                    continue;
+                }
+
+                $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                $observation = $this->observer->observe($group, $task);
+
+                if ($observation->threads === [] && $observation->available) {
+                    $this->clearUnavailable($group);
+
+                    continue;
+                }
+
+                if ($task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
+                    continue;
+                }
+
+                if ($task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
+                    continue;
+                }
+
+                try {
+                    $decision = ! $observation->available
+                        ? $this->unavailableDecision($group)
+                        : $this->classifyAvailable($group, $observation);
+                } catch (TaskSessionClassificationException $exception) {
+                    $decision = TaskSessionDecision::escalate($exception->getMessage());
+                }
+
+                if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+                    if (! $observation->available) {
+                        $this->actor->execute($group, $observation, $decision);
+                        $decisions[] = $decision;
+
+                        continue;
+                    }
+                    $this->requestAssistance($task, $group, $decision->reason, $observation);
+                    $decisions[] = $decision;
+
+                    continue;
+                }
+
+                try {
+                    $this->actor->execute($group, $observation, $decision);
+                    $this->advance($group, $task, $decision);
+                    if ($task->communication_failures > 0) {
+                        $task->update(['communication_failures' => 0]);
+                    }
+                } catch (AgentDriverException $exception) {
+                    $decision = TaskSessionDecision::escalate($exception->getMessage());
+                    $task->increment('communication_failures');
+                    $task->refresh();
+                    if ($task->communication_failures >= 5) {
+                        $task->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
+                        $group->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
+                    }
+                    $this->actor->execute($group, $observation, $decision);
+                }
+
+                $decisions[] = $decision;
             }
-
-            try {
-                $unavailable = ! $observation->available || array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available);
-                $decision = $unavailable
-                    ? $this->unavailableDecision($group)
-                    : $this->classifyAvailable($group, $observation);
-            } catch (TaskSessionClassificationException $exception) {
-                $decision = TaskSessionDecision::escalate($exception->getMessage());
-            }
-
-            try {
-                $this->actor->execute($group, $observation, $decision);
-                $this->advance($group, $decision);
-            } catch (AgentDriverException $exception) {
-                $decision = TaskSessionDecision::escalate($exception->getMessage());
-                $this->actor->execute($group, $observation, $decision);
-            }
-
-            $decisions[] = $decision;
         }
 
         return $decisions;
     }
 
+    private function handleImplementerCompletion(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
+    {
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($implementer === null || ! $implementer->idle) {
+            return false;
+        }
+
+        $comment = $task->comments()->where('type', TaskCommentType::ReadyForReview->value)->where('completion_attempt', $task->completion_attempt)->latest('posted_at')->latest('id')->first();
+        $mentionsComposerCheck = array_any($implementer->recentMessages, static fn (array $message): bool => str_contains(strtolower($message['text']), 'composer check'));
+        if ($comment === null && ! $mentionsComposerCheck) {
+            return false;
+        }
+        $validEvidence = array_any($implementer->recentMessages, static function (array $message): bool {
+            $text = strtolower($message['text'].' '.$message['label']);
+
+            return $message['kind'] === 'activity'
+                && $message['label'] !== 'assistant'
+                && str_contains($text, 'composer check')
+                && (str_contains($text, 'passed') || str_contains($text, 'exit code 0') || str_contains($text, 'code 0'));
+        });
+
+        if ($comment !== null && $validEvidence && $task->completion_handoff_comment_id !== $comment->id) {
+            $task->completion_handoff_comment_id = $comment->id;
+            $task->save();
+            $this->settleImplementer($task);
+
+            return true;
+        }
+
+        if ($task->completion_reminder_attempt !== $task->completion_attempt) {
+            $this->actor->remindCompletion($group, $implementer);
+            $task->completion_reminder_attempt = $task->completion_attempt;
+            $task->save();
+        } else {
+            $this->requestAssistance($task, $group, 'Implementer did not provide a ready_for_review comment and passing composer check after the reminder.', $observation);
+        }
+
+        return true;
+    }
+
+    private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
+    {
+        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+        if ($reviewer === null || ! $reviewer->idle) {
+            return false;
+        }
+
+        $comment = $task->comments()
+            ->whereIn('type', [TaskCommentType::ChangesRequested->value, TaskCommentType::Approved->value])
+            ->where('review_attempt', $task->review_attempt)
+            ->latest('posted_at')->latest('id')->first();
+        $commentType = $comment === null ? null : TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
+        if ($commentType === TaskCommentType::ChangesRequested) {
+            if ($task->review_handled_comment_id === $comment->id) {
+                return true;
+            }
+            $implementer = $observation->thread(TaskThreadRole::Implementer);
+            if ($implementer === null) {
+                return false;
+            }
+            $this->actor->relayReviewBody($group, $implementer, $comment->body);
+            $task->update([
+                'status' => TaskStatus::Running,
+                'review_handled_comment_id' => $comment->id,
+                'review_attempt' => $task->review_attempt + 1,
+                'review_reminder_attempt' => null,
+                'completion_attempt' => $task->completion_attempt + 1,
+                'completion_handoff_comment_id' => null,
+                'completion_reminder_attempt' => null,
+            ]);
+            $group->update(['status' => TaskGroupStatus::Running]);
+
+            return true;
+        }
+
+        if ($commentType !== TaskCommentType::Approved) {
+            return $this->remindReviewer($group, $task, $reviewer, false, $observation);
+        }
+
+        $instance = $group->taskable;
+        $head = $instance instanceof AppInstance ? $this->workspace->headCommit($instance) : null;
+        $hasCommit = is_string($comment->commit_sha)
+            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $comment->commit_sha) === 1
+            && $instance instanceof AppInstance
+            && $comment->commit_sha === $head
+            && $this->workspace->currentBranch($instance) === 'task-'.$group->id
+            && $this->workspace->isClean($instance)
+            && $comment->commit_sha !== $task->subtask_start_commit
+            && $this->diff->hasCommitsSince($instance, (string) $task->subtask_start_commit);
+        $isFinal = ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
+        $hasPr = ! $isFinal || (is_string($comment->pr_url) && filter_var($comment->pr_url, FILTER_VALIDATE_URL) !== false
+            && $this->pullRequestWatcher->verifies($group, (string) $comment->commit_sha));
+        if (! $hasCommit || ! $hasPr) {
+            return $this->remindReviewer($group, $task, $reviewer, true, $observation);
+        }
+
+        $task->update(['review_handled_comment_id' => $comment->id]);
+        $this->acceptReview($task);
+
+        return true;
+    }
+
+    private function remindReviewer(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, bool $artifactsMissing, TaskSessionObservation $observation): bool
+    {
+        if ($task->review_reminder_attempt === $task->review_attempt) {
+            $this->requestAssistance($task, $group, 'Reviewer did not provide the required outcome or approved artifacts after the reminder.', $observation);
+
+            return true;
+        }
+        $this->actor->remindReviewer($group, $reviewer, $artifactsMissing);
+        $task->update(['review_reminder_attempt' => $task->review_attempt]);
+
+        return true;
+    }
+
+    private function requestAssistance(Task $task, TaskGroup $group, string $reason, ?TaskSessionObservation $observation = null): void
+    {
+        if ($task->assistance_requested || $group->assistance_requested) {
+            return;
+        }
+        $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+        $this->coder->assistance($group, $reason);
+    }
+
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
+    {
+        $this->clearUnavailable($group);
+
+        // The typed outcome contract requires projected tool output. Never fall
+        // back to the legacy drain/continue actions when it is absent.
+        $hasToolEvidence = array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => array_any($thread->recentMessages, static fn (array $message): bool => $message['kind'] === 'activity'));
+        if (! $hasToolEvidence) {
+            return TaskSessionDecision::escalate('Jev cannot verify a composer check in the recent tool output.');
+        }
+
+        $role = $observation->thread(TaskThreadRole::Reviewer) !== null && $group->status === TaskGroupStatus::Reviewing
+            ? TaskThreadRole::Reviewer
+            : TaskThreadRole::Implementer;
+        $outcome = $this->classifier->classifyOutcome($observation, $role);
+        if ($outcome->outcome === TaskJevOutcome::AssistanceRequired) {
+            return TaskSessionDecision::escalate($outcome->reason, $outcome->confidence);
+        }
+
+        return TaskSessionDecision::escalate(
+            $outcome->outcome === TaskJevOutcome::ChangesRequested
+                ? 'Jev requested changes without a typed reviewer comment.'
+                : 'Jev reported completion without the required typed comment and mechanical gates.',
+            $outcome->confidence,
+        );
+    }
+
+    private function clearUnavailable(TaskGroup $group): void
     {
         TaskGroup::query()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
             'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
         ]);
-
-        return $this->classifier->classify($observation);
     }
 
     private function unavailableDecision(TaskGroup $group): TaskSessionDecision
@@ -100,15 +319,10 @@ final readonly class TaskScheduler
         return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
     }
 
-    private function advance(TaskGroup $group, TaskSessionDecision $decision): void
+    private function advance(TaskGroup $group, Task $task, TaskSessionDecision $decision): void
     {
         $group = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-        $current = $group->tasks
-            ->sortBy(static fn (Task $task): array => [$task->position, $task->id])
-            ->first(static fn (Task $task): bool => in_array($task->status, [
-                TaskStatus::Running,
-                TaskStatus::Reviewing,
-            ], true));
+        $current = $task->fresh();
 
         if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
             if ($current->status === TaskStatus::Running) {
@@ -169,7 +383,9 @@ final readonly class TaskScheduler
         ));
 
         if (! $instance instanceof AppInstance) {
-            return $reserved->fresh(['tasks', 'app', 'taskable']) ?? $reserved;
+            $reserved->update(['status' => TaskGroupStatus::Queued]);
+
+            return null;
         }
 
         $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
@@ -182,6 +398,8 @@ final readonly class TaskScheduler
             $group->load('taskable');
 
             if (! $this->ceilings->canActivate($group)) {
+                $group->status = TaskGroupStatus::Queued;
+                $group->taskable()->dissociate();
                 $group->save();
 
                 return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
@@ -194,9 +412,11 @@ final readonly class TaskScheduler
             return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
         });
 
-        if ($started->status === TaskGroupStatus::Running) {
-            $this->spawnOpeningAgents($started);
+        if ($started->status !== TaskGroupStatus::Running) {
+            return null;
         }
+
+        $this->spawnOpeningAgents($started);
 
         return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
     }
@@ -236,6 +456,7 @@ final readonly class TaskScheduler
     public function startTask(Task $task): TaskGroup
     {
         $started = $this->activateRunningTask($task);
+        $this->recordSubtaskStart($started);
         $this->assignImplementer($started);
 
         $group = $started->taskGroup;
@@ -245,8 +466,6 @@ final readonly class TaskScheduler
 
     public function acceptReview(Task $task): TaskGroup
     {
-        $this->spawner->signOff($task);
-
         /** @var Task|null $next */
         $next = null;
         $group = DB::transaction(function () use ($task, &$next): TaskGroup {
@@ -287,6 +506,7 @@ final readonly class TaskScheduler
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
+            $this->recordSubtaskStart($next);
             $this->assignImplementer($next);
         }
 
@@ -416,6 +636,14 @@ final readonly class TaskScheduler
 
         $task->implementer_agent_thread_id = $threadId;
         $task->save();
+    }
+
+    private function recordSubtaskStart(Task $task): void
+    {
+        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
+        if ($instance instanceof AppInstance) {
+            $task->update(['subtask_start_commit' => $this->workspace->headCommit($instance)]);
+        }
     }
 
     /** @return Collection<int, Task> */

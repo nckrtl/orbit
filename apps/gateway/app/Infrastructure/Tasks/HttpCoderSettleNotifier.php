@@ -45,6 +45,16 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
         ]);
     }
 
+    public function assistance(TaskGroup $group, string $reason): void
+    {
+        $this->post([
+            'event' => 'task_group.assistance_requested',
+            'task_group_id' => $group->id,
+            'title' => $group->title,
+            'reason' => $reason,
+        ]);
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */

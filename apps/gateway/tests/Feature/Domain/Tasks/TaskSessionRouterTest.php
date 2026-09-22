@@ -72,6 +72,10 @@ function router_group(): TaskGroup
 function router_observation(TaskGroup $group, ?string $pendingApprovalId = null): TaskSessionObservation
 {
     return new TaskSessionObservation(
+        taskId: $group->tasks->first()->id,
+        taskStatus: 'running',
+        taskTitle: 'Models',
+        taskBrief: 'Store the records.',
         groupId: $group->id,
         groupStatus: $group->status->value,
         title: $group->title,
@@ -187,6 +191,8 @@ it('notifies Coder only when Jev escalates', function (): void {
             $this->escalated = $group;
             $this->decision = $decision;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
     $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
 
@@ -213,6 +219,8 @@ it('dispatches nothing for noop', function (): void {
         {
             $this->called = true;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
 
     new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute(

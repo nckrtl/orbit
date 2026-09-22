@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Tasks\TaskStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -14,6 +15,16 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $task_group_id
  * @property int $position
+ * @property int $completion_attempt
+ * @property int|null $completion_handoff_comment_id
+ * @property int|null $completion_reminder_attempt
+ * @property int $review_attempt
+ * @property int|null $review_handled_comment_id
+ * @property int|null $review_reminder_attempt
+ * @property bool $assistance_requested
+ * @property string|null $assistance_reason
+ * @property int $communication_failures
+ * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
  * @property TaskStatus $status
@@ -24,6 +35,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $line_diff
  * @property int|null $duration_ms
  * @property Carbon|null $started_at
+ * @property string|null $subtask_start_commit
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */
@@ -50,7 +62,15 @@ final class Task extends Model
         'lines_deleted',
         'duration_ms',
         'started_at',
+        'subtask_start_commit',
         'settled_at',
+        'completion_attempt',
+        'completion_handoff_comment_id',
+        'completion_reminder_attempt',
+        'review_attempt',
+        'review_handled_comment_id',
+        'review_reminder_attempt',
+        'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */
@@ -63,6 +83,12 @@ final class Task extends Model
     public function implementerThread(): BelongsTo
     {
         return $this->belongsTo(AgentThread::class, 'implementer_agent_thread_id');
+    }
+
+    /** @return HasMany<TaskComment, $this> */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(TaskComment::class);
     }
 
     /** @return array<string, string> */
@@ -78,6 +104,15 @@ final class Task extends Model
             'duration_ms' => 'integer',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
+            'completion_attempt' => 'integer',
+            'completion_handoff_comment_id' => 'integer',
+            'completion_reminder_attempt' => 'integer',
+            'review_attempt' => 'integer',
+            'review_handled_comment_id' => 'integer',
+            'review_reminder_attempt' => 'integer',
+            'assistance_requested' => 'boolean',
+            'communication_failures' => 'integer',
+            'resolution_delivered_comment_id' => 'integer',
         ];
     }
 }

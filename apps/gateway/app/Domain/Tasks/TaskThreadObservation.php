@@ -6,7 +6,9 @@ namespace App\Domain\Tasks;
 
 final readonly class TaskThreadObservation
 {
-    /** @param list<AgentInputRequest> $inputRequests */
+    /** @param list<AgentInputRequest> $inputRequests
+     * @param  list<array{id: string, kind: string, label: string, text: string, at: string}>  $recentMessages
+     */
     public function __construct(
         public int $threadId,
         public TaskThreadRole $role,
@@ -22,6 +24,7 @@ final readonly class TaskThreadObservation
         public bool $available = true,
         public ?string $error = null,
         public array $inputRequests = [],
+        public array $recentMessages = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -42,6 +45,7 @@ final readonly class TaskThreadObservation
             'has_new_commits_since_thread_start' => $this->hasNewCommitsSinceThreadStart,
             'pr_url' => $this->prUrl,
             'ci_summary' => $this->ciSummary,
+            'recent_messages' => $this->recentMessages,
         ];
     }
 }

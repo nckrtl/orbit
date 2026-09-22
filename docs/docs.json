@@ -459,6 +459,8 @@
               "POST /api/v1/task-groups/{group}/cancel",
               "POST /api/v1/task-groups/{group}/complete",
               "POST /api/v1/task-groups/{group}/tasks",
+              "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/tasks/disable",
               "POST /api/v1/tasks/enable",
               "GET /api/v1/tasks/status"
@@ -645,7 +647,8 @@
               "decisions/0108-persist-managed-environment-on-systemd-processes",
               "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
               "decisions/0110-route-task-sessions-with-laravel-ai-jev",
-              "decisions/0112-isolate-agent-threads-behind-drivers"
+              "decisions/0112-isolate-agent-threads-behind-drivers",
+              "decisions/0113-gate-task-completion-on-validation-and-review"
             ]
           }
         ]

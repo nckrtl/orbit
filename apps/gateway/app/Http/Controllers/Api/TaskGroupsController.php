@@ -10,6 +10,8 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -19,6 +21,9 @@ use App\Http\Requests\Tasks\AddTaskRequest;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
+use App\Http\Requests\Tasks\StoreTaskCommentRequest;
+use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,6 +50,26 @@ final class TaskGroupsController extends Controller
             'data' => TaskData::fromModel($task)->toArray(),
             'meta' => $this->meta($request),
         ], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function storeComment(StoreTaskCommentRequest $request, TaskGroup $group, Task $task, StoreTaskCommentAction $action): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+        $comment = $action->execute($task, $request->validated());
+
+        return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function comments(Request $request, TaskGroup $group, Task $task): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+
+        return response()->json([
+            'data' => $task->comments()->latest('posted_at')->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
+            'meta' => $this->meta($request),
+        ]);
     }
 
     #[RequiresNodeAccess(ServingNode::Collection)]
