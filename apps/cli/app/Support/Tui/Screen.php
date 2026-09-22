@@ -873,8 +873,6 @@ final class Screen
             $block = $block->titles(Title::fromString($title));
         }
 
-        $ui->selected[$name] = max(0, min($ui->selected[$name] ?? 0, count($rows) - 1));
-
         if ($rows === []) {
             return $block->widget(ParagraphWidget::fromString(' '.$empty)->style(Style::default()->fg(AnsiColor::DarkGray)));
         }
@@ -884,6 +882,7 @@ final class Screen
 
         $table = TableWidget::default();
         $table->columnSpacing = 1;
+        $ui->selected[$name] = max(0, min($ui->selected[$name] ?? 0, count($rows) - 1));
         $ui->drawn[$name]['table'] = $table->state;
 
         if ($headers !== []) {

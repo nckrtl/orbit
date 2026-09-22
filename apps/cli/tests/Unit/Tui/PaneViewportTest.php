@@ -36,6 +36,22 @@ beforeEach(function (): void {
 });
 
 describe('last-drawn pane authority', function (): void {
+    it('keeps selection through an empty polling frame without allowing an action', function (): void {
+        $this->ui->goTo('processes');
+        $this->ui->focus = 'list';
+        $this->ui->selected['list'] = 30;
+        render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+        $rows = $this->state->processes;
+        $this->state->processes = [];
+        render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+        $this->interaction->handleChar('a');
+        expect($this->ui->selected['list'])->toBe(30)->and($this->ui->menu)->toBeNull();
+        $this->state->processes = $rows;
+        render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+        $this->interaction->handleChar('a');
+        expect($this->ui->selected['list'])->toBe(30)->and($this->ui->menu['row']['id'])->toBe(31);
+    });
+
     it('retains the renderer offset across keyboard wheel and resized frames', function (): void {
         $this->ui->goTo('processes');
         $this->ui->focus = 'list';
