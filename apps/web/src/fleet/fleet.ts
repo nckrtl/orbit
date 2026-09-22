@@ -46,9 +46,7 @@ export const nodeName = (fleet: Fleet, id: number): string =>
 export function instanceName(fleet: Fleet, id: number): string {
     const instance = fleet.instances.find((candidate) => candidate.id === id);
 
-    return instance === undefined
-        ? "—"
-        : `${(instance.project ?? instance.app).slug}/${instance.name}`;
+    return instance === undefined ? "—" : `${instance.project.slug}/${instance.name}`;
 }
 
 export const instanceNodeName = (fleet: Fleet, id: number): string =>
@@ -67,7 +65,7 @@ export const processNodeName = (fleet: Fleet, process: Process): string =>
 export const instancesForNode = (fleet: Fleet, name: string): Instance[] =>
     fleet.instances.filter((instance) => instance.node.name === name);
 export const instancesForProject = (fleet: Fleet, slug: string): Instance[] =>
-    fleet.instances.filter((instance) => (instance.project ?? instance.app).slug === slug);
+    fleet.instances.filter((instance) => instance.project.slug === slug);
 export const processesFor = (fleet: Fleet, type: "node" | "instance", id: number): Process[] =>
     fleet.processes.filter((process) => process.target_type === type && process.target_id === id);
 export const schedulesForInstance = (fleet: Fleet, id: number): Schedule[] =>
@@ -93,8 +91,7 @@ export function listRows(
             .filter(
                 (instance) =>
                     (nodeFilter === undefined || instance.node.name === nodeFilter) &&
-                    (projectFilter === undefined ||
-                        (instance.project ?? instance.app).slug === projectFilter),
+                    (projectFilter === undefined || instance.project.slug === projectFilter),
             )
             .map((instance) => instance.id),
     );
@@ -167,7 +164,7 @@ export function attentionRows(fleet: Fleet): AttentionRow[] {
                     kind: "instances",
                     record: instance,
                     label: "Instance",
-                    name: `${(instance.project ?? instance.app).slug}/${instance.name}`,
+                    name: `${instance.project.slug}/${instance.name}`,
                     where: instance.node.name,
                     state: instance.status,
                 }),
@@ -247,7 +244,7 @@ export function recordTitle(kind: Kind, row: AnyRecord): string {
         case "nodes":
             return (row as Node).name;
         case "instances":
-            return `${((row as Instance).project ?? (row as Instance).app).slug}/${(row as Instance).name}`;
+            return `${(row as Instance).project.slug}/${(row as Instance).name}`;
         case "projects":
         case "databases":
             return (row as { slug: string }).slug;

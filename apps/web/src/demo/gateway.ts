@@ -2,7 +2,7 @@ import type { Method, Transport } from "../api/client";
 import type {
     Database,
     FirewallRule,
-    Instance,
+    InstanceWire,
     ManagedFirewallRule,
     Node,
     Process,
@@ -72,7 +72,7 @@ export function createDemoGateway() {
     const processes = list<Process>("GET /api/v1/processes");
     const schedules = list<Schedule>("GET /api/v1/schedules");
     const databases = list<Database>("GET /api/v1/database-connections");
-    const instances = list<Instance>("GET /api/v1/instances");
+    const instances = list<InstanceWire>("GET /api/v1/instances");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
     const trackedInstances = new Set<string>();
     const quotaAccounts: QuotaAccount[] = [

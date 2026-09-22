@@ -422,9 +422,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
     const hasDeployments = (deployments.data?.length ?? 0) > 0;
     const analytics = useQuery(instanceAnalyticsQuery(instance.id)).data;
     const schedules = useMemo(() => scheduleColumns(fleet, "none"), [fleet]);
-    const project = fleet.projects.find(
-        (candidate) => candidate.id === (instance.project ?? instance.app).id,
-    );
+    const project = fleet.projects.find((candidate) => candidate.id === instance.project.id);
     const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id);
 
     return (
@@ -439,7 +437,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                         { name: "Name", value: instance.name },
                         {
                             name: "Project",
-                            value: (instance.project ?? instance.app).slug,
+                            value: instance.project.slug,
                             onOpen:
                                 project === undefined
                                     ? undefined

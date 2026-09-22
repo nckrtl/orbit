@@ -1,6 +1,7 @@
 import { get, setTransport } from "../api/client";
 import type { Fleet } from "../api/queries";
-import type { FirewallRule, Node } from "../api/types";
+import type { FirewallRule, InstanceWire, Node } from "../api/types";
+import { normalizeInstance } from "../api/instances";
 import { createDemoGateway } from "./gateway";
 
 /** The fixture fleet as the pages see it, read through the demo Gateway. For tests of fleet logic. */
@@ -14,7 +15,9 @@ export async function demoFleet(): Promise<Fleet> {
     return {
         nodes,
         projects: await get("/api/v1/projects"),
-        instances: await get("/api/v1/instances"),
+        instances: (await get<InstanceWire[]>("/api/v1/instances")).map((instance) =>
+            normalizeInstance(instance),
+        ),
         processes: await get("/api/v1/processes"),
         schedules: await get("/api/v1/schedules"),
         databases: await get("/api/v1/database-connections"),

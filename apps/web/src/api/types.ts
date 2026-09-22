@@ -7,12 +7,16 @@ type Schema<K extends keyof components["schemas"]> = Required<components["schema
 export type Node = Schema<"Node">;
 export type Project = Schema<"App">;
 export type ProjectIdentity = { id: number; name: string; slug: string };
-export type Instance = Omit<Schema<"AppInstance">, "app" | "project" | "node" | "deploy_steps"> & {
-    app: ProjectIdentity;
-    project?: ProjectIdentity;
+type InstanceFields = Omit<Schema<"AppInstance">, "app" | "project" | "node" | "deploy_steps"> & {
     node: { id: number; name: string };
     deploy_steps: DeployStep[];
 };
+export type InstanceWire = InstanceFields &
+    (
+        | { app: ProjectIdentity; project?: ProjectIdentity }
+        | { project: ProjectIdentity; app?: ProjectIdentity }
+    );
+export type Instance = InstanceFields & { project: ProjectIdentity };
 export type DeployStep = { phase: string; name: string; timeout_seconds: number };
 export type Process = Schema<"Process">;
 export type Schedule = Schema<"Schedule">;

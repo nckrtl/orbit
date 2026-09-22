@@ -1,4 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { normalizeInstance } from "../api/instances";
+import type { InstanceWire } from "../api/types";
 
 export type RealtimeEvent = { type: string; id: number; at: string; data: Record<string, unknown> };
 
@@ -30,9 +32,19 @@ export function applyRow(client: QueryClient, collection: string, verb: string, 
             return rows.filter((row) => row.id !== data.id);
         }
 
-        return rows.some((row) => row.id === data.id)
-            ? rows.map((row) => (row.id === data.id ? { ...row, ...data } : row))
-            : [...rows, data];
+        const patch =
+            collection === "instances" ? normalizeInstance(data as Partial<InstanceWire>) : data;
+
+        if (rows.some((row) => row.id === data.id)) {
+            return rows.map((row) => (row.id === data.id ? { ...row, ...patch } : row));
+        }
+
+        if (collection === "instances" && patch.project === undefined) {
+            void client.invalidateQueries({ queryKey: ["instances"] });
+            return undefined;
+        }
+
+        return [...rows, patch];
     });
 }
 

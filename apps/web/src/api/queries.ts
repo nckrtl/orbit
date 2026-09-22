@@ -2,6 +2,7 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useLiveness } from "../realtime/liveness";
 import { get } from "./client";
 import { queryClient } from "./queryClient";
+import { normalizeInstance } from "./instances";
 import type {
     Database,
     DatabaseUser,
@@ -9,6 +10,7 @@ import type {
     DeploymentEvent,
     FirewallRule,
     Instance,
+    InstanceWire,
     InstanceAnalytics,
     InstanceAnalyticsStats,
     LiveFirewallSnapshot,
@@ -40,7 +42,10 @@ export const lists = {
     }),
     instances: queryOptions({
         queryKey: ["instances"],
-        queryFn: () => get<Instance[]>("/api/v1/instances"),
+        queryFn: async () =>
+            (await get<InstanceWire[]>("/api/v1/instances")).map((instance) =>
+                normalizeInstance(instance),
+            ),
     }),
     processes: queryOptions({
         queryKey: ["processes"],
