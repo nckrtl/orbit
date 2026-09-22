@@ -10,7 +10,7 @@ import { resolveAnnotationContext } from "@/annotation/context";
 import { annotationContextFields, annotationPayload } from "@/annotation/payload";
 import { releaseMicrophone, warmMicrophone } from "@/annotation/dictation";
 import { captureAnnotationScreenshot } from "@/annotation/screenshot";
-import { deleteSyncedAnnotation, fetchAnnotationSync, pushAnnotation } from "@/annotation/sync";
+import { submitOneShotTask } from "@/annotation/commander";
 import type { Annotation, AnnotationDraft } from "@/annotation/types";
 import { currentBreakpoint, currentScreenSize, currentScrollPosition } from "@/annotation/viewport";
 
@@ -104,244 +104,12 @@ async function attachDraftScreenshot(target: AnnotationDraft): Promise<void> {
 
 export function reloadAnnotations(pathname: string = window.location.pathname): void {
     currentPathname = pathname;
-    annotations.value = loadAnnotations(pathname);
+    annotations.value = loadAnnotations(pathname).filter(
+        (annotation) => annotation.status !== "resolved",
+    );
     clearPendingPlacement();
     draft.value = null;
     hover.value = null;
-}
-
-const visualWaiters = new Map<string, number>();
-const VISUAL_APPLY_TIMEOUT_MS = 10_000;
-
-export function applyResolvedAnnotations(
-    resolvedIds: string[],
-    options: { toById?: Record<string, string>; immediate?: boolean } = {},
-): void {
-    if (resolvedIds.length === 0) {
-        return;
-    }
-
-    const ready: string[] = [];
-
-    for (const id of resolvedIds) {
-        const annotation = annotations.value.find((item) => item.id === id);
-        const to = options.toById?.[id] ?? annotation?.change?.to;
-
-        if (
-            options.immediate ||
-            !annotation ||
-            typeof to !== "string" ||
-            to === "" ||
-            visualChangeVisible(annotation, to)
-        ) {
-            ready.push(id);
-            continue;
-        }
-
-        applyAnnotationStatus([id], "applied");
-        applyChangeTargets({ [id]: to });
-        waitForVisualApply(annotation, to);
-    }
-
-    if (ready.length > 0) {
-        removeResolvedPins(ready);
-    }
-}
-
-function waitForVisualApply(annotation: Annotation, to: string): void {
-    if (visualWaiters.has(annotation.id) || typeof window === "undefined") {
-        return;
-    }
-
-    const started = Date.now();
-    const tick = () => {
-        if (
-            visualChangeVisible(annotation, to) ||
-            Date.now() - started >= VISUAL_APPLY_TIMEOUT_MS
-        ) {
-            visualWaiters.delete(annotation.id);
-            removeResolvedPins([annotation.id]);
-            return;
-        }
-
-        visualWaiters.set(annotation.id, window.setTimeout(tick, 100));
-    };
-
-    visualWaiters.set(annotation.id, window.setTimeout(tick, 50));
-}
-
-function visualChangeVisible(annotation: Annotation, to: string): boolean {
-    if (typeof document === "undefined") {
-        return true;
-    }
-
-    return Boolean(resolveTargetElement(annotation)?.classList.contains(to));
-}
-
-function removeResolvedPins(resolvedIds: string[]): void {
-    const resolved = new Set(resolvedIds);
-    const remaining = annotations.value.filter((annotation) => !resolved.has(annotation.id));
-
-    for (const id of resolvedIds) {
-        const timer = visualWaiters.get(id);
-
-        if (timer) {
-            window.clearTimeout(timer);
-            visualWaiters.delete(id);
-        }
-    }
-
-    if (remaining.length === annotations.value.length) {
-        return;
-    }
-
-    annotations.value = remaining;
-    persist();
-
-    if (draft.value?.annotationId && resolved.has(draft.value.annotationId)) {
-        draft.value = null;
-    }
-}
-
-function applyChangeTargets(toById?: Record<string, string>): void {
-    if (!toById || Object.keys(toById).length === 0) {
-        return;
-    }
-
-    let changed = false;
-
-    annotations.value = annotations.value.map((annotation) => {
-        const to = toById[annotation.id];
-
-        if (!to || annotation.change?.to === to) {
-            return annotation;
-        }
-
-        changed = true;
-
-        return {
-            ...annotation,
-            change: {
-                ...annotation.change,
-                to,
-            },
-        };
-    });
-
-    if (changed) {
-        persist();
-    }
-}
-
-export function annotationBelongsToCurrentPage(
-    annotation: Pick<Annotation, "url" | "pathname">,
-): boolean {
-    const pathname =
-        currentPathname || (typeof window === "undefined" ? "" : window.location.pathname);
-    const href = typeof window === "undefined" ? "" : window.location.href;
-    const path = annotation.pathname ?? "";
-    const url = annotation.url ?? "";
-
-    if (path === "" && url === "") {
-        return true;
-    }
-
-    if (path !== "" && path === pathname) {
-        return true;
-    }
-
-    if (url === "") {
-        return false;
-    }
-
-    try {
-        return new URL(url, href || "http://localhost").pathname === pathname;
-    } catch {
-        return url.includes(pathname);
-    }
-}
-
-export function applyCreatedAnnotations(incoming: Annotation[]): void {
-    const next = new Map(annotations.value.map((annotation) => [annotation.id, annotation]));
-    let changed = false;
-
-    for (const annotation of incoming) {
-        if ((annotation.status ?? "pending") === "resolved") {
-            if (next.delete(annotation.id)) {
-                changed = true;
-            }
-
-            continue;
-        }
-
-        if (!annotationBelongsToCurrentPage(annotation)) {
-            continue;
-        }
-
-        const existing = next.get(annotation.id);
-
-        if (
-            existing &&
-            existing.comment === annotation.comment &&
-            existing.status === annotation.status &&
-            existing.x === annotation.x &&
-            existing.y === annotation.y
-        ) {
-            continue;
-        }
-
-        next.set(annotation.id, existing ? { ...existing, ...annotation } : annotation);
-        changed = true;
-    }
-
-    if (!changed) {
-        return;
-    }
-
-    annotations.value = [...next.values()];
-    persist();
-}
-
-export function applyInProgressAnnotations(
-    inProgressIds: string[],
-    toById?: Record<string, string>,
-): void {
-    applyAnnotationStatus(inProgressIds, "in_progress");
-    applyChangeTargets(toById);
-}
-
-export function applyPendingAnnotations(pendingIds: string[]): void {
-    applyAnnotationStatus(pendingIds, "pending");
-}
-
-function applyAnnotationStatus(ids: string[], status: Annotation["status"]): void {
-    if (ids.length === 0) {
-        return;
-    }
-
-    const matching = new Set(ids);
-    let changed = false;
-
-    annotations.value = annotations.value.map((annotation) => {
-        if (!matching.has(annotation.id) || annotation.status === status) {
-            return annotation;
-        }
-
-        changed = true;
-
-        return { ...annotation, status };
-    });
-
-    if (changed) {
-        persist();
-    }
-}
-
-export async function pullResolvedAnnotations(): Promise<void> {
-    const sync = await fetchAnnotationSync();
-    applyCreatedAnnotations(sync.annotations);
-    applyResolvedAnnotations(sync.resolvedIds);
-    applyInProgressAnnotations(sync.inProgressIds);
 }
 
 export function submitDraft(comment: string, source: AnnotationDraft | null = draft.value): void {
@@ -374,48 +142,33 @@ export function submitDraft(comment: string, source: AnnotationDraft | null = dr
               ...annotationPayload(current, trimmed),
           };
 
+    saved.url ??= window.location.href;
+    saved.pathname ??= currentPathname || window.location.pathname;
+    saved.status ??= "in_progress";
+
     annotations.value = current.annotationId
         ? annotations.value.map((annotation) => (annotation.id === saved.id ? saved : annotation))
         : [...annotations.value, saved];
 
     persist();
-    void pushAnnotation(saved).then((updated) => {
-        if (!updated) {
+    void submitOneShotTask(saved).then((result) => {
+        if (result.ok) {
             return;
         }
 
-        if ((updated.status ?? "pending") === "resolved") {
-            applyResolvedAnnotations([updated.id]);
+        console.warn("[orbit annotation] Commander one-shot failed:", result.error);
+
+        // The saved object owns this revision. Edits, deletion, reload and teardown replace it.
+        if (saved.status === "pending" || !annotations.value.includes(saved)) {
             return;
         }
 
-        applyCreatedAnnotations([updated]);
-
-        if (updated.status === "in_progress") {
-            applyInProgressAnnotations([updated.id]);
-        }
-
-        void followAnnotationLifecycle(updated.id);
+        annotations.value = annotations.value.map((annotation) =>
+            annotation === saved ? { ...saved, status: "pending" } : annotation,
+        );
+        persist();
     });
     draft.value = null;
-}
-
-async function followAnnotationLifecycle(id: string): Promise<void> {
-    for (const delay of [400, 800, 1600, 3200, 5000]) {
-        await new Promise((resolve) => window.setTimeout(resolve, delay));
-
-        if (!annotations.value.some((annotation) => annotation.id === id)) {
-            return;
-        }
-
-        await pullResolvedAnnotations();
-
-        const current = annotations.value.find((annotation) => annotation.id === id);
-
-        if (!current || current.status === "resolved") {
-            return;
-        }
-    }
 }
 
 export function deleteDraft(): void {
@@ -428,7 +181,6 @@ export function deleteDraft(): void {
 
     annotations.value = annotations.value.filter((annotation) => annotation.id !== id);
     persist();
-    void deleteSyncedAnnotation(id);
     draft.value = null;
 }
 
@@ -499,7 +251,6 @@ export function setAnnotationMode(active: boolean): void {
     }
 
     void warmMicrophone();
-    void pullResolvedAnnotations();
 }
 
 export function toggleAnnotationMode(): void {
@@ -670,23 +421,18 @@ export function handleNavigation(): void {
     const pathChanged = pathname !== currentPathname;
 
     currentPathname = pathname;
-    annotations.value = loadAnnotations(pathname);
+    annotations.value = loadAnnotations(pathname).filter(
+        (annotation) => annotation.status !== "resolved",
+    );
 
     if (pathChanged) {
         clearPendingPlacement();
         draft.value = null;
         hover.value = null;
     }
-
-    void pullResolvedAnnotations();
 }
 
 export function resetAnnotationState(): void {
-    for (const timer of visualWaiters.values()) {
-        window.clearTimeout(timer);
-    }
-
-    visualWaiters.clear();
     setAnnotationMode(false);
     clearPendingPlacement();
     draft.value = null;

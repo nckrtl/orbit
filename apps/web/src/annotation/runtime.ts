@@ -7,11 +7,6 @@ import {
     handleKeyDown,
     handleMouseMove,
     handleNavigation,
-    applyCreatedAnnotations,
-    applyInProgressAnnotations,
-    applyPendingAnnotations,
-    applyResolvedAnnotations,
-    pullResolvedAnnotations,
     reloadAnnotations,
     resetAnnotationState,
 } from "@/annotation/actions";
@@ -19,7 +14,6 @@ import AnnotationOverlay from "@/annotation/components/AnnotationOverlay";
 import { ensureAnnotationRoot, removeAnnotationHost } from "@/annotation/host";
 import { resolveDictationSettings } from "@/annotation/dictation-settings";
 import { cacheInertiaPage, readInertiaPage, resetInertiaPage } from "@/annotation/inertia-page";
-import { subscribeAnnotationEvents } from "@/annotation/sync";
 import { dictationSettings, viewportTick } from "@/annotation/state";
 
 export { annotationMode, annotations, draft, hover, shakeToken } from "@/annotation/state";
@@ -36,27 +30,9 @@ export {
 let overlayRoot: Root | null = null;
 let listenersBound = false;
 let toolbarObserver: MutationObserver | null = null;
-let stopAnnotationEvents: (() => void) | null = null;
 
 function bumpViewport(): void {
     viewportTick.value += 1;
-}
-
-function startResolveSync(): void {
-    stopResolveSync();
-    void pullResolvedAnnotations();
-    stopAnnotationEvents = subscribeAnnotationEvents({
-        onCreated: applyCreatedAnnotations,
-        onResolved: (ids, toById) => applyResolvedAnnotations(ids, { toById }),
-        onDeleted: (ids) => applyResolvedAnnotations(ids, { immediate: true }),
-        onProgress: applyInProgressAnnotations,
-        onPending: applyPendingAnnotations,
-    });
-}
-
-function stopResolveSync(): void {
-    stopAnnotationEvents?.();
-    stopAnnotationEvents = null;
 }
 
 function bindListeners(): void {
@@ -118,7 +94,6 @@ export function ensureAnnotationRuntime(toolConfig?: {
     bindListeners();
     readInertiaPage();
     reloadAnnotations();
-    startResolveSync();
 }
 
 function handleInertiaNavigation(event: Event): void {
@@ -127,7 +102,6 @@ function handleInertiaNavigation(event: Event): void {
 }
 
 export function teardownAnnotationRuntime(): void {
-    stopResolveSync();
     unbindListeners();
     overlayRoot?.unmount();
     overlayRoot = null;
