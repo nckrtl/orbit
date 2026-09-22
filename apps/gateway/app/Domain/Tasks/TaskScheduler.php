@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RequestTaskAssistanceAction;
 use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
@@ -24,6 +25,7 @@ final readonly class TaskScheduler
         private TaskWorkspaceStateReader $workspace,
         private TaskPullRequestWatcher $pullRequestWatcher,
         private CompleteTaskGroupAction $completeGroup,
+        private RequestTaskAssistanceAction $assistance,
         private CoderSettleNotifier $coder,
         private TaskExtensionState $extension,
         private TaskSessionObserver $observer,
@@ -51,7 +53,7 @@ final readonly class TaskScheduler
                 continue;
             }
             if (! is_string($group->pr_url) || $group->pr_url === '') {
-                $this->requestMissingPullRequest($group);
+                $this->assistance->execute($group, 'The settling group has no reviewed pull request URL.');
 
                 continue;
             }
@@ -60,10 +62,10 @@ final readonly class TaskScheduler
                 try {
                     $this->completeGroup->execute($group);
                 } catch (Throwable $exception) {
-                    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: '.$exception->getMessage()]);
+                    $this->assistance->execute($group, 'Merged pull request cleanup failed: '.$exception->getMessage());
                 }
             } elseif ($status === 'closed') {
-                $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
+                $this->assistance->execute($group, 'The expected pull request closed without merging.');
             }
         }
 
@@ -116,7 +118,7 @@ final readonly class TaskScheduler
 
                         continue;
                     }
-                    $this->requestAssistance($task, $group, $decision->reason, $observation);
+                    $this->assistance->execute($task, $decision->reason);
                     $decisions[] = $decision;
 
                     continue;
@@ -133,8 +135,7 @@ final readonly class TaskScheduler
                     $task->increment('communication_failures');
                     $task->refresh();
                     if ($task->communication_failures >= 5) {
-                        $task->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
-                        $group->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
+                        $this->assistance->execute($task, $exception->getMessage());
                     }
                     $this->actor->execute($group, $observation, $decision);
                 }
@@ -180,7 +181,7 @@ final readonly class TaskScheduler
             $task->completion_reminder_attempt = $task->completion_attempt;
             $task->save();
         } else {
-            $this->requestAssistance($task, $group, 'Implementer did not provide a ready_for_review comment and passing composer check after the reminder.', $observation);
+            $this->assistance->execute($task, 'Implementer did not provide a ready_for_review comment and passing composer check after the reminder.');
         }
 
         return true;
@@ -254,7 +255,7 @@ final readonly class TaskScheduler
     private function remindReviewer(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, bool $artifactsMissing, TaskSessionObservation $observation): bool
     {
         if ($task->review_reminder_attempt === $task->review_attempt) {
-            $this->requestAssistance($task, $group, 'Reviewer did not provide the required outcome or approved artifacts after the reminder.', $observation);
+            $this->assistance->execute($task, 'Reviewer did not provide the required outcome or approved artifacts after the reminder.');
 
             return true;
         }
@@ -262,16 +263,6 @@ final readonly class TaskScheduler
         $task->update(['review_reminder_attempt' => $task->review_attempt]);
 
         return true;
-    }
-
-    private function requestAssistance(Task $task, TaskGroup $group, string $reason, ?TaskSessionObservation $observation = null): void
-    {
-        if ($task->assistance_requested || $group->assistance_requested) {
-            return;
-        }
-        $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $this->coder->assistance($group, $reason);
     }
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
@@ -535,7 +526,7 @@ final readonly class TaskScheduler
         $url = $group->pr_url;
 
         if (! is_string($url) || $url === '') {
-            $this->requestMissingPullRequest($group);
+            $this->assistance->execute($group, 'The settling group has no reviewed pull request URL.');
 
             return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
         }
@@ -554,17 +545,6 @@ final readonly class TaskScheduler
         }
 
         return $settled->fresh(['tasks', 'app', 'taskable']) ?? $settled;
-    }
-
-    private function requestMissingPullRequest(TaskGroup $group): void
-    {
-        if ($group->assistance_requested) {
-            return;
-        }
-
-        $reason = 'The settling group has no reviewed pull request URL.';
-        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $this->coder->assistance($group, $reason);
     }
 
     private function spawnOpeningAgents(TaskGroup $group): void

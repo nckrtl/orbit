@@ -26,6 +26,7 @@ use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -222,6 +223,8 @@ it('flags a prior settling group without a reviewed PR once and retains its work
         'id' => $group->id, 'status' => 'settling', 'pr_url' => null,
         'assistance_requested' => true, 'taskable_id' => $group->taskable_id, 'settled_at' => null,
     ]);
+    expect(Activity::query()->where('description', 'assistance requested')->sole()->subject_type)->toBe(TaskGroup::class);
+    expect($group->tasks()->sole()->assistance_requested)->toBeFalse();
     Http::assertNothingSent();
 });
 

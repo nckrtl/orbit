@@ -6,7 +6,6 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskCommentType;
 use App\Models\Activity;
 use App\Models\Task;
@@ -17,13 +16,14 @@ use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier) {}
+    public function __construct(private AgentDriverRegistry $drivers, private RequestTaskAssistanceAction $assistance) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
     {
         $deliverResolution = false;
         $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
+            $task = Task::query()->lockForUpdate()->findOrFail($task->id);
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->task_group_id,
@@ -34,9 +34,7 @@ final readonly class StoreTaskCommentAction
             $type = TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
 
             if ($type === TaskCommentType::AssistanceRequested) {
-                $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $task->taskGroup()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $this->log($task, $comment, 'assistance requested');
+                $this->assistance->execute($task, $comment->body, $comment);
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
                 $deliverResolution = true;
@@ -46,7 +44,7 @@ final readonly class StoreTaskCommentAction
         });
 
         if ($deliverResolution) {
-            $task->loadMissing('implementerThread', 'taskGroup');
+            $task->refresh()->loadMissing('implementerThread', 'taskGroup');
             try {
                 $thread = $task->implementerThread;
                 if ($thread === null) {
@@ -67,10 +65,6 @@ final readonly class StoreTaskCommentAction
                     $this->log($task, $comment, 'resolution delivery failed');
                 });
             }
-        }
-
-        if (TaskCommentType::tryFrom((string) $comment->getRawOriginal('type')) === TaskCommentType::AssistanceRequested) {
-            $this->notifier->assistance($task->taskGroup()->firstOrFail(), $comment->body);
         }
 
         return $comment;
