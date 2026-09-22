@@ -22,7 +22,9 @@ The Gateway reads one file under `storage/logs` in the checkout of the Instance,
 | 1 | `laravel.log` | The file exists. This is the `single` log channel. |
 | 2 | The newest `laravel-*.log` | `laravel.log` is absent. This is the `daily` log channel. |
 
-An Instance without either file has an empty log, and the request still succeeds. The caller never names a path. The Gateway reads only a regular file that sits directly in `storage/logs`, and it skips a symbolic link, so a link in the checkout cannot point the read at another file.
+An Instance without either file or its log directory has an empty log, and the request still succeeds. The caller never names a path. The Gateway opens each directory from the filesystem root through the recorded checkout and `storage/logs` without following links. A linked or non-directory ancestor fails the read. Production reads use the recorded concrete release, not the `current` link.
+
+The Gateway skips symbolic links and special files when selecting a log. It reads the verified open file, so replacing a checked pathname cannot redirect the read. A candidate replaced before it can be opened fails the read. Before redaction, the read retains at most the last 65,536 bytes of the requested lines.
 
 ## Know what the Gateway redacts
 
@@ -39,4 +41,4 @@ A failed read returns an Orbit error with one of these codes. The log itself is 
 | 422 | `validation.failed` | `lines` is outside 1 through 1,000, or the request names `follow`. |
 | 422 | `instance.checkout_path_invalid` | The recorded checkout path is not a valid storage path. |
 | 422 | `instance.wireguard_ip_missing` | The owning Node has no WireGuard address. |
-| 502 | `instance.logs_failed` | The Node did not answer, or the read command failed. |
+| 502 | `instance.logs_failed` | The Node did not answer, a directory path was unsafe, a selected file changed before opening, or the read command failed. |

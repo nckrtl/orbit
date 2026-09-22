@@ -28,7 +28,7 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
         $result = $this->ssh->execute(
             $this->connection($instance->node),
             new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', $this->checkout($instance), (string) $lines],
+                ['sudo', '/usr/bin/python3', '-I', '-', $this->checkout($instance), (string) $lines],
                 self::script(),
             ),
         );
@@ -78,28 +78,70 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
     }
 
     /**
-     * The caller never names a file. The script reads only a regular file named
-     * `laravel.log` or `laravel-*.log` that sits directly in `storage/logs`, so a
-     * symlink in the checkout cannot point the read at another file.
+     * Keep directory traversal, candidate selection, and reading bound to open
+     * descriptors. The caller names neither a file nor a link target.
      */
     private static function script(): string
     {
-        return <<<'BASH'
-            logs="$1/storage/logs"
-            lines=$2
+        return <<<'PYTHON'
+            import fnmatch, os, stat, sys
 
-            test -d "$logs" && ! test -L "$logs" || exit 0
+            def open_logs(checkout):
+                flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                descriptor = os.open('/', flags)
+                try:
+                    for component in [*checkout.split('/')[1:], 'storage', 'logs']:
+                        following = os.open(component, flags, dir_fd=descriptor)
+                        os.close(descriptor)
+                        descriptor = following
+                    return descriptor
+                except FileNotFoundError:
+                    os.close(descriptor)
+                    return None
+                except BaseException:
+                    os.close(descriptor)
+                    raise
 
-            file="$logs/laravel.log"
+            def regular_file(directory, name):
+                try: info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError: return None
+                return info if stat.S_ISREG(info.st_mode) else None
 
-            if ! test -f "$file" || test -L "$file"; then
-                file=$(find "$logs" -maxdepth 1 -type f -name 'laravel-*.log' -printf '%T@ %p\n' \
-                    | sort -rn | head -n 1 | cut -d' ' -f2-)
-            fi
+            def read_log(checkout, lines):
+                directory = open_logs(checkout)
+                if directory is None: return b''
+                try:
+                    name = 'laravel.log'
+                    selected = regular_file(directory, name)
+                    if selected is None:
+                        candidates = []
+                        for candidate in os.listdir(directory):
+                            if not fnmatch.fnmatchcase(candidate, 'laravel-*.log'): continue
+                            info = regular_file(directory, candidate)
+                            if info is not None: candidates.append((info.st_mtime_ns, candidate, info))
+                        if not candidates: return b''
+                        _, name, selected = max(candidates, key=lambda entry: (entry[0], entry[1]))
+                    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                    try:
+                        opened = os.fstat(descriptor)
+                        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (selected.st_dev, selected.st_ino):
+                            raise SystemExit(42)
+                        data = os.pread(descriptor, 65_536, max(0, opened.st_size - 65_536))
+                    finally:
+                        os.close(descriptor)
+                finally:
+                    os.close(directory)
+                if not data: return b''
+                terminated = data.endswith(b'\n')
+                parts = data.split(b'\n')
+                if terminated: parts.pop()
+                return b'\n'.join(parts[-lines:]) + (b'\n' if terminated else b'')
 
-            test -n "$file" && test -f "$file" && ! test -L "$file" || exit 0
-
-            tail -n "$lines" -- "$file"
-            BASH;
+            try:
+                result = read_log(sys.argv[1], int(sys.argv[2]))
+            except (OSError, ValueError):
+                raise SystemExit(42)
+            sys.stdout.buffer.write(result)
+            PYTHON;
     }
 }

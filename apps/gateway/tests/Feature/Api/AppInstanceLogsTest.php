@@ -62,7 +62,7 @@ describe('instance:logs', function (): void {
         ($this->read)()->assertOk()->assertJsonPath('data.logs', '');
     });
 
-    it('redacts the values of the instance environment', function (): void {
+    it('redacts instance environment values and secret patterns', function (): void {
         AppInstanceEnvironmentValue::query()->create([
             'app_instance_id' => $this->fixture->instance->id,
             'env_key' => 'PAYMENT_SECRET',
@@ -73,13 +73,14 @@ describe('instance:logs', function (): void {
             'env_key' => 'APP_ENV',
             'env_value' => 'local',
         ]);
-        $this->reader->log = 'local.ERROR: charge failed with key orbit-test-secret-value-4821';
+        $this->reader->log = 'local.ERROR: charge failed with key orbit-test-secret-value-4821; Authorization: Bearer disposable-log-token-4821';
 
         $logs = ($this->read)()->assertOk()->json('data.logs');
 
         expect($logs)->not->toContain('orbit-test-secret-value-4821')
             ->and($logs)->toContain('[REDACTED]')
             ->and($logs)->toContain('local.ERROR');
+        expect($logs)->not->toContain('disposable-log-token-4821');
     });
 
     it('rejects a line count outside one to a thousand, and following', function (string $query): void {
