@@ -129,6 +129,8 @@ Laravel rollback backups belong to one recorded registration attempt, Instance, 
 
 When Orbit completes restoration or confirms publication, it exclusively claims the exact backup directory and removes only its recorded files. Bounded completion metadata remains after restore or discard so a lost acknowledgment cannot recreate a completed attempt; a new provisioning attempt after a confirmed restore gets a new receipt. This private metadata boundary trusts the Node execution user, as relocation receipts do.
 
+Rollback checks both configuration targets and their recorded directories before changing either file. It refuses symlinks and changed checkout or parent identities, retaining the backups. For a regular target, Orbit claims the current directory entry, checks its identity, and atomically publishes the restored file without overwriting an inode shared with another path. Ordinary provisioning replacements remain supported. Interrupted restoration resumes its recorded candidates and claims; unrelated files remain unchanged, and file modes and directory timestamps are restored through the bound descriptors.
+
 An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing Instance, source, and Route.
 
 ## Provision the application endpoint

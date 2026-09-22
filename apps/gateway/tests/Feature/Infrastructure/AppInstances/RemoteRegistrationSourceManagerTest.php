@@ -2028,6 +2028,343 @@ it('leaves a completed legacy registration without rollback artifacts unchanged 
     }
 });
 
+it('restores Laravel targets without writing through replacement links', function (string $target, bool $symlink): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $path = $fixture['source'].'/'.$target;
+        $outside = dirname($fixture['source']).'/outside.txt';
+        file_put_contents($outside, "keep outside rollback target\n");
+        file_put_contents($fixture['source'].'/.env', "APP_URL=https://changed.test\n");
+        file_put_contents($fixture['source'].'/bootstrap/cache/config.php', "<?php return ['url' => 'changed'];\n");
+        unlink($path);
+        if ($symlink) {
+            symlink($outside, $path);
+        } else {
+            link($outside, $path);
+        }
+        $before = orb105_complete_manifest($fixture['source']);
+        $outsideBefore = orb105_complete_manifest($outside);
+        $failure = null;
+
+        try {
+            $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+        } catch (RuntimeConvergenceException $exception) {
+            $failure = $exception;
+        }
+
+        expect(orb105_complete_manifest($outside))->toBe($outsideBefore);
+        expect(file_get_contents($outside))->toBe("keep outside rollback target\n");
+        if ($symlink) {
+            expect($failure)->toBeInstanceOf(RuntimeConvergenceException::class);
+            expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+            expect(is_dir(orb105_laravel_scope($fixture).'/backup'))->toBeTrue();
+        } else {
+            expect($failure)->toBeNull();
+            expect(file_get_contents($fixture['source'].'/.env'))->toContain('APP_URL=https://before.test');
+            expect(file_get_contents($fixture['source'].'/bootstrap/cache/config.php'))->toContain("'url' => 'before'");
+        }
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['.env', 'bootstrap/cache/config.php'])->with(['symlink' => true, 'hard link' => false]);
+
+it('restores with recorded missing Laravel directories and refuses unproven directories introduced afterward', function (string $missing, bool $created): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        unlink($fixture['source'].'/bootstrap/cache/config.php');
+        rmdir($fixture['source'].'/bootstrap/cache');
+        if ($missing === 'bootstrap') {
+            rmdir($fixture['source'].'/bootstrap');
+        }
+        $before = orb105_complete_manifest($fixture['source']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        file_put_contents($fixture['source'].'/.env', "APP_URL=https://changed.test\n");
+        if ($created) {
+            new Filesystem()->ensureDirectoryExists($fixture['source'].'/bootstrap/cache');
+            file_put_contents($fixture['source'].'/bootstrap/cache/foreign.txt', "unproven cache directory\n");
+            $foreignBefore = orb105_complete_manifest($fixture['source']);
+            expect(fn () => $fixture['manager']->restoreLaravelConfiguration($fixture['instance']))
+                ->toThrow(RuntimeConvergenceException::class);
+            expect(orb105_complete_manifest($fixture['source']))->toBe($foreignBefore);
+            expect(is_dir(orb105_laravel_scope($fixture).'/backup'))->toBeTrue();
+        } else {
+            $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+            expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+            expect(file_exists($fixture['source'].'/bootstrap/cache'))->toBeFalse();
+        }
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['bootstrap', 'cache'])->with(['still absent' => false, 'unproven replacement' => true]);
+
+it('refuses replaced Laravel checkout or target directories and retains both namespaces', function (string $directory, bool $symlink): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        file_put_contents($fixture['source'].'/.env', "APP_URL=https://changed.test\n");
+        $path = $fixture['source'].($directory === 'checkout' ? '' : '/'.$directory);
+        $retained = dirname($fixture['source']).'/retained-directory';
+        rename($path, $retained);
+        if ($symlink) {
+            symlink($retained, $path);
+        } else {
+            orb105_copy_tree($retained, $path);
+        }
+        $before = orb105_complete_manifest($fixture['source_root']);
+        $receiptBefore = orb105_complete_manifest(orb105_laravel_scope($fixture));
+
+        expect(fn () => $fixture['manager']->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source_root']))->toBe($before);
+        expect(orb105_complete_manifest(orb105_laravel_scope($fixture)))->toBe($receiptBefore);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['checkout', 'bootstrap', 'bootstrap/cache'])->with(['directory' => false, 'symlink' => true]);
+
+it('rechecks a Laravel target after its actual native claim and preserves substitution and restoration conflicts', function (bool $conflict): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $before = file_get_contents($fixture['source'].'/.env');
+        $hook = 'conflict='.($conflict ? 'True' : 'False')."\n".<<<'PYTHON'
+            import os, sys
+            def substitute_target(frame,event,result):
+                if frame.f_code.co_name == 'rename_exclusive' and frame.f_locals.get('source') == '.env':
+                    parent=frame.f_locals['parent']
+                    if event == 'call':
+                        os.rename('.env','.env-retained',src_dir_fd=parent,dst_dir_fd=parent)
+                        file=os.open('.env',os.O_WRONLY | os.O_CREAT | os.O_EXCL,0o600,dir_fd=parent)
+                        os.write(file,b'foreign target at claim\n'); os.close(file)
+                    elif event == 'return':
+                        sys.settrace(None)
+                        if conflict:
+                            file=os.open('.env',os.O_WRONLY | os.O_CREAT | os.O_EXCL,0o600,dir_fd=parent)
+                            os.write(file,b'foreign target after claim\n'); os.close(file)
+                return substitute_target
+            sys.settrace(substitute_target)
+            PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('restore', $hook));
+
+        expect(fn () => $manager->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(file_get_contents($fixture['source'].'/.env-retained'))->toBe($before);
+        $claim = $fixture['source'].'/.orbit-restore-'.$fixture['instance']->registration_laravel_receipt['binding']['attempt'].'-0/previous';
+        if ($conflict) {
+            expect(file_get_contents($claim))->toBe("foreign target at claim\n");
+            expect(file_get_contents($fixture['source'].'/.env'))->toBe("foreign target after claim\n");
+        } else {
+            expect(file_exists($claim))->toBeFalse();
+            expect(file_get_contents($fixture['source'].'/.env'))->toBe("foreign target at claim\n");
+        }
+        expect(file_get_contents(orb105_laravel_scope($fixture).'/backup/0'))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['restored replacement' => false, 'conflicting replacement' => true]);
+
+it('keeps a foreign Laravel file created immediately before publication without overwriting it', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $hook = <<<'PYTHON'
+            import os, sys
+            def recreate_target(frame,event,result):
+                if event == 'call' and frame.f_code.co_name == 'rename_exclusive' and frame.f_locals.get('source') == 'candidate' and frame.f_locals.get('destination') == '.env':
+                    sys.settrace(None)
+                    parent=frame.f_locals['destination_parent']
+                    file=os.open('.env',os.O_WRONLY | os.O_CREAT | os.O_EXCL,0o600,dir_fd=parent)
+                    os.write(file,b'foreign target at publication\n'); os.close(file)
+                return recreate_target
+            sys.settrace(recreate_target)
+            PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('restore', $hook));
+
+        expect(fn () => $manager->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(file_get_contents($fixture['source'].'/.env'))->toBe("foreign target at publication\n");
+        expect(file_get_contents(orb105_laravel_scope($fixture).'/backup/0'))->toContain('private-fixture-value');
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('rechecks Laravel directories after the complete target preflight before any target claim', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        file_put_contents($fixture['source'].'/.env', "APP_URL=https://changed.test\n");
+        $configBefore = file_get_contents($fixture['source'].'/bootstrap/cache/config.php');
+        $hook = <<<'PYTHON'
+            import os, sys
+            def replace_cache_after_preflight(frame,event,result):
+                if event == 'call' and frame.f_code.co_name == 'restore_target' and frame.f_locals['index'] == 0:
+                    sys.settrace(None); root=frame.f_globals['root']
+                    os.rename(root+'/bootstrap/cache',root+'/bootstrap/cache-retained')
+                    os.mkdir(root+'/bootstrap/cache')
+                    with open(root+'/bootstrap/cache/foreign.txt','w') as file: file.write('foreign cache after preflight\n')
+                return replace_cache_after_preflight
+            sys.settrace(replace_cache_after_preflight)
+            PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('restore', $hook));
+
+        expect(fn () => $manager->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(file_get_contents($fixture['source'].'/.env'))->toBe("APP_URL=https://changed.test\n");
+        expect(file_get_contents($fixture['source'].'/bootstrap/cache-retained/config.php'))->toBe($configBefore);
+        expect(file_get_contents($fixture['source'].'/bootstrap/cache/foreign.txt'))->toBe("foreign cache after preflight\n");
+        expect(file_exists($fixture['source'].'/bootstrap/cache/config.php'))->toBeFalse();
+        expect(is_dir(orb105_laravel_scope($fixture).'/backup'))->toBeTrue();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('resumes each durable Laravel target restoration checkpoint and preserves complete metadata', function (string $checkpoint): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $before = orb105_complete_manifest($fixture['source']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        file_put_contents($fixture['source'].'/.env.next', "APP_URL=https://changed.test\n");
+        rename($fixture['source'].'/.env.next', $fixture['source'].'/.env');
+        file_put_contents($fixture['source'].'/bootstrap/cache/config.php.next', "<?php return [];\n");
+        rename($fixture['source'].'/bootstrap/cache/config.php.next', $fixture['source'].'/bootstrap/cache/config.php');
+        $manager = orb105_laravel_restore_checkpoint_manager($checkpoint);
+
+        expect(fn () => $manager->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(file_get_contents(orb105_laravel_scope($fixture).'/backup/0'))->toContain('private-fixture-value');
+        expect(file_get_contents(orb105_laravel_scope($fixture).'/backup/1'))->toContain("'url' => 'before'");
+        $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+        $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('restored');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['candidate bound', 'partial candidate', 'target claimed', 'published', 'target scope removed', 'first target complete']);
+
+it('refuses replaced private Laravel restoration artifacts on retry and retains every recovery copy', function (string $artifact): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $checkpoint = $artifact === 'previous' ? 'target claimed' : 'candidate bound';
+        $manager = orb105_laravel_restore_checkpoint_manager($checkpoint);
+        expect(fn () => $manager->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+        $scope = $fixture['source'].'/.orbit-restore-'.$fixture['instance']->registration_laravel_receipt['binding']['attempt'].'-0';
+        $target = in_array($artifact, ['scope', 'scope symlink', 'extra member'], strict: true)
+            ? $scope
+            : $scope.'/'.($artifact === 'previous' ? 'previous' : 'candidate');
+        $retained = dirname($fixture['source']).'/retained-restore-artifact';
+        if ($artifact === 'extra member') {
+            file_put_contents($scope.'/foreign.txt', "foreign restore scope member\n");
+        } else {
+            rename($target, $retained);
+            if (str_contains($artifact, 'symlink')) {
+                symlink($retained, $target);
+            } elseif (is_dir($retained)) {
+                orb105_copy_tree($retained, $target);
+            } else {
+                copy($retained, $target);
+                chmod($target, 0o600);
+            }
+        }
+        $before = orb105_complete_manifest($fixture['source_root']);
+
+        expect(fn () => $fixture['manager']->restoreLaravelConfiguration($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source_root']))->toBe($before);
+        expect(is_dir(orb105_laravel_scope($fixture).'/backup'))->toBeTrue();
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['scope', 'scope symlink', 'candidate', 'candidate symlink', 'previous', 'extra member']);
+
+it('restores read-only Laravel file modes and resumes interruption after protecting a candidate', function (int $mode, bool $interrupted): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        chmod($fixture['source'].'/.env', $mode);
+        chmod($fixture['source'].'/bootstrap/cache/config.php', $mode);
+        $before = orb105_complete_manifest($fixture['source']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        file_put_contents($fixture['source'].'/.env.next', "APP_URL=https://changed.test\n");
+        rename($fixture['source'].'/.env.next', $fixture['source'].'/.env');
+        file_put_contents($fixture['source'].'/bootstrap/cache/config.php.next', "<?php return [];\n");
+        rename($fixture['source'].'/bootstrap/cache/config.php.next', $fixture['source'].'/bootstrap/cache/config.php');
+        if ($interrupted) {
+            $hook = 'restored_mode='.$mode."\n".<<<'PYTHON'
+                import os
+                native_fchmod=os.fchmod
+                def interrupt_readonly_candidate(descriptor,mode):
+                    native_fchmod(descriptor,mode)
+                    if mode == restored_mode and os.readlink('/proc/self/fd/'+str(descriptor)).endswith('/candidate'):
+                        os.fsync(descriptor); os._exit(137)
+                os.fchmod=interrupt_readonly_candidate
+                PYTHON;
+            $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('restore', $hook));
+            expect(fn () => $manager->restoreLaravelConfiguration($fixture['instance']))
+                ->toThrow(RuntimeConvergenceException::class);
+        }
+
+        $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('restored');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['owner read-only' => 0o400, 'world read-only' => 0o444])->with(['ordinary' => false, 'mode acknowledgment lost' => true]);
+
+function orb105_laravel_restore_checkpoint_manager(string $checkpoint): RemoteRegistrationSourceManager
+{
+    $hook = 'checkpoint='.json_encode($checkpoint, JSON_THROW_ON_ERROR)."\n".<<<'PYTHON'
+        import os, sys
+        native_write=os.write; native_rmdir=os.rmdir
+        def interrupt_candidate(descriptor,content):
+            if checkpoint == 'partial candidate' and os.readlink('/proc/self/fd/'+str(descriptor)).endswith('/candidate'):
+                native_write(descriptor,content[:5]); os.fsync(descriptor); os._exit(137)
+            return native_write(descriptor,content)
+        def interrupt_target_scope(path,*,dir_fd=None):
+            native_rmdir(path,dir_fd=dir_fd)
+            if checkpoint == 'target scope removed' and str(path).startswith('.orbit-restore-'): os._exit(137)
+        os.write=interrupt_candidate; os.rmdir=interrupt_target_scope
+        def interrupt_restore(frame,event,result):
+            if event == 'return':
+                if frame.f_code.co_name == 'rename_exclusive':
+                    if checkpoint == 'target claimed' and frame.f_locals['source'] == '.env': os._exit(137)
+                    if checkpoint == 'published' and frame.f_locals['source'] == 'candidate': os._exit(137)
+                if checkpoint == 'first target complete' and frame.f_code.co_name == 'restore_target' and frame.f_locals['index'] == 0: os._exit(137)
+                if checkpoint == 'candidate bound' and frame.f_code.co_name == 'save':
+                    targets=frame.f_locals['self'].state['targets']
+                    if targets is not None and targets[0]['phase'] == 'preparing': os._exit(137)
+            return interrupt_restore
+        sys.settrace(interrupt_restore)
+        PYTHON;
+
+    return orb105_registration_manager(new Orb105NativeHookSshExecutor('restore', $hook));
+}
+
 /** @return array<string, mixed> */
 function orb105_laravel_fixture(): array
 {

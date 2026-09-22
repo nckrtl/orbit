@@ -1279,7 +1279,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     private static function laravelReceiptScript(): string
     {
         return <<<'PYTHON'
-            import ctypes, fcntl, hashlib, json, os, pathlib, shutil, stat, sys, uuid
+            import ctypes, fcntl, hashlib, json, os, stat, sys, uuid
             operation=sys.argv[1]; member=json.loads(sys.argv[2]); root=member['checkout']
             os.umask(0o077)
             def require(value):
@@ -1315,9 +1315,9 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             def private(info,mode):
                 require(info is not None and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == mode)
                 require(stat.S_ISDIR(info.st_mode) if mode == 0o700 else stat.S_ISREG(info.st_mode) and info.st_nlink == 1)
-            def rename_exclusive(parent,source,destination):
+            def rename_exclusive(parent,source,destination,destination_parent=None):
                 libc=ctypes.CDLL(None,use_errno=True)
-                if libc.renameat2(parent,os.fsencode(source),parent,os.fsencode(destination),1) != 0:
+                if libc.renameat2(parent,os.fsencode(source),parent if destination_parent is None else destination_parent,os.fsencode(destination),1) != 0:
                     error=ctypes.get_errno(); raise OSError(error,os.strerror(error))
             def digest(descriptor):
                 result=hashlib.sha256(); os.lseek(descriptor,0,os.SEEK_SET)
@@ -1364,7 +1364,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     require(intent == (pending if initializing else self.binding))
                     if created:
                         self.revision=0
-                        self.state={'binding':self.binding,'phase':'new','action':None,'files':None,'times':[None if fd is None else [os.fstat(fd).st_atime_ns,os.fstat(fd).st_mtime_ns] for fd in self.directories]}
+                        self.state={'binding':self.binding,'phase':'new','action':None,'files':None,'targets':None,'times':[None if fd is None else [os.fstat(fd).st_atime_ns,os.fstat(fd).st_mtime_ns] for fd in self.directories]}
                         os.ftruncate(self.journal,32768); self.save()
                     else:
                         require(os.fstat(self.journal).st_size == 32768)
@@ -1372,7 +1372,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         require(records)
                         if len(records) == 2: require(abs(records[0]['revision']-records[1]['revision']) == 1)
                         latest=max(records,key=lambda record:record['revision']); self.revision=latest['revision']; self.state=latest['state']
-                        require(set(self.state) == {'binding','phase','action','files','times'} and self.state['binding'] == self.binding)
+                        require(set(self.state) == {'binding','phase','action','files','targets','times'} and self.state['binding'] == self.binding)
                         require(self.state['phase'] in ('new','preparing','ready','restoring','restored_files','claiming','claimed','restored','discarded'))
                         require(self.state['action'] in (None,'restore','discard'))
                         require(isinstance(self.state['times'],list) and len(self.state['times']) == 3)
@@ -1386,8 +1386,9 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                                 if value is None: continue
                                 require(isinstance(value,dict) and set(value) == {'source','backup','ready'} and type(value['ready']) is bool)
                                 require(value['backup'] is None or valid_identity(value['backup']))
-                                source=value['source']; require(isinstance(source,dict) and set(source) == {'identity','mode','times','size','digest'})
+                                source=value['source']; require(isinstance(source,dict) and set(source) == {'identity','mode','uid','gid','times','size','digest'})
                                 require(valid_identity(source['identity']) and type(source['mode']) is int and 0 <= source['mode'] <= 0o7777)
+                                require(all(type(source[key]) is int and source[key] >= 0 for key in ('uid','gid')))
                                 require(type(source['size']) is int and source['size'] >= 0)
                                 require(isinstance(source['times'],list) and len(source['times']) == 2 and all(type(part) is int for part in source['times']))
                                 require(isinstance(source['digest'],str) and len(source['digest']) == 64 and all(part in '0123456789abcdef' for part in source['digest']))
@@ -1396,6 +1397,13 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         elif self.state['phase'] in ('restoring','restored_files','restored'): require(self.state['action'] == 'restore')
                         elif self.state['phase'] == 'discarded': require(self.state['action'] == 'discard')
                         else: require(self.state['action'] in ('restore','discard'))
+                        if self.state['action'] == 'restore':
+                            require(isinstance(self.state['targets'],list) and len(self.state['targets']) == 2)
+                            for target in self.state['targets']:
+                                require(isinstance(target,dict) and set(target) == {'observed','scope','candidate','phase'})
+                                require(all(target[key] is None or valid_identity(target[key]) for key in ('observed','scope','candidate')))
+                                require(target['phase'] in ('planned','preparing','ready','claiming','claimed','publishing','published','cleaning','cleaned'))
+                        else: require(self.state['targets'] is None)
                         if initializing: require(self.state['phase'] == 'new')
                     self.check()
                 def check(self):
@@ -1419,6 +1427,28 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     elif self.state['phase'] == 'claimed': require(backup is None)
                     elif self.state['phase'] == 'claiming': require(backup is not None or deleting is not None)
                     else: require(backup is not None and deleting is None)
+                    for index,name in ((1,'bootstrap'),(2,'cache')):
+                        previous=self.directories[index-1]
+                        info=None if previous is None else metadata(previous,name)
+                        require(identity(info) == self.binding['directories'][index])
+                        if info is not None: require(stat.S_ISDIR(info.st_mode))
+                    if self.state['targets'] is not None:
+                        for index,target in enumerate(self.state['targets']):
+                            target_parent=self.directories[0 if index == 0 else 2]
+                            name='.orbit-restore-'+self.binding['attempt']+'-'+str(index)
+                            info=None if target_parent is None else metadata(target_parent,name)
+                            if target['scope'] is None or target['phase'] == 'cleaned': require(info is None)
+                            elif info is None: require(target['phase'] == 'cleaning')
+                            else:
+                                private(info,0o700); require(identity(info) == target['scope'])
+                                directory=open_child(target_parent,name,target['scope'])
+                                try:
+                                    require(set(os.listdir(directory)).issubset({'candidate','previous'}))
+                                    for entry,key in (('candidate','candidate'),('previous','observed')):
+                                        member_info=metadata(directory,entry)
+                                        if member_info is not None:
+                                            require(stat.S_ISREG(member_info.st_mode) and identity(member_info) == target[key])
+                                finally: os.close(directory)
                 def read_record(self,slot):
                     frame=os.pread(self.journal,16384,slot*16384); length=int.from_bytes(frame[:4],'big')
                     if len(frame) != 16384 or not 0 < length <= 16348: return None
@@ -1443,7 +1473,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     require(stat.S_ISREG(info.st_mode))
                     descriptor=os.open(name,os.O_RDONLY | os.O_NOFOLLOW,dir_fd=parent)
                     require(identity(os.fstat(descriptor)) == identity(info))
-                    result={'identity':identity(info),'mode':stat.S_IMODE(info.st_mode),'times':[info.st_atime_ns,info.st_mtime_ns],'size':info.st_size,'digest':digest(descriptor)}
+                    result={'identity':identity(info),'mode':stat.S_IMODE(info.st_mode),'uid':info.st_uid,'gid':info.st_gid,'times':[info.st_atime_ns,info.st_mtime_ns],'size':info.st_size,'digest':digest(descriptor)}
                     after=os.fstat(descriptor)
                     require((after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns) == (info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns))
                     return descriptor,result
@@ -1484,7 +1514,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         for index,value in enumerate(self.state['files']):
                             if value is None or value['ready']: continue
                             source,current=self.source_file(index)
-                            require(current is not None and all(current[key] == value['source'][key] for key in ('identity','mode','size','digest')) and current['times'][1] == value['source']['times'][1])
+                            require(current is not None and all(current[key] == value['source'][key] for key in ('identity','mode','uid','gid','size','digest')) and current['times'][1] == value['source']['times'][1])
                             try:
                                 if value['backup'] is None:
                                     output=os.open(str(index),os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,0o600,dir_fd=backup)
@@ -1505,6 +1535,143 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         self.state['phase']='ready'; self.save()
                     finally: os.close(backup)
                     checked=self.backup(); os.close(checked)
+                def target_parent(self,index):
+                    return self.directories[0 if index == 0 else 2],'.env' if index == 0 else 'config.php'
+                def target_scope_name(self,index):
+                    return '.orbit-restore-'+self.binding['attempt']+'-'+str(index)
+                def plan_targets(self):
+                    self.check(); targets=[]
+                    for index in range(2):
+                        parent,name=self.target_parent(index)
+                        info=None if parent is None else metadata(parent,name)
+                        require(info is None or stat.S_ISREG(info.st_mode))
+                        targets.append({'observed':identity(info),'scope':None,'candidate':None,'phase':'cleaned' if parent is None else 'planned'})
+                    self.state.update(phase='restoring',action='restore',targets=targets); self.save()
+                def target_directory(self,index):
+                    self.check(); target=self.state['targets'][index]; parent,_=self.target_parent(index)
+                    if parent is None:
+                        require(target['phase'] == 'cleaned' and target['scope'] is None); return None
+                    name=self.target_scope_name(index); info=metadata(parent,name)
+                    if target['phase'] == 'cleaned':
+                        require(info is None); return None
+                    if target['scope'] is None:
+                        require(target['phase'] == 'planned' and info is None)
+                        os.mkdir(name,0o700,dir_fd=parent); os.fsync(parent)
+                        directory=open_child(parent,name); private(os.fstat(directory),0o700)
+                        target['scope']=identity(os.fstat(directory)); self.save()
+                    elif info is None:
+                        require(target['phase'] == 'cleaning'); return None
+                    else:
+                        directory=open_child(parent,name,target['scope']); private(os.fstat(directory),0o700)
+                    require(set(os.listdir(directory)).issubset({'candidate','previous'}))
+                    return directory
+                def candidate_file(self,index,directory,ready=True):
+                    target=self.state['targets'][index]; info=metadata(directory,'candidate')
+                    require(info is not None and stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and identity(info) == target['candidate'])
+                    descriptor=os.open('candidate',os.O_RDONLY | os.O_NOFOLLOW,dir_fd=directory)
+                    require(identity(os.fstat(descriptor)) == target['candidate'])
+                    if ready:
+                        source=self.state['files'][index]['source']; current=os.fstat(descriptor)
+                        require(current.st_size == source['size'] and stat.S_IMODE(current.st_mode) == source['mode'] and current.st_uid == source['uid'] and current.st_gid == source['gid'])
+                        require(current.st_mtime_ns == source['times'][1] and digest(descriptor) == source['digest'])
+                    else:
+                        os.fchmod(descriptor,0o600); os.close(descriptor)
+                        descriptor=os.open('candidate',os.O_RDWR | os.O_NOFOLLOW,dir_fd=directory)
+                        require(identity(os.fstat(descriptor)) == target['candidate'])
+                    return descriptor
+                def verify_restored(self,index):
+                    self.check(); parent,name=self.target_parent(index); value=self.state['files'][index]
+                    info=None if parent is None else metadata(parent,name)
+                    if value is None:
+                        require(info is None); return
+                    require(info is not None and stat.S_ISREG(info.st_mode) and identity(info) == self.state['targets'][index]['candidate'])
+                    descriptor=os.open(name,os.O_RDONLY | os.O_NOFOLLOW,dir_fd=parent)
+                    try:
+                        current=os.fstat(descriptor); source=value['source']
+                        require(identity(current) == identity(info) and current.st_size == source['size'])
+                        require(stat.S_IMODE(current.st_mode) == source['mode'] and current.st_uid == source['uid'] and current.st_gid == source['gid'])
+                        require(current.st_mtime_ns == source['times'][1] and digest(descriptor) == source['digest'])
+                    finally: os.close(descriptor)
+                def restore_target(self,index,backup):
+                    target=self.state['targets'][index]; value=self.state['files'][index]
+                    if target['phase'] in ('published','cleaning','cleaned'):
+                        self.verify_restored(index); return
+                    directory=self.target_directory(index); parent,name=self.target_parent(index)
+                    try:
+                        if target['phase'] == 'planned':
+                            require(metadata(directory,'candidate') is None and metadata(directory,'previous') is None)
+                            if value is not None:
+                                descriptor=os.open('candidate',os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,0o600,dir_fd=directory)
+                                target.update(candidate=identity(os.fstat(descriptor)),phase='preparing')
+                                os.fsync(directory); self.save(); os.close(descriptor)
+                            else:
+                                target['phase']='ready'; self.save()
+                        if target['phase'] == 'preparing':
+                            output=self.candidate_file(index,directory,ready=False)
+                            source=os.open(str(index),os.O_RDONLY | os.O_NOFOLLOW,dir_fd=backup)
+                            try:
+                                require(identity(os.fstat(source)) == value['backup'])
+                                os.ftruncate(output,0)
+                                while True:
+                                    chunk=os.read(source,1048576)
+                                    if not chunk: break
+                                    written=0
+                                    while written < len(chunk):
+                                        count=os.write(output,chunk[written:]); require(count > 0); written+=count
+                                os.fchown(output,value['source']['uid'],value['source']['gid'])
+                                os.fchmod(output,value['source']['mode']); os.utime(output,ns=tuple(value['source']['times'])); os.fsync(output)
+                            finally: os.close(source); os.close(output)
+                            target['phase']='ready'; self.save()
+                        if target['phase'] in ('ready','claiming'):
+                            if value is not None:
+                                descriptor=self.candidate_file(index,directory); os.close(descriptor)
+                            else: require(metadata(directory,'candidate') is None)
+                            previous=metadata(directory,'previous')
+                            if previous is not None:
+                                require(target['phase'] == 'claiming' and stat.S_ISREG(previous.st_mode) and identity(previous) == target['observed'])
+                            elif target['observed'] is not None:
+                                current=metadata(parent,name)
+                                require(current is not None and stat.S_ISREG(current.st_mode) and identity(current) == target['observed'])
+                                target['phase']='claiming'; self.save()
+                                rename_exclusive(parent,name,'previous',directory); os.fsync(parent); os.fsync(directory)
+                                if identity(metadata(directory,'previous')) != target['observed']:
+                                    try: rename_exclusive(directory,'previous',name,parent)
+                                    except OSError: pass
+                                    raise SystemExit(42)
+                            else: require(metadata(parent,name) is None)
+                            target['phase']='claimed'; self.save()
+                        if target['phase'] == 'claimed':
+                            require(identity(metadata(directory,'previous')) == target['observed'])
+                            target['phase']='publishing'; self.save()
+                        if target['phase'] == 'publishing':
+                            if value is not None:
+                                if metadata(directory,'candidate') is not None:
+                                    descriptor=self.candidate_file(index,directory); os.close(descriptor)
+                                    self.check(); require(metadata(parent,name) is None)
+                                    rename_exclusive(directory,'candidate',name,parent); os.fsync(parent); os.fsync(directory)
+                                require(metadata(directory,'candidate') is None)
+                            else: require(metadata(directory,'candidate') is None and metadata(parent,name) is None)
+                            self.verify_restored(index); target['phase']='published'; self.save()
+                        self.verify_restored(index)
+                    finally: os.close(directory)
+                def finish_target(self,index):
+                    target=self.state['targets'][index]; self.verify_restored(index)
+                    directory=self.target_directory(index)
+                    if directory is None:
+                        if target['phase'] != 'cleaned':
+                            target['phase']='cleaned'; self.save()
+                        return
+                    parent,_=self.target_parent(index)
+                    try:
+                        require(target['phase'] in ('published','cleaning') and metadata(directory,'candidate') is None)
+                        previous=metadata(directory,'previous')
+                        require(identity(previous) == target['observed'] or previous is None and target['phase'] == 'cleaning')
+                        target['phase']='cleaning'; self.save()
+                        if previous is not None: os.unlink('previous',dir_fd=directory); os.fsync(directory)
+                        self.check(); require(identity(metadata(parent,self.target_scope_name(index))) == target['scope'])
+                        os.rmdir(self.target_scope_name(index),dir_fd=parent); os.fsync(parent)
+                    finally: os.close(directory)
+                    target['phase']='cleaned'; self.save()
                 def restore(self):
                     if self.state['phase'] == 'restored': return
                     require(self.state['action'] in (None,'restore'))
@@ -1512,20 +1679,16 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     if self.state['phase'] in ('ready','restoring'):
                         backup=self.backup()
                         try:
-                            self.state.update(phase='restoring',action='restore'); self.save()
-                            paths=[pathlib.Path(root)/'.env',pathlib.Path(root)/'bootstrap'/'cache'/'config.php']
-                            for index,path in enumerate(paths):
-                                value=self.state['files'][index]
-                                if value is not None:
-                                    path.parent.mkdir(parents=True,exist_ok=True)
-                                    shutil.copyfile('/proc/self/fd/'+str(backup)+'/'+str(index),path)
-                                    os.chmod(path,value['source']['mode']); os.utime(path,ns=tuple(value['source']['times']))
-                                elif path.exists() and not path.is_symlink(): path.unlink()
-                            directories=[pathlib.Path(root),pathlib.Path(root)/'bootstrap',pathlib.Path(root)/'bootstrap'/'cache']
-                            for path,times in reversed(list(zip(directories,self.state['times']))):
-                                if times is not None and path.is_dir() and not path.is_symlink(): os.utime(path,ns=tuple(times))
+                            if self.state['phase'] == 'ready': self.plan_targets()
+                            for index in range(2): self.restore_target(index,backup)
+                            for index in range(2): self.verify_restored(index)
+                            for index in range(2): self.finish_target(index)
+                            for directory,times in reversed(list(zip(self.directories,self.state['times']))):
+                                if times is not None:
+                                    self.check(); os.utime(directory,ns=tuple(times)); os.fsync(directory)
                             self.state['phase']='restored_files'; self.save()
                         finally: os.close(backup)
+                    for index in range(2): self.verify_restored(index)
                     self.cleanup('restore')
                 def cleanup(self,action):
                     terminal='restored' if action == 'restore' else 'discarded'

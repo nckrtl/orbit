@@ -121,6 +121,8 @@ beforeEach(function (): void {
 
         public bool $failDiscardOnce = false;
 
+        public bool $failRestoreOnce = false;
+
         public bool $failRelocateOnce = false;
 
         /** @var list<string> */
@@ -219,6 +221,12 @@ beforeEach(function (): void {
         public function restoreLaravelConfiguration(AppInstance $appInstance): void
         {
             $this->calls[] = 'url-restore';
+
+            if ($this->failRestoreOnce) {
+                $this->failRestoreOnce = false;
+
+                throw new ResourceOperationException('instance.laravel_rollback_failed', 'Rollback target ownership changed.');
+            }
         }
 
         public function discardLaravelRollback(AppInstance $appInstance): void
@@ -354,6 +362,34 @@ it('requires unresolved values without mutating and keeps a valid App on incompl
         ->toBe('source_resolved')
         ->and($this->registrationSource->calls)
         ->toContain('url-restore');
+});
+
+it('returns an incomplete registration when Laravel rollback refuses and completes only after an identical recovery retry', function (): void {
+    $payload = ['source_path' => '/work/acme', 'app_slug' => 'acme', 'default_branch' => 'main', 'root' => 'public'];
+    $this->projection->fail = true;
+    $this->registrationSource->failRestoreOnce = true;
+
+    $this->postJson('/api/v1/instances/register', $payload)
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+
+    $instance = AppInstance::query()->sole();
+    expect($instance->registration_completed_at)->toBeNull();
+    expect($instance->status)->not->toBe(AppInstanceState::Active);
+    expect($instance->error_code)->toBe('instance.laravel_rollback_failed');
+    expect($this->registrationSource->calls)->toContain('url-restore');
+    expect($this->registrationSource->calls)->not->toContain('url-discard');
+
+    $this->projection->fail = false;
+    $this->postJson('/api/v1/instances/register', $payload)
+        ->assertOk()
+        ->assertJsonPath('data.app_instance.id', $instance->id);
+
+    expect($instance->refresh()->status)->toBe(AppInstanceState::Active);
+    expect($instance->registration_completed_at)->not->toBeNull();
+    expect($instance->error_code)->toBeNull();
+    expect($this->registrationSource->calls)->toContain('url-discard');
+    $this->assertDatabaseCount('app_instances', 1);
 });
 
 it('preserves an explicit different Project selector and refuses registration without mutation', function (string $alias, bool $asString): void {
