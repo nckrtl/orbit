@@ -26,7 +26,9 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionCloneRouteProjector;
+use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\ProductionRouteProjector;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
@@ -50,6 +52,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
@@ -260,6 +263,32 @@ it('admits a completed route-less clone through the native candidate lifecycle g
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('instance.clone_candidate_release_missing');
         });
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo]);
+
+it('removes a completed route-less production clone while retaining production content evidence', function (ProjectType $type): void {
+    orb198_route_less_candidate($this->candidate, $type);
+    $target = $this->action->execute($this->candidate, $this->data)['appInstance'];
+    $layout = Mockery::mock(ProductionReleaseLayout::class);
+    $layout->shouldReceive('clearCurrent')->once()->withArgs(fn (AppInstance $instance): bool => $instance->id === $target->id);
+    app()->instance(ProductionReleaseLayout::class, $layout);
+    app()->instance(AppInstanceEnvironmentOperationLock::class, $this->lock);
+    $projection = Mockery::mock(AppInstanceRemovalProjector::class);
+    $projection->shouldReceive('clearRouteTarget')->once()->withArgs(
+        fn (AppInstanceRemovalMember $member): bool => $member->app_instance_id === $target->id && $member->route_id === null,
+    )->andReturn('absent');
+    $projection->shouldReceive('cleanupRuntime')->once();
+    app()->instance(AppInstanceRemovalProjector::class, $projection);
+
+    $removal = app(RemoveAppInstanceAction::class)->execute($target, false);
+
+    expect($removal->status->value)->toBe('completed');
+    expect($removal->members->sole()->route_id)->toBeNull();
+    expect($removal->members->sole()->route_outcome)->toBe('absent');
+    expect($removal->members->sole()->finalization_receipt)
+        ->toBe(hash('sha256', "production-retained\0{$removal->members->sole()->source_digest}"));
+    $this->assertModelMissing($target);
+    $this->assertModelExists($this->candidate);
+    $this->assertDatabaseCount('routes', 0);
 })->with([ProjectType::LaravelPackage, ProjectType::Monorepo]);
 
 it('keeps route-less activation incomplete when its terminal database write fails and resumes without repeating effects', function (): void {

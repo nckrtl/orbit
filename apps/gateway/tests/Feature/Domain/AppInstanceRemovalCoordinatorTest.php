@@ -25,6 +25,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -154,6 +155,150 @@ it('accepts exactly one independent checkout and completes every durable step', 
             $this->orb131ProcessRuntime->removed,
         )->toBe([$process->id])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
 })->with([false, true]);
+
+it('removes a route-less development Project with immutable absent Route evidence', function (ProjectType $type, bool $force): void {
+    $instance = orb181_coordinator_instance();
+    orb046_remove_optional_route($instance, $type);
+
+    $removal = $this->orb181Coordinator->execute($instance, $force);
+    $member = $removal->members->sole();
+
+    expect($removal->status->value)->toBe('completed');
+    expect($member->route_id)->toBeNull();
+    expect($member->route_outcome)->toBe('absent');
+    expect($member->source_prepared_at)->not->toBeNull();
+    expect($member->source_finalized_at)->not->toBeNull();
+    expect($member->runtime_cleaned_at)->not->toBeNull();
+    expect($member->row_deleted_at)->not->toBeNull();
+    expect($this->orb181Projector->calls)->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
+    $this->assertModelMissing($instance);
+    $this->assertDatabaseCount('routes', 0);
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo])->with([false, true]);
+
+it('retries route-less removal without changing its accepted absence or repeating completed source work', function (): void {
+    $instance = orb181_coordinator_instance();
+    orb046_remove_optional_route($instance, ProjectType::LaravelPackage);
+    $this->orb181Projector->failRuntime = true;
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(AppInstanceRemovalException::class);
+    $member = AppInstanceRemovalMember::query()->sole();
+    $receipt = $member->finalization_receipt;
+    expect($member->route_id)->toBeNull();
+    expect($member->route_outcome)->toBe('absent');
+    expect($member->runtime_cleaned_at)->toBeNull();
+    $this->orb181Projector->failRuntime = false;
+
+    $removal = $this->orb181Coordinator->execute($instance->fresh(), false);
+
+    expect($removal->status->value)->toBe('completed');
+    expect($removal->members->sole()->id)->toBe($member->id);
+    expect($removal->members->sole()->finalization_receipt)->toBe($receipt);
+    expect($this->orb181Projector->calls)->toBe(["route:{$instance->id}", "runtime:{$instance->id}", "runtime:{$instance->id}"]);
+});
+
+it('retries an interrupted absent Route checkpoint without fabricating a Route', function (): void {
+    $instance = orb181_coordinator_instance();
+    orb046_remove_optional_route($instance, ProjectType::Monorepo);
+    DB::unprepared(<<<'SQL'
+        CREATE TEMP TRIGGER absent_route_checkpoint_failure BEFORE UPDATE ON app_instance_removal_members
+        WHEN NEW.route_cleared_at IS NOT NULL AND OLD.route_cleared_at IS NULL
+        BEGIN SELECT RAISE(ABORT, 'injected Route checkpoint failure'); END
+        SQL);
+
+    try {
+        expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(AppInstanceRemovalException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER absent_route_checkpoint_failure');
+    }
+
+    $member = AppInstanceRemovalMember::query()->sole();
+    expect($member->route_id)->toBeNull();
+    expect($member->route_cleared_at)->toBeNull();
+    expect($member->source_finalized_at)->toBeNull();
+
+    $removal = $this->orb181Coordinator->execute($instance->fresh(), false);
+
+    expect($removal->status->value)->toBe('completed');
+    expect($removal->members->sole()->id)->toBe($member->id);
+    expect($removal->members->sole()->route_outcome)->toBe('absent');
+    $this->assertDatabaseCount('routes', 0);
+});
+
+it('refuses a newly attached Route before retrying source finalization after absent Route clearing', function (): void {
+    $instance = orb181_coordinator_instance();
+    orb046_remove_optional_route($instance, ProjectType::LaravelPackage);
+    $this->orb181Finalizer->failAfterPartialReceipt = true;
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(AppInstanceRemovalException::class);
+    $member = AppInstanceRemovalMember::query()->sole();
+    expect($member->route_outcome)->toBe('absent');
+    $route = Route::query()->create([
+        'app_id' => $instance->app_id, 'node_id' => $instance->node_id,
+        'domain' => 'late.example.test', 'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $calls = $this->orb181Finalizer->calls;
+
+    expect(fn () => $this->orb181Coordinator->execute($instance->fresh(), false))->toThrow(AppInstanceRemovalException::class);
+
+    expect(array_filter($this->orb181Finalizer->calls, static fn (string $call): bool => str_starts_with($call, 'finalize:')))
+        ->toBe(array_filter($calls, static fn (string $call): bool => str_starts_with($call, 'finalize:')));
+    expect($member->refresh()->source_finalized_at)->toBeNull();
+    $this->assertModelExists($route);
+    expect($route->targets()->count())->toBe(1);
+    expect($this->orb181Projector->calls)->toBe(["route:{$instance->id}"]);
+});
+
+it('removes the fixed dependent-first checkout set with mixed Route evidence', function (): void {
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    orb046_remove_optional_route($first, ProjectType::Monorepo);
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $untouched = orb181_coordinator_instance();
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    $untouchedRoute = $untouched->routes->sole();
+
+    $removal = $this->orb181Coordinator->execute($checkout, true);
+
+    expect($removal->status->value)->toBe('completed');
+    expect($removal->members->pluck('app_instance_id')->all())->toBe([$first->id, $second->id, $checkout->id]);
+    expect($removal->members->firstWhere('app_instance_id', $first->id)->route_id)->toBeNull();
+    expect($removal->members->pluck('route_outcome')->all())->toBe(['absent', 'deleted', 'deleted']);
+    $this->assertModelExists($untouched);
+    $this->assertModelExists($untouchedRoute);
+    $this->assertDatabaseCount('routes', 1);
+});
+
+it('refuses Route or capability drift before recording a route-less removal', function (string $change): void {
+    $instance = orb181_coordinator_instance();
+    orb046_remove_optional_route($instance, ProjectType::LaravelPackage);
+    $this->orb131ProcessLock->beforeRun = function () use ($instance, $change): void {
+        if ($change === 'required') {
+            DB::table('apps')->where('id', $instance->app_id)->update(['type' => ProjectType::LaravelApp->value]);
+        } elseif ($change === 'placement') {
+            AppInstance::query()->whereKey($instance->id)->update(['checkout_path' => '/srv/changed']);
+        } else {
+            $route = Route::query()->create([
+                'app_id' => $instance->app_id,
+                'node_id' => $instance->node_id,
+                'domain' => 'unexpected.example.test',
+                'provenance' => RouteProvenance::Explicit,
+                'publication' => RoutePublication::Private,
+                'status' => RouteStatus::Pending,
+            ]);
+            $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+            $route->update(['status' => RouteStatus::Active]);
+        }
+    };
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class);
+
+    $this->assertDatabaseCount('app_instance_removals', 0);
+    $this->assertDatabaseCount('app_instance_removal_members', 0);
+    expect($this->orb181Finalizer->calls)->toBe([]);
+    expect($this->orb181Projector->calls)->toBe([]);
+})->with(['appears', 'required', 'placement']);
 
 it('cascades owned Schedules before successful AppInstance row deletion', function (): void {
     $runtime = new FakeScheduleRuntimeManager;
@@ -1226,6 +1371,9 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
     {
         $this->calls[] = "route:{$member->app_instance_id}";
+        if ($member->route_id === null) {
+            return 'absent';
+        }
         $route = Route::query()->find($member->route_id);
 
         if (! $route instanceof Route) {
@@ -1313,17 +1461,30 @@ final class Orb212CoordinatorEnvironmentLock implements AppInstanceEnvironmentOp
 
 final class Orb131CoordinatorProcessAdmissionLock implements ProcessAdmissionLock
 {
+    public ?Closure $beforeRun = null;
+
     /** @var list<list<int>> */
     public array $owners = [];
 
     public function run(array $appInstanceIds, Closure $operation): mixed
     {
+        ($this->beforeRun ?? static fn () => null)();
         $owners = array_values(array_unique(array_map(intval(...), $appInstanceIds)));
         sort($owners, SORT_NUMERIC);
         $this->owners[] = $owners;
 
         return $operation();
     }
+}
+
+function orb046_remove_optional_route(AppInstance $instance, ProjectType $type): void
+{
+    $instance->app->update(['type' => $type]);
+    foreach ($instance->routes()->get() as $route) {
+        $route->targets()->delete();
+        $route->delete();
+    }
+    $instance->unsetRelation('routes');
 }
 
 final class Orb131CoordinatorProcessRuntimeManager implements ProcessRuntimeManager

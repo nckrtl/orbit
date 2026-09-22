@@ -44,7 +44,7 @@ Forced removal validates the configured origin identity locally and does not req
 
 ## Preflight the complete removal
 
-The Gateway checks source ownership and the active Route before changing records, processes, schedules, runtime, Git, or files. A failed source check changes nothing. A development Instance must be its Route's only target. Production instances of the same Project can share an explicit Cluster Route across distinct active app-prod Nodes. Development removal holds the Node's source lock through inspection, Route checks, and acceptance. Source preparation and retries use the same lock.
+The Gateway checks source ownership and the active Route when present before changing records, processes, schedules, runtime, Git, or files. A failed source check changes nothing. A development Instance must be its Route's only target. Production instances of the same Project can share an explicit Cluster Route across distinct active app-prod Nodes. Package and monorepo Instances can enter removal without a Route. The Gateway records that absence as immutable evidence and refuses a Route attached after acceptance. Development removal holds the Node's source lock through inspection, Route checks, and acceptance. Source preparation and retries use the same lock.
 
 Preflight compares the recorded checkout with its source layout, Project repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
 
@@ -69,7 +69,7 @@ Forced checkout removal sorts worktrees by checkout path and puts the common che
 
 ### Production target
 
-Orbit accepts one production Instance after it verifies the complete Route target set. An Instance that still needs manual source migration returns `instance.migration_required` before removal preflight can accept it.
+Orbit accepts one production Instance after it verifies the complete Route target set, or verifies that its Project permits the recorded absence of a Route. An Instance that still needs manual source migration returns `instance.migration_required` before removal preflight can accept it.
 
 ## Complete an accepted removal
 
@@ -78,12 +78,12 @@ After preflight succeeds, the Gateway records one immutable member for a worktre
 | Step | Result |
 | --- | --- |
 | `source_preparation` | Record verified development source identity or the production content-retention boundary without deleting content. |
-| `route_target_clear` | Stop the Route from forwarding to the Instance, republish an ordered surviving production set or delete the final-target Route after managed projection cleanup, and release a deleted Route's domain. |
+| `route_target_clear` | Confirm recorded Route absence, republish surviving production targets, or delete the final-target Route and release its domain after managed projection cleanup. |
 | `source_finalization` | Delete the exact recorded development checkout or retain production application content, store matching completion evidence, and remove the Project slug grouping directory when that directory is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule with its exact artifacts and record, then remove Instance runtime artifacts after Route traffic stops. |
 | `row_deletion` | Delete the member's Instance row. The final member's transaction also marks the operation completed. |
 
-Development source finalization never starts before that member's Route deletion releases the domain. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes the Route. A projection failure keeps the Instance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes.
+Development source finalization never starts before that member's Route deletion releases the domain or its recorded Route absence is confirmed. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes a present Route. A projection failure keeps the Instance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes, including a set with both routed and route-less members.
 
 After that deletion leaves a Project slug grouping directory empty, the Gateway removes that directory. It leaves a grouping directory that still has entries, the apps root, and unrelated paths unchanged.
 
@@ -111,6 +111,8 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 | `failed_step`, `error_code` | Null outside failure; on failure, the unfinished step and a bounded safe error token or null. |
 
 Repeating the same removal request resumes the first unfinished member and step. The Gateway refuses a changed force value or a request owned by another operation. Before further source deletion, it revalidates every unfinished source under the same Node lock. A retry after Route deletion continues without recreating the Route or reclaiming its domain.
+
+An absent Route at acceptance stays distinct from a recorded Route that was deleted before retry. When no Route was accepted, removal records the `absent` outcome and skips Route publication work. Source receipts, production content retention, Process and Schedule cleanup, runtime and certificate cleanup, and metrics reconciliation still apply.
 
 Process and Schedule cleanup retry only records and exact-owned runtime artifacts that remain unfinished. A cleanup failure keeps the Instance and its removal progress, reports no completed removal, and permits the same request to continue after the Node or artifact conflict is repaired. Retry leaves Node-owned Schedules, other Instances' children, and unrecognized artifacts unchanged. If final cascade completion cannot commit, the same transaction restores the final member checkpoint and requested checkout row, so the identical public request remains model-bindable.
 

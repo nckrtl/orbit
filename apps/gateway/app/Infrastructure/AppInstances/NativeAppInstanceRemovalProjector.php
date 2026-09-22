@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -37,23 +38,35 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
     {
+        if ($member->route_id === null) {
+            return DB::transaction(function () use ($member): string {
+                $instance = AppInstance::query()->with('app')->lockForUpdate()->findOrFail($member->app_instance_id);
+
+                if (
+                    $instance->status !== AppInstanceState::Removing
+                    || $instance->app_id !== $member->app_id
+                    || $instance->node_id !== $member->node_id
+                    || $instance->requiresRoute()
+                    || $instance->routes()->exists()
+                ) {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.removal_conflict',
+                        message: 'The recorded absence of an Instance Route changed during removal.',
+                        status: 409,
+                    );
+                }
+
+                return 'absent';
+            });
+        }
+
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
-        $route = $member->route_id === null
-            ? null
-            : Route::query()
-                ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
-                ->find($member->route_id);
+        $route = Route::query()
+            ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
+            ->find($member->route_id);
 
         if (! $route instanceof Route) {
-            if ($member->route_id !== null) {
-                return 'deleted';
-            }
-
-            throw new ResourceOperationException(
-                errorCode: 'instance.removal_conflict',
-                message: "AppInstance [{$member->name}] Route identity changed during removal.",
-                status: 409,
-            );
+            return 'deleted';
         }
 
         if (

@@ -235,7 +235,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     ->orderBy('id')
                     ->get()
                     ->keyBy('id');
-                $routeIds = $members->map(static fn (AppInstance $member): int => $member->routes->sole()->id);
+                $routeIds = $members->flatMap(static fn (AppInstance $member): array => $member->routes->modelKeys())->unique()->values();
                 $lockedRoutes = Route::query()
                     ->with('targets')
                     ->whereKey($routeIds)
@@ -243,27 +243,31 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     ->get()
                     ->keyBy('id');
 
-                if ($lockedMembers->count() !== $members->count() || $lockedRoutes->count() !== $members->count()) {
+                if ($lockedMembers->count() !== $members->count() || $lockedRoutes->count() !== $routeIds->count()) {
                     $this->conflict($snapshot);
                 }
 
                 foreach ($members as $member) {
                     $lockedMember = $lockedMembers->get($member->id);
-                    $route = $member->routes->sole();
-                    $lockedRoute = $lockedRoutes->get($route->id);
+                    $route = $member->routes->first();
+                    $lockedRoute = $route instanceof Route ? $lockedRoutes->get($route->id) : null;
+                    $lockedMember?->load(['app', 'node', 'routes.targets']);
 
                     if (
                         ! $lockedMember instanceof AppInstance
-                        || ! $lockedRoute instanceof Route
                         || $lockedMember->status !== AppInstanceState::Active
                         || $lockedMember->migration_required
                         || $lockedMember->app_id !== $member->app_id
                         || $lockedMember->node_id !== $member->node_id
                         || $lockedMember->checkout_path !== $member->checkout_path
                         || $lockedMember->source_layout !== $member->source_layout
-                        || $lockedRoute->status !== RouteStatus::Active
-                        || $lockedRoute->targets->count() !== 1
-                        || $lockedRoute->targets->sole()->app_instance_id !== $lockedMember->id
+                        || $lockedMember->requiresRoute() !== $member->requiresRoute()
+                        || $lockedMember->routes->modelKeys() !== $member->routes->modelKeys()
+                        || ($route instanceof Route && (! $lockedRoute instanceof Route
+                            || $lockedRoute->status !== RouteStatus::Active
+                            || $lockedRoute->targets->count() !== 1
+                            || $lockedRoute->targets->sole()->app_instance_id !== $lockedMember->id))
+                        || (! $route instanceof Route && $lockedMember->requiresRoute())
                     ) {
                         $this->conflict($snapshot);
                     }
@@ -289,7 +293,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                             'app_instance_id' => $member->id,
                             'app_id' => $member->app_id,
                             'node_id' => $member->node_id,
-                            'route_id' => $member->routes->sole()->id,
+                            'route_id' => $member->routes->first()?->id,
                             'name' => $member->name,
                             'environment' => $member->environment,
                             'source_layout' => $inventory->layout,
@@ -327,13 +331,26 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         /** @var AppInstanceRemoval $operation */
         $operation = $this->processAdmissions->run([$snapshot->id], fn (): AppInstanceRemoval => DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($snapshot->id);
-            $lockedRoute = Route::query()
+            $lockedRoute = $route instanceof Route ? Route::query()
                 ->with($this->productionRouteRelations())
                 ->lockForUpdate()
-                ->findOrFail($route->id);
+                ->findOrFail($route->id) : null;
             $locked->load(['app', 'node', 'routes.targets']);
 
-            if ($locked->status !== AppInstanceState::Active || ! $this->productionRouteIsSafe($lockedRoute, $locked)) {
+            if (
+                $locked->status !== AppInstanceState::Active
+                || $locked->migration_required
+                || $locked->app_id !== $snapshot->app_id
+                || $locked->node_id !== $snapshot->node_id
+                || $locked->checkout_path !== $snapshot->checkout_path
+                || $locked->source_layout !== $snapshot->source_layout
+                || $locked->production_home !== $snapshot->production_home
+                || $locked->production_user !== $snapshot->production_user
+                || $locked->requiresRoute() !== $snapshot->requiresRoute()
+                || $locked->routes->modelKeys() !== $snapshot->routes->modelKeys()
+                || ($lockedRoute instanceof Route && ! $this->productionRouteIsSafe($lockedRoute, $locked))
+                || (! $lockedRoute instanceof Route && ! $this->productionRouteAbsenceIsSafe($locked))
+            ) {
                 $this->conflict($snapshot);
             }
 
@@ -356,7 +373,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     'app_instance_id' => $snapshot->id,
                     'app_id' => $snapshot->app_id,
                     'node_id' => $snapshot->node_id,
-                    'route_id' => $route->id,
+                    'route_id' => $route?->id,
                     'name' => $snapshot->name,
                     'environment' => $snapshot->environment,
                     'source_layout' => $inventory->layout,
@@ -596,8 +613,12 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         );
     }
 
-    private function route(AppInstance $appInstance): Route
+    private function route(AppInstance $appInstance): ?Route
     {
+        if ($appInstance->routes->isEmpty() && ! $appInstance->requiresRoute()) {
+            return null;
+        }
+
         if ($appInstance->routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
@@ -623,8 +644,12 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $route;
     }
 
-    private function productionRoute(AppInstance $appInstance): Route
+    private function productionRoute(AppInstance $appInstance): ?Route
     {
+        if ($this->productionRouteAbsenceIsSafe($appInstance)) {
+            return null;
+        }
+
         if ($appInstance->routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
@@ -644,6 +669,15 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         }
 
         return $route;
+    }
+
+    private function productionRouteAbsenceIsSafe(AppInstance $appInstance): bool
+    {
+        return $appInstance->routes->isEmpty()
+            && ! $appInstance->requiresRoute()
+            && $appInstance->placedOnAppProd()
+            && $appInstance->node->status === LifecycleStatus::Active
+            && $appInstance->node->roles()->where('role', RoleName::AppProd)->where('status', LifecycleStatus::Active)->exists();
     }
 
     private function productionRouteIsSafe(Route $route, AppInstance $requested): bool
@@ -762,6 +796,20 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         AppInstanceRemovalMember $member,
         AppInstanceRemovalStep $step,
     ): void {
+        if ($member->route_id === null) {
+            $instance = AppInstance::query()->with('app')->findOrFail($member->app_instance_id);
+
+            if (
+                $instance->requiresRoute()
+                || $instance->routes()->exists()
+                || $instance->app_id !== $member->app_id
+                || $instance->node_id !== $member->node_id
+                || $instance->status !== AppInstanceState::Removing
+            ) {
+                $this->conflict($instance);
+            }
+        }
+
         match ($step) {
             AppInstanceRemovalStep::SourcePreparation => $this->prepareSource($operation, $member),
             AppInstanceRemovalStep::RouteTargetClear => $this->clearRoute($member),

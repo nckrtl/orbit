@@ -12,11 +12,13 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
@@ -53,6 +55,37 @@ afterEach(function (): void {
     if (is_string($this->orb181ProjectorHome ?? null)) {
         new Filesystem()->deleteDirectory($this->orb181ProjectorHome);
     }
+});
+
+it('confirms recorded Route absence without publishing a Route or changing remote state', function (ProjectType $type): void {
+    $app = orb181_projector_app('optional');
+    $app->update(['type' => $type]);
+    $node = orb181_projector_node('app-dev', '31', null, RoleName::AppDev);
+    $instance = orb181_projector_instance($app, $node, 'development', 'dev');
+    $instance->update(['status' => AppInstanceState::Active]);
+    $member = orb181_projector_member($instance, null);
+    [$projector, $ssh, $processes] = orb181_removal_projector($this);
+
+    expect($projector->clearRouteTarget($member))->toBe('absent');
+    expect($projector->clearRouteTarget($member->fresh()))->toBe('absent');
+
+    expect($ssh->commands)->toBe([]);
+    expect($processes->invocations)->toBe([]);
+    $this->assertDatabaseCount('routes', 0);
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo]);
+
+it('refuses claimed Route absence when a target exists without deleting or publishing it', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    $member->route_id = null;
+    OrbitApp::query()->whereKey($member->app_id)->update(['type' => ProjectType::LaravelPackage]);
+    [$projector, $ssh, $processes] = orb181_removal_projector($this);
+
+    expect(fn () => $projector->clearRouteTarget($member))->toThrow(ResourceOperationException::class);
+
+    $this->assertModelExists($route);
+    expect($route->targets()->count())->toBe(1);
+    expect($ssh->commands)->toBe([]);
+    expect($processes->invocations)->toBe([]);
 });
 
 it('serves the exact transient development 503 without an upstream then deletes the final Route', function (): void {
@@ -568,7 +601,7 @@ function orb181_projector_route(
     ]);
 }
 
-function orb181_projector_member(AppInstance $instance, Route $route): AppInstanceRemovalMember
+function orb181_projector_member(AppInstance $instance, ?Route $route): AppInstanceRemovalMember
 {
     $operation = AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
@@ -587,7 +620,7 @@ function orb181_projector_member(AppInstance $instance, Route $route): AppInstan
             'app_instance_id' => $instance->id,
             'app_id' => $instance->app_id,
             'node_id' => $instance->node_id,
-            'route_id' => $route->id,
+            'route_id' => $route?->id,
             'name' => $instance->name,
             'environment' => $instance->environment,
             'source_layout' => $instance->source_layout,

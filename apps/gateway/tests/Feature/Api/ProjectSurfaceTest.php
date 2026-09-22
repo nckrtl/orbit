@@ -169,8 +169,11 @@ it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (
     $migration = require base_path(
         'database/migrations/2026_09_20_210000_add_project_type_and_normalize_app_prod_mode.php',
     );
+    $removalRoutes = require base_path('database/migrations/2026_09_22_105133_allow_absent_routes_in_app_instance_removal.php');
+    $removalRoutes->down();
     $migration->down();
     $migration->up();
+    $removalRoutes->up();
 
     expect($project->refresh()->type)->toBe(ProjectType::LaravelApp)
         ->and($instance->environmentValues()->where('env_key', 'APP_ENV')->sole()->env_value)
@@ -193,8 +196,11 @@ it('classifies the Orbit repository as a monorepo during upgrade', function (): 
     $migration = require base_path(
         'database/migrations/2026_09_20_210000_add_project_type_and_normalize_app_prod_mode.php',
     );
+    $removalRoutes = require base_path('database/migrations/2026_09_22_105133_allow_absent_routes_in_app_instance_removal.php');
+    $removalRoutes->down();
     $migration->down();
     $migration->up();
+    $removalRoutes->up();
 
     expect($orbit->refresh()->type)->toBe(ProjectType::Monorepo);
 });
