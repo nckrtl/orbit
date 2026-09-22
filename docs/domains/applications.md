@@ -89,6 +89,8 @@ An explicit valid value can fill an unresolved or optional value. It cannot repl
 
 Orbit records `checkout` for an independent repository and `worktree` for a linked worktree. It moves the complete source to the managed path. HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated settings stay intact. A source already at the correct path stays there.
 
+Registration derives literal branch names from full `refs/heads/` references and the default branch from `refs/remotes/origin/`. Same-name tags do not alter that evidence. Only actual detached HEAD produces a null branch; an unknown symbolic target or failed observation refuses inspection. Existing recorded branch values are not rewritten.
+
 Registration adopts only the caller's source by default. After moving a shared checkout, Orbit repairs links so other worktrees remain usable and unregistered. Use `--include-worktrees` to adopt the checkout and all linked worktrees together. Before moving anything, the Gateway checks each source's Git identity, metadata ownership and permissions, instance name, and destination. It also checks for overlap with managed Instances. If any check fails, nothing moves.
 
 The registration API preserves its accepted boolean forms for `include_worktrees`: `true`, `1`, and `"1"` select the complete source set; `false`, `0`, `"0"`, or omission select only the caller's source. Equivalent accepted forms keep the same source-set intent on retry.

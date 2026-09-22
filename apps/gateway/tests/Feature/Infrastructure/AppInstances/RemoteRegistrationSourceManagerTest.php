@@ -28,6 +28,195 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
 
+it('inspects and resumes relocation of literal registration branches despite same-name tags', function (string $branch): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        if ($branch !== 'main') {
+            expect(orb105_git($fixture['source'], ['branch', '-m', $branch])->succeeded())->toBeTrue();
+        }
+        expect(orb105_git($fixture['source'], ['tag', $branch])->succeeded())->toBeTrue();
+        $before = orb105_complete_manifest($fixture['source']);
+        $gitBefore = orb105_git_state($fixture['source']);
+
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        expect($facts->branch)->toBe($branch);
+        expect($facts->detached)->toBeFalse();
+        expect($facts->defaultBranch)->toBeNull();
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        $fixture['instance']->update(['branch' => $branch]);
+        $interrupting = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor);
+        expect(fn () => $interrupting->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+        $fixture['manager']->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']);
+        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
+        expect(orb105_git_state($fixture['destination']))->toBe($gitBefore);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        expect(file_exists($fixture['source']))->toBeFalse();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['main', 'heads/main', 'remotes/origin/main']);
+
+it('derives a literal origin default branch despite colliding tag or local branch names', function (string $branch, string $collision): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        expect(orb105_git($fixture['source'], ['update-ref', 'refs/remotes/origin/'.$branch, 'HEAD'])->succeeded())->toBeTrue();
+        expect(orb105_git($fixture['source'], ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/'.$branch])->succeeded())->toBeTrue();
+        expect(orb105_git($fixture['source'], [$collision, 'origin/'.$branch])->succeeded())->toBeTrue();
+        $before = orb105_complete_manifest($fixture['source']);
+
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        expect($facts->defaultBranch)->toBe($branch);
+        expect($facts->branch)->toBe('main');
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['main', 'heads/main'])->with(['tag', 'branch']);
+
+it('preserves genuine detached registration source and missing optional default evidence', function (): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        expect(orb105_git($fixture['source'], ['checkout', '--detach'])->succeeded())->toBeTrue();
+        $before = orb105_complete_manifest($fixture['source']);
+
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        expect($facts->branch)->toBeNull();
+        expect($facts->detached)->toBeTrue();
+        expect($facts->defaultBranch)->toBeNull();
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        $fixture['instance']->update(['branch' => null, 'registration_detached' => true]);
+        $fixture['manager']->relocate($fixture['instance'], $facts);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses unrelated registration symbolic targets and a non-symbolic origin default', function (string $mutation): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        if ($mutation === 'HEAD tag') {
+            expect(orb105_git($fixture['source'], ['tag', 'main'])->succeeded())->toBeTrue();
+            expect(orb105_git($fixture['source'], ['symbolic-ref', 'HEAD', 'refs/tags/main'])->succeeded())->toBeTrue();
+        } elseif ($mutation === 'default namespace') {
+            expect(orb105_git($fixture['source'], ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/heads/main'])->succeeded())->toBeTrue();
+        } else {
+            expect(orb105_git($fixture['source'], ['update-ref', 'refs/remotes/origin/HEAD', 'HEAD'])->succeeded())->toBeTrue();
+        }
+        $before = orb105_complete_manifest($fixture['source']);
+
+        expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['source'], false))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(file_exists($fixture['destination']))->toBeFalse();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['HEAD tag', 'default namespace', 'default direct commit']);
+
+it('refuses failed Git registration observations rather than reporting detached or missing evidence', function (string $reference): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        $hook = 'reference='.json_encode($reference, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n".<<<'PYTHON'
+            import subprocess
+            native_check_output=subprocess.check_output
+            def failing_observation(arguments, **options):
+                if 'symbolic-ref' in arguments and '-q' not in arguments and arguments[-1] == reference:
+                    arguments=[*arguments[:3], '--invalid-registration-option', *arguments[3:]]
+                return native_check_output(arguments, **options)
+            subprocess.check_output=failing_observation
+            PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor($fixture['source'], $hook));
+        $before = orb105_complete_manifest($fixture['source']);
+
+        expect(fn () => $manager->inspect($fixture['node'], $fixture['source'], false))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['HEAD', 'refs/remotes/origin/HEAD']);
+
+it('refuses a failed relocation HEAD observation even for a genuinely detached source', function (): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        expect(orb105_git($fixture['source'], ['checkout', '--detach'])->succeeded())->toBeTrue();
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $fixture['instance']->update(['branch' => null, 'registration_detached' => true]);
+        $before = orb105_complete_manifest($fixture['source']);
+        $hook = <<<'PYTHON'
+            import subprocess
+            native_check_output=subprocess.check_output
+            def failing_observation(arguments, **options):
+                if 'symbolic-ref' in arguments and '-q' not in arguments:
+                    arguments=[*arguments[:3], '--invalid-registration-option', *arguments[3:]]
+                return native_check_output(arguments, **options)
+            subprocess.check_output=failing_observation
+            PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('prepare', $hook));
+
+        expect(fn () => $manager->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(file_exists($fixture['destination']))->toBeFalse();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses retained abbreviated branch evidence without normalizing or moving source', function (string $operation): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        expect(orb105_git($fixture['source'], ['tag', 'main'])->succeeded())->toBeTrue();
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $retained = new RegistrationSourceFacts(
+            path: $facts->path,
+            layout: $facts->layout,
+            repositoryUrl: $facts->repositoryUrl,
+            repositoryIdentity: $facts->repositoryIdentity,
+            branch: 'heads/main',
+            detached: $facts->detached,
+            commit: $facts->commit,
+            defaultBranch: $facts->defaultBranch,
+            inferredSlug: $facts->inferredSlug,
+            inferredRoot: $facts->inferredRoot,
+            commonRepositoryPath: $facts->commonRepositoryPath,
+            worktreePaths: $facts->worktreePaths,
+            sourceDigest: $facts->sourceDigest,
+        );
+        $fixture['instance']->update(['branch' => 'heads/main']);
+        $before = orb105_complete_manifest($fixture['source']);
+
+        if ($operation === 'recover') {
+            expect(fn () => $fixture['manager']->validateRelocationRecovery($fixture['node'], $retained, $fixture['source']))
+                ->toThrow(ResourceOperationException::class);
+        } else {
+            expect(fn () => $fixture['manager']->relocate($fixture['instance'], $retained))
+                ->toThrow(RuntimeConvergenceException::class);
+        }
+
+        expect($fixture['instance']->refresh()->branch)->toBe('heads/main');
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(file_exists($fixture['destination']))->toBeFalse();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['recover', 'relocate']);
+
 it('preserves an unowned legacy stage even when another registration copy verifies', function (bool $destinationPresent, string $kind): void {
     $fixture = orb105_relocation_fixture();
 
@@ -733,13 +922,15 @@ it('resumes after an emitted same-filesystem rename outruns its database checkpo
     }
 });
 
-it('resumes a partially renamed included worktree set from retained evidence', function (): void {
+it('resumes a partially renamed included worktree set from literal evidence despite same-name tags', function (string $branch): void {
     $fixture = orb105_relocation_fixture(crossFilesystem: false);
 
     try {
         $linkedSource = $fixture['source_root'].'/source/feature';
         $linkedDestination = $fixture['destination_root'].'/managed/acme/feature';
-        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
+        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', $branch, $linkedSource]);
+        expect(orb105_git($fixture['source'], ['tag', 'main'])->succeeded())->toBeTrue();
+        expect(orb105_git($linkedSource, ['tag', $branch])->succeeded())->toBeTrue();
         $files = new Filesystem;
         $files->ensureDirectoryExists($linkedSource.'/many');
         for ($index = 0; $index < 2_000; $index++) {
@@ -747,6 +938,9 @@ it('resumes a partially renamed included worktree set from retained evidence', f
         }
 
         $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], true);
+        expect(collect($facts)->firstWhere('path', $fixture['source'])?->branch)->toBe('main');
+        expect(collect($facts)->firstWhere('path', $linkedSource)?->branch)->toBe($branch);
+        $refsBefore = orb105_git($fixture['source'], ['show-ref'])->stdout;
         $requestId = $fixture['instance']->registration_request_id;
         $linked = AppInstance::query()->create([
             'app_id' => $fixture['instance']->app_id,
@@ -754,7 +948,7 @@ it('resumes a partially renamed included worktree set from retained evidence', f
             'name' => 'feature',
             'source_layout' => 'worktree',
             'checkout_path' => $linkedDestination,
-            'branch' => 'feature',
+            'branch' => $branch,
             'starting_commit' => collect($facts)->firstWhere('path', $linkedSource)?->commit,
             'registration_original_path' => $linkedSource,
             'registration_request_id' => $requestId,
@@ -817,10 +1011,12 @@ it('resumes a partially renamed included worktree set from retained evidence', f
             ->toBe('relocated')
             ->and($linked->refresh()->registration_relocation_state)
             ->toBe('relocated');
+        expect(orb105_git($linkedDestination, ['symbolic-ref', 'HEAD'])->stdout)->toBe('refs/heads/'.$branch."\n");
+        expect(orb105_git($fixture['destination'], ['show-ref'])->stdout)->toBe($refsBefore);
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
-});
+})->with(['feature', 'heads/feature']);
 
 it('preflights stage ownership for every included member before moving any source', function (): void {
     $fixture = orb105_relocation_fixture(crossFilesystem: false);

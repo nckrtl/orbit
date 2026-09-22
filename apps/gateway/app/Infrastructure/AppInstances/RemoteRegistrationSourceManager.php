@@ -797,6 +797,19 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             def git(path, *args):
                 return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
 
+            def symbolic_branch(path, name, prefix):
+                try: ref = git(path, 'symbolic-ref', '--quiet', name)
+                except subprocess.CalledProcessError as error:
+                    if error.returncode != 1: raise
+                    if name == 'HEAD': return None
+                    try: git(path, 'show-ref', '--verify', '--quiet', name)
+                    except subprocess.CalledProcessError as missing:
+                        if missing.returncode == 1: return None
+                        raise
+                    raise SystemExit(42)
+                if not ref.startswith(prefix) or ref == prefix: raise SystemExit(42)
+                return ref[len(prefix):]
+
             def digest(path):
                 root = pathlib.Path(path)
                 h = hashlib.sha256()
@@ -842,11 +855,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             listing = git(top, 'worktree', 'list', '--porcelain').splitlines()
             worktrees = [line[9:] for line in listing if line.startswith('worktree ')]
             paths = worktrees if include_worktrees else [top]
-            try:
-                ref = git(top, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
-                default_branch = ref.removeprefix('origin/')
-            except subprocess.CalledProcessError:
-                default_branch = None
+            default_branch = symbolic_branch(top, 'refs/remotes/origin/HEAD', 'refs/remotes/origin/')
             repository_path = origin.split(':', 1)[1] if origin.startswith('git@') else __import__('urllib.parse').parse.urlparse(origin).path
             slug = pathlib.PurePosixPath(repository_path.removesuffix('.git').rstrip('/')).name.lower()
             rows = []
@@ -861,8 +870,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 git_dir = os.path.realpath(git(path, 'rev-parse', '--absolute-git-dir'))
                 safe_metadata(git_dir, True)
                 safe_metadata(common, True)
-                try: branch = git(path, 'symbolic-ref', '--short', 'HEAD')
-                except subprocess.CalledProcessError: branch = None
+                branch = symbolic_branch(path, 'HEAD', 'refs/heads/')
                 rows.append({
                     'path': path,
                     'layout': layout,
@@ -913,8 +921,13 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             def verify(path, member):
                 if not os.path.isdir(path) or os.path.realpath(path) != path: raise SystemExit(42)
                 if git(path,'rev-parse','--verify','HEAD^{commit}') != member['commit']: raise SystemExit(42)
-                try: branch=git(path,'symbolic-ref','--short','HEAD')
-                except subprocess.CalledProcessError: branch=None
+                try:
+                    ref=git(path,'symbolic-ref','--quiet','HEAD')
+                    if not ref.startswith('refs/heads/') or ref == 'refs/heads/': raise SystemExit(42)
+                    branch=ref[len('refs/heads/'):]
+                except subprocess.CalledProcessError as error:
+                    if error.returncode != 1: raise
+                    branch=None
                 if branch != member['branch'] or (branch is None) != member['detached']: raise SystemExit(42)
                 if digest(path) != member['digest']: raise SystemExit(42)
             def require(condition):

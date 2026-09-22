@@ -265,12 +265,13 @@ it('refuses a non Git source before any registration mutation', function (): voi
         ->toBe(['inspect']);
 });
 
-it('resolves an App by canonical repository identity and returns bounded source state', function (): void {
+it('resolves an App by canonical repository identity and returns bounded source state', function (string $branch): void {
+    $this->registrationSource->facts = [registration_facts(branch: $branch)];
     $app = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
-        'default_branch' => 'main',
+        'default_branch' => $branch,
         'root' => 'public',
     ]);
 
@@ -281,13 +282,15 @@ it('resolves an App by canonical repository identity and returns bounded source 
         ->assertJsonPath('data.app_instance.name', 'default')
         ->assertJsonPath('data.app_instance.source_layout', 'checkout')
         ->assertJsonPath('data.app_instance.checkout_path', '/srv/orbit/apps/acme/default')
-        ->assertJsonPath('data.app_instance.selected_branch', 'main')
+        ->assertJsonPath('data.app_instance.selected_branch', $branch)
         ->assertJsonPath('data.app_instance.detached', false)
         ->assertJsonPath('data.app_instance.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.app_instance.status', 'active')
         ->assertJsonPath('data.source_count', 1)
         ->assertJsonPath('data.completed_count', 1);
 
+    expect(AppInstance::query()->sole()->branch)->toBe($branch);
+    expect(AppInstance::query()->sole()->registration_default_branch)->toBe($branch);
     $activity = Activity::query()->where('command', 'instance:register')->sole();
     expect($activity->subject_type)
         ->toBe('instance')
@@ -297,7 +300,7 @@ it('resolves an App by canonical repository identity and returns bounded source 
         ->toBe('checkout')
         ->and($activity->properties?->get('input'))
         ->not->toHaveKey('source_path');
-});
+})->with(['main', 'heads/main', 'remotes/origin/main']);
 
 it('creates a confirmed missing App before its AppInstance and retains it after later failure', function (): void {
     $payload = [
@@ -2466,17 +2469,17 @@ function bind_route_domain_update_for_registration_test(): void
     });
 }
 
-function registration_facts(string $digest = ''): RegistrationSourceFacts
+function registration_facts(string $digest = '', string $branch = 'main'): RegistrationSourceFacts
 {
     return new RegistrationSourceFacts(
         path: '/work/acme',
         layout: AppInstanceSourceLayout::Checkout,
         repositoryUrl: 'git@github.com:acme/acme.git',
         repositoryIdentity: 'github.com/acme/acme',
-        branch: 'main',
+        branch: $branch,
         detached: false,
         commit: str_repeat('a', 40),
-        defaultBranch: 'main',
+        defaultBranch: $branch,
         inferredSlug: 'acme',
         inferredRoot: 'public',
         commonRepositoryPath: '/work/acme/.git',
