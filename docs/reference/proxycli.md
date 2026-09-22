@@ -87,6 +87,8 @@ orbit extension:disable proxycli
 
 The Orbit web app shows a Quota section while the fleet feature is enabled. The overview lists each provider pool. A provider page lists accounts, window remaining, reset times, and enable or disable controls. Window titles are duration labels in management.html#/quota order: the longer window first (`7d` then `5h`). A window the provider omitted is absent. The UI never renders a missing window as zero and never labels a window Primary or Secondary.
 
+An account control stays unavailable while its change and provider refresh are pending. A failed change shows the Gateway error beside that account; retry it explicitly with the same control.
+
 CodexBar uses the LLM Proxy quota-stats contract at `https://collector.proxycli.orbit/v1/quota-stats` with the read token as a bearer token. The custom CodexBar plugins also use cache-only `GET /api/v1/usage` and `GET /api/v1/providers/{provider}` on this collector. Their existing camelCase snapshot contract is preserved, including the `xai` alias for Grok. Native account control uses `PUT /api/v1/providers/{provider}/accounts/{account}` with the distinct control token. The collector compiles a snapshot every minute. CodexBar rejects snapshots older than three minutes; this does not increase quota polling. Account control at `https://collector.proxycli.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
 
 `orbit proxycli:status` reports whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written. `orbit proxycli:list` and `orbit proxycli:show` read the same snapshot. `orbit proxycli:update` toggles one account.

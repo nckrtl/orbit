@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
@@ -153,15 +153,41 @@ function QuotaWindows({
     );
 }
 
-async function toggleAccount(account: QuotaAccount): Promise<void> {
-    await api<QuotaAccount>(
-        "PATCH",
-        `/api/v1/proxycli/accounts/${encodeURIComponent(account.id)}`,
-        {
-            disabled: !account.disabled,
-        },
+function AccountControl({ account }: { account: QuotaAccount }) {
+    const change = useMutation({
+        mutationFn: (disabled: boolean) =>
+            api<QuotaAccount>(
+                "PATCH",
+                `/api/v1/proxycli/accounts/${encodeURIComponent(account.id)}`,
+                { disabled },
+            ),
+        retry: false,
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proxycli-providers"] }),
+    });
+
+    return (
+        <div>
+            <button
+                type="button"
+                aria-label={`Toggle account ${account.id}`}
+                aria-pressed={!account.disabled}
+                className="cursor-pointer text-cyan disabled:cursor-default disabled:text-dim"
+                disabled={change.isPending}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                    event.stopPropagation();
+                    if (!change.isPending) change.mutate(!account.disabled);
+                }}
+            >
+                {change.isPending ? "Saving…" : account.disabled ? "enable" : "disable"}
+            </button>
+            {change.error && (
+                <p role="alert" className="text-red break-words">
+                    {change.error.message}
+                </p>
+            )}
+        </div>
     );
-    await queryClient.invalidateQueries({ queryKey: ["proxycli-providers"] });
 }
 
 const providerColumns: Column<QuotaProvider>[] = [
@@ -294,17 +320,7 @@ export function QuotaProviderPage() {
                 header: "Control",
                 width: 12,
                 value: (row) => (row.disabled ? "enable" : "disable"),
-                cell: (row) => (
-                    <span
-                        className="cursor-pointer text-cyan"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            void toggleAccount(row);
-                        }}
-                    >
-                        {row.disabled ? "enable" : "disable"}
-                    </span>
-                ),
+                cell: (row) => <AccountControl key={row.id} account={row} />,
             },
         ],
         [],
