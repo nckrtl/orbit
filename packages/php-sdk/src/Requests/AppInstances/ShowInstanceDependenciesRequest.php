@@ -33,7 +33,7 @@ final class ShowInstanceDependenciesRequest extends GatewayRequest
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceDependencyInventoryResponse
     {
         return DependencyInventoryDecoder::decodeFromResponse(
-            $response, $this->instanceId, false, $this->successRequestId($response),
+            $response, $this->instanceId, false,
         );
     }
 }

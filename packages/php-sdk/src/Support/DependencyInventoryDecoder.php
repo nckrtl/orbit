@@ -61,20 +61,13 @@ final class DependencyInventoryDecoder
         #[SensitiveParameter] Response $response,
         int $instanceId,
         bool $scan,
-        string $requestId,
     ): InstanceDependencyInventoryResponse {
-        $result = self::decode($response->body(), $instanceId, $response->header('X-Orbit-Request-Id'), $scan);
-        if ($requestId !== '' && $result->requestId !== $requestId) {
-            throw new GatewayApiException(self::INVENTORY_MESSAGE, requestId: $result->requestId);
-        }
-
-        return $result;
+        return self::decode($response->body(), $instanceId, $response->header('X-Orbit-Request-Id'), $scan);
     }
 
     public static function decodeUpdate(
         #[SensitiveParameter] Response $response,
         int $instanceId,
-        string $requestId,
     ): InstanceDependencyUpdateResponse {
         $body = $response->body();
         $headerRequestId = $response->header('X-Orbit-Request-Id');
@@ -109,15 +102,10 @@ final class DependencyInventoryDecoder
             $decoder->invalid();
         }
 
-        $result = new InstanceDependencyUpdateResponse(
+        return new InstanceDependencyUpdateResponse(
             $instanceId, $data->succeeded, $errorCode, $data->may_have_mutated,
             $composer, $javascript, $inventory, $decoder->requestId ?? $decoder->invalid(),
         );
-        if ($requestId !== '' && $result->requestId !== $requestId) {
-            $decoder->invalid();
-        }
-
-        return $result;
     }
 
     private function envelope(#[SensitiveParameter] string $body): stdClass

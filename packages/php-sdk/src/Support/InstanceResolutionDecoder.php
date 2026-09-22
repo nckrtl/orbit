@@ -48,26 +48,14 @@ final class InstanceResolutionDecoder
     public static function decodeFromResponse(
         #[SensitiveParameter] Response $response,
         #[SensitiveParameter] string $domain,
-        string $requestId,
     ): ResolvedAppInstanceResponse {
-        $result = self::decode($response->body(), $domain, $response->header('X-Orbit-Request-Id'));
-        if ($requestId !== '' && $result->requestId !== $requestId) {
-            throw new GatewayApiException('Gateway response contains invalid instance resolution data.', requestId: $result->requestId);
-        }
-
-        return $result;
+        return self::decode($response->body(), $domain, $response->header('X-Orbit-Request-Id'));
     }
 
     public static function decodeDirectoryFromResponse(
         #[SensitiveParameter] Response $response,
-        string $requestId,
     ): ResolvedDirectoryInstanceResponse {
-        $result = self::decodeDirectory($response->body(), $response->header('X-Orbit-Request-Id'));
-        if ($requestId !== '' && $result->requestId !== $requestId) {
-            throw new GatewayApiException('Gateway response contains invalid instance resolution data.', requestId: $result->requestId);
-        }
-
-        return $result;
+        return self::decodeDirectory($response->body(), $response->header('X-Orbit-Request-Id'));
     }
 
     /** @param list<string> $fields

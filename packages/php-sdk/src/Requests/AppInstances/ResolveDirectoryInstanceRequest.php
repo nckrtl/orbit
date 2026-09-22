@@ -38,6 +38,6 @@ final class ResolveDirectoryInstanceRequest extends GatewayRequest
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): ResolvedDirectoryInstanceResponse
     {
-        return InstanceResolutionDecoder::decodeDirectoryFromResponse($response, $this->successRequestId($response));
+        return InstanceResolutionDecoder::decodeDirectoryFromResponse($response);
     }
 }

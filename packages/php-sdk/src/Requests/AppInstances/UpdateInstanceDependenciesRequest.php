@@ -45,7 +45,7 @@ final class UpdateInstanceDependenciesRequest extends GatewayRequest implements 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceDependencyUpdateResponse
     {
         return DependencyInventoryDecoder::decodeUpdate(
-            $response, $this->instanceId, $this->successRequestId($response),
+            $response, $this->instanceId,
         );
     }
 }

@@ -45,7 +45,7 @@ final class ScanInstanceDependenciesRequest extends GatewayRequest implements Ha
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): InstanceDependencyInventoryResponse
     {
         return DependencyInventoryDecoder::decodeFromResponse(
-            $response, $this->instanceId, true, $this->successRequestId($response),
+            $response, $this->instanceId, true,
         );
     }
 }

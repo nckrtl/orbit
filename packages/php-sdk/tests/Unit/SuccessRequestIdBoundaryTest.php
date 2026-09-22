@@ -334,6 +334,36 @@ describe('success request ID boundary', function (): void {
                 return new ResponseDto($this->successRequestId($response));
             }
             PHP,
+        'unrecognized decoder entry point' => <<<'PHP'
+            public function createDtoFromResponse(#[\SensitiveParameter] Response $response): object
+            {
+                return InstanceResolutionDecoder::decodeUnchecked($response);
+            }
+            PHP,
+        'raw metadata before strict decoding' => <<<'PHP'
+            public function createDtoFromResponse(#[\SensitiveParameter] Response $response): object
+            {
+                $requestId = $response->json('meta.request_id');
+                return InstanceResolutionDecoder::decodeDirectoryFromResponse($response);
+            }
+            PHP,
+        'missing centralized correlation boundary' => <<<'PHP'
+            public function createDtoFromResponse(#[\SensitiveParameter] Response $response): object
+            {
+                return ResponseDto::fromArray($this->unwrapData($response));
+            }
+            PHP,
+    ]);
+
+    it('accepts the strict decoder response entry points as correlation owners', function (string $call): void {
+        $source = 'public function createDtoFromResponse(#[\\SensitiveParameter] Response $response): object { return '.$call.'; }';
+
+        expect(success_request_id_source_violations($source))->toBeEmpty();
+    })->with([
+        'DependencyInventoryDecoder::decodeFromResponse($response, $this->instanceId, false)',
+        'DependencyInventoryDecoder::decodeUpdate($response, $this->instanceId)',
+        'InstanceResolutionDecoder::decodeFromResponse($response, $this->domain)',
+        'InstanceResolutionDecoder::decodeDirectoryFromResponse($response)',
     ]);
 
     it('prevents ad hoc success metadata request ID extraction in request classes', function (): void {
@@ -443,6 +473,7 @@ function success_request_id_factory_violations(string $contents): array
     if (
         str_contains($contents, 'createDtoFromResponse(')
         && preg_match('/->success(?:Header)?RequestId\s*\(\s*\$response\s*\)/s', $contents) !== 1
+        && preg_match('/\breturn\s+(?:DependencyInventoryDecoder::(?:decodeFromResponse|decodeUpdate)|InstanceResolutionDecoder::(?:decodeFromResponse|decodeDirectoryFromResponse))\s*\(\s*\$response\b/s', $contents) !== 1
     ) {
         $violations[] = 'missing centralized request ID extraction';
     }
