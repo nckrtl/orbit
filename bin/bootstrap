@@ -2,6 +2,14 @@
 
 set -euo pipefail
 
+run_checks=1
+if [[ $# -eq 1 && "$1" == --skip-checks ]]; then
+    run_checks=0
+elif [[ $# -ne 0 ]]; then
+    printf 'Usage: bin/bootstrap [--skip-checks]\n' >&2
+    exit 2
+fi
+
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
 
@@ -126,4 +134,18 @@ for index in "${!projects[@]}"; do
     sed 's/^/  /' "$log_file"
 done
 
-exit "$failed"
+if ((failed != 0)); then
+    exit "$failed"
+fi
+
+if ((run_checks)); then
+    for project in "${projects[@]}"; do
+        printf '\n[%s] affected tests and quality checks\n' "$project"
+        (
+            cd "$repository_root/$project"
+            export COMPOSER_PROCESS_TIMEOUT=0
+            composer test:affected
+            composer check
+        )
+    done
+fi

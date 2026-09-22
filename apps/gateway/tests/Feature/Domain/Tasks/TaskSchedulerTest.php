@@ -31,6 +31,7 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWorkspacePreparer;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -475,6 +476,14 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         'status' => LifecycleStatus::Active,
     ]);
     $group = queued_group($app, 'Real wire');
+    app()->instance(TaskWorkspacePreparer::class, new class implements TaskWorkspacePreparer
+    {
+        public function prepare(AppInstance $instance): void
+        {
+            expect($instance->provisioning_step)->toBe('task-bootstrap');
+            expect(AgentThread::query()->count())->toBe(0);
+        }
+    });
 
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
     {

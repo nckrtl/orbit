@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspacePreparer;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
@@ -24,6 +25,7 @@ use App\Infrastructure\Tasks\LaravelAiTaskEvidenceJudge;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
+use App\Infrastructure\Tasks\RemoteTaskWorkspacePreparer;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
@@ -43,6 +45,7 @@ final class TasksServiceProvider extends ServiceProvider
     public array $bindings = [
         T3Stream::class => T3TaskAgentStream::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
+        TaskWorkspacePreparer::class => RemoteTaskWorkspacePreparer::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,
         T3ThreadReader::class => HttpT3ThreadReader::class,

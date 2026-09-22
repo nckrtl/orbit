@@ -64,7 +64,7 @@ it('seeds all five projects during bootstrap with independent cache copies', fun
         if [ "$1" = "install" ]; then
             mkdir -p vendor
             touch vendor/installed
-        elif [ "$1" = "guidance:check" ]; then
+        elif [ "$1" = "guidance:check" ] || [ "$1" = "test:affected" ] || [ "$1" = "check" ]; then
             test -f vendor/installed && test -f vendor/pint.cache && test -f vendor/phpstan/cache/resultCache.php
         else
             exit 2
@@ -89,7 +89,7 @@ it('seeds all five projects during bootstrap with independent cache copies', fun
     expect(file_get_contents($worktree.'/apps/cli/vendor/pint.cache'))->toBe('worktree result');
 });
 
-it('selects the most recent compatible worktree for each cache', function (): void {
+it('uses primary main caches and ignores newer feature worktree caches', function (): void {
     ['root' => $root, 'worktree' => $worktree, 'run' => $run] = worktreeCacheFixture();
     $sibling = $root.'/.worktrees/sibling';
     expect($run->path($root)->run(['git', 'worktree', 'add', '-b', 'sibling', $sibling])->successful())->toBeTrue();
@@ -101,7 +101,7 @@ it('selects the most recent compatible worktree for each cache', function (): vo
     file_put_contents($sibling.'/apps/cli/phpstan.neon', 'different configuration');
 
     expect($run->run([$root.'/bin/worktree-cache', '--worktree='.$worktree])->successful())->toBeTrue();
-    expect(file_get_contents($worktree.'/apps/cli/vendor/pint.cache'))->toBe('sibling cache');
+    expect(file_get_contents($worktree.'/apps/cli/vendor/pint.cache'))->toBe('primary cache');
     expect(file_get_contents($worktree.'/apps/cli/vendor/phpstan/cache/resultCache.php'))->toBe('primary cache');
 });
 

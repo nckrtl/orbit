@@ -114,7 +114,9 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
-For Orbit monorepo work, `source_resolved` confirms the checkout and branch only. The automatic task provisioner does not run `bin/worktree-create` or `bin/bootstrap`. It does not guarantee installed project dependencies or seeded TIA caches. The manual worktree command includes that preparation. Automatic workspace readiness must be completed before enabling the verification pilot on newly provisioned Orbit task workspaces.
+For Orbit monorepo work, `source_resolved` confirms the checkout and branch. Before returning the workspace for agent start, the task provisioner runs `bin/bootstrap` through pinned SSH. Bootstrap installs dependencies, seeds compatible main caches, runs Pest TIA, and runs quality checks in all five projects. A failed setup keeps the group queued for retry on the same instance; the instance reports `task-bootstrap` as its failed step. The scheduler starts no agent on failure. Cancellation during preparation remains cancellation.
+
+The Gateway reads successful main cache publications from the Git common directory of `ORBIT_TASKS_CACHE_REPOSITORY`, which defaults to its monorepo checkout. It transfers only the fifteen known publication files through SSH stdin. The destination seeds private caches after validating dependency, runtime, checksum, and ancestry compatibility. Missing or incompatible publications allow a normal first run. Setup does not refresh shared main caches; the operator merging or deploying Orbit owns that refresh. `ORBIT_MAIN_CACHE_STORE` selects the transported publication directory for the seed tools. This fixed Orbit preparation hook is temporary; configurable instance and project setup steps remain a separate feature.
 
 ## Agent viewer
 

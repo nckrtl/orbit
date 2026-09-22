@@ -27,7 +27,9 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspacePreparer;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -47,6 +49,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentAppInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
+        private TaskWorkspacePreparer $preparation,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): ?AppInstance
@@ -54,21 +57,26 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         $group = $intent->group->loadMissing(['app', 'taskable']);
         $existing = $group->taskable;
 
-        if ($existing instanceof AppInstance) {
-            return $existing;
-        }
-
         if (! $this->hasSourceDefaults($group->app, $intent->visitable)) {
             return null;
         }
 
-        $node = $this->selectNode($intent->group->agent_driver);
+        $existing ??= AppInstance::query()
+            ->where('app_id', $group->app_id)
+            ->where('name', TaskWorkspaceName::for($group))
+            ->first();
+        $node = $existing instanceof AppInstance ? $existing->node : $this->selectNode($intent->group->agent_driver);
 
         if (! $node instanceof Node) {
             return null;
         }
 
         try {
+            if ($existing instanceof AppInstance && $group->taskable instanceof AppInstance) {
+                return $this->sourceLock->synchronized($existing->node_id,
+                    fn (): AppInstance => $this->prepareWorkspace($group, $existing));
+            }
+
             return $this->createWorkspace($group, $node, $intent->visitable);
         } catch (ResourceOperationException|RuntimeConvergenceException) {
             return null;
@@ -117,18 +125,49 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         return $this->sourceLock->synchronized(
             $appInstance->node_id,
-            function () use ($appInstance, $visitable): AppInstance {
+            function () use ($group, $appInstance, $visitable): AppInstance {
                 $resolved = $this->prepareSource($appInstance);
 
                 if (! $visitable) {
-                    return $resolved;
+                    return $this->prepareWorkspace($group, $resolved);
                 }
 
                 $this->development->reserve($resolved, null);
 
-                return $this->development->complete($resolved, null);
+                return $this->prepareWorkspace($group, $this->development->complete($resolved, null));
             },
         );
+    }
+
+    private function prepareWorkspace(TaskGroup $group, AppInstance $instance): AppInstance
+    {
+        if ($group->app->slug !== 'orbit') {
+            return $instance;
+        }
+
+        DB::transaction(function () use ($group, $instance): void {
+            $locked = TaskGroup::query()->lockForUpdate()->findOrFail($group->id);
+            if ($locked->status !== TaskGroupStatus::Reserved) {
+                throw new ResourceOperationException('tasks.preparation_cancelled', 'Task group is no longer reserved.');
+            }
+            $locked->taskable()->associate($instance);
+            $locked->save();
+        });
+        $instance->update(['provisioning_step' => 'task-bootstrap', 'failed_step' => null, 'error_code' => null]);
+        try {
+            $this->preparation->prepare($instance);
+        } catch (ResourceOperationException $exception) {
+            AppInstance::query()->whereKey($instance->id)->update([
+                'failed_step' => 'task-bootstrap', 'error_code' => 'tasks.workspace_setup_failed',
+            ]);
+
+            throw $exception;
+        }
+        AppInstance::query()->whereKey($instance->id)->update([
+            'provisioning_step' => 'task-prepared', 'failed_step' => null, 'error_code' => null,
+        ]);
+
+        return $instance;
     }
 
     private function prepareSource(AppInstance $appInstance): AppInstance

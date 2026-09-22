@@ -565,7 +565,8 @@ final readonly class TaskScheduler
         ));
 
         if (! $instance instanceof AppInstance) {
-            $reserved->update(['status' => TaskGroupStatus::Queued]);
+            TaskGroup::query()->whereKey($reserved->id)->where('status', TaskGroupStatus::Reserved)
+                ->update(['status' => TaskGroupStatus::Queued]);
 
             return null;
         }
@@ -575,6 +576,10 @@ final readonly class TaskScheduler
                 ->with(['tasks', 'app', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($reserved->id);
+
+            if ($group->status !== TaskGroupStatus::Reserved || ! AppInstance::query()->whereKey($instance->id)->exists()) {
+                return $group;
+            }
 
             $group->taskable()->associate($instance);
             $group->load('taskable');

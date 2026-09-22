@@ -32,6 +32,7 @@ ISOLATED_ENVIRONMENT_NAMES = frozenset((
 ))
 PHP_METADATA = r'''
 require $argv[1].'/vendor/autoload.php';
+Pest\Plugins\Tia\Storage::useDirectory($argv[1].'/.orbit-tia');
 echo json_encode([
     'cache' => Pest\Plugins\Tia\Storage::tempDir($argv[1]),
     'fingerprint' => Pest\Plugins\Tia\Fingerprint::compute($argv[1]),
@@ -646,6 +647,7 @@ def main():
     projects = args.project or PROJECTS
     if args.action == 'seed':
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
+        store = Path(os.environ.get('ORBIT_MAIN_CACHE_STORE', store))
         seed(root, store, projects)
     elif args.action == 'status':
         if args.json:

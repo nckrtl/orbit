@@ -25,6 +25,8 @@ if (! class_exists(Pest\Plugins\Tia\Storage::class)) { exit; }
 $override = getenv('ORBIT_TIA_DIRECTORY');
 if (is_string($override) && $override !== '') {
     Pest\Plugins\Tia\Storage::useDirectory($override);
+} else {
+    Pest\Plugins\Tia\Storage::useDirectory($root.'/.orbit-tia');
 }
 $path = Pest\Plugins\Tia\Storage::tempDir($root).'/graph.json';
 if (is_file($path) && ! is_link($path) && filesize($path) <= 16000000) {

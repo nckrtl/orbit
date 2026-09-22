@@ -19,9 +19,12 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspacePreparer;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -157,8 +160,24 @@ function bind_task_workspace_fakes(): object
     app()->instance(AppInstanceDestinationGuard::class, $destination);
     app()->instance(DevelopmentAppInstanceSourceLifecycle::class, $source);
     app()->instance(DevelopmentAppInstanceProvisioner::class, $development);
+    $preparation = new class implements TaskWorkspacePreparer
+    {
+        /** @var list<int> */
+        public array $instances = [];
 
-    return (object) ['source' => $source, 'development' => $development];
+        public bool $fail = false;
+
+        public function prepare(AppInstance $instance): void
+        {
+            $this->instances[] = $instance->id;
+            if ($this->fail) {
+                throw new ResourceOperationException('tasks.workspace_setup_failed', 'Bootstrap failed.');
+            }
+        }
+    };
+    app()->instance(TaskWorkspacePreparer::class, $preparation);
+
+    return (object) ['source' => $source, 'development' => $development, 'preparation' => $preparation];
 }
 
 it('leaves a group reserved when no app-dev Node can take the workspace', function (): void {
@@ -189,6 +208,8 @@ it('creates a non-visitable Orbit checkout without activating a Route', function
         ->and($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved'])
         ->and($fakes->development->reserves)->toBe(0)
         ->and($fakes->development->completes)->toBe(0);
+    expect($fakes->preparation->instances)->toBe([$instance->id]);
+    expect($instance->fresh()?->provisioning_step)->toBe('task-prepared');
 });
 
 it('activates a visitable workspace through the development provisioner', function (): void {
@@ -204,7 +225,63 @@ it('activates a visitable workspace through the development provisioner', functi
         ->and($instance?->status)->toBe(AppInstanceState::SourceResolved)
         ->and($fakes->development->reserves)->toBe(1)
         ->and($fakes->development->completes)->toBe(1);
+    expect($fakes->preparation->instances)->toBe([]);
 });
+
+it('keeps failed Orbit setup on its assigned instance and retries before returning it', function (): void {
+    $app = provisioner_app('orbit');
+    provisioner_node('bootstrap-dev', '10.44.0.119');
+    $group = provisioner_group($app);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->preparation->fail = true;
+
+    $first = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($first)->toBeNull();
+    $instance = $group->fresh('taskable')?->taskable;
+    expect($instance)->toBeInstanceOf(AppInstance::class);
+    expect($instance->failed_step)->toBe('task-bootstrap');
+    expect($instance->error_code)->toBe('tasks.workspace_setup_failed');
+    $fakes->preparation->fail = false;
+
+    $retried = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['app', 'taskable']), false));
+
+    expect($retried?->id)->toBe($instance->id);
+    expect($fakes->preparation->instances)->toBe([$instance->id, $instance->id]);
+    expect($retried?->fresh()?->failed_step)->toBeNull();
+    $this->assertDatabaseCount('app_instances', 1);
+});
+
+it('starts no agent when bootstrap fails or the group is cancelled during setup', function (bool $cancel, TaskGroupStatus $expected): void {
+    $app = provisioner_app('orbit');
+    provisioner_node('waiting-dev', '10.44.0.120');
+    $group = provisioner_group($app);
+    $group->update(['status' => TaskGroupStatus::Queued]);
+    bind_task_workspace_fakes();
+    app()->instance(TaskWorkspacePreparer::class, new class($group, $cancel) implements TaskWorkspacePreparer
+    {
+        public function __construct(private TaskGroup $group, private bool $cancel) {}
+
+        public function prepare(AppInstance $instance): void
+        {
+            expect($this->group->fresh()?->taskable_id)->toBe($instance->id);
+            if ($this->cancel) {
+                $this->group->update(['status' => TaskGroupStatus::Cancelled]);
+
+                return;
+            }
+            throw new ResourceOperationException('tasks.workspace_setup_failed', 'Setup failed.');
+        }
+    });
+
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+
+    expect($group->fresh()?->status)->toBe($expected);
+    expect(AgentThread::query()->count())->toBe(0);
+})->with([
+    'failed setup' => [false, TaskGroupStatus::Queued],
+    'cancelled group' => [true, TaskGroupStatus::Cancelled],
+]);
 
 it('reuses an already assigned Task workspace', function (): void {
     $app = provisioner_app('reuse');

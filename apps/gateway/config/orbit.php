@@ -40,6 +40,7 @@ return [
         'token' => env('ORBIT_T3_TOKEN'),
     ],
     'tasks' => [
+        'cache_repository' => env('ORBIT_TASKS_CACHE_REPOSITORY', dirname(__DIR__, 3)),
         'verification_app_ids' => array_values(array_map('intval', array_filter(explode(',', (string) env('ORBIT_TASKS_VERIFICATION_APP_IDS', '')), static fn (string $id): bool => ctype_digit($id) && (int) $id > 0))),
         'verification_noul_threshold' => env('ORBIT_TASKS_VERIFICATION_NOUL_THRESHOLD'),
         'agent_driver' => env('ORBIT_TASKS_AGENT_DRIVER', 't3'),

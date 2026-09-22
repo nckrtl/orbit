@@ -67,7 +67,8 @@ def seed_publication(root, project, tool, config, destination):
         common = Path(subprocess.check_output(
             ['git', '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
             text=True, stderr=subprocess.DEVNULL).strip())
-        path = common / 'orbit-tia/v1/quality' / project.replace('/', '-') / (tool.lower() + '.json')
+        store = Path(os.environ.get('ORBIT_MAIN_CACHE_STORE', common / 'orbit-tia/v1'))
+        path = store / 'quality' / project.replace('/', '-') / (tool.lower() + '.json')
         snapshot = json.loads(path.read_text())
         if (snapshot.get('schema') != 1 or snapshot.get('project') != project
                 or snapshot.get('tool') != tool.lower()):
@@ -107,7 +108,8 @@ def seed_publication(root, project, tool, config, destination):
 
 
 def seed(root):
-    sources = [source for source in worktrees(root) if source != root]
+    sources = worktrees(root)[:1] if not os.environ.get('ORBIT_MAIN_CACHE_STORE') else []
+    sources = [source for source in sources if source != root and clean_main(source)]
     for relative_project in PROJECTS:
         project = root / relative_project
         for tool, config, relative_cache in CACHES:
@@ -140,6 +142,17 @@ def seed(root):
                 if copied:
                     print(f"[{relative_project}] seeded {tool} cache from {source}")
                 break
+
+
+def clean_main(root):
+    try:
+        branch = subprocess.check_output(['git', '-C', str(root), 'branch', '--show-current'],
+                                         text=True, stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'],
+                                        stderr=subprocess.DEVNULL)
+        return branch == 'main' and not dirty
+    except (OSError, subprocess.CalledProcessError):
+        return False
 
 
 def main():

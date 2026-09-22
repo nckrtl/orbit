@@ -153,6 +153,17 @@ print(history.read_text())
                 path.unlink()
             self.assertNotEqual(before['digest'], self.identity()['digest'], mutation)
 
+    def test_default_seed_uses_the_checkout_local_pest_history(self):
+        autoload = Path(runner.__file__).resolve().parents[2] / 'vendor/autoload.php'
+        (self.project / 'vendor/autoload.php').write_text('<?php require ' + runner.json.dumps(str(autoload)) + ';')
+        source = self.project / '.orbit-tia/graph.json'
+        source.parent.mkdir()
+        source.write_text('{"schema":1,"baselines":{"main":{"results":{}}}}')
+        destination = self.runtime / 'default-verification-tia'
+        with patch.dict(runner.os.environ, {'ORBIT_TIA_DIRECTORY': ''}):
+            runner.seed_tia_cache(self.root, PROJECT, destination)
+        self.assertEqual(source.read_bytes(), (destination / 'graph.json').read_bytes())
+
     def test_branch_change_invalidates_even_identical_source(self):
         before = self.identity()
         subprocess.run(['git', '-C', str(self.root), 'checkout', '--quiet', '-b', 'another-task'], check=True)
