@@ -65,3 +65,5 @@ Event types follow `<family>.<verb>`, for example `node.created`, `instance.stat
 ### Reconnection
 
 When the socket drops, the command reconnects automatically with increasing backoff: 1, 2, 4, 8, 16, then 30 seconds between attempts. It keeps retrying rather than exiting, so a long-running `orbit realtime:tail` survives a Gateway restart or a brief network interruption.
+
+Complete events already received before the peer disconnects are printed in order before reconnection. An incomplete final frame is discarded. Reconnecting starts a fresh stream; it does not replay earlier events or recover events missed while disconnected.

@@ -268,7 +268,9 @@ final class RealtimeSubscriber
         $event = $message['event'] ?? null;
 
         if ($event === 'pusher:ping') {
-            $this->transport->send(['event' => 'pusher:pong', 'data' => new stdClass]);
+            if ($this->transport->isConnected()) {
+                $this->transport->send(['event' => 'pusher:pong', 'data' => new stdClass]);
+            }
 
             return null;
         }

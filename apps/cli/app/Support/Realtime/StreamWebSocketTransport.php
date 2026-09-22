@@ -95,7 +95,7 @@ final class StreamWebSocketTransport implements WebSocketTransport
     #[\Override]
     public function receive(): ?array
     {
-        if (! $this->connected || ! is_resource($this->stream)) {
+        if (! $this->isConnected() && $this->buffer === '') {
             return null;
         }
 
@@ -105,13 +105,19 @@ final class StreamWebSocketTransport implements WebSocketTransport
             $frame = $this->readFrame();
 
             if ($frame === null) {
+                if (! $this->isConnected()) {
+                    $this->buffer = '';
+                }
+
                 return null;
             }
 
             [$opcode, $payload] = $frame;
 
             if ($opcode === self::OPCODE_PING) {
-                $this->writeFrame(self::OPCODE_PONG, $payload);
+                if ($this->isConnected()) {
+                    $this->writeFrame(self::OPCODE_PONG, $payload);
+                }
 
                 continue;
             }
@@ -121,7 +127,10 @@ final class StreamWebSocketTransport implements WebSocketTransport
             }
 
             if ($opcode === self::OPCODE_CLOSE) {
-                $this->acknowledgeClose($payload);
+                if ($this->isConnected()) {
+                    $this->acknowledgeClose($payload);
+                }
+
                 $this->close();
 
                 return null;
@@ -145,12 +154,17 @@ final class StreamWebSocketTransport implements WebSocketTransport
     #[\Override]
     public function close(): void
     {
+        $this->releaseStream();
+        $this->buffer = '';
+    }
+
+    private function releaseStream(): void
+    {
         if (is_resource($this->stream)) {
             fclose($this->stream);
         }
 
         $this->stream = null;
-        $this->buffer = '';
         $this->connected = false;
     }
 
@@ -282,7 +296,8 @@ final class StreamWebSocketTransport implements WebSocketTransport
 
             if ($chunk === false || $chunk === '') {
                 if (feof($stream)) {
-                    $this->close();
+                    // Complete frames still belong to receive(); explicit close() discards them.
+                    $this->releaseStream();
                 }
 
                 return;

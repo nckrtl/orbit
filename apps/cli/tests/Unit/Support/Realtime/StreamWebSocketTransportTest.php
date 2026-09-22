@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Support\Realtime\FakeRealtimeChannelAuthorizer;
 use App\Support\Realtime\RealtimeConnectionException;
 use App\Support\Realtime\RealtimeProtocolException;
+use App\Support\Realtime\RealtimeState;
+use App\Support\Realtime\RealtimeSubscriber;
 use App\Support\Realtime\StreamWebSocketTransport;
+use Symfony\Component\Process\Process;
 
 /**
  * These tests exercise the real frame parser and writer directly over a connected socket pair,
@@ -185,4 +189,171 @@ describe(StreamWebSocketTransport::class, function (): void {
     it('refuses to connect to a non-ws(s) URL', function (): void {
         (new StreamWebSocketTransport)->connect('https://example.test');
     })->throws(RealtimeConnectionException::class);
+});
+
+describe('native peer EOF', function (): void {
+    beforeEach(function (): void {
+        [$this->transport, $this->peer] = stream_websocket_transport_for_testing();
+    });
+
+    afterEach(function (): void {
+        $this->transport->close();
+
+        if (is_resource($this->peer)) {
+            fclose($this->peer);
+        }
+    });
+
+    it('drains complete frames in order after the peer closes', function (int $count): void {
+        for ($id = 1; $id <= $count; $id++) {
+            ws_write_frame($this->peer, 0x1, json_encode(['id' => $id]));
+        }
+
+        fclose($this->peer);
+
+        for ($id = 1; $id <= $count; $id++) {
+            expect($this->transport->receive())->toBe(['id' => $id]);
+        }
+
+        expect($this->transport->receive())->toBeNull()
+            ->and($this->transport->isConnected())->toBeFalse()
+            ->and($this->transport->receive())->toBeNull();
+    })->with([0, 1, 3]);
+
+    it('drains complete frames and discards an incomplete final frame', function (string $tail): void {
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 1]));
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 2]));
+        fwrite($this->peer, $tail);
+        fclose($this->peer);
+
+        expect($this->transport->receive())->toBe(['id' => 1])
+            ->and($this->transport->receive())->toBe(['id' => 2])
+            ->and($this->transport->receive())->toBeNull()
+            ->and($this->transport->isConnected())->toBeFalse()
+            ->and(new ReflectionObject($this->transport)->getProperty('buffer')->getValue($this->transport))->toBe('')
+            ->and($this->transport->receive())->toBeNull();
+    })->with(["\x81", "\x81\x7e\x00", "\x81\x10{\"id\":"]);
+
+    it('keeps a later frame already buffered before the peer closes', function (): void {
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 1]));
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 2]));
+
+        expect($this->transport->receive())->toBe(['id' => 1]);
+        expect(new ReflectionObject($this->transport)->getProperty('buffer')->getValue($this->transport))->not->toBe('');
+        fclose($this->peer);
+
+        expect($this->transport->receive())->toBe(['id' => 2])
+            ->and($this->transport->receive())->toBeNull()
+            ->and($this->transport->isConnected())->toBeFalse();
+    });
+
+    it('drains text around control frames without writing to an exhausted peer', function (bool $closeFrame): void {
+        ws_write_frame($this->peer, 0x9, 'first-ping');
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 1]));
+        ws_write_frame($this->peer, 0xA, 'pong');
+        ws_write_frame($this->peer, 0x9, 'last-ping');
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 2]));
+
+        if ($closeFrame) {
+            ws_write_frame($this->peer, 0x8, "\x03\xE8");
+            ws_write_frame($this->peer, 0x1, json_encode(['id' => 3]));
+        }
+
+        fclose($this->peer);
+
+        expect($this->transport->receive())->toBe(['id' => 1])
+            ->and($this->transport->receive())->toBe(['id' => 2])
+            ->and($this->transport->receive())->toBeNull()
+            ->and($this->transport->isConnected())->toBeFalse()
+            ->and($this->transport->receive())->toBeNull();
+    })->with([false, true]);
+
+    it('delivers earlier text before acknowledging a live peer close', function (): void {
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 1]));
+        ws_write_frame($this->peer, 0x8, "\x03\xE8");
+
+        expect($this->transport->receive())->toBe(['id' => 1])
+            ->and($this->transport->receive())->toBeNull()
+            ->and($this->transport->isConnected())->toBeFalse()
+            ->and(ws_read_frame($this->peer))->toBe([0x8, "\x03\xE8"]);
+    });
+
+    it('explicitly closes idempotently and discards owned frames', function (bool $peerEof): void {
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 1]));
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 2]));
+
+        if ($peerEof) {
+            fclose($this->peer);
+        }
+
+        expect($this->transport->receive())->toBe(['id' => 1]);
+        $this->transport->close();
+        $this->transport->close();
+
+        expect($this->transport->receive())->toBeNull()
+            ->and($this->transport->isConnected())->toBeFalse()
+            ->and(new ReflectionObject($this->transport)->getProperty('buffer')->getValue($this->transport))->toBe('');
+    })->with([false, true]);
+
+    it('starts a fresh native connection without replaying owned frames', function (): void {
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 1]));
+        ws_write_frame($this->peer, 0x1, json_encode(['id' => 2]));
+        expect($this->transport->receive())->toBe(['id' => 1]);
+        fclose($this->peer);
+
+        $configuration = tempnam(sys_get_temp_dir(), 'orbit-eof-');
+        $trace = $configuration.'.trace';
+        file_put_contents($configuration, json_encode(['certificate' => '', 'key' => '', 'tls' => false, 'trace' => $trace]));
+        $server = new Process([PHP_BINARY, dirname(__DIR__, 3).'/Fixtures/realtime/trust-server.php', $configuration]);
+
+        try {
+            $server->start();
+            $server->waitUntil(fn (): bool => str_contains($server->getOutput(), "\n"));
+            $this->transport->connect('ws://'.trim($server->getOutput()), timeoutSeconds: 1);
+
+            expect($this->transport->receive())->toBeNull()
+                ->and(new ReflectionObject($this->transport)->getProperty('buffer')->getValue($this->transport))->toBe('');
+        } finally {
+            $server->stop();
+            unlink($configuration);
+
+            if (is_file($trace)) {
+                unlink($trace);
+            }
+        }
+    });
+
+    it('returns final subscriber events once before reconnecting after native EOF', function (bool $pusherPing): void {
+        $subscriber = new RealtimeSubscriber($this->transport, realtime_test_connection_config(), new FakeRealtimeChannelAuthorizer, static fn (): float => 1000.0);
+        $object = new ReflectionObject($subscriber);
+        $object->getProperty('phase')->setValue($subscriber, 'awaiting_established');
+        ws_write_frame($this->peer, 0x1, json_encode(['event' => 'pusher:connection_established', 'data' => ['socket_id' => 'native.1']]));
+        ws_write_frame($this->peer, 0x1, json_encode(['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-orbit', 'data' => []]));
+
+        expect($subscriber->poll())->toBe([])
+            ->and($subscriber->state())->toBe(RealtimeState::Connected);
+        [$opcode, $payload] = ws_read_frame($this->peer);
+        expect($opcode)->toBe(0x1)
+            ->and(json_decode($payload, true)['event'])->toBe('pusher:subscribe');
+
+        foreach ([1, 2] as $id) {
+            ws_write_frame($this->peer, 0x1, json_encode(['event' => 'node.created', 'channel' => 'private-orbit', 'data' => [
+                'type' => 'node.created', 'id' => $id, 'at' => '2026-09-22T10:00:00+00:00', 'data' => ['name' => 'native-'.$id],
+            ]]));
+
+            if ($pusherPing && $id === 1) {
+                ws_write_frame($this->peer, 0x1, json_encode(['event' => 'pusher:ping', 'data' => []]));
+            }
+        }
+
+        fclose($this->peer);
+        $events = $subscriber->poll();
+
+        expect(array_map(fn ($event) => $event->id, $events))->toBe([1, 2])
+            ->and($subscriber->state())->toBe(RealtimeState::Reconnecting)
+            ->and($this->transport->isConnected())->toBeFalse()
+            ->and($object->getProperty('nextAttemptAt')->getValue($subscriber))->toBe(1001.0)
+            ->and($subscriber->poll())->toBe([])
+            ->and($subscriber->poll())->toBe([]);
+    })->with([false, true]);
 });

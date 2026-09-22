@@ -31,10 +31,10 @@ interface WebSocketTransport
     /**
      * Return the next decoded JSON message already available on the socket, or null immediately
      * when nothing is available. This method never blocks: a caller polls it in a loop to drain
-     * everything currently buffered.
+     * everything currently buffered, including complete frames received before peer EOF.
      *
-     * Ping frames are answered with a pong automatically and are never returned. A close frame
-     * closes the transport (see isConnected()) and returns null.
+     * Ping frames are answered with a pong while connected and are never returned. A close
+     * frame closes the transport (see isConnected()) and returns null.
      *
      * @return array<string, mixed>|null
      *
@@ -42,7 +42,7 @@ interface WebSocketTransport
      */
     public function receive(): ?array;
 
-    /** Close the socket. Safe to call when it is already closed. */
+    /** Close the socket and discard buffered messages. Safe to call when it is already closed. */
     public function close(): void;
 
     /** Whether the socket is currently open. False after close(), a close frame, or a dropped connection. */
