@@ -129,9 +129,13 @@ beforeEach(function (): void {
         /** @var list<string> */
         public array $calls = [];
 
+        /** @var list<array{source_path: string, include_worktrees: bool}> */
+        public array $inspections = [];
+
         public function inspect(Node $node, string $sourcePath, bool $includeWorktrees): array
         {
             $this->calls[] = 'inspect';
+            $this->inspections[] = ['source_path' => $sourcePath, 'include_worktrees' => $includeWorktrees];
             if ($this->invalid) {
                 throw new ResourceOperationException('instance.source_invalid', 'Invalid source.', 422);
             }
@@ -351,6 +355,124 @@ it('requires unresolved values without mutating and keeps a valid App on incompl
         ->and($this->registrationSource->calls)
         ->toContain('url-restore');
 });
+
+it('preserves an explicit different Project selector and refuses registration without mutation', function (string $alias, bool $asString): void {
+    OrbitApp::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/acme.git', 'default_branch' => 'main', 'root' => 'public']);
+    $other = OrbitApp::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://github.com/acme/other.git', 'default_branch' => 'main', 'root' => 'public']);
+    $before = OrbitApp::query()->orderBy('id')->get()->toArray();
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', $alias => $asString ? (string) $other->id : $other->id])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'app.repository_identity_conflict');
+
+    expect(OrbitApp::query()->orderBy('id')->get()->toArray())->toBe($before);
+    $this->assertDatabaseCount('app_instances', 0);
+    $this->assertDatabaseCount('routes', 0);
+    expect($this->registrationSource->calls)->toBe(['inspect']);
+    expect($this->registrationSource->inspections)->toBe([['source_path' => '/work/acme', 'include_worktrees' => false]]);
+    expect($this->destinationGuard->paths)->toBe([]);
+})->with(['project_id', 'app_id'])->with(['integer' => false, 'numeric string' => true]);
+
+it('keeps same-Project selectors and matching aliases across accepted integer representations', function (string $representation): void {
+    $app = OrbitApp::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/acme.git', 'default_branch' => 'main', 'root' => 'public']);
+    $selector = match ($representation) {
+        'project string' => ['project_id' => (string) $app->id],
+        'app string' => ['app_id' => (string) $app->id],
+        'project string and app integer' => ['project_id' => (string) $app->id, 'app_id' => $app->id],
+        'project integer and app string' => ['project_id' => $app->id, 'app_id' => (string) $app->id],
+        'both strings' => ['project_id' => (string) $app->id, 'app_id' => (string) $app->id],
+    };
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', ...$selector])
+        ->assertOk()
+        ->assertJsonPath('data.app.id', $app->id);
+
+    $this->assertDatabaseCount('apps', 1);
+    expect(AppInstance::query()->sole()->app_id)->toBe($app->id);
+    expect($this->registrationSource->inspections)->toBe([['source_path' => '/work/acme', 'include_worktrees' => false]]);
+})->with(['project string', 'app string', 'project string and app integer', 'project integer and app string', 'both strings']);
+
+it('rejects different Project aliases before source inspection with mixed accepted types', function (bool $projectString): void {
+    $app = OrbitApp::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/acme.git', 'default_branch' => 'main', 'root' => 'public']);
+    $other = OrbitApp::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://github.com/acme/other.git', 'default_branch' => 'main', 'root' => 'public']);
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', 'project_id' => $projectString ? (string) $app->id : $app->id, 'app_id' => $projectString ? $other->id : (string) $other->id])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.details.project_id.0', 'project_id and app_id must name the same Project.');
+
+    expect($this->registrationSource->calls)->toBe([]);
+    $this->assertDatabaseCount('app_instances', 0);
+    $this->assertDatabaseCount('routes', 0);
+})->with([true, false]);
+
+it('preserves every accepted worktree boolean at source-set inspection and reservation', function (mixed $value, bool $included): void {
+    $payload = ['source_path' => '/work/acme'];
+    if ($value !== null) {
+        $payload['include_worktrees'] = $value;
+    }
+    $this->registrationSource->facts = $included
+        ? registration_set_facts(['/work/acme', '/work/feature'])
+        : [registration_facts()];
+
+    $this->postJson('/api/v1/instances/register', $payload)
+        ->assertCreated()
+        ->assertJsonPath('data.source_count', $included ? 2 : 1);
+
+    expect($this->registrationSource->inspections)->toBe([['source_path' => '/work/acme', 'include_worktrees' => $included]]);
+    expect(AppInstance::query()->pluck('registration_include_worktrees')->all())->toBe(array_fill(0, $included ? 2 : 1, $included));
+    expect($this->registrationSource->calls)->toContain('relocate-set:'.($included ? 2 : 1));
+})->with([
+    'true' => [true, true],
+    'one' => [1, true],
+    'string one' => ['1', true],
+    'false' => [false, false],
+    'zero' => [0, false],
+    'string zero' => ['0', false],
+    'omitted' => [null, false],
+]);
+
+it('resumes the same retained complete source set across equivalent boolean and selector forms', function (): void {
+    $app = OrbitApp::query()->create(['name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/acme.git', 'default_branch' => 'main', 'root' => 'public']);
+    $this->registrationSource->facts = registration_set_facts(['/work/acme', '/work/feature']);
+    $this->projection->fail = true;
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', 'project_id' => (string) $app->id, 'include_worktrees' => '1'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete');
+    $ids = AppInstance::query()->orderBy('id')->pluck('id')->all();
+    expect($ids)->toHaveCount(2);
+    $this->projection->fail = false;
+    $this->registrationSource->invalid = true;
+
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', 'app_id' => $app->id, 'include_worktrees' => true])
+        ->assertOk()
+        ->assertJsonPath('data.completed_count', 2);
+
+    expect(AppInstance::query()->orderBy('id')->pluck('id')->all())->toBe($ids);
+    expect($this->registrationSource->inspections)->toBe([['source_path' => '/work/acme', 'include_worktrees' => true]]);
+    $this->assertDatabaseCount('apps', 1);
+    $this->assertDatabaseCount('routes', 2);
+});
+
+it('rejects malformed registration scalar intent before source inspection', function (array $fields, string $field): void {
+    $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', ...$fields])
+        ->assertUnprocessable()
+        ->assertJsonStructure(['error' => ['details' => [$field]]]);
+
+    expect($this->registrationSource->calls)->toBe([]);
+    $this->assertDatabaseCount('apps', 0);
+    $this->assertDatabaseCount('app_instances', 0);
+    $this->assertDatabaseCount('routes', 0);
+})->with([
+    'boolean word' => [['include_worktrees' => 'true'], 'include_worktrees'],
+    'other integer boolean' => [['include_worktrees' => 2], 'include_worktrees'],
+    'null boolean' => [['include_worktrees' => null], 'include_worktrees'],
+    'array boolean' => [['include_worktrees' => []], 'include_worktrees'],
+    'fractional Project' => [['project_id' => '1.5'], 'project_id'],
+    'word Project' => [['project_id' => 'other'], 'project_id'],
+    'array App' => [['app_id' => []], 'app_id'],
+    'null App' => [['app_id' => null], 'app_id'],
+]);
 
 it('returns the same identities on an identical retry and refuses conflicting evidence', function (): void {
     $app = OrbitApp::query()->create([

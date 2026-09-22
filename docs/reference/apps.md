@@ -57,6 +57,8 @@ During an upgrade, the Gateway checks every existing Project before it makes rep
 
 Registration finds the Project from the checkout's verified Git origin. It matches the repository identity across URL formats. Conflicting Project or source details stop registration before any changes.
 
+An explicit registration `project_id`, or its `app_id` alias, must name that same repository owner. Validated integer and numeric-string IDs preserve the same explicit selection. When both aliases are supplied, they must name the same Project; neither can silently become an omitted selector.
+
 When no Project owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the Project before its Instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request.
 
 Ownership transfer requires a default-No confirmation naming the source, or explicit `--yes`. Non-interactive registration, including every `--json` call, requires `--yes` and refuses when a required value remains unresolved. These refusals send no mutation request. If Project creation succeeds and later registration fails, the valid Project remains available for an identical retry.

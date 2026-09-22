@@ -89,6 +89,8 @@ Orbit records `checkout` for an independent repository and `worktree` for a link
 
 Registration adopts only the caller's source by default. After moving a shared checkout, Orbit repairs links so other worktrees remain usable and unregistered. Use `--include-worktrees` to adopt the checkout and all linked worktrees together. Before moving anything, the Gateway checks each source's Git identity, metadata ownership and permissions, instance name, and destination. It also checks for overlap with managed Instances. If any check fails, nothing moves.
 
+The registration API preserves its accepted boolean forms for `include_worktrees`: `true`, `1`, and `"1"` select the complete source set; `false`, `0`, `"0"`, or omission select only the caller's source. Equivalent accepted forms keep the same source-set intent on retry.
+
 For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress binds original cleanup to the verified source directory identity and keeps one verified authoritative copy after interruption. An identical retry revalidates the canonical authoritative path, repository identity, checkout or worktree layout, and provisioning safety without requiring an unchanged source digest. After relocation, the CLI can retry from the managed primary source path while Orbit retains the original primary and complete requested set. It resumes the same Project, Instances, Routes, and managed paths; conflicting input preserves the accepted registration.
 
 ## Create a production Instance

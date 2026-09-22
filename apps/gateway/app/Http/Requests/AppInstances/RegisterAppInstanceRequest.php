@@ -87,13 +87,12 @@ final class RegisterAppInstanceRequest extends FormRequest
     {
         /** @var array<string, mixed> $values */
         $values = $this->validated();
+        $appId = $values['project_id'] ?? $values['app_id'] ?? null;
 
         return new RegisterAppInstanceData(
             sourcePath: (string) $values['source_path'],
-            includeWorktrees: ($values['include_worktrees'] ?? false) === true,
-            appId: is_int($values['project_id'] ?? null)
-                ? $values['project_id']
-                : (is_int($values['app_id'] ?? null) ? $values['app_id'] : null),
+            includeWorktrees: (bool) ($values['include_worktrees'] ?? false),
+            appId: $appId === null ? null : (int) $appId,
             appName: is_string($values['app_name'] ?? null) ? $values['app_name'] : null,
             appSlug: is_string($values['app_slug'] ?? null) ? $values['app_slug'] : null,
             defaultBranch: is_string($values['default_branch'] ?? null) ? $values['default_branch'] : null,
