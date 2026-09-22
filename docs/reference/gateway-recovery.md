@@ -7,6 +7,8 @@ description: "Preserve source, state, and keys through an update or recovery."
 
 This guide helps an operator preserve Gateway state during a source update and recover when an update fails. It covers the installation layout from the [Quickstart](/quickstart#install-orbit). Test the procedure on a disposable copy before relying on it for important data.
 
+Gateway web setup grants Caddy access to regular files and directories under the checkout’s `public` directory, including files restored with restrictive permissions. It does not follow public symlinks or change private source permissions. The Gateway `.env` stays at mode `0600`.
+
 ## Preserve a complete state set
 
 The database alone is not a recoverable Gateway backup. Keep these inputs together and store the backup outside the machine, with access limited to administrators.
