@@ -109,6 +109,7 @@ ensure_gateway_app_key
 
 # Cache reuse is optional feedback and must not make bootstrap a test gate.
 "$repository_root/bin/tia-cache" seed --repository="$repository_root" || printf 'TIA cache seeding unavailable.\n' >&2
+unset ORBIT_MAIN_CACHE_STORE
 
 pids=()
 

@@ -258,9 +258,13 @@ Startup runs after the tick releases its observation lock. Each tick attempts on
 
 The Gateway copies only published main test and quality caches from its configured cache repository to the allocated checkout. The existing seed tools check compatibility and preserve private destination caches. Feature worktrees never supply shared cache publications. Operators refresh main publications through the existing `bin/tia-cache refresh` lifecycle after merging or deploying. A stale compatible graph selects changed dependencies; missing or incompatible history can require a full run.
 
+The native cache bundle contained fifteen publications totaling 31,650,847 bytes. The Gateway process peaked at 100,827,136 bytes under a 128 MiB limit. Limit the raw publications to 32 MB in total and skip files that exceed the remaining budget; the earlier 64 MB allowance left insufficient room for JSON encoding and compression at that memory limit. Skipped caches use the normal fallback.
+
 Bootstrap runs `composer test:affected` and `composer check` in each project by default after installation, seeding, and guidance validation. The former warms Pest history; the latter runs quality tools. `--skip-checks` explicitly requests installation and seeding only and is not used by task preparation. Tests use a checkout-local `.orbit-tia` directory unless an explicit TIA directory is supplied, so independent task clones do not share mutable history through their common Git origin. The verifier reads that same source cache when seeding its isolated checks.
 
 The first native bootstrap exposed two test-environment failures. Gateway's PHPUnit configuration did not override the setup process's `ORBIT_HOME`, and a cleanup-interruption test missed its deletion window on one CPU. Force the configured Gateway test home and suspend the cleanup child immediately after its trigger deletion before killing it. The retry still runs the real cleanup and must recover from a partially removed source.
+
+The next native run passed Gateway and exposed the transported `ORBIT_MAIN_CACHE_STORE` in nested E2E cache fixtures. Bootstrap removes that override after seeding and before guidance or project checks. The outer bootstrap consumes the main publications; checks then run with their own cache configuration.
 
 This interim path is specific to Orbit. It does not introduce configurable setup commands, project defaults, or changes to `instance:create`. The shared instance setup proposal below replaces this hook when that feature ships.
 

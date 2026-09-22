@@ -9,6 +9,8 @@ use App\Infrastructure\Processes\ProcessRunner;
 
 final readonly class TaskMainCache
 {
+    private const int MaxBytes = 32_000_000;
+
     public function __construct(private ProcessRunner $process) {}
 
     /** @return array<string, string> */
@@ -38,10 +40,10 @@ final readonly class TaskMainCache
                     continue;
                 }
                 $size = filesize($path);
-                if ($size === false || $size > 32_000_000 || $bytes + $size > 64_000_000) {
+                if ($size === false || $bytes + $size > self::MaxBytes) {
                     continue;
                 }
-                $limit = min(32_000_000, 64_000_000 - $bytes);
+                $limit = self::MaxBytes - $bytes;
                 $contents = file_get_contents($path, length: $limit + 1);
                 if ($contents === false || strlen($contents) > $limit) {
                     continue;

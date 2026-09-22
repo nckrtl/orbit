@@ -525,14 +525,16 @@ else:
             (root / project).mkdir(parents=True)
         calls = root / 'calls'
         for name, script in {
-            'composer': '#!/bin/sh\necho "composer $*" >> "$TIA_TEST_CALLS"\nif [ "$1" = "$TIA_TEST_FAIL" ]; then exit 7; fi\n',
-            'worktree-cache': '#!/bin/sh\nexit 0\n',
-            'tia-cache': '#!/bin/sh\necho "cache $*" >> "$TIA_TEST_CALLS"\nexit 1\n',
+            'composer': '#!/bin/sh\necho "composer $*" >> "$TIA_TEST_CALLS"\nif [ "$1" = "$TIA_TEST_FAIL" ]; then exit 7; fi\nif [ "$1" != install ]; then test -z "$ORBIT_MAIN_CACHE_STORE"; fi\n',
+            'worktree-cache': '#!/bin/sh\ntest "$ORBIT_MAIN_CACHE_STORE" = "$TIA_TEST_STORE"\n',
+            'tia-cache': '#!/bin/sh\necho "cache $*" >> "$TIA_TEST_CALLS"\ntest "$ORBIT_MAIN_CACHE_STORE" = "$TIA_TEST_STORE" || exit 9\nexit 1\n',
         }.items():
             path = root / 'bin' / name
             path.write_text(script)
             path.chmod(0o755)
         environment = {**os.environ, 'ORBIT_HOME': str(root / 'orbit-home'),
+                       'ORBIT_MAIN_CACHE_STORE': str(root / 'transported-main'),
+                       'TIA_TEST_STORE': str(root / 'transported-main'),
                        'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
                        'TIA_TEST_CALLS': str(calls), 'TIA_TEST_FAIL': ''}
         result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True, env=environment)

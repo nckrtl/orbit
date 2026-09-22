@@ -81,3 +81,17 @@ it('refuses failed truncated or mismatched setup without exposing remote output'
 it('treats absent main publications as an empty cache source', function (): void {
     expect(preparation_cache('/no-such-main-cache')->publications())->toBe([]);
 });
+
+it('skips publications that exceed the shared memory budget and keeps smaller remaining files', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-main-publications-'.bin2hex(random_bytes(8));
+    mkdir($directory.'/orbit-tia/v1/published', 0o700, true);
+    $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($directory));
+    foreach (['apps-cli', 'apps-docs'] as $project) {
+        file_put_contents($directory.'/orbit-tia/v1/published/'.$project.'.json', str_repeat('x', 20_000_000));
+    }
+    file_put_contents($directory.'/orbit-tia/v1/published/apps-e2e.json', '{}');
+
+    $publications = preparation_cache($directory)->publications();
+
+    expect(array_keys($publications))->toBe(['published/apps-cli.json', 'published/apps-e2e.json']);
+});
