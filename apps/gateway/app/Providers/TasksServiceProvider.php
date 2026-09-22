@@ -9,9 +9,11 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
+use App\Domain\Tasks\NullTaskPullRequestWatcher;
 use App\Domain\Tasks\SequentialTaskPullRequestOpener;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskPullRequestOpener;
+use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
@@ -47,6 +49,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
         TaskSessionClassifier::class => LaravelAiTaskSessionClassifier::class,
+        TaskPullRequestWatcher::class => NullTaskPullRequestWatcher::class,
     ];
 
     #[\Override]

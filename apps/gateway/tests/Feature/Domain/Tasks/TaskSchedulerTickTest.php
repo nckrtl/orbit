@@ -323,7 +323,7 @@ it('runs the artisan tick while the extension is enabled', function (): void {
     app(TaskExtensionState::class)->enable();
 
     $this->artisan('tasks:tick')
-        ->expectsOutput('Routed [0] tasks.')
+        ->expectsOutput('Routed [0] tasks and started [0] groups.')
         ->assertSuccessful();
 });
 

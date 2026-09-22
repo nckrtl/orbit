@@ -20,6 +20,7 @@ final readonly class TaskScheduler
         private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
         private TaskWorkspaceDiffReader $diff,
+        private TaskPullRequestWatcher $pullRequestWatcher,
         private CoderSettleNotifier $coder,
         private TaskExtensionState $extension,
         private TaskSessionObserver $observer,
@@ -41,6 +42,18 @@ final readonly class TaskScheduler
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing])
             ->orderBy('id')
             ->get();
+
+        foreach ($groups as $group) {
+            if ($group->status !== TaskGroupStatus::Settling || ! is_string($group->pr_url) || $group->pr_url === '') {
+                continue;
+            }
+            $status = $this->pullRequestWatcher->status($group);
+            if ($status === 'merged') {
+                $group->update(['status' => TaskGroupStatus::Completed, 'settled_at' => $group->settled_at ?? now()]);
+            } elseif ($status === 'closed') {
+                $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
+            }
+        }
 
         $decisions = [];
 
