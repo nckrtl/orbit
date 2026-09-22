@@ -93,7 +93,7 @@ export async function dictate(options: DictateOptions): Promise<string> {
         throwIfAborted(abort);
 
         const opusMime = pickOpusMime(options.codec);
-        const capture = opusMime ? startOpusCapture(stream, opusMime) : startPcmCapture(stream);
+        let capture = opusMime ? startOpusCapture(stream, opusMime) : startPcmCapture(stream);
         const connecting = connectDiction(options.wsUrl, opusMime !== null);
         let socket: WebSocket | undefined;
 
@@ -102,14 +102,13 @@ export async function dictate(options: DictateOptions): Promise<string> {
             socket = connection.socket;
             throwIfAborted(abort);
 
-            const live =
-                connection.useOpus && capture.kind === "opus"
-                    ? capture
-                    : await switchToPcm(stream, capture);
+            if (!connection.useOpus) {
+                capture = await switchToPcm(stream, capture);
+            }
 
-            await live.attach(socket);
+            await capture.attach(socket);
             await waitForStop(socket, stop, abort);
-            await live.stop();
+            await capture.stop();
 
             throwIfAborted(abort);
             socket.send(JSON.stringify({ action: "done" }));
