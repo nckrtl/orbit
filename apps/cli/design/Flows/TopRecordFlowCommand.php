@@ -55,10 +55,13 @@ final class TopRecordFlowCommand extends GatewayCommand
                         : "Process: horizon\nRuntime status: {$status}");
                 $body .= $menu === null ? '' : "\n\nActions: {$menu}\nEnter chooses the original action.";
                 $body .= "\n\n{$message}\n\na actions · u simulated event · Esc back · q leave";
-                $body = implode("\n", TerminalText::wrap($body, max(1, $display->viewportArea()->width - 2)));
+                $lines = [];
+                foreach (explode("\n", $body) as $line) {
+                    array_push($lines, ...TerminalText::wrap($line, max(1, $display->viewportArea()->width - 2)));
+                }
                 $display->draw(BlockWidget::default()->borders(Borders::ALL)
                     ->titles(Title::fromString(' Live record · no-request sketch '))
-                    ->widget(ParagraphWidget::fromString($body)));
+                    ->widget(ParagraphWidget::fromString(implode("\n", $lines))));
                 $event = $terminal->events()->next();
                 if ($event instanceof CharKeyEvent) {
                     if (in_array($event->char, ['q', 'c'], true)) {
@@ -69,6 +72,7 @@ final class TopRecordFlowCommand extends GatewayCommand
                     }
                     if ($event->char === 'a' && $menu === null && $page && $status !== null) {
                         $menu = $status === 'active' ? 'stop' : 'start';
+                        $message = '';
                     }
                 }
                 if ($event instanceof CodedKeyEvent && $event->code === KeyCode::Esc) {
@@ -76,6 +80,7 @@ final class TopRecordFlowCommand extends GatewayCommand
                         $menu = null;
                     } else {
                         $page = false;
+                        $message = '';
                     }
                 }
                 if ($event instanceof CodedKeyEvent && $event->code === KeyCode::Enter && $menu !== null) {
