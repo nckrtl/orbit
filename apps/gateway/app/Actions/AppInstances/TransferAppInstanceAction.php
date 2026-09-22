@@ -786,9 +786,6 @@ final readonly class TransferAppInstanceAction
         DB::transaction(function () use ($instance, $destination, $transfer, $sourceClusterId): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
             $lockedTransfer = AppInstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
-            if (TransferSourceAttempt::fromArray($lockedTransfer->source_attempt, $lockedTransfer)->phase !== 'owned') {
-                throw $this->conflict('instance.transfer_cleanup_incomplete', 'Captured source ownership is unconfirmed.');
-            }
             $sourceRoute = Route::query()->lockForUpdate()->find($lockedTransfer->source_route_id);
             $destinationRoute = Route::query()->lockForUpdate()->find($lockedTransfer->destination_route_id);
             $sourceNode = Node::query()->lockForUpdate()->find($lockedTransfer->source_node_id);
@@ -802,6 +799,10 @@ final readonly class TransferAppInstanceAction
                 if ($lockedTransfer->getRawOriginal($attribute) !== $transfer->getRawOriginal($attribute)) {
                     throw $this->conflict('instance.transfer_cleanup_conflict', 'The transfer identity changed while acquiring cutover ownership.');
                 }
+            }
+
+            if (TransferSourceAttempt::fromArray($lockedTransfer->source_attempt, $lockedTransfer)->phase !== 'owned') {
+                throw $this->conflict('instance.transfer_cleanup_incomplete', 'Captured source ownership is unconfirmed.');
             }
 
             $placement = $this->routeState->forNode($lockedDestination);
