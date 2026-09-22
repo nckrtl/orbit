@@ -48,6 +48,8 @@ function orb277_gate_fixture(): array
     }
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
+    mkdir($root.'/apps/gateway/resources/tasks', 0o700, true);
+    copy(base_path('../gateway/resources/tasks/check.py'), $root.'/apps/gateway/resources/tasks/check.py');
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     chmod($root.'/bin/review-check', 0o700);

@@ -874,6 +874,9 @@ class ReviewGateTest(unittest.TestCase):
         seed.chmod(0o755)
         for project in cache.PROJECTS:
             (self.root / project).mkdir(parents=True)
+        profile = self.root / 'apps/gateway/resources/tasks/check.py'
+        profile.parent.mkdir(parents=True)
+        profile.write_bytes((Path(cache.__file__).parent.parent / 'apps/gateway/resources/tasks/check.py').read_bytes())
         self.commit_change('gate fixture')
         fake_bin = Path(self.temporary.name) / 'fake-bin'
         fake_bin.mkdir()

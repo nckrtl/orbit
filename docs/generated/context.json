@@ -3072,6 +3072,36 @@
             ]
         },
         {
+            "path": "docs/decisions/0115-verify-task-evidence-before-review.md",
+            "title": "ADR 0115: Verify task evidence before review",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0059",
+                "0113",
+                "0114",
+                "0115"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3941,6 +3971,34 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/jev-investigation.md",
+            "title": "Jev opportunity investigation",
+            "kind": "reference",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0059",
+                "0113",
+                "0114",
+                "0115",
+                "2000"
+            ]
+        },
+        {
             "path": "docs/reference/local-resolver-overrides.md",
             "title": "Local resolver overrides",
             "kind": "reference",
@@ -4227,7 +4285,9 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Database",
                 "Gateway",
@@ -4246,7 +4306,8 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0115"
             ]
         },
         {

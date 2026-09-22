@@ -10,6 +10,8 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskEvidenceJudge;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
@@ -18,7 +20,9 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
+use App\Infrastructure\Tasks\LaravelAiTaskEvidenceJudge;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
+use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
@@ -47,6 +51,8 @@ final class TasksServiceProvider extends ServiceProvider
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
+        TaskCheckRunner::class => RemoteTaskCheckRunner::class,
+        TaskEvidenceJudge::class => LaravelAiTaskEvidenceJudge::class,
         TaskSessionClassifier::class => LaravelAiTaskSessionClassifier::class,
         TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
     ];

@@ -150,7 +150,7 @@ When `project.create` collides on an occupied workspace root, T3's receipt is `A
 
 Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first pending subtask. The next pending subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
-When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. Jev is asked only whether the agent is blocked. A pending input fails on its own.
+For tasks outside the verification pilot, when an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. Jev is asked only whether the agent is blocked. A pending input fails on its own.
 
 When every item passes, the Gateway sets the task to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. While that thread is still idle, or its snapshot is still the turn from before the handoff, the Gateway waits. It asks for an outcome only after a newer review turn stops.
 
@@ -166,13 +166,15 @@ A scheduler tick checks every in-progress task in running and reviewing groups. 
 
 AgentThread state is authoritative. A `working` thread (including a starting T3 session) defers its task until a later tick. The Gateway does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
-For each eligible stopped implementer, the tick reads `composer check` from tool activity. The run must name `composer check`, exit 0, and have no edit, write, or patch activity after it. An assistant message does not count. Jev is asked only whether the agent is blocked, and that answer passes only at or above `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`). A pending input fails `waiting_for_input` in code and skips that question. A thread state the rubric does not recognize waits without a model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
+For each eligible stopped implementer outside the verification pilot, the tick reads `composer check` from tool activity. The run must name `composer check`, exit 0, and have no edit, write, or patch activity after it. An assistant message does not count. Jev is asked only whether the agent is blocked, and that answer passes only at or above `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`). A pending input fails `waiting_for_input` in code and skips that question. A thread state the rubric does not recognize waits without a model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
 A stopped reviewer with `changes_requested` is relayed, and the task returns to `running`. An `approved` comment is checked in code: the commit equals HEAD, the branch is `task-{group id}`, the tree is clean, the commit is new for the subtask, and the final pull request verifies. A missing outcome comment asks Jev only whether the reviewer is blocked. `assistance_requested` and `resolution` still update the assistance flag and keep their history. Status stays the current phase for those two comments.
 
 The Gateway sends one reminder that names every failed item. The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder. A missing Jev answer counts as a communication failure and asks for assistance on the fifth consecutive failure.
 
-Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
+[ADR 0115](/decisions/0115-verify-task-evidence-before-review) defines the opt-in verification pilot below. Pilot tasks use captured execution results and required Noul questions in place of the three transcript-derived check items. Runtime state, pending input, the blocker question, and independent review still apply.
+
+Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not supply verification evidence. The pilot runner owns that record. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
@@ -196,6 +198,73 @@ Gateway uses `laravel/ai` Classification with its official TypeSafe provider in 
 Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest pending groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+
+## Task verification pilot
+
+The pilot is disabled by default. It supports the Orbit monorepo and local PHP test evidence. Enable it only after the held-out evaluation in [ADR 0115](/decisions/0115-verify-task-evidence-before-review#smallest-experiment-and-release-condition) passes. There is no default Noul threshold and no measured model-quality claim.
+
+Set `ORBIT_TASKS_VERIFICATION_APP_IDS` to the comma-separated App IDs in the pilot and `ORBIT_TASKS_VERIFICATION_NOUL_THRESHOLD` to an evaluated probability greater than `0.5` and at most `1`. New tasks for those Apps require one to three criteria. Existing tasks retain their contract. Removing an App from the setting does not remove verification from its existing pilot tasks. A missing threshold refuses pilot task creation with `tasks.verification_not_calibrated` (409).
+
+Include `verification` in each task supplied to `tasks-create`, or in `tasks-add`. Each criterion has this shape:
+
+```json
+{
+  "id": "failed-check",
+  "requirement": "A failed check prevents review.",
+  "question": "Does the named test demonstrate that a failed check prevents review?",
+  "true": "It observes no review handoff after a failed check.",
+  "false": "It does not observe that outcome.",
+  "environment": "local"
+}
+```
+
+IDs must be unique within the task. Criteria cannot be edited through the API. Only `local` is supported. A criterion requiring Linux topology evidence must wait for the topology slice; a mocked test cannot satisfy it. Tasks whose acceptance is entirely deterministic belong in the code-only evaluation baseline.
+
+After implementing the task, call `tasks-verify` with the group and task IDs and the following body. Use the exact Pest test name, including its `it ` prefix and any dataset suffix.
+
+```json
+{
+  "run_key": "33c532b6-a58a-4848-964c-cb20b683b78b",
+  "evidence": [{
+    "criterion_id": "failed-check",
+    "project": "apps/gateway",
+    "path": "tests/Feature/Tasks/FailedCheckTest.php",
+    "test": "it prevents review after a failed check"
+  }]
+}
+```
+
+The example shows the reference format. Evidence files must fit the limits below; choose a focused test file that demonstrates the requirement. Each criterion needs exactly one reference. The API accepts no commands, checkout paths, success claims, or uploaded results.
+
+| Operation | Route | Result |
+| --- | --- | --- |
+| `tasks:verify` / `tasks-verify` | `POST /api/v1/task-groups/{group}/tasks/{task}/verify` | Runs checks and returns the captured result |
+| `tasks:verification` / `tasks-verification` | `GET /api/v1/task-groups/{group}/tasks/{task}/verification` | Returns the newest run, or null before the first run |
+
+Both operations require Gateway access and an enabled tasks extension. Verification requires a running pilot task with an assigned Instance and no pending assistance. A different group returns 404. A changed request using an existing run key returns `tasks.verification_key_conflict` (409). A second active run returns `tasks.verification_running` (409).
+
+Gateway sends its runner over pinned SSH to the assigned Node. The runner copies tracked and untracked source into an isolated checkout and copies installed dependencies. It leaves the agent's Git index unchanged. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in CLI, Docs, Gateway, E2E, and PHP SDK order. It then reruns each distinct referenced test file with Pest's JUnit output enabled. Only an exact, unambiguous passing test with assertions supplies evidence. JUnit output from the parallel full suite is not used because the inspected Pest version failed to merge one real Gateway report.
+
+Source files, deletions, modes, internal symlink targets, branch, HEAD, installed dependency manifests, PHP version, and the runner profile form the input identity. Gateway also binds the result to the task, attempt, Instance, Node, checkout, criteria, model, and threshold. Changed inputs require a new run. These checks assume trusted installed tools and dependencies; they do not attest all machine state or resist hostile code running as the same OS user.
+
+The local runner has an 840-second budget; SSH has 880 seconds and the run reservation has 900 seconds. The Gateway command deadline is 900 seconds. A caller must allow that duration; after an uncertain disconnect, read the newest result or repeat the same run key. A duplicate key observes the existing run. An expired run becomes `interrupted` and cannot authorize review. Checks execute outside the scheduler tick, which waits for that task and continues other tasks.
+
+Each evidence file is limited to 12,000 UTF-8 bytes. Total criteria and evidence are limited to 24,000 JSON bytes. Oversized or unresolved evidence does not pass and is never silently truncated. Keep tests small enough for the pilot. Logs remain in a private temporary directory on the Node; the API returns command results and log references, not raw logs or source. Operators remove these temporary logs after diagnosis; automatic retention is not implemented.
+
+Jev receives the required questions together as Nouls using `jev-1.13.0`, with a three-second timeout. Each question checks only its criterion and named test. Jev does not certify command execution, test correctness, or Linux behavior. Missing evidence skips classification. Probabilities below the configured threshold remain unverified. Provider errors remain errors and never become a passing answer.
+
+| Status | Meaning |
+| --- | --- |
+| `running` | Checks or classification are in progress |
+| `complete` | Processing finished; inspect `checks_passed`, `answers`, and `error`. This does not mean ready or approved |
+| `error` | Transport, runner, evidence-budget, or provider error prevented evaluation |
+| `interrupted` | The reservation expired or the task or inputs differ from the run |
+
+The result includes command outcomes, source fingerprint, criterion digest, evidence references, Noul probabilities, threshold, model, check duration, and semantic token usage and duration. The newest started run supersedes any earlier pass. If inference fails after passing checks, repeating the same run key can retry inference up to three total attempts after a fresh input check. It does not rerun checks. Valid answers, including negative ones, are reused for identical inputs; repeated requests cannot retry a negative answer until it becomes favorable.
+
+Before review, the scheduler consumes the newest result, checks current inputs, and requires every criterion to pass. It saves the consumed run ID on the review handoff. The reviewer receives that ID and the criteria. Missing or negative evidence uses the existing reminder and assistance flow. Provider errors use the communication-failure flow. Review delivery retains the existing retry behavior; a lost transport acknowledgment can repeat the message, so this is not an exactly-once delivery guarantee.
+
+The next runtime-proof slice will give each applicable task group its own ephemeral Incus topology. Code will bind executed Linux proof to that group and its current attempt. Jev may check whether the observations cover the requirement. Allocation, reset, cancellation, failure inspection, and cleanup must be verified together before that slice is enabled.
 
 ## Pull request and settle metrics
 

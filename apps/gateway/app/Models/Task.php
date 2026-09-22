@@ -33,6 +33,9 @@ use Illuminate\Support\Carbon;
  * @property int $communication_failures
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
+ * @property bool $verification_required
+ * @property list<array{id: string, requirement: string, question: string, true: string, false: string, environment: string}>|null $verification_criteria
+ * @property int|null $review_verification_id
  * @property string $brief
  * @property TaskStatus $status
  * @property int|null $implementer_agent_thread_id
@@ -61,6 +64,7 @@ final class Task extends Model
         'position',
         'title',
         'brief',
+        'verification_required', 'verification_criteria', 'review_verification_id',
         'status',
         'implementer_agent_thread_id',
         'tokens',
@@ -109,6 +113,7 @@ final class Task extends Model
     protected function casts(): array
     {
         return [
+            'verification_required' => 'boolean', 'verification_criteria' => 'array', 'review_verification_id' => 'integer',
             'position' => 'integer',
             'status' => TaskStatus::class,
             'tokens' => 'integer',

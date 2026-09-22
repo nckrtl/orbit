@@ -70,6 +70,8 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
         'tasks:add' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:verify' => ['api/v1/task-groups/{group}/tasks/{task}/verify', ['POST']],
+        'tasks:verification' => ['api/v1/task-groups/{group}/tasks/{task}/verification', ['GET', 'HEAD']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],

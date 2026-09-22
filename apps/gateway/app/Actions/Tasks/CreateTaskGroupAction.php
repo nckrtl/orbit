@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskVerificationPolicy;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
@@ -21,6 +22,7 @@ final readonly class CreateTaskGroupAction
         private RequireTasksExtensionAction $requireExtension,
         private TaskScheduler $scheduler,
         private AgentDriverRegistry $drivers,
+        private TaskVerificationPolicy $verification,
     ) {}
 
     public function execute(CreateTaskGroupData $data): TaskGroup
@@ -31,6 +33,10 @@ final readonly class CreateTaskGroupAction
             $driver = $this->drivers->get((string) config('orbit.tasks.agent_driver', 't3'))->key();
         } catch (AgentDriverException) {
             throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
+        }
+
+        foreach ($data->tasks as $task) {
+            $this->verification->validatePlan($data->appId, $task->verification);
         }
 
         $group = TaskGroup::query()->create([
@@ -50,6 +56,8 @@ final readonly class CreateTaskGroupAction
                 'position' => $index + 1,
                 'title' => $task->title,
                 'brief' => $task->brief,
+                'verification_required' => $task->verification !== [],
+                'verification_criteria' => $task->verification,
                 'status' => TaskStatus::Pending,
             ]);
         }

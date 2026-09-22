@@ -5605,6 +5605,51 @@
           "brief": {
             "type": "string",
             "maxLength": 8000
+          },
+          "verification": {
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]*$",
+                  "maxLength": 64
+                },
+                "requirement": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "true": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "false": {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "environment": {
+                  "type": "string",
+                  "enum": [
+                    "local"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "requirement",
+                "question",
+                "true",
+                "false",
+                "environment"
+              ]
+            }
           }
         },
         "additionalProperties": false,
@@ -5688,7 +5733,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task ID within this group."
           },
           "type": {
             "type": "string",
@@ -5785,7 +5832,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task ID within this group."
           }
         },
         "additionalProperties": false,
@@ -5864,6 +5913,51 @@
                 "brief": {
                   "type": "string",
                   "maxLength": 8000
+                },
+                "verification": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]*$",
+                        "maxLength": 64
+                      },
+                      "requirement": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "question": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "true": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "false": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "environment": {
+                        "type": "string",
+                        "enum": [
+                          "local"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "requirement",
+                      "question",
+                      "true",
+                      "false",
+                      "environment"
+                    ]
+                  }
                 }
               },
               "required": [
@@ -5986,6 +6080,117 @@
         "type": "object",
         "properties": {},
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-verification",
+      "title": "Read task verification",
+      "description": "Returns the newest verification result, or null before the first run. Complete means the attempt finished; it does not mean every check and question passed. Current source identity is checked again before review.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/verification",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task ID within this group."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "tasks-verify",
+      "title": "Verify task evidence",
+      "description": "Runs the fixed Orbit check profile in an isolated source copy and evaluates required Noul questions. Requires an enrolled running task, a calibrated threshold, a unique run_key, and one test reference per criterion. Exact retries reuse the result; a provider retry reuses passing checks. The scheduler consumes the newest result before review.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/verify",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task ID within this group."
+          },
+          "run_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "criterion_id": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "project": {
+                  "type": "string",
+                  "enum": [
+                    "apps/cli",
+                    "apps/docs",
+                    "apps/gateway",
+                    "apps/e2e",
+                    "packages/php-sdk"
+                  ]
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^tests/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.php$",
+                  "maxLength": 300
+                },
+                "test": {
+                  "type": "string",
+                  "maxLength": 500
+                }
+              },
+              "required": [
+                "criterion_id",
+                "project",
+                "path",
+                "test"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task",
+          "run_key",
+          "evidence"
+        ]
       }
     },
     {

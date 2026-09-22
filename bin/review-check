@@ -2,14 +2,16 @@
 """Run the Builder's quality checks and affected tests on one clean candidate."""
 import json
 import os
+import runpy
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
 
-PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
-COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
+PROFILE = runpy.run_path(str(Path(__file__).resolve().parent.parent / 'apps/gateway/resources/tasks/check.py'))
+PROJECTS = PROFILE['PROJECTS']
+COMMANDS = PROFILE['COMMANDS']
 AFFECTED = ('composer', 'test:affected')
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'

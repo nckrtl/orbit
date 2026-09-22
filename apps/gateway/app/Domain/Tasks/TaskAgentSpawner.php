@@ -97,6 +97,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     {
         return implode("\n\n", [
             'Implement this subtask in the shared workspace, then stop so the reviewer can inspect it.',
+            $task->verification_required ? 'Before stopping, call tasks-verify with a unique run_key and one evidence reference per criterion (criterion_id, project, path, test). Orbit captures checks and judges evidence. Requirements: '.json_encode($task->verification_criteria, JSON_THROW_ON_ERROR) : '',
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             'Orbit subtask #'.$task->id,
@@ -110,7 +111,8 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return implode("\n\n", [
             'please review',
             'Orbit task group #'.$task->task_group_id.' / subtask #'.$task->id,
-            'Subtask '.$task->title.' is done.',
+            'Subtask '.$task->title.' is ready for review.',
+            $task->review_verification_id === null ? '' : 'Consumed verification run #'.$task->review_verification_id.'. Read tasks-verification and inspect the referenced tests against these criteria: '.json_encode($task->verification_criteria, JSON_THROW_ON_ERROR),
             $task->brief,
         ]);
     }

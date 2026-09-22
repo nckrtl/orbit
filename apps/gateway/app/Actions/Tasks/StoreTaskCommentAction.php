@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskVerificationGate;
 use App\Models\Activity;
 use App\Models\Task;
 use App\Models\TaskComment;
@@ -17,11 +19,14 @@ use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier) {}
+    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier, private TaskVerificationGate $verification) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
     {
+        if (($payload['type'] ?? null) === TaskCommentType::Resolution->value && $this->verification->busy($task)) {
+            throw new ResourceOperationException('tasks.verification_running', 'Wait for the current verification run before continuing the implementer.', 409);
+        }
         $deliverResolution = false;
         $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
             $comment = TaskComment::query()->create([

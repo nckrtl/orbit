@@ -18076,6 +18076,51 @@
                         "brief": {
                           "type": "string",
                           "maxLength": 8000
+                        },
+                        "verification": {
+                          "type": "array",
+                          "maxItems": 3,
+                          "minItems": 1,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_-]*$",
+                                "maxLength": 64
+                              },
+                              "requirement": {
+                                "type": "string",
+                                "maxLength": 1000
+                              },
+                              "question": {
+                                "type": "string",
+                                "maxLength": 1000
+                              },
+                              "true": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "false": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "environment": {
+                                "type": "string",
+                                "enum": [
+                                  "local"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "requirement",
+                              "question",
+                              "true",
+                              "false",
+                              "environment"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -18663,6 +18708,51 @@
                   "brief": {
                     "type": "string",
                     "maxLength": 8000
+                  },
+                  "verification": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_-]*$",
+                          "maxLength": 64
+                        },
+                        "requirement": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "question": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "true": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "false": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "environment": {
+                          "type": "string",
+                          "enum": [
+                            "local"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "requirement",
+                        "question",
+                        "true",
+                        "false",
+                        "environment"
+                      ]
+                    }
                   }
                 },
                 "required": [
@@ -18792,9 +18882,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric Task ID within this group."
           }
         ],
         "responses": {
@@ -18871,9 +18962,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric Task ID within this group."
           }
         ],
         "requestBody": {
@@ -19048,6 +19140,252 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/comments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"ready_for_review\", \"body\": \"example\", \"author\": \"example\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-groups/{group}/tasks/{task}/verification": {
+      "get": {
+        "operationId": "tasks-verification",
+        "summary": "Read task verification",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task ID within this group."
+          }
+        ],
+        "description": "Returns the newest verification result, or null before the first run. Complete means the attempt finished; it does not mean every check and question passed. Current source identity is checked again before review.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskVerification"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/verification\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-groups/{group}/tasks/{task}/verify": {
+      "post": {
+        "operationId": "tasks-verify",
+        "summary": "Verify task evidence",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task ID within this group."
+          }
+        ],
+        "description": "Runs the fixed Orbit check profile in an isolated source copy and evaluates required Noul questions. Requires an enrolled running task, a calibrated threshold, a unique run_key, and one test reference per criterion. Exact retries reuse the result; a provider retry reuses passing checks. The scheduler consumes the newest result before review.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_key": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "criterion_id": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "project": {
+                          "type": "string",
+                          "enum": [
+                            "apps/cli",
+                            "apps/docs",
+                            "apps/gateway",
+                            "apps/e2e",
+                            "packages/php-sdk"
+                          ]
+                        },
+                        "path": {
+                          "type": "string",
+                          "pattern": "^tests/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.php$",
+                          "maxLength": 300
+                        },
+                        "test": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "criterion_id",
+                        "project",
+                        "path",
+                        "test"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "run_key",
+                  "evidence"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskVerification"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/verify\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"run_key\": \"9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b\", \"evidence\": [{\"criterion_id\": \"example\", \"project\": \"apps/gateway\", \"path\": \"tests/Unit/Domain/Tasks/ComposerCheckEvidenceTest.php\", \"test\": \"it reads a passing composer check from tool output and ignores an assistant claim\"}]}'\n"
           }
         ]
       }
@@ -21696,6 +22034,15 @@
               "integer",
               "null"
             ]
+          },
+          "verification_required": {
+            "type": "boolean"
+          },
+          "verification": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
           }
         }
       },
@@ -21849,6 +22196,87 @@
           "pr_url": {
             "type": [
               "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TaskVerification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "run_key": {
+            "type": "string"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "answers": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "threshold": {
+            "type": "number"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "semantic_input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "semantic_duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "criteria_digest": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "checks_passed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "seconds": {
+            "type": [
+              "number",
               "null"
             ]
           }

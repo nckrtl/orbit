@@ -13,6 +13,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class TaskData extends Data
 {
+    /** @param list<array{id: string, requirement: string, question: string, true: string, false: string, environment: string}> $verification */
     public function __construct(
         public int $id,
         public int $taskGroupId,
@@ -26,6 +27,8 @@ final class TaskData extends Data
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public bool $verificationRequired = false,
+        public array $verification = [],
     ) {}
 
     public static function fromModel(Task $task): self
@@ -43,6 +46,8 @@ final class TaskData extends Data
             linesAdded: $task->lines_added,
             linesDeleted: $task->lines_deleted,
             durationMs: $task->duration_ms,
+            verificationRequired: $task->verification_required,
+            verification: $task->verification_criteria ?? [],
         );
     }
 }

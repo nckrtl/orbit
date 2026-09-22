@@ -11,9 +11,12 @@ use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Actions\Tasks\VerifyTaskAction;
 use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
+use App\Data\Tasks\TaskVerificationData;
+use App\Domain\Tasks\TaskVerificationGate;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -22,6 +25,7 @@ use App\Http\Requests\Tasks\CreateTaskGroupRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
+use App\Http\Requests\Tasks\VerifyTaskRequest;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -50,6 +54,23 @@ final class TaskGroupsController extends Controller
             'data' => TaskData::fromModel($task)->toArray(),
             'meta' => $this->meta($request),
         ], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function verify(VerifyTaskRequest $request, TaskGroup $group, Task $task, VerifyTaskAction $action): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+
+        return response()->json(['data' => TaskVerificationData::fromModel($action->execute($task, $request->payload()))->toArray(), 'meta' => $this->meta($request)]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function verification(Request $request, TaskGroup $group, Task $task, TaskVerificationGate $gate): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+        $run = $gate->latest($task);
+
+        return response()->json(['data' => $run === null ? null : TaskVerificationData::fromModel($run)->toArray(), 'meta' => $this->meta($request)]);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]

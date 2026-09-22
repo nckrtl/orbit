@@ -40,6 +40,8 @@ return [
         'token' => env('ORBIT_T3_TOKEN'),
     ],
     'tasks' => [
+        'verification_app_ids' => array_values(array_map('intval', array_filter(explode(',', (string) env('ORBIT_TASKS_VERIFICATION_APP_IDS', '')), static fn (string $id): bool => ctype_digit($id) && (int) $id > 0))),
+        'verification_noul_threshold' => env('ORBIT_TASKS_VERIFICATION_NOUL_THRESHOLD'),
         'agent_driver' => env('ORBIT_TASKS_AGENT_DRIVER', 't3'),
         'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),

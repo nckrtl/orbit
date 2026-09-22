@@ -19,6 +19,8 @@ function orb247_gate_fixture(): array
     }
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
+    mkdir($root.'/apps/gateway/resources/tasks', 0o700, true);
+    copy(base_path('../gateway/resources/tasks/check.py'), $root.'/apps/gateway/resources/tasks/check.py');
     copy($fixture.'/tia-cache', $root.'/bin/tia-cache');
     copy($fixture.'/composer', $root.'/tooling/composer');
     chmod($root.'/bin/review-check', 0o700);

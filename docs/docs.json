@@ -461,6 +461,8 @@
               "POST /api/v1/task-groups/{group}/tasks",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "GET /api/v1/task-groups/{group}/tasks/{task}/verification",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/verify",
               "POST /api/v1/tasks/disable",
               "POST /api/v1/tasks/enable",
               "GET /api/v1/tasks/status"

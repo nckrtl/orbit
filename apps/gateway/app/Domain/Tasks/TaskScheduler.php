@@ -23,6 +23,7 @@ final readonly class TaskScheduler
         private TaskSettleMetricsCollector $metrics,
         private TaskWorkspaceDiffReader $diff,
         private TaskWorkspaceStateReader $workspace,
+        private TaskVerificationGate $verification,
         private TaskPullRequestWatcher $pullRequestWatcher,
         private CompleteTaskGroupAction $completeGroup,
         private CoderSettleNotifier $coder,
@@ -81,7 +82,7 @@ final readonly class TaskScheduler
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
                 }
-                if ($task->assistance_requested || $group->assistance_requested) {
+                if ($task->assistance_requested || $group->assistance_requested || $this->verification->busy($task)) {
                     continue;
                 }
 
@@ -317,6 +318,9 @@ final readonly class TaskScheduler
             new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
             new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),
         ];
+        if ($task->verification_required) {
+            $items = $this->verification->items($task);
+        }
         $waiting = $this->waitingItem($thread);
         if ($waiting instanceof TaskRubricItem) {
             $items[] = $waiting;
@@ -629,7 +633,11 @@ final readonly class TaskScheduler
 
     public function settleImplementer(Task $task, ?string $turnId = null): TaskGroup
     {
-        $group = DB::transaction(function () use ($task): TaskGroup {
+        $verified = $task->verification_required ? $this->verification->accepted($task) : null;
+        if ($task->verification_required && $verified === null) {
+            return $task->taskGroup;
+        }
+        $group = DB::transaction(function () use ($task, $verified): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $group = TaskGroup::query()
                 ->with(['tasks', 'app', 'taskable'])
@@ -640,6 +648,12 @@ final readonly class TaskScheduler
                 return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
             }
 
+            if ($locked->verification_required && ($verified === null
+                || $this->verification->latest($locked)?->id !== $verified->id
+                || ! $this->verification->matches($locked, $verified))) {
+                return $group;
+            }
+            $locked->review_verification_id = $verified?->id;
             $locked->status = TaskStatus::Reviewing;
             $locked->save();
             $group->status = TaskGroupStatus::Reviewing;
