@@ -219,6 +219,23 @@ function render_top_screen(UiState $ui, ?State $state = null, string $header = '
     return (string) $backend->flushed();
 }
 
+/** Node 1 and Instance 1 are different owners; the Instance lives on Node 2. */
+function tui_target_state(): State
+{
+    $state = tui_test_state();
+    $state->nodes[] = [...$state->nodes[0], 'id' => 2, 'name' => 'shark', 'wireguard_ip' => '10.44.0.3'];
+    $state->instances[0]['node'] = ['id' => 2, 'name' => 'shark'];
+    $state->schedules[] = [
+        ...$state->schedules[0],
+        'id' => '0198e15d-16c4-7855-8eb2-182b53ad28bc',
+        'name' => 'node-backup',
+        'target_type' => 'node',
+        'target_id' => 1,
+    ];
+
+    return $state;
+}
+
 /** A fixed DeploymentsSource for `orbit top` Tui tests: returns whatever the caller passed it. */
 final readonly class FakeDeploymentsSource implements DeploymentsSource
 {

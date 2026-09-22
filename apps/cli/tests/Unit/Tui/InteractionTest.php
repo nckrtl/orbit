@@ -7,6 +7,7 @@ use App\Support\Tui\Interaction;
 use App\Support\Tui\Screen;
 use App\Support\Tui\UiState;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
 use PhpTui\Term\Event\MouseEvent;
 use PhpTui\Term\KeyCode;
 use PhpTui\Term\MouseButton;
@@ -27,6 +28,28 @@ function render_for_hit_testing(UiState $ui): void
 }
 
 describe(Interaction::class, function (): void {
+    it('opens the Node Schedule displayed by the Node filter', function (): void {
+        $state = tui_target_state();
+        $ui = new UiState;
+        $ui->goTo('schedules');
+        $ui->filters['node'] = 'beast';
+        render_top_screen($ui, $state);
+        $ui->focus = 'list';
+        $sent = [];
+        $send = function (object $request) use (&$sent, $state): ScheduleLogsResponse {
+            $sent[] = $request->resolveEndpoint();
+
+            return ScheduleLogsResponse::fromGatewayData([
+                'id' => $state->schedules[1]['id'], 'name' => 'node-backup', 'lines' => 100, 'output' => '', 'truncated' => false,
+            ], '0198e15d-16c4-7855-8eb2-182b53ad28ba');
+        };
+
+        new Interaction($state, $ui, new ActionRunner($send), $send)->handleKey(KeyCode::Enter);
+
+        expect($ui->page()['row']['id'])->toBe($state->schedules[1]['id'])
+            ->and($sent)->toBe(['/api/v1/schedules/'.$state->schedules[1]['id'].'/logs']);
+    });
+
     it('moves the selection down and up within the focused pane on arrow keys', function (): void {
         $state = tui_test_state();
         $ui = new UiState;

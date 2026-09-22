@@ -24,6 +24,29 @@ beforeEach(function (): void {
 });
 
 describe(Screen::class, function (): void {
+    it('shows complete Schedule owners in the list, dashboard and detail', function (): void {
+        $state = tui_target_state();
+        $ui = new UiState;
+        $ui->goTo('schedules');
+
+        $list = render_top_screen($ui, $state);
+        expect($list)->toContain('Owner', 'node-backup', 'node beast', 'charlie-shop/dev', 'shark');
+
+        $ui->goTo('dashboard');
+        expect(render_top_screen($ui, $state))->toContain('node beast');
+
+        $ui->open('schedules', $state->schedules[1]);
+        $detail = render_top_screen($ui, $state);
+        expect($detail)->toContain('Owner', 'node beast');
+        expect($detail)->not->toContain('charlie-shop/dev');
+
+        $ui->goTo('apps');
+        $ui->open('apps', $state->apps[0]);
+        $project = render_top_screen($ui, $state);
+        expect($project)->toContain('backup');
+        expect($project)->not->toContain('node-backup');
+    });
+
     it('renders the dashboard with fleet counts in the sidebar and the needs-attention pane, and no separate stats bar', function (): void {
         $ui = new UiState;
 

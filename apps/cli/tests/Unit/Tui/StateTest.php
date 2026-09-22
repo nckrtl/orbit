@@ -148,6 +148,60 @@ describe(State::class, function (): void {
     });
 });
 
+describe('runtime target ownership', function (): void {
+    it('filters schedules by the complete target pair without changing order', function (): void {
+        $state = tui_target_state();
+        $ids = array_column($state->schedules, 'id');
+
+        expect(array_column($state->listRows('schedules', null, null), 'id'))->toBe($ids)
+            ->and(array_column($state->listRows('schedules', 'beast', null), 'id'))->toBe([$ids[1]])
+            ->and(array_column($state->listRows('schedules', 'shark', null), 'id'))->toBe([$ids[0]])
+            ->and($state->listRows('schedules', 'missing', null))->toBe([])
+            ->and(array_column($state->listRows('schedules', null, 'charlie-shop'), 'id'))->toBe([$ids[0]])
+            ->and($state->listRows('schedules', 'beast', 'charlie-shop'))->toBe([])
+            ->and(array_column($state->listRows('schedules', 'shark', 'charlie-shop'), 'id'))->toBe([$ids[0]])
+            ->and(array_column($state->schedulesForApp('charlie-shop'), 'id'))->toBe([$ids[0]])
+            ->and(array_column($state->schedulesForInstance(1), 'id'))->toBe([$ids[0]]);
+    });
+
+    it('uses the same owner labels and membership for processes and schedules', function (): void {
+        $state = tui_target_state();
+        $state->processes[] = [...$state->processes[0], 'id' => 2, 'target_type' => 'node', 'target_id' => 1];
+
+        foreach ([$state->processes, $state->schedules] as [$instanceOwned, $nodeOwned]) {
+            expect($state->targetOwner($instanceOwned))->toBe('charlie-shop/dev')
+                ->and($state->targetNodeName($instanceOwned))->toBe('shark')
+                ->and($state->targetOwner($nodeOwned))->toBe('node beast')
+                ->and($state->targetNodeName($nodeOwned))->toBe('beast');
+        }
+
+        expect(array_column($state->listRows('processes', 'beast', null), 'id'))->toBe([2])
+            ->and(array_column($state->listRows('processes', null, 'charlie-shop'), 'id'))->toBe([1]);
+    });
+
+    it('renders missing owners without guessing from a colliding id', function (): void {
+        $state = tui_target_state();
+        $state->nodes = [];
+
+        expect($state->targetOwner($state->schedules[1]))->toBe('—')
+            ->and($state->targetNodeName($state->schedules[1]))->toBe('—');
+
+        $state->instances = [];
+
+        expect($state->targetOwner($state->schedules[0]))->toBe('—')
+            ->and($state->targetNodeName($state->schedules[0]))->toBe('—');
+    });
+
+    it('shows the Node owner in schedule attention rows', function (): void {
+        $state = tui_target_state();
+        $state->schedules[1]['status'] = 'failed';
+
+        expect($state->attentionRows())->toHaveCount(1)
+            ->and($state->attentionRows()[0]['where'])->toBe('node beast')
+            ->and($state->attentionRows()[0]['record']['id'])->toBe($state->schedules[1]['id']);
+    });
+});
+
 describe('State health vocabulary', function (): void {
     it('treats a systemd process as healthy only when runtime_status matches desired_state in systemd\'s own vocabulary, not when the strings are equal', function (): void {
         expect(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'active']))->toBeTrue()

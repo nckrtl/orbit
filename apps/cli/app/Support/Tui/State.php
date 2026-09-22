@@ -418,16 +418,22 @@ final class State
         return '—';
     }
 
-    /** @param array<string, mixed> $process */
-    public function processOwner(array $process): string
+    /** @param array<string, mixed> $runtime Process or Schedule with a Node/Instance target. */
+    public function targetOwner(array $runtime): string
     {
-        return $process['target_type'] === 'node' ? "node {$this->nodeName($process['target_id'])}" : $this->instanceName($process['target_id']);
+        if ($runtime['target_type'] === 'instance') {
+            return $this->instanceName($runtime['target_id']);
+        }
+
+        $name = $this->nodeName($runtime['target_id']);
+
+        return $name === '—' ? '—' : "node {$name}";
     }
 
-    /** @param array<string, mixed> $process */
-    public function processNodeName(array $process): string
+    /** @param array<string, mixed> $runtime Process or Schedule with a Node/Instance target. */
+    public function targetNodeName(array $runtime): string
     {
-        return $process['target_type'] === 'node' ? $this->nodeName($process['target_id']) : $this->instanceNodeName($process['target_id']);
+        return $runtime['target_type'] === 'node' ? $this->nodeName($runtime['target_id']) : $this->instanceNodeName($runtime['target_id']);
     }
 
     public function nodeName(int $id): string
@@ -500,7 +506,7 @@ final class State
     {
         $ids = array_column($this->instancesForApp($appSlug), 'id');
 
-        return array_values(array_filter($this->schedules, static fn (array $s): bool => in_array($s['target_id'], $ids, true)));
+        return array_values(array_filter($this->schedules, static fn (array $s): bool => $s['target_type'] === 'instance' && in_array($s['target_id'], $ids, true)));
     }
 
     /** @return list<array<string, mixed>> */
@@ -525,10 +531,9 @@ final class State
             'nodes' => $this->nodes,
             'apps' => $this->apps,
             'instances' => array_values(array_filter($this->instances, static fn (array $i): bool => in_array($i['id'], $instanceIds, true))),
-            'processes' => array_values(array_filter($this->processes, fn (array $p): bool => $p['target_type'] === 'node'
+            'processes', 'schedules' => array_values(array_filter($this->{$section}, fn (array $p): bool => $p['target_type'] === 'node'
                 ? $appFilter === null && ($nodeFilter === null || $this->nodeName($p['target_id']) === $nodeFilter)
                 : in_array($p['target_id'], $instanceIds, true))),
-            'schedules' => array_values(array_filter($this->schedules, static fn (array $s): bool => $s['target_type'] === 'instance' && in_array($s['target_id'], $instanceIds, true))),
             'databases' => array_values(array_filter($this->databases, fn (array $d): bool => $nodeFilter === null || $this->nodeName((int) $d['node_id']) === $nodeFilter)),
             'firewall' => array_values(array_filter($this->firewall, static fn (array $f): bool => $nodeFilter === null || $f['node'] === $nodeFilter)),
             default => [],
@@ -558,13 +563,13 @@ final class State
 
         foreach ($this->processes as $process) {
             if (! self::processHealthy($process)) {
-                $rows[] = ['kind' => 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->processOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
+                $rows[] = ['kind' => 'processes', 'record' => $process, 'label' => 'Process', 'name' => $process['name'], 'where' => $this->targetOwner($process), 'state' => "{$process['runtime_status']}, wanted {$process['desired_state']}"];
             }
         }
 
         foreach ($this->schedules as $schedule) {
             if (! self::scheduleHealthy($schedule)) {
-                $rows[] = ['kind' => 'schedules', 'record' => $schedule, 'label' => 'Schedule', 'name' => $schedule['name'], 'where' => $this->instanceName($schedule['target_id']), 'state' => $schedule['status'] === 'failed' ? 'failed' : $schedule['desired_timer_state']];
+                $rows[] = ['kind' => 'schedules', 'record' => $schedule, 'label' => 'Schedule', 'name' => $schedule['name'], 'where' => $this->targetOwner($schedule), 'state' => $schedule['status'] === 'failed' ? 'failed' : $schedule['desired_timer_state']];
             }
         }
 

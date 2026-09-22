@@ -35,6 +35,8 @@ The sidebar lists eight sections: Dashboard, Nodes, Projects, Instances, Process
 
 Every Processes pane carries a right-aligned `CPU/MEM` column, read from cAdvisor (see [Metrics role](/reference/metrics#per-process-cpu-and-memory-cadvisor)): whole-percent CPU over one core and memory in GiB, like `20%/1.2G`. A Process that is not running, or that cAdvisor has no series for, shows `—` instead.
 
+Schedules show their owner as either a Node or an Instance. The unfiltered list includes both. A Node filter includes that Node's own Schedules and its Instances' Schedules. A Project filter includes only Schedules owned by that Project's Instances. Missing owners display an em dash.
+
 ## Keys and mouse
 
 | Key | Effect |
