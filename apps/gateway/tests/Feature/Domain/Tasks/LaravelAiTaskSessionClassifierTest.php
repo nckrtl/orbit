@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\TaskJevOutcome;
 use App\Domain\Tasks\TaskSessionClassifier;
-use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
@@ -62,92 +61,89 @@ function classifier_observation(
                 hasNewCommitsSinceThreadStart: $prUrl !== null,
                 prUrl: $prUrl,
                 ciSummary: $prUrl === null ? null : 'passing',
+                recentMessages: $recentMessages,
             ),
         ],
     );
 }
 
-it('returns the faked Choice as the next action', function (): void {
+it('classifies the three supported outcomes for a stopped reviewer', function (TaskJevOutcome $outcome): void {
     Http::preventStrayRequests();
     Classification::fake([[
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.91),
+        'outcome' => new ChoiceAnswer($outcome->value, [], 0.91),
     ]]);
 
-    $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
-        classifier_observation(pendingApprovalId: 'approval-1'),
+    $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(recentMessages: [[
+            'id' => 'tool-1', 'kind' => 'activity', 'label' => 'tool',
+            'text' => 'composer check passed (exit code 0)', 'at' => '2026-09-22T10:00:00Z',
+        ]]),
+        TaskThreadRole::Reviewer,
     );
 
-    expect($decision->action)->toBe(TaskSessionNextAction::DrainApproval)
+    expect($decision->outcome)->toBe($outcome)
         ->and($decision->confidence)->toBe(0.91)
-        ->and($decision->reason)->toBe('Jev selected drain_approval.');
-});
+        ->and($decision->reason)->toBe('Jev selected '.$outcome->value.'.');
+})->with(TaskJevOutcome::cases());
 
 it('uses the package fake without a TypeSafe key', function (): void {
     Classification::fake();
     config()->set('ai.providers.typesafe.key', null);
 
-    expect(app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation())->action)
-        ->toBe(TaskSessionNextAction::EscalateCoder);
+    expect(app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(classifier_observation(), TaskThreadRole::Implementer)->outcome)
+        ->toBe(TaskJevOutcome::AssistanceRequired);
 });
 
-it('selects drain_approval for a pending approval fixture', function (): void {
+it('requires assistance when an implementer returns reviewer findings', function (): void {
     Classification::fake([[
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.88),
+        'outcome' => new ChoiceAnswer(TaskJevOutcome::ChangesRequested->value, [], 0.88),
     ]]);
 
-    expect(app(LaravelAiTaskSessionClassifier::class)->classify(
-        classifier_observation(sessState: 'waiting', idle: false, pendingApprovalId: 'approval-9'),
-    )->action)->toBe(TaskSessionNextAction::DrainApproval);
+    expect(app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(), TaskThreadRole::Implementer,
+    )->outcome)->toBe(TaskJevOutcome::AssistanceRequired);
 });
 
-it('relays a reviewer summary when the implementer is idle', function (): void {
+it('requires assistance for an unknown outcome', function (): void {
     Classification::fake([[
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::RelayReviewToImplementer->value, [], 0.84),
+        'outcome' => new ChoiceAnswer('unknown', [], 0.84),
     ]]);
 
-    expect(app(LaravelAiTaskSessionClassifier::class)->classify(
-        classifier_observation(reviewerText: 'Please add tests, then stop.'),
-    )->action)->toBe(TaskSessionNextAction::RelayReviewToImplementer);
+    expect(app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(), TaskThreadRole::Reviewer,
+    )->outcome)->toBe(TaskJevOutcome::AssistanceRequired);
 });
 
-it('marks a verified subtask done when more work remains', function (): void {
+it('requires assistance when outcome confidence is below the configured threshold', function (TaskJevOutcome $outcome): void {
+    config()->set('orbit.tasks.jev_confidence_threshold', 0.9);
     Classification::fake([[
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, [], 0.9),
+        'outcome' => new ChoiceAnswer($outcome->value, [], 0.85),
     ]]);
 
-    expect(app(LaravelAiTaskSessionClassifier::class)->classify(
-        classifier_observation(prUrl: 'https://github.com/nckrtl/orbit/pull/21'),
-    )->action)->toBe(TaskSessionNextAction::MarkSubtaskDone);
-});
-
-it('settles a verified commit with a pull request', function (): void {
-    Classification::fake([[
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::SettleGroup->value, [], 0.93),
-    ]]);
-
-    $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
-        classifier_observation(
-            hasPendingSubtasks: false,
-            prUrl: 'https://github.com/nckrtl/orbit/pull/21',
-        ),
+    $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(recentMessages: [[
+            'id' => 'tool-1', 'kind' => 'activity', 'label' => 'tool',
+            'text' => 'composer check passed (exit code 0)', 'at' => '2026-09-22T10:00:00Z',
+        ]]),
+        TaskThreadRole::Reviewer,
     );
 
-    expect($decision->action)->toBe(TaskSessionNextAction::SettleGroup);
-});
+    expect($decision->outcome)->toBe(TaskJevOutcome::AssistanceRequired)
+        ->and($decision->confidence)->toBe(0.85)
+        ->and($decision->reason)->toBe('Choice confidence 0.85 is below 0.9.');
+})->with(TaskJevOutcome::cases());
 
-it('escalates when Choice confidence is below the gate', function (): void {
-    config()->set('orbit.tasks.jev_confidence_threshold', 0.75);
+it('accepts confidence at the default threshold when the setting is invalid', function (): void {
+    config()->set('orbit.tasks.jev_confidence_threshold', 'invalid');
     Classification::fake([[
-        'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.2),
+        'outcome' => new ChoiceAnswer(TaskJevOutcome::ChangesRequested->value, [], 0.75),
     ]]);
 
-    $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
-        classifier_observation(pendingApprovalId: 'approval-low'),
+    $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(), TaskThreadRole::Reviewer,
     );
 
-    expect($decision->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decision->confidence)->toBe(0.2)
-        ->and($decision->reason)->toBe('Choice confidence 0.2 is below 0.75.');
+    expect($decision->outcome)->toBe(TaskJevOutcome::ChangesRequested);
 });
 
 it('is bound as the task session classifier', function (): void {

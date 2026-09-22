@@ -160,6 +160,8 @@ A scheduler tick checks every in-progress task in running and reviewing groups. 
 
 AgentThread state is authoritative. A `working` thread (including a starting T3 session) defers its task until a later tick. The Gateway does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
+### Outcomes and assistance
+
 For each eligible task with no active sessions, the tick builds an observation and asks TypeSafe Jev for one outcome: `completed_successfully`, `changes_requested`, or `assistance_required`. The observation identifies the task and includes its status, title, and brief alongside group context. It includes the last five thread entries, including tool output, so Jev can verify a passing `composer check`; an assistant claim without command output is not validation. The shared group reviewer is included when the task is reviewing. Code gathers facts. Jev does not generate prose.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not create a separate validation-evidence record or API. Explicit `assistance_requested` comments and scheduler requests use one transition: flag the task and group, retain the active slot, record the actor and reason, and notify once after the state commits. Repeated requests remain in comment history without replacing the first reason or repeating its activity and notification.
@@ -168,20 +170,9 @@ A non-empty `resolution` comment preserves the history, resets the completion an
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
-Legacy scheduler actions:
+Jev classifies outcomes; typed comments and mechanical checks control task transitions. The scheduler sends completion reminders and relays explicit reviewer findings through the recorded driver. It requests assistance when required evidence is missing. It does not automatically approve pending requests or continue unfinished work from an inferred next action.
 
-| Action | Effect |
-| --- | --- |
-| `drain_approval` | Driver approval response accepting the current request |
-| `drain_user_input` | Driver question response continuing the current brief and refusing scope expansion |
-| `continue_implementer` | Driver follow-up on the implementer with its recorded model |
-| `relay_review_to_implementer` | Driver follow-up on the implementer including the last reviewer excerpt |
-| `mark_subtask_done` | Existing settleImplementer, acceptReview, and next-subtask spawn paths |
-| `settle_group` | Existing settle path: use the verified PR, write metrics, and notify Coder when CLEAN-ready |
-| `escalate_coder` | HMAC Coder webhook with the observation and the low-confidence or failed Choice |
-| `noop` | No driver action and no Coder notification |
-
-Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `escalate_coder`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents a next action.
+Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `assistance_required`. Only a reviewer can return `changes_requested`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents an outcome. Observation outages keep their grace period and send one escalation webhook with the observation when that period expires.
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 

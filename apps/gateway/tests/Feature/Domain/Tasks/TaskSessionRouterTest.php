@@ -118,49 +118,47 @@ function router_dispatcher(): T3Dispatcher
     };
 }
 
-it('dispatches acceptForSession for a pending approval', function (): void {
+it('sends a completion reminder through the recorded implementer driver', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
-    $observation = router_observation($group, 'approval-3');
+    $observation = router_observation($group);
 
-    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->remindCompletion(
         $group,
-        $observation,
-        new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
+        $observation->thread(TaskThreadRole::Implementer),
     );
 
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
+        ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('implementer-thread')
-        ->and($dispatcher->commands[0]['requestId'])->toBe('approval-3')
-        ->and($dispatcher->commands[0]['decision'])->toBe('acceptForSession');
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('ready_for_review', 'composer check');
 });
 
-it('surfaces a refused drain instead of swallowing the dispatch', function (): void {
+it('surfaces a refused reminder instead of swallowing the dispatch', function (): void {
     $group = router_group();
     $dispatcher = new class implements T3Dispatcher
     {
         public function dispatch(Node $node, array $command): array
         {
-            throw new T3DispatchException('T3 approval respond failed.');
+            throw new T3DispatchException('T3 reminder failed.');
         }
     };
 
-    expect(fn () => new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    expect(fn () => new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->remindCompletion(
         $group,
-        router_observation($group, 'approval-3'),
-        new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
-    ))->toThrow(T3DispatchException::class, 'T3 approval respond failed.');
+        router_observation($group)->thread(TaskThreadRole::Implementer),
+    ))->toThrow(T3DispatchException::class, 'T3 reminder failed.');
 });
 
-it('starts an implementer turn with the T3 0.0.42 message struct', function (): void {
+it('relays the full reviewer findings with the T3 message struct and recorded model', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
 
-    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    $body = "Cover rollback failure.\nPreserve the existing error reason.";
+    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->relayReviewBody(
         $group,
-        router_observation($group),
-        new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 0.86, 'Jev selected continue_implementer.'),
+        router_observation($group)->thread(TaskThreadRole::Implementer),
+        $body,
     );
 
     expect($dispatcher->commands)->toHaveCount(1)
@@ -169,7 +167,7 @@ it('starts an implementer turn with the T3 0.0.42 message struct', function (): 
             'role' => 'user',
             'attachments' => [],
         ])
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not expand scope.')
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith($body)
         ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort))
         ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');

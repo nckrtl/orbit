@@ -124,22 +124,6 @@ final readonly class TaskScheduler
                     continue;
                 }
 
-                try {
-                    $this->actor->execute($group, $observation, $decision);
-                    $this->advance($group, $task, $decision);
-                    if ($task->communication_failures > 0) {
-                        $task->update(['communication_failures' => 0]);
-                    }
-                } catch (AgentDriverException $exception) {
-                    $decision = TaskSessionDecision::escalate($exception->getMessage());
-                    $task->increment('communication_failures');
-                    $task->refresh();
-                    if ($task->communication_failures >= 5) {
-                        $this->assistance->execute($task, $exception->getMessage());
-                    }
-                    $this->actor->execute($group, $observation, $decision);
-                }
-
                 $decisions[] = $decision;
             }
         }
@@ -269,8 +253,6 @@ final readonly class TaskScheduler
     {
         $this->clearUnavailable($group);
 
-        // The typed outcome contract requires projected tool output. Never fall
-        // back to the legacy drain/continue actions when it is absent.
         $hasToolEvidence = array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => array_any($thread->recentMessages, static fn (array $message): bool => $message['kind'] === 'activity'));
         if (! $hasToolEvidence) {
             return TaskSessionDecision::escalate('Jev cannot verify a composer check in the recent tool output.');
@@ -315,36 +297,6 @@ final readonly class TaskScheduler
         }
 
         return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
-    }
-
-    private function advance(TaskGroup $group, Task $task, TaskSessionDecision $decision): void
-    {
-        $group = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
-        $current = $task->fresh();
-
-        if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
-            if ($current->status === TaskStatus::Running) {
-                $this->settleImplementer($current);
-            } elseif ($current->status === TaskStatus::Reviewing) {
-                $this->acceptReview($current);
-            }
-
-            return;
-        }
-
-        if ($decision->action !== TaskSessionNextAction::SettleGroup) {
-            return;
-        }
-
-        if ($current instanceof Task && $current->status === TaskStatus::Reviewing) {
-            $this->acceptReview($current);
-
-            return;
-        }
-
-        if ($group->status === TaskGroupStatus::Settling) {
-            $this->settle($group);
-        }
     }
 
     public function claimNext(): ?TaskGroup
