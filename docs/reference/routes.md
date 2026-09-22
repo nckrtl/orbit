@@ -195,6 +195,8 @@ Router Caddy preserves the domain as the HTTP `Host` value and Transport Layer S
 
 The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard. A production pool applies the same address rule per target and does not fail over from LAN to WireGuard after a connection failure.
 
+Moving or clearing a Router rebuilds its former Node’s shared Caddy configuration from the remaining Routes. Local workloads and other publications keep serving while Orbit removes the obsolete Router firewall rules.
+
 ### Development-server endpoint
 
 The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) over the Route's HTTPS domain on port 443. Cluster DNS points that domain at the Router. The application serves its web root on the same domain. See [ADR 0067](/decisions/0067-serve-development-servers-on-the-route-origin).
