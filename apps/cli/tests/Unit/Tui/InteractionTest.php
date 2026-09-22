@@ -6,6 +6,7 @@ use App\Support\Tui\ActionRunner;
 use App\Support\Tui\Confirmation;
 use App\Support\Tui\Interaction;
 use App\Support\Tui\Screen;
+use App\Support\Tui\State;
 use App\Support\Tui\UiState;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
@@ -20,9 +21,9 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 /** Draws one frame so UiState::$drawn holds real pane areas for hit-testing. */
-function render_for_hit_testing(UiState $ui): void
+function render_for_hit_testing(UiState $ui, ?State $state = null): void
 {
-    $state = tui_test_state();
+    $state ??= tui_test_state();
     $backend = DummyBackend::fromDimensions(120, 40);
     $display = DisplayBuilder::default($backend)->fullscreen()->build();
     $display->draw((new Screen)->screen($state, $ui, '', '', $display->viewportArea()));
@@ -127,7 +128,7 @@ describe(Interaction::class, function (): void {
         ];
         $ui = new UiState;
         $ui->goTo('nodes');
-        render_for_hit_testing($ui);
+        render_for_hit_testing($ui, $state);
 
         $area = $ui->drawn['list']['area'];
         $point = [$area->left() + 2, $area->top() + 3]; // The second data row (shark).

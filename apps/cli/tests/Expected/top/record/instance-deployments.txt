@@ -15,7 +15,7 @@
 │                  ││ No deploy steps. instance:deploy-step:create adds one.                                           │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Deployments ─────────────────────────────────────────────────────────────────────────────────────╮
-│                  ││  Started         Release            Branch       Commit      By           Duration     Status    │
+│                  ││  Started         Release            Branch       Commit      By           Duration        Status │
 │                  ││› 2026-01-01T00:0 20260101000000     main         aaaaaaa     gateway      42s          succeeded │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │

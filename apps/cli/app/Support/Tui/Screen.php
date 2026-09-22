@@ -39,9 +39,9 @@ use RuntimeException;
  * simplification (the per-engine database stats/keyspace/slowlog panes and the table sample
  * browser are not modeled, because the SDK does not carry that data).
  *
- * Screen never mutates State or UiState except to record where it drew each pane in
- * `UiState::$drawn` and `UiState::$paneOrder`, which Interaction uses for keyboard and mouse
- * hit-testing on the next event.
+ * Screen never mutates State. It publishes each pane's identities and renderer state in
+ * `UiState::$drawn`, records pane order and clamps selections to the rows it draws. Interaction
+ * consumes that frame for keyboard and mouse input.
  */
 final class Screen
 {
@@ -60,6 +60,7 @@ final class Screen
 
     public function screen(State $state, UiState $ui, string $header, string $footer, Area $area): Widget
     {
+        $previous = $ui->drawn;
         $ui->drawn = [];
         $ui->paneOrder = [];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
@@ -91,6 +92,8 @@ final class Screen
                     ->widgets($this->nav($state, $ui), $body),
                 ParagraphWidget::fromString($footer)->style($dim),
             );
+
+        $ui->retainTableOffsets($previous);
 
         return $ui->menu === null ? $screen : CompositeWidget::fromWidgets($screen, $this->menuPopup($ui, $area));
     }
@@ -177,6 +180,7 @@ final class Screen
     private function listTable(State $state, UiState $ui): array
     {
         $rows = $state->listRows($ui->section, $ui->filters['node'], $ui->filters['project']);
+        $this->paneRecords($ui, 'list', $rows);
 
         return match ($ui->section) {
             'nodes' => [
@@ -249,7 +253,13 @@ final class Screen
         $ui->drawn['attention'] = ['area' => $rows->get(3), 'header' => true];
         $ui->paneOrder = ['apps', 'instances', 'processes', 'schedules', 'attention'];
 
-        $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $state->attentionRows());
+        foreach (['apps', 'instances', 'processes', 'schedules'] as $family) {
+            $this->paneRecords($ui, $family, $state->{$family});
+        }
+        $attentionRows = $state->attentionRows();
+        $this->paneRecords($ui, 'attention', array_column($attentionRows, 'record'));
+        $ui->drawn['attention']['families'] = array_column($attentionRows, 'kind');
+        $attention = array_map(fn (array $a): TableRow => $this->row([$a['label'], $a['name'], $a['where']], $a['state'], true), $attentionRows);
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -492,6 +502,8 @@ final class Screen
     private function nodePage(State $state, UiState $ui, array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
     {
         $instances = $state->instancesForNode($node['id']);
+        $processes = $state->processesForNode($node['id']);
+        $firewall = $state->firewallForNode($node['id']);
         $metrics = $state->nodeMetrics($node['id']);
         $metricsHeight = $metrics === null ? 3 : intdiv(count($metrics['cores']) + 1, 2) + 4;
         $top = max($propertiesHeight, $metricsHeight);
@@ -503,6 +515,9 @@ final class Screen
         $ui->drawn['processes'] = ['area' => $bottom->get(0), 'header' => true];
         $ui->drawn['firewall'] = ['area' => $bottom->get(1), 'header' => true];
         $ui->paneOrder = ['instances', 'processes', 'firewall'];
+        $this->paneRecords($ui, 'instances', $instances);
+        $this->paneRecords($ui, 'processes', $processes);
+        $this->paneRecords($ui, 'firewall', $firewall);
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -517,8 +532,8 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
-                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(40), Constraint::percentage(27), Constraint::min(self::USAGE_WIDTH)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $state->processesForNode($node['id']))),
-                        $this->pane($ui, 'firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row(["{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $state->firewallForNode($node['id']))),
+                        $this->pane($ui, 'processes', ' Node processes ', ['Name', 'Status', 'CPU/MEM'], [Constraint::percentage(40), Constraint::percentage(27), Constraint::min(self::USAGE_WIDTH)], array_map(fn (array $p): TableRow => $this->row([$p['name'], $p['runtime_status']], $this->processUsage($p), ! State::processHealthy($p)), $processes)),
+                        $this->pane($ui, 'firewall', ' Firewall ', ['Port', 'Action', 'Source', 'Status'], [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(40), Constraint::percentage(18)], array_map(fn (array $f): TableRow => $this->row(["{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $firewall)),
                     ),
             );
     }
@@ -533,6 +548,8 @@ final class Screen
         $ui->drawn['instances'] = ['area' => $rows->get(1), 'header' => true];
         $ui->drawn['schedules'] = ['area' => $rows->get(2), 'header' => true];
         $ui->paneOrder = ['instances', 'schedules'];
+        $this->paneRecords($ui, 'instances', $instances);
+        $this->paneRecords($ui, 'schedules', $schedules);
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -561,16 +578,20 @@ final class Screen
         $ui->drawn['schedules'] = ['area' => $columns->get(2), 'header' => true];
         $ui->drawn['deploysteps'] = ['area' => $rows->get(1), 'header' => true];
         $ui->paneOrder = ['processes', 'schedules', 'deploysteps'];
+        $this->paneRecords($ui, 'processes', $processes);
+        $this->paneRecords($ui, 'schedules', $schedules);
+        $this->paneRecords($ui, 'deploysteps', $deploySteps);
+
+        if ($deployments !== null) {
+            $ui->drawn['deployments'] = ['area' => $rows->get(2), 'header' => true];
+            $ui->paneOrder[] = 'deployments';
+            $this->paneRecords($ui, 'deployments', $deployments);
+        }
 
         $deploymentsWidget = $deployments === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Deployments '))->borderStyle($dim)->padding(Padding::horizontal(1))
                 ->widget(ParagraphWidget::fromString('Deployment history unavailable right now.')->style($dim))
             : $this->pane($ui, 'deployments', ' Deployments ', ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'], [Constraint::percentage(16), Constraint::percentage(18), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(12), Constraint::percentage(14)], array_map(fn (array $d): TableRow => $this->row([$d['started'], $d['release'], $d['branch'], $d['commit'], $d['by'], $d['duration']], $d['status'], ! State::deploymentHealthy($d)), $deployments), 'Not deployed yet.');
-
-        if ($deployments !== null) {
-            $ui->drawn['deployments'] = ['area' => $rows->get(2), 'header' => true];
-            $ui->paneOrder[] = 'deployments';
-        }
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -601,16 +622,18 @@ final class Screen
         $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::percentage(45), Constraint::percentage(55)])->split($rows->get(1));
         $ui->drawn['tables'] = ['area' => $columns->get(0), 'header' => true];
         $ui->paneOrder = ['tables'];
+        $this->paneRecords($ui, 'tables', array_map(static fn (string $table): array => ['id' => $table], $tables));
+
+        if ($users !== null) {
+            $ui->drawn['users'] = ['area' => $columns->get(1), 'header' => true];
+            $ui->paneOrder[] = 'users';
+            $this->paneRecords($ui, 'users', $users);
+        }
 
         $usersWidget = $users === null
             ? BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->titles(Title::fromString(' Users '))->borderStyle($dim)->padding(Padding::horizontal(1))
                 ->widget(ParagraphWidget::fromString('Database users unavailable right now.')->style($dim))
             : $this->pane($ui, 'users', ' Users ', ['Username', 'Privileges', 'Created by'], [Constraint::percentage(24), Constraint::percentage(46), Constraint::percentage(30)], array_map(fn (array $u): TableRow => $this->row([$u['username'], $u['privileges']], $u['created_by'], false), $users), 'No users recorded.');
-
-        if ($users !== null) {
-            $ui->drawn['users'] = ['area' => $columns->get(1), 'header' => true];
-            $ui->paneOrder[] = 'users';
-        }
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -850,6 +873,8 @@ final class Screen
             $block = $block->titles(Title::fromString($title));
         }
 
+        $ui->selected[$name] = max(0, min($ui->selected[$name] ?? 0, count($rows) - 1));
+
         if ($rows === []) {
             return $block->widget(ParagraphWidget::fromString(' '.$empty)->style(Style::default()->fg(AnsiColor::DarkGray)));
         }
@@ -859,6 +884,7 @@ final class Screen
 
         $table = TableWidget::default();
         $table->columnSpacing = 1;
+        $ui->drawn[$name]['table'] = $table->state;
 
         if ($headers !== []) {
             $table->header($this->alignLast(TableRow::fromStrings(...$headers), $lastWidth));
@@ -868,10 +894,19 @@ final class Screen
             $table
                 ->widths(...$widths)
                 ->rows(...$rows)
-                ->select(min($ui->selected[$name] ?? 0, count($rows) - 1))
+                ->select($ui->selected[$name])
                 ->highlightSymbol('› ')
                 ->highlightStyle($focused ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()->addModifier(Modifier::BOLD)),
         );
+    }
+
+    /** @param list<array<string, mixed>> $records */
+    private function paneRecords(UiState $ui, string $name, array $records): void
+    {
+        $ui->drawn[$name]['kind'] = $ui->kindOf($name);
+        $ui->drawn[$name]['ids'] = in_array($name, ['deploysteps', 'tables', 'users'], true)
+            ? array_keys($records)
+            : array_column($records, 'id');
     }
 
     /** @param list<Constraint> $widths */

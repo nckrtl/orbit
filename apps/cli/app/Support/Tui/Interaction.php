@@ -278,21 +278,18 @@ final readonly class Interaction
         $this->ui->hover = $pane;
         $this->ui->focus = $pane;
         $this->maybeLazyLoad($pane);
-        $rows = $this->rowsFor($pane);
         $row = $this->hitRow($pane, $x, $y);
-        $hit = $row !== null && $row < count($rows);
 
         if ($event->button === MouseButton::Right) {
-            if ($hit) {
+            if ($row !== null) {
                 $this->ui->selected[$pane] = $row;
+                $this->openMenu([$x, $y]);
             }
-
-            $this->openMenu([$x, $y]);
 
             return;
         }
 
-        if ($hit) {
+        if ($row !== null && $event->button === MouseButton::Left) {
             if (($this->ui->selected[$pane] ?? 0) === $row) {
                 $this->openSelected();
             } else {
@@ -331,7 +328,7 @@ final readonly class Interaction
     {
         $drawn = $this->ui->drawn[$name] ?? null;
 
-        if ($drawn === null || $x < $drawn['area']->left() || $x >= $drawn['area']->right()) {
+        if ($drawn === null || $x <= $drawn['area']->left() || $x >= $drawn['area']->right() - 1) {
             return null;
         }
 
@@ -341,7 +338,9 @@ final readonly class Interaction
             return null;
         }
 
-        return $y - $first;
+        $index = $y - $first + ($drawn['table']->offset ?? 0);
+
+        return isset($drawn['ids']) && ! isset($drawn['ids'][$index]) ? null : $index;
     }
 
     private function linkAt(int $x, int $y): ?string
@@ -363,7 +362,7 @@ final readonly class Interaction
             return;
         }
 
-        $rows = count($this->rowsFor($this->ui->focus));
+        $rows = count($this->ui->drawn[$this->ui->focus]['ids'] ?? []);
         $this->ui->selected[$this->ui->focus] = max(0, min(max(0, $rows - 1), ($this->ui->selected[$this->ui->focus] ?? 0) + $step));
     }
 
@@ -373,24 +372,11 @@ final readonly class Interaction
             return;
         }
 
-        $rows = $this->rowsFor($this->ui->focus);
-        $row = $rows[$this->ui->selected[$this->ui->focus] ?? 0] ?? null;
+        $record = $this->selectedRecord($this->ui->focus);
 
-        if ($row === null) {
-            return;
+        if ($record !== null) {
+            $this->openRecord($record['kind'], $record['row']);
         }
-
-        if ($this->ui->focus === 'attention') {
-            $this->openRecord($row['kind'], $row['record']);
-
-            return;
-        }
-
-        if (in_array($this->ui->focus, ['deploysteps', 'tables', 'users'], true)) {
-            return; // Leaf panes: nothing further to drill into.
-        }
-
-        $this->openRecord($this->ui->kindOf($this->ui->focus), $row);
     }
 
     /** @param array<string, mixed> $row */
@@ -432,44 +418,27 @@ final readonly class Interaction
         $this->ui->selected['list'] = 0;
     }
 
-    /**
-     * The rows a named pane currently shows, resolved from State using the open page (or
-     * section, for 'list' and 'attention'). Mirrors Screen's own row derivation so hit-testing
-     * and selection stay in sync with what was drawn.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function rowsFor(string $pane): array
+    /** @return array{kind: string, row: array<string, mixed>}|null */
+    private function selectedRecord(string $pane): ?array
     {
-        $page = $this->ui->page();
-        $kind = $page['kind'] ?? null;
-        $row = $page['row'] ?? null;
+        $drawn = $this->ui->drawn[$pane] ?? [];
+        $index = $this->ui->selected[$pane] ?? 0;
+        $id = $drawn['ids'][$index] ?? null;
+        $kind = $drawn['families'][$index] ?? $drawn['kind'] ?? '';
 
-        return match ($pane) {
-            'list' => $this->state->listRows($this->ui->section, $this->ui->filters['node'], $this->ui->filters['project']),
-            'attention' => $this->state->attentionRows(),
-            'instances' => match ($kind) {
-                'nodes' => $this->state->instancesForNode($row['id']),
-                'apps' => $this->state->instancesForApp($row['slug']),
-                default => [],
-            },
-            'processes' => match ($kind) {
-                'instances' => $this->state->processesForInstance($row['id']),
-                'nodes' => $this->state->processesForNode($row['id']),
-                default => [],
-            },
-            'schedules' => match ($kind) {
-                'instances' => $this->state->schedulesForInstance($row['id']),
-                'apps' => $this->state->schedulesForApp($row['slug']),
-                default => [],
-            },
-            'firewall' => $kind === 'nodes' ? $this->state->firewallForNode($row['id']) : [],
-            'deploysteps' => $kind === 'instances' ? $row['deploy_steps'] : [],
-            'deployments' => $kind === 'instances' ? ($this->state->deploymentsFor($row['id']) ?? []) : [],
-            'tables' => $kind === 'databases' ? array_map(static fn (string $t): array => ['name' => $t], $this->state->databaseTables[$row['slug']] ?? []) : [],
-            'users' => $kind === 'databases' ? ($this->state->databaseUsersFor($row['slug']) ?? []) : [],
-            default => [],
-        };
+        if ($id === null || in_array($kind, ['deploysteps', 'tables', 'users'], true)) {
+            return null;
+        }
+
+        $row = $this->state->recordById($kind, $id);
+
+        if ($row === null) {
+            $this->ui->message = 'The selected record disappeared. Select a current row.';
+
+            return null;
+        }
+
+        return ['kind' => $kind, 'row' => $row];
     }
 
     /**
@@ -560,10 +529,9 @@ final readonly class Interaction
         $pane = $this->ui->focus;
 
         if ($pane !== null && $pane !== 'nav') {
-            $rows = $this->rowsFor($pane);
-            $selectedRow = $rows[$this->ui->selected[$pane] ?? 0] ?? null;
-            $kind = $pane === 'attention' ? ($selectedRow['kind'] ?? '') : $this->ui->kindOf($pane);
-            $row = $pane === 'attention' ? ($selectedRow['record'] ?? null) : $selectedRow;
+            $record = $this->selectedRecord($pane);
+            $kind = $record['kind'] ?? '';
+            $row = $record['row'] ?? null;
         } elseif ($page !== null) {
             $kind = $page['kind'];
             $row = $page['row'];

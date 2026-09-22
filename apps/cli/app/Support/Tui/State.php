@@ -366,6 +366,30 @@ final class State
     }
 
     /**
+     * Resolve a drawn identity without falling back to a name or collection index.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function recordById(string $kind, int|string $id): ?array
+    {
+        $groups = match ($kind) {
+            'nodes', 'apps', 'instances', 'processes', 'schedules', 'databases', 'firewall' => [$this->{$kind}],
+            'deployments' => $this->deploymentsCache,
+            default => [],
+        };
+
+        foreach ($groups as $rows) {
+            foreach ($rows ?? [] as $row) {
+                if ($row['id'] === $id) {
+                    return $row;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * RefreshScheduler calls this after it fetches (or fails to fetch) one instance's deployments.
      *
      * @param  list<array<string, mixed>>|null  $deployments

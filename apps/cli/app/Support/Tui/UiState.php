@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Tui;
 
 use PhpTui\Tui\Display\Area;
+use PhpTui\Tui\Extension\Core\Widget\Table\TableState;
 
 /**
  * Everything about the screen that is not fleet data: which section and page are open, hover
@@ -64,12 +65,28 @@ final class UiState
     /**
      * Where each pane, link, and button was drawn in the last frame, for mouse hit-testing.
      *
-     * @var array<string, array{area: Area, header: bool}>
+     * Table panes also carry the ordered identities and the renderer's actual scroll state.
+     *
+     * @var array<string, array{area: Area, header: bool, kind?: string, ids?: list<int|string>, families?: list<string>, table?: TableState}>
      */
     public array $drawn = [];
 
     /** @var list<string> */
     public array $paneOrder = [];
+
+    /**
+     * Retain only the renderer's offset; identities and bounds always come from the new frame.
+     *
+     * @param  array<string, array{area: Area, header: bool, kind?: string, ids?: list<int|string>, families?: list<string>, table?: TableState}>  $previous
+     */
+    public function retainTableOffsets(array $previous): void
+    {
+        foreach ($this->drawn as $name => $drawn) {
+            if (isset($drawn['table'], $previous[$name]['table']) && ($drawn['kind'] ?? null) === ($previous[$name]['kind'] ?? null)) {
+                $drawn['table']->offset = $previous[$name]['table']->offset;
+            }
+        }
+    }
 
     /** @return array{kind: string, row: array<string, mixed>}|null */
     public function page(): ?array
@@ -90,6 +107,8 @@ final class UiState
         $this->focus = null;
         $this->hover = 'nav';
         $this->filters = ['node' => null, 'project' => null];
+        $this->drawn = [];
+        $this->paneOrder = [];
     }
 
     /** @param array<string, mixed> $row */
@@ -98,6 +117,8 @@ final class UiState
         $this->pages[] = ['kind' => $kind, 'row' => $row];
         $this->focus = null;
         $this->hover = 'nav';
+        $this->drawn = [];
+        $this->paneOrder = [];
     }
 
     public function back(): void
@@ -109,6 +130,8 @@ final class UiState
         }
         array_pop($this->pages);
         $this->focus = null;
+        $this->drawn = [];
+        $this->paneOrder = [];
     }
 
     /** Which record family a pane's rows belong to. */

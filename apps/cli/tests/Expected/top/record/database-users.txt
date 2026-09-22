@@ -11,8 +11,8 @@
 │                  ││ Password           ••••••••                                                                      │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Tables · database:tables ─────────────────╮╭ Users ──────────────────────────────────────────────╮
-│                  ││ No tables, or not loaded yet.             ││  Username     Privileges                Created by  │
-│                  ││                                           ││› app          ALL PRIVILEGES            gateway     │
+│                  ││ No tables, or not loaded yet.             ││  Username     Privileges                 Created by │
+│                  ││                                           ││› app          ALL PRIVILEGES                gateway │
 │                  ││                                           ││                                                     │
 │                  ││                                           ││                                                     │
 │                  ││                                           ││                                                     │
