@@ -32,6 +32,23 @@ final class GatewayFailureRenderer
             return self::environmentConfigurationDetails($details);
         }
 
+        if (in_array($code, ['instance.setup_step_failed', 'instance.teardown_step_failed'], true)) {
+            $safe = [];
+            foreach (['step', 'teardown_step'] as $field) {
+                $value = $details[$field] ?? null;
+                if (is_string($value) && preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D', $value) === 1) {
+                    $safe[$field] = $value;
+                }
+            }
+            foreach (['outcome' => ['failed', 'unconfirmed'], 'cleanup' => ['incomplete', 'unconfirmed']] as $field => $allowed) {
+                if (in_array($details[$field] ?? null, $allowed, true)) {
+                    $safe[$field] = $details[$field];
+                }
+            }
+
+            return $safe;
+        }
+
         $id = $details['id'] ?? null;
 
         if (is_int($id) && $id > 0) {

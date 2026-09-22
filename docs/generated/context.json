@@ -309,7 +309,9 @@
                 "Project",
                 "Repository identity",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Setup step",
+                "Teardown step"
             ],
             "governing_adrs": []
         },
@@ -563,8 +565,10 @@
                 "Router",
                 "Runtime hibernation",
                 "Schedule",
+                "Setup step",
                 "Task",
                 "Task group",
+                "Teardown step",
                 "Tool",
                 "Tool Manager",
                 "Web root",
@@ -3072,6 +3076,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0115-run-project-setup-commands-on-development-instances.md",
+            "title": "ADR 0115: Run Project setup commands on development Instances",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0027",
+                "0071",
+                "0073",
+                "0115"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3575,6 +3604,8 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Setup step",
+                "Teardown step",
                 "Tool",
                 "proxycli"
             ],
@@ -3939,6 +3970,26 @@
                 "Project"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-setup.md",
+            "title": "Instance setup and teardown",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Setup step",
+                "Teardown step"
+            ],
+            "governing_adrs": [
+                "0115"
+            ]
         },
         {
             "path": "docs/reference/local-resolver-overrides.md",

@@ -133,7 +133,7 @@ The same option recovers an active development or production Instance whose reco
 
 For a recovered Laravel profile, the option permits Orbit to reconcile the canonical URL through its existing idempotent operation. If a request stops after the remote URL write and before checkpoint persistence, another identical retry safely performs the reconciliation and continues. A complete profile that later drifts remains a refusal even when the recovery option is present.
 
-Orbit records each completed step so retries do not duplicate source or Routes. Database rollback preserves complete profiles at non-active `php-selected` or `url-configured` checkpoints. Once every Orbit setup step succeeds, the response returns the active Instance, Route, domain, and HTTPS URL.
+Orbit records each completed provisioning checkpoint so retries do not duplicate source or Routes. Database rollback preserves complete profiles at non-active `php-selected` or `url-configured` checkpoints. Once every provisioning checkpoint succeeds, Orbit runs the Project's setup steps. [Instance setup and teardown](/reference/instance-setup) owns those commands. The response returns the active Instance, Route, domain, and HTTPS URL only after that list succeeds or the list is empty.
 
 ## Configure a Laravel URL
 
@@ -149,9 +149,9 @@ After activation, an operator can explicitly import the recorded `.env` or updat
 
 The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certificate, firewall, or publication boundary and does not return a provisioned Instance. Secret environment values, certificate material, and private keys do not appear in command arguments, errors, API responses, activity data, or debug output.
 
-Active means Orbit prepared the source, PHP runtime if needed, supported Laravel configuration, and Route. The application can still fail. Missing dependencies, an application key, or a database can cause HTTP 500 while the Instance and Route remain active.
+Active describes prepared source, PHP runtime, Laravel configuration, and Route publication. A successful create response also confirms the Project setup steps; a retained setup failure blocks another create response until explicit setup succeeds. An empty setup list counts as success. The application can still fail for a reason outside those steps.
 
-Retrying creation for an active Instance with a recorded profile returns it unchanged. Use the endpoint to inspect the application and finish setup. Application setup commands run separately from provisioning.
+A confirmed setup command failure triggers teardown and removal of the new Instance. Unconfirmed execution or incomplete cleanup retains the Instance and records the failure. Retrying creation for an active Instance with a recorded profile returns it unchanged and does not run setup again. `instance:setup` runs the current setup list against an Instance that already exists.
 
 ## Reconcile a Project update
 

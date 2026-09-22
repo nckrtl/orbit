@@ -13,6 +13,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -22,6 +23,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -49,6 +52,9 @@ final readonly class CreateAppInstanceAction
         private ProductionAppInstanceProvisioner $productionProvisioner,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
+        private ?ProjectLifecycleRunner $lifecycle = null,
+        private ?RemoveAppInstanceAction $remover = null,
+        private ?AppInstanceEnvironmentOperationLock $environmentOperations = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -109,27 +115,97 @@ final readonly class CreateAppInstanceAction
             $created = true;
         }
 
-        $result = $this->sourceLock->synchronized(
-            $appInstance->node_id,
-            function () use ($appInstance, $created, $data): AppInstance {
-                try {
-                    $this->provisioner->reserve($appInstance, $data->domain);
-                    $resolved = $this->resumeSource($appInstance, ! $created);
+        $result = ($this->environmentOperations ?? app(AppInstanceEnvironmentOperationLock::class))->run(
+            [$appInstance->id],
+            fn (): AppInstance => $this->sourceLock->synchronized(
+                $appInstance->node_id,
+                function () use ($appInstance, $created, $data): AppInstance {
+                    $wasActive = $appInstance->refresh()->status === AppInstanceState::Active;
 
-                    return $this->provisioner->complete(
-                        $resolved,
-                        $data->domain,
-                        $data->recoverSourceProfile,
-                    );
-                } catch (Throwable $exception) {
-                    $this->recordFailure($appInstance, $exception);
+                    if ($wasActive && $appInstance->failed_step === 'setup') {
+                        throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
+                    }
 
-                    throw $exception;
-                }
-            },
+                    try {
+                        $this->provisioner->reserve($appInstance, $data->domain);
+                        $resolved = $this->resumeSource($appInstance, ! $created);
+
+                        $result = $this->provisioner->complete(
+                            $resolved,
+                            $data->domain,
+                            $data->recoverSourceProfile,
+                        );
+
+                    } catch (Throwable $exception) {
+                        $this->recordFailure($appInstance, $exception);
+
+                        throw $exception;
+                    }
+
+                    if (! $wasActive) {
+                        $this->finishSetup($result);
+                    }
+
+                    return $result;
+                },
+            ),
         );
 
         return $this->announceCreated(['appInstance' => $result, 'created' => $created]);
+    }
+
+    private function finishSetup(AppInstance $instance): void
+    {
+        $runner = $this->lifecycle ?? app(ProjectLifecycleRunner::class);
+
+        try {
+            $runner->run($instance, LifecyclePhase::Setup);
+        } catch (ResourceOperationException $setupFailure) {
+            $details = $setupFailure->details;
+            $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.setup_step_failed']);
+
+            if (($details['outcome'] ?? null) === 'unconfirmed') {
+                throw $setupFailure;
+            }
+
+            try {
+                $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown);
+            } catch (ResourceOperationException $teardownFailure) {
+                if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.setup_step_failed',
+                        message: 'Setup failed and teardown could not be confirmed. The Instance remains.',
+                        status: 422,
+                        details: [...$details, 'cleanup' => 'unconfirmed'],
+                    );
+                }
+
+                $step = $teardownFailure->details['step'] ?? null;
+
+                if (is_string($step) && $step !== '') {
+                    $details['teardown_step'] = $step;
+                }
+            }
+
+            try {
+                ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
+            } catch (Throwable) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.setup_step_failed',
+                    message: 'Setup failed and cleanup is incomplete. Inspect the Instance before retrying removal.',
+                    status: 422,
+                    details: [...$details, 'cleanup' => 'incomplete'],
+                );
+            }
+
+            throw new ResourceOperationException(
+                errorCode: 'instance.setup_step_failed',
+                message: 'Setup step failed.',
+                status: 422,
+                previous: $setupFailure,
+                details: $details,
+            );
+        }
     }
 
     /**

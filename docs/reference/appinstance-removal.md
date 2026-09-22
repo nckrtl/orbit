@@ -13,6 +13,8 @@ Completed transfer history is retained when an Instance is removed. Its `app_ins
 
 Removal requires a default-No confirmation naming the Instance and effect, or explicit `--yes`. JSON and noninteractive calls require `--yes`. The separate `--force` option permits the source overrides below and never supplies consent. Decline, cancellation and end of input stop before mutation.
 
+Development removal runs the Project teardown list after preflight accepts the source and before it deletes the Route, source, or Instance record. A teardown command that exits non-zero stops removal and leaves the Instance in place. Production removal does not run that list. [Instance setup and teardown](/reference/instance-setup) owns the commands and the failure code.
+
 Human output shows waiting feedback, the verified outcome and any remaining removal checkpoints. JSON keeps the bounded removal-progress contract.
 
 ## Choose normal or forced removal

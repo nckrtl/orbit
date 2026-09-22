@@ -56,6 +56,7 @@ final readonly class RegisterAppInstanceAction
         private DevelopmentAppInstanceProvisioner $provisioner,
         private DevelopmentAppInstanceConfigurator $configuration,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?RunInstanceSetupAction $setup = null,
     ) {}
 
     /** @return array{app: OrbitApp, primary: AppInstance, instances: list<AppInstance>, created: bool} */
@@ -69,6 +70,10 @@ final readonly class RegisterAppInstanceAction
                 $result['primary']->id,
                 AppInstanceData::fromModel($result['primary'])->toArray(),
             );
+        }
+
+        if ($data->runSetup && ! $result['primary']->placedOnAppProd()) {
+            ($this->setup ?? app(RunInstanceSetupAction::class))->execute($result['primary']);
         }
 
         return $result;

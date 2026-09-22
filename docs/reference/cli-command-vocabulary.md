@@ -34,6 +34,8 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `instance` | `create` and `destroy` | An Instance |
 | `instance:database` | `add` and `remove` | A Database connection on an Instance |
 | `instance:deploy-step` | `create` and `destroy` | A named [deploy step](/reference/deployments) |
+| `instance:setup-step` | `create` and `destroy` | A named [setup step](/reference/instance-setup) on a Project |
+| `instance:teardown-step` | `create` and `destroy` | A named [teardown step](/reference/instance-setup) on a Project |
 | `node` | `add` and `remove` | A Node in the fleet |
 | `node:access` | `add` and `remove` | An access grant between Nodes |
 | `node:role` | `add` and `remove` | A role on a Node |
@@ -57,7 +59,7 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
 | `herdr` | `observe`, `adopt`, `restart` | The CLI observes a session, adopts an existing server, or restarts a session. |
-| `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, or scans its dependencies. |
+| `instance` | `clone`, `deploy`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, scans its dependencies, or runs its Project setup steps. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `status` | The CLI reports the fleet CLIProxyAPI quota collector. |
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
