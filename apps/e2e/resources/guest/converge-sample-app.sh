@@ -68,8 +68,21 @@ case ${1-} in
     if [[ "$instance_shape" == app_instances ]]; then
       # Select one complete mutation contract after the read-only shape
       # preflight and before changing cluster, App, or sample state.
-      command_surface=$("$orbit" list --raw)
+      command_surface=$("$orbit" list --raw | awk 'NF { print $1 }')
       has_command() { grep -Fxq -- "$1" <<<"$command_surface"; }
+      project_command=app
+      project_type=()
+      if has_command project:list || has_command project:create; then
+        if ! has_command project:list || ! has_command project:create; then
+          printf 'create-resources: incomplete Project command contract\n' >&2
+          exit 65
+        fi
+        project_command=project
+        project_type=(laravel-app)
+      elif ! has_command app:list || ! has_command app:create; then
+        printf 'create-resources: no supported Project command contract\n' >&2
+        exit 65
+      fi
       candidate_contract=0
       environment_contract=0
       if has_command instance:clone && has_command instance:deploy && has_command instance:deploy-step:create; then
@@ -149,8 +162,8 @@ case ${1-} in
         read -r verified_cluster_id cluster_phase <<<"$cluster_state"
         [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
       fi
-      apps=$("$orbit" app:list --json)
-      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1) exit(65); if($m) { $x=$m[0]; $branch=array_key_exists("default_branch", $x) ? $x["default_branch"] : ($x["main_branch"] ?? null); if(($x["repository_url"] ?? null)!==$argv[2] || ($x["name"] ?? null)!==$argv[3] || ($x["root"] ?? null)!==$argv[4] || !is_string($branch) || $branch==="" || !is_int($x["id"] ?? null)) exit(65); } echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
+      apps=$("$orbit" "${project_command}:list" --json)
+      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1) exit(65); if($m) { $x=$m[0]; $branch=array_key_exists("default_branch", $x) ? $x["default_branch"] : ($x["main_branch"] ?? null); if(($x["repository_url"] ?? null)!==$argv[2] || ($x["name"] ?? null)!==$argv[3] || ($x["root"] ?? null)!==$argv[4] || ($argv[5]==="project" && ($x["type"] ?? null)!=="laravel-app") || !is_string($branch) || $branch==="" || !is_int($x["id"] ?? null)) exit(65); } echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public "$project_command" <<<"$apps")
       typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
       [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
       typed_instances=$initial_instances
@@ -163,7 +176,8 @@ case ${1-} in
         typed_state=$(typed_app_instance_state <<<"$typed_instances")
       fi
       if [[ -z "$app_id" ]]; then
-        app_id=$("$orbit" app:create laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
+        created_app=$("$orbit" "${project_command}:create" laravel-typed "${project_type[@]}" https://github.com/laravel/laravel.git --name=Laravel --root=public --json)
+        app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];' <<<"$created_app")
       fi
       if [[ "$typed_count" -eq 0 ]]; then
         "$orbit" instance:create "$app_id" "$dev_id" e2e-dev --domain=e2e-dev.orbit --json >/dev/null

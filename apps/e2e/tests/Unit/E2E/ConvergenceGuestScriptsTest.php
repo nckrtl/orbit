@@ -288,7 +288,10 @@ function typed_sample_resource_fixture(): array
         }
         printf '%s\n' "$*" >>"$state/commands"
         case "$1" in
-          list) [[ "$*" == 'list --raw' ]]; printf '%s' "${COMMAND_SURFACE:-}" ;;
+          list)
+            [[ "$*" == 'list --raw' ]]
+            printf '%s\n' "${PROJECT_COMMAND_SURFACE-$'app:list\napp:create'}" "${COMMAND_SURFACE:-}"
+            ;;
           node:list)
             if [[ -e "$state/active" && -n "${FINAL_NODE_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_NODE_RESPONSE"
@@ -335,17 +338,24 @@ function typed_sample_resource_fixture(): array
             touch "$state/active"
             [[ -n "${CLUSTER_UPDATE_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_UPDATE_RESPONSE" || cluster_json
             ;;
-          app:list)
+          app:list|project:list)
+            [[ "${PROJECT_LIST_FAILS:-0}" == 0 ]] || exit 19
             legacy=$(cat "$state/legacy-app.json")
             if [[ -n "${TYPED_APP_RESPONSE:-}" ]]; then
               printf '{"apps":[%s,%s]}' "$legacy" "$TYPED_APP_RESPONSE"
             elif [[ -e "$state/app" ]]; then
-              printf '{"apps":[%s,{"id":1,"slug":"laravel-typed","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' "$legacy"
+              printf '{"apps":[%s,{"id":1,"slug":"laravel-typed","type":"laravel-app","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' "$legacy"
             else
               printf '{"apps":[%s]}' "$legacy"
             fi
             ;;
-          app:create)
+          app:create|project:create)
+            if [[ "$1" == project:create ]]; then
+              [[ "$*" == 'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json' ]]
+            else
+              [[ "$*" == 'app:create laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json' ]]
+            fi
+            [[ "${PROJECT_CREATE_FAILS:-0}" == 0 ]] || exit 19
             [[ -e "$state/verified" ]] || touch "$state/app-before-cluster"
             touch "$state/app"
             printf '{"id":1}'
@@ -3068,6 +3078,126 @@ describe('convergence guest scripts', function () {
         'duplicate legacy-branch App' => [['main_branch' => '13.x'], 'duplicate'],
         'default branch with wrong AppInstance ownership' => [['default_branch' => '13.x'], 'ownership'],
         'legacy branch with wrong AppInstance ownership' => [['main_branch' => '13.x'], 'ownership'],
+    ]);
+
+    it('creates and reuses current sample resources from the real CLI command surface', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        $cli = dirname(__DIR__, 4).'/cli/orbit';
+        $environment = ['ORBIT_HOME' => $fixture['root'].'/cli-home'];
+
+        try {
+            $registry = new Process([PHP_BINARY, $cli, 'list', '--raw'], env: $environment);
+            $surface = $registry->mustRun()->getOutput();
+            $help = new Process([PHP_BINARY, $cli, 'help', 'project:create', '--format=json'], env: $environment);
+            $definition = json_decode($help->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            expect(array_keys($definition['definition']['arguments']))->toBe(['slug', 'type', 'repository']);
+            expect($definition['definition']['arguments']['type']['is_required'])->toBeTrue();
+            $environment = ['PROJECT_COMMAND_SURFACE' => '', 'COMMAND_SURFACE' => $surface];
+
+            $first = typed_sample_create_resources_process($fixture, $environment);
+            expect($first->run())->toBe(0, $first->getErrorOutput());
+            $second = typed_sample_create_resources_process($fixture, $environment);
+            expect($second->run())->toBe(0, $second->getErrorOutput());
+
+            $commands = file($fixture['root'].'/commands', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)->toContain(
+                'project:list --json',
+                'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
+                'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
+                'instance:deploy 5 --json',
+                'env:sync --instance=5 --json',
+            );
+            foreach (['app:list ', 'app:create '] as $forbidden) {
+                expect(implode("\n", $commands))->not->toContain($forbidden);
+            }
+            foreach (['project:create ', 'instance:clone ', 'instance:deploy '] as $mutation) {
+                expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, $mutation)))
+                    ->toHaveCount(1);
+            }
+            $state = json_decode(file_get_contents($fixture['state']), true, flags: JSON_THROW_ON_ERROR);
+            expect($state['production']['layout'])->toBe('release');
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('refuses incomplete project capabilities before any resource mutation', function (string $surface): void {
+        $fixture = typed_sample_resource_fixture();
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, ['PROJECT_COMMAND_SURFACE' => $surface]);
+
+            expect($process->run())->toBe(65);
+            expect(file($fixture['root'].'/commands', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+                ->toBe(['node:list --json', 'instance:list --json', 'list --raw']);
+            foreach (['cluster', 'app', 'instance', 'sample-app-state.json'] as $stateFile) {
+                expect(file_exists($fixture['root'].'/'.$stateFile))->toBeFalse();
+            }
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'none' => [''],
+        'current list only with legacy pair' => ["project:list  List projects.\napp:list\napp:create\n"],
+        'current create only with legacy pair' => ["project:create  Create a project.\napp:list\napp:create\n"],
+        'legacy list only' => ["app:list\n"],
+        'legacy create only' => ["app:create\n"],
+    ]);
+
+    it('requires the Laravel application type when reusing a current sample Project', function (?string $type, int $status): void {
+        $fixture = typed_sample_resource_fixture();
+        $project = ['default_branch' => 'main'];
+        if ($type !== null) {
+            $project['type'] = $type;
+        }
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'PROJECT_COMMAND_SURFACE' => "project:list  List projects.\nproject:create  Create a project.\n",
+                'TYPED_APP_RESPONSE' => typed_sample_app($project),
+            ]);
+
+            expect($process->run())->toBe($status, $process->getErrorOutput());
+            $commands = file_get_contents($fixture['root'].'/commands');
+            expect($commands)->toContain('project:list --json');
+            foreach (['app:list ', 'app:create ', 'project:create '] as $forbidden) {
+                expect($commands)->not->toContain($forbidden);
+            }
+            expect(file_exists($fixture['root'].'/instance'))->toBe($status === 0);
+            expect(file_exists($fixture['state']))->toBe($status === 0);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'Laravel application' => ['laravel-app', 0],
+        'package' => ['laravel-package', 65],
+        'monorepo' => ['monorepo', 65],
+        'missing type' => [null, 65],
+    ]);
+
+    it('does not fall back after a selected current Project operation fails', function (string $failure, string $lastCommand): void {
+        $fixture = typed_sample_resource_fixture();
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'PROJECT_COMMAND_SURFACE' => "project:list\nproject:create\napp:list\napp:create\n",
+                $failure => '1',
+            ]);
+
+            expect($process->run())->toBe(19);
+            $commands = file($fixture['root'].'/commands', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands[array_key_last($commands)])->toBe($lastCommand);
+            foreach (['app:list ', 'app:create ', 'instance:create '] as $forbidden) {
+                expect(implode("\n", $commands))->not->toContain($forbidden);
+            }
+            expect(file_exists($fixture['root'].'/app'))->toBeFalse();
+            expect(file_exists($fixture['state']))->toBeFalse();
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'list' => ['PROJECT_LIST_FAILS', 'project:list --json'],
+        'create' => ['PROJECT_CREATE_FAILS', 'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json'],
     ]);
 
     it('creates one typed development AppInstance with only authorized source inputs', function (): void {
