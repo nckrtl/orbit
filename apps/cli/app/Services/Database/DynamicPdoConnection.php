@@ -7,6 +7,7 @@ namespace App\Services\Database;
 use PDO;
 use Pdo\Sqlite;
 use PDOException;
+use ReflectionClass;
 
 final readonly class DynamicPdoConnection
 {
@@ -70,7 +71,24 @@ final readonly class DynamicPdoConnection
         ];
 
         if ($driver === 'sqlite' && ! $write) {
-            $options[Sqlite::ATTR_OPEN_FLAGS] = Sqlite::OPEN_READONLY;
+            if (defined(Sqlite::class.'::ATTR_OPEN_FLAGS') && defined(Sqlite::class.'::OPEN_READONLY')) {
+                $options[Sqlite::ATTR_OPEN_FLAGS] = Sqlite::OPEN_READONLY;
+            } else {
+                $pdo = new ReflectionClass(PDO::class);
+
+                if (! $pdo->hasConstant('SQLITE_ATTR_OPEN_FLAGS') || ! $pdo->hasConstant('SQLITE_OPEN_READONLY')) {
+                    $this->fail();
+                }
+
+                $attribute = $pdo->getConstant('SQLITE_ATTR_OPEN_FLAGS');
+                $readOnly = $pdo->getConstant('SQLITE_OPEN_READONLY');
+
+                if (! is_int($attribute) || ! is_int($readOnly)) {
+                    $this->fail();
+                }
+
+                $options[$attribute] = $readOnly;
+            }
         }
 
         return $options;

@@ -154,6 +154,8 @@ SQLite query, tables, schema, and describe run on the associated Node. The Gatew
 
 The local SQLite command reports `database.query_failed` if reading a result fails or its values cannot be encoded as JSON. It preserves representable values and does not replace invalid text. A result failure does not roll back a write that already completed.
 
+Read-only opening uses the installed PDO SQLite driver's supported options. It refuses if those options are unavailable and never creates a missing database file. Only an explicit write request permits a writable connection.
+
 MySQL and PostgreSQL inspection uses PDO on the Gateway with the stored host, port, database, username, and password. The password never enters a DSN, response, activity record, error, or debug output. Responses, activity records, errors, and debug output replace a password-shaped value with `[REDACTED]`. Query returns at most 500 rows and sets `truncated` when more remain.
 
 An unknown table returns `database.table_missing` (HTTP 404). A failed remote or driver execution returns `database.query_failed` (HTTP 502).

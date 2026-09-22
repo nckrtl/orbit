@@ -8,7 +8,9 @@ use App\Services\Database\LocalDatabaseQueryAction;
 use App\Services\Database\LocalDatabaseQueryRequest;
 use App\Support\Console\StandardInputReader;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     $this->previousToken = getenv(InternalDatabaseLane::TOKEN_ENV);
@@ -238,6 +240,156 @@ describe('local sqlite result failures', function (): void {
         }
     });
 });
+
+describe('native PDO driver read-only opening', function (): void {
+    it('bounds unavailable readonly driver options without a deprecation or new database', function (): void {
+        $probe = new Process([PHP_BINARY, '-n', '-r', 'echo json_encode(class_exists("PDO") ? PDO::getAvailableDrivers() : null);']);
+        $probe->mustRun();
+        $drivers = json_decode($probe->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array($drivers) && in_array('sqlite', $drivers, true)) {
+            $this->markTestSkipped('This binary compiles SQLite support in; it cannot be unloaded.');
+        }
+
+        $path = sys_get_temp_dir().'/orbit-internal-db-unavailable-'.bin2hex(random_bytes(8)).'.sqlite';
+        $arguments = [PHP_BINARY, '-n'];
+
+        if ($drivers === null) {
+            $arguments = [...$arguments, '-d', 'extension=pdo'];
+        }
+
+        try {
+            $process = new Process([
+                ...$arguments, '-d', 'error_reporting=-1', '-d', 'display_errors=stderr',
+                dirname(__DIR__, 2).'/Fixtures/Database/read-only-capability.php',
+            ], input: $path);
+
+            expect($process->run())->toBe(1)
+                ->and(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'error' => ['code' => 'database.query_failed', 'message' => 'Database query failed.'],
+                ])
+                ->and($process->getErrorOutput())->toBe('')
+                ->and(file_exists($path))->toBeFalse();
+        } finally {
+            if (file_exists($path)) {
+                unlink($path);
+            }
+        }
+    });
+
+    it('reads a SQLite file without runtime warnings on either driver class layout', function (): void {
+        $path = internal_database_sqlite_path();
+
+        try {
+            [$exit, $stdout, $stderr] = internal_database_query_process(internal_database_lane_payload(
+                internal_database_lane_token(), $path, 'SELECT email FROM users',
+            ));
+
+            expect($exit)->toBe(0)
+                ->and(json_decode($stdout, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'columns' => ['email'],
+                    'rows' => [['email' => 'owner@example.test']],
+                    'row_count' => 1,
+                    'truncated' => false,
+                ])
+                ->and($stderr)->toBe('');
+        } finally {
+            unlink($path);
+        }
+    });
+
+    it('refuses a write through a readonly connection without changing the database', function (): void {
+        $path = internal_database_sqlite_path();
+
+        try {
+            [$exit, $stdout, $stderr] = internal_database_query_process(internal_database_lane_payload(
+                internal_database_lane_token(), $path, "INSERT INTO users (email) VALUES ('refused@example.test')",
+            ));
+
+            expect($exit)->toBe(1)
+                ->and(json_decode($stdout, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'error' => [
+                        'code' => 'database.query_failed',
+                        'message' => 'Database query failed.',
+                        'request_id' => null,
+                    ],
+                ])
+                ->and($stderr)->toBe('')
+                ->and((new PDO('sqlite:'.$path))->query('SELECT email FROM users')->fetchAll(PDO::FETCH_COLUMN))
+                ->toBe(['owner@example.test']);
+        } finally {
+            unlink($path);
+        }
+    });
+
+    it('refuses a missing readonly database without creating it', function (): void {
+        $path = sys_get_temp_dir().'/orbit-internal-db-missing-'.bin2hex(random_bytes(8)).'.sqlite';
+
+        try {
+            [$exit, $stdout, $stderr] = internal_database_query_process(internal_database_lane_payload(
+                internal_database_lane_token(), $path, 'SELECT 1',
+            ));
+
+            expect($exit)->toBe(1)
+                ->and(json_decode($stdout, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'error' => [
+                        'code' => 'database.query_failed',
+                        'message' => 'Database query failed.',
+                        'request_id' => null,
+                    ],
+                ])
+                ->and($stderr)->toBe('')
+                ->and(file_exists($path))->toBeFalse();
+        } finally {
+            if (file_exists($path)) {
+                unlink($path);
+            }
+        }
+    });
+
+    it('keeps an explicit writable connection available', function (): void {
+        $path = internal_database_sqlite_path();
+
+        try {
+            [$exit, $stdout, $stderr] = internal_database_query_process(internal_database_lane_payload(
+                internal_database_lane_token(), $path, "INSERT INTO users (email) VALUES ('allowed@example.test')", write: true,
+            ));
+
+            expect($exit)->toBe(0)
+                ->and(json_decode($stdout, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'columns' => [],
+                    'rows' => [],
+                    'row_count' => 1,
+                    'truncated' => false,
+                ])
+                ->and($stderr)->toBe('')
+                ->and((new PDO('sqlite:'.$path))->query('SELECT email FROM users ORDER BY id')->fetchAll(PDO::FETCH_COLUMN))
+                ->toBe(['owner@example.test', 'allowed@example.test']);
+        } finally {
+            unlink($path);
+        }
+    });
+});
+
+/** @return array{int, string, string} */
+function internal_database_query_process(string $payload): array
+{
+    $fixtureHome = sys_get_temp_dir().'/orbit-internal-db-home-'.bin2hex(random_bytes(8));
+    mkdir($fixtureHome, 0o700);
+
+    try {
+        $process = new Process(
+            [PHP_BINARY, '-d', 'error_reporting=-1', '-d', 'display_errors=stderr', dirname(__DIR__, 3).'/orbit', 'internal:database-local'],
+            env: ['ORBIT_HOME' => $fixtureHome, InternalDatabaseLane::TOKEN_ENV => false],
+            input: $payload,
+        );
+        $process->run();
+
+        return [$process->getExitCode(), $process->getOutput(), $process->getErrorOutput()];
+    } finally {
+        new Filesystem()->deleteDirectory($fixtureHome);
+    }
+}
 
 /**
  * @return array{0: int, 1: string, 2: string}
