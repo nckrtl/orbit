@@ -148,8 +148,99 @@ it('executes sqlite through the local PDO action without argv SQL', function ():
     unlink($path);
 });
 
+describe('local sqlite result failures', function (): void {
+    it('returns one bounded failure with no partial result or stderr', function (string $sql): void {
+        $path = internal_database_sqlite_path();
+        $token = internal_database_lane_token();
+
+        try {
+            [$exit, $output, $stderr] = internal_database_query_display(
+                internal_database_lane_payload($token, $path, $sql),
+            );
+
+            expect($exit)->toBe(1)
+                ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'error' => [
+                        'code' => 'database.query_failed',
+                        'message' => 'Database query failed.',
+                        'request_id' => null,
+                    ],
+                ])
+                ->and(substr_count($output, "\n"))->toBe(1)
+                ->and($stderr)->toBe('');
+
+            foreach ([$sql, $token, $path, 'private-first-row', 'PDOException', 'JsonException', '\\uFFFD', "\e"] as $forbidden) {
+                expect($output)->not->toContain($forbidden);
+            }
+        } finally {
+            unlink($path);
+        }
+    })->with([
+        'deferred second-row overflow' => ["SELECT 'private-first-row' AS value UNION ALL SELECT abs(-9223372036854775808)"],
+        'unrepresentable text' => ["SELECT CAST(X'80' AS TEXT) AS value"],
+        'nonfinite number' => ['SELECT 1e999 AS value'],
+    ]);
+
+    it('preserves representable Unicode and scalar values exactly', function (): void {
+        $path = internal_database_sqlite_path();
+
+        try {
+            [$exit, $output, $stderr] = internal_database_query_display(internal_database_lane_payload(
+                internal_database_lane_token(),
+                $path,
+                "SELECT '雪 café 🛰️' AS text, 42 AS integer_value, 1.25 AS float_value, NULL AS null_value, '' AS empty_value, '001' AS numeric_text",
+            ));
+
+            expect($exit)->toBe(0)
+                ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'columns' => ['text', 'integer_value', 'float_value', 'null_value', 'empty_value', 'numeric_text'],
+                    'rows' => [[
+                        'text' => '雪 café 🛰️',
+                        'integer_value' => 42,
+                        'float_value' => 1.25,
+                        'null_value' => null,
+                        'empty_value' => '',
+                        'numeric_text' => '001',
+                    ]],
+                    'row_count' => 1,
+                    'truncated' => false,
+                ])
+                ->and($stderr)->toBe('');
+        } finally {
+            unlink($path);
+        }
+    });
+
+    it('does not imply rollback when a completed write result cannot be encoded', function (): void {
+        $path = internal_database_sqlite_path();
+
+        try {
+            [$exit, $output, $stderr] = internal_database_query_display(internal_database_lane_payload(
+                internal_database_lane_token(),
+                $path,
+                "INSERT INTO users (email) VALUES ('committed@example.test') RETURNING CAST(X'80' AS TEXT) AS value",
+                write: true,
+            ));
+
+            expect($exit)->toBe(1)
+                ->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
+                    'error' => [
+                        'code' => 'database.query_failed',
+                        'message' => 'Database query failed.',
+                        'request_id' => null,
+                    ],
+                ])
+                ->and($stderr)->toBe('')
+                ->and((new PDO('sqlite:'.$path))->query('SELECT email FROM users ORDER BY id')->fetchAll(PDO::FETCH_COLUMN))
+                ->toBe(['owner@example.test', 'committed@example.test']);
+        } finally {
+            unlink($path);
+        }
+    });
+});
+
 /**
- * @return array{0: int, 1: string}
+ * @return array{0: int, 1: string, 2: string}
  */
 function internal_database_query_display(string $payload): array
 {
@@ -165,7 +256,9 @@ function internal_database_query_display(string $payload): array
 
     $tester = new CommandTester(app(Kernel::class)->all()['internal:database-local']);
 
-    return [$tester->execute([], ['interactive' => false]), $tester->getDisplay(true)];
+    $exit = $tester->execute([], ['interactive' => false, 'capture_stderr_separately' => true]);
+
+    return [$exit, $tester->getDisplay(true), $tester->getErrorOutput(true)];
 }
 
 function internal_database_sqlite_path(): string

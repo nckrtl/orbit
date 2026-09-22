@@ -29,13 +29,16 @@ final class InternalDatabaseLocalCommand extends Command
         try {
             $request = $this->request($input->read());
             $result = $action->execute($request);
+            $json = json_encode($result->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         } catch (LocalDatabaseQueryException $exception) {
             return $this->writeFailure($exception->errorCode, $exception->getMessage());
+        } catch (JsonException) {
+            return $this->writeFailure('database.query_failed', 'Database query failed.');
         }
 
         ConsoleWriter::write(
             $this->output,
-            json_encode($result->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n",
+            $json."\n",
         );
 
         return self::SUCCESS;

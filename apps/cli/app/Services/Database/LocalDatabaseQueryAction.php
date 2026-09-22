@@ -30,51 +30,50 @@ final readonly class LocalDatabaseQueryAction
                 'driver' => 'sqlite',
                 'path' => $path,
             ], $request->write)->query($sql);
+            if ($statement === false) {
+                throw new LocalDatabaseQueryException(
+                    'database.query_failed',
+                    'Database query failed.',
+                );
+            }
+
+            if (! $request->write && $statement->columnCount() === 0) {
+                return new LocalDatabaseQueryResult([], [], 0, false);
+            }
+
+            $rows = [];
+            $columns = [];
+            $truncated = false;
+
+            if ($statement->columnCount() > 0) {
+                for ($index = 0; $index < $statement->columnCount(); $index++) {
+                    $meta = $statement->getColumnMeta($index);
+                    $columns[] = is_array($meta) ? (string) $meta['name'] : (string) $index;
+                }
+
+                while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
+                    if (count($rows) >= self::ROW_LIMIT) {
+                        $truncated = true;
+
+                        break;
+                    }
+
+                    $rows[] = $this->normalizeRow($row);
+                }
+            }
+
+            return new LocalDatabaseQueryResult(
+                $columns,
+                $rows,
+                $request->write ? max($statement->rowCount(), 0) : count($rows),
+                $truncated,
+            );
         } catch (PDOException) {
             throw new LocalDatabaseQueryException(
                 'database.query_failed',
                 'Database query failed.',
             );
         }
-
-        if ($statement === false) {
-            throw new LocalDatabaseQueryException(
-                'database.query_failed',
-                'Database query failed.',
-            );
-        }
-
-        if (! $request->write && $statement->columnCount() === 0) {
-            return new LocalDatabaseQueryResult([], [], 0, false);
-        }
-
-        $rows = [];
-        $columns = [];
-        $truncated = false;
-
-        if ($statement->columnCount() > 0) {
-            for ($index = 0; $index < $statement->columnCount(); $index++) {
-                $meta = $statement->getColumnMeta($index);
-                $columns[] = is_array($meta) ? (string) $meta['name'] : (string) $index;
-            }
-
-            while ($row = $statement->fetch(PDO::FETCH_ASSOC)) {
-                if (count($rows) >= self::ROW_LIMIT) {
-                    $truncated = true;
-
-                    break;
-                }
-
-                $rows[] = $this->normalizeRow($row);
-            }
-        }
-
-        return new LocalDatabaseQueryResult(
-            $columns,
-            $rows,
-            $request->write ? max($statement->rowCount(), 0) : count($rows),
-            $truncated,
-        );
     }
 
     private function path(string $path): string
