@@ -871,6 +871,95 @@ it('resumes exact archive cleanup after interruption at its claim or deletion bo
     }
 })->with(['after claim', 'during deletion']);
 
+it('recovers archive cleanup after killed partial and complete metadata writes', function (bool $partial): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $journals = [];
+    foreach (['source', 'destination'] as $side) {
+        $journals[$side] = $fixture->attempt->{$side}['private_root'].'/'.$fixture->attempt->id.'.json';
+    }
+    $before = array_map(stat(...), $journals);
+    $exitCodes = [];
+    $fixture->ssh->after = function (SshConnection $connection, RemoteCommand $command, CommandResult $result) use (&$exitCodes): CommandResult {
+        $exitCodes[] = $result->exitCode;
+
+        return $result;
+    };
+    $fixture->ssh->programReplacements = [
+        'written = os.pwrite(descriptor, frame[position:], offset + position)' => implode("\n", [
+            'written = os.pwrite(descriptor, frame[position:position + 24] if '.($partial ? 'True' : 'False').' and value["phase"] == "cleaned" else frame[position:], offset + position)',
+            '        if value["phase"] == "cleaned":',
+            '            os.fsync(descriptor)',
+            '            os.kill(os.getpid(), 9)',
+        ]),
+    ];
+
+    try {
+        expect($fixture->source->cleanupArchives($fixture->attempt))->toBe(['source', 'destination'])
+            ->and($exitCodes)->toBe([137, 137]);
+        foreach (['source', 'destination'] as $side) {
+            expect(is_dir(dirname($fixture->attempt->archivePath($side))))->toBeFalse();
+        }
+        $fixture->ssh->programReplacements = [];
+        expect($fixture->source->cleanupArchives($fixture->attempt))->toBe([])
+            ->and($fixture->source->cleanupArchives($fixture->attempt))->toBe([]);
+        foreach ($journals as $side => $journal) {
+            clearstatcache(true, $journal);
+            $after = stat($journal);
+            expect($after['ino'])->toBe($before[$side]['ino'])
+                ->and($after['size'])->toBe(32768)
+                ->and(file_exists($fixture->attempt->{$side}['private_root'].'/'.$fixture->attempt->id.'.next'))->toBeFalse();
+        }
+    } finally {
+        $fixture->close();
+    }
+})->with(['partial write' => true, 'complete write' => false]);
+
+it('retains archive payloads when their metadata journal has no valid ownership record', function (string $fault): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $archive = $fixture->attempt->archivePath('source');
+    $hash = hash_file('sha256', $archive);
+    $journal = $fixture->attempt->source['private_root'].'/'.$fixture->attempt->id.'.json';
+    match ($fault) {
+        'legacy format' => file_put_contents($journal, '{"phase":"ready"}'),
+        'both torn' => file_put_contents($journal, str_repeat("\0", 32768)),
+        'oversized' => file_put_contents($journal, str_repeat('x', 32769)),
+        'wrong mode' => chmod($journal, 0644),
+        'hard link' => link($journal, $journal.'.retained'),
+    };
+
+    try {
+        expect($fixture->source->cleanupArchives($fixture->attempt))->toBe(['source'])
+            ->and(hash_file('sha256', $archive))->toBe($hash);
+    } finally {
+        $fixture->close();
+    }
+})->with(['legacy format', 'both torn', 'oversized', 'wrong mode', 'hard link']);
+
+it('does not infer archive ownership from a killed initial metadata write', function (): void {
+    $fixture = new TransferArchiveNativeFixture(prepare: false);
+    $fixture->ssh->programReplacements = [
+        'written = os.pwrite(descriptor, frame[position:], offset + position)' => implode("\n", [
+            'written = os.pwrite(descriptor, frame[position:position + 24], offset + position)',
+            '        os.fsync(descriptor)',
+            '        os.kill(os.getpid(), 9)',
+        ]),
+    ];
+
+    try {
+        expect(fn () => $fixture->prepare())->toThrow(ResourceOperationException::class);
+        $workspace = dirname($fixture->attempt->archivePath('source'));
+        mkdir($workspace, 0700);
+        file_put_contents($workspace.'/foreign', 'foreign-sentinel');
+        $fixture->ssh->programReplacements = [];
+        expect($fixture->source->cleanupArchives($fixture->attempt))->toBe(['source'])
+            ->and(file_get_contents($workspace.'/foreign'))->toBe('foreign-sentinel');
+    } finally {
+        $fixture->close();
+    }
+});
+
 final class TransferArchiveNativeFixture
 {
     public readonly string $directory;
