@@ -10,7 +10,7 @@ Typed task comments record implementation and review outcomes. Jev identifies mi
 
 ## Status
 
-Proposed. The workflow requirements are agreed; this workflow is not yet implemented.
+Accepted on 2026-09-22. Implemented in the Gateway task workflow; independent review and merge remain pending.
 
 This amends the routing choices in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) and the task lifecycle in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension).
 

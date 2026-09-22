@@ -23,6 +23,12 @@ Run checks in each changed project during development. Root `composer check` run
 
 The repository maintainer configures branch protection to require `Required checks` and maintainer review. Workflow files define the checks; GitHub repository settings enforce them.
 
+## Orbit task completion evidence
+
+The Gateway task workflow uses typed comments and the AgentThread transcript. An implementer posts `ready_for_review` after a successful `composer check`; Jev inspects the command output in the last five thread entries, including tool output. A completion claim without that output does not pass the gate. Reviewers post `changes_requested` or `approved`, and the Gateway preserves the full comment body and attempt metadata while it relays findings or checks the commit and pull request.
+
+Assistance is part of the same task history. An `assistance_requested` comment flags the task and parent group without releasing its capacity. A non-empty `resolution` comment clears the flag and continues the AgentThread idempotently. Delivery failures preserve the blocked state and the resolution for retry. These comments and transcript entries are the evidence; the workflow has no separate validation-evidence API.
+
 ## Orbit review on Incus
 
 Orbit's independent reviewer checks the complete change and reproduces the feature on Incus before merge. Use machines allocated to the review and verify which source commit is running there.
