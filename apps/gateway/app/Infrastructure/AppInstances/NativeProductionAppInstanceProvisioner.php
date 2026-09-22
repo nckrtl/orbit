@@ -88,7 +88,8 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
             || $appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value
             || $appInstance->checkout_path !== $expectedCheckout
             && ! ($appInstance->status === AppInstanceState::Active
-            && $appInstance->checkout_path === $expectedHome)
+            && ($appInstance->checkout_path === $expectedHome
+                || preg_match('#\A'.preg_quote($expectedHome, '#').'/releases/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z#D', $appInstance->checkout_path) === 1))
             || $appInstance->production_user !== $expectedUser
             || $appInstance->production_home !== $expectedHome
             || $appInstance->root !== $root

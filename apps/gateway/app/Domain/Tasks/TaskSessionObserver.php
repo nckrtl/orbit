@@ -22,8 +22,7 @@ final readonly class TaskSessionObserver
         foreach (AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get() as $thread) {
             $role = TaskThreadRole::tryFrom($thread->role);
             $belongsToTask = $thread->task_id === $task->id;
-            $sharedReviewer = $task->status === TaskStatus::Reviewing
-                && $thread->task_id === null && $role === TaskThreadRole::Reviewer;
+            $sharedReviewer = $thread->task_id === null && $role === TaskThreadRole::Reviewer;
             if ($role === null || (! $belongsToTask && ! $sharedReviewer)) {
                 continue;
             }
@@ -56,6 +55,7 @@ final readonly class TaskSessionObserver
                 available: $observation !== null && $observation->state !== null,
                 error: $observation?->error, inputRequests: $requests,
                 recentMessages: $observation === null ? [] : $this->recentMessages($observation->entries),
+                turnId: $observation?->turnId,
             );
         }
 

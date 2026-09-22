@@ -75,26 +75,13 @@ it('scopes the analytics role https listener to the node own WireGuard address',
         ));
 });
 
-it('scopes the websocket role https listener to the node own WireGuard address', function (): void {
-    $rules = new NodeFirewallRuleCatalog()->forRole(
-        new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.44.0.9']),
-        RoleName::WebSocket,
-    );
-
-    expect($rules)
-        ->toHaveCount(1)
-        ->and($rules[0]->shape)
-        ->toEqual(new UfwRuleShape(
-            comment: 'orbit:websocket-https',
-            action: 'allow',
-            direction: 'in',
-            source: 'any',
-            destination: '10.44.0.9',
-            port: '443',
-            protocol: 'tcp',
-            inInterface: 'orbit',
-            outInterface: null,
-            family: 'v4',
+it('uses the shared WireGuard baseline for WebSocket access', function (): void {
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.44.0.9']);
+    $catalog = new NodeFirewallRuleCatalog;
+    expect($catalog->forRole($node, RoleName::WebSocket))->toBe([])
+        ->and($catalog->forNode($node)[1]->shape)->toEqual(new UfwRuleShape(
+            comment: 'orbit:wireguard-members', action: 'allow', direction: 'in', source: 'any',
+            destination: '10.44.0.9', port: 'any', protocol: 'any', inInterface: 'orbit', outInterface: null, family: 'v4',
         ));
 });
 

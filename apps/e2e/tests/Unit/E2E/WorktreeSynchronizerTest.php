@@ -431,6 +431,7 @@ function synchronizerRequiredGuestScriptNames(): array
         'converge-app-prod-internal-tls.sh',
         'converge-gateway.sh',
         'converge-sample-app.sh',
+        'converge-sample-fixtures.sh',
         'hydrate-orbit.sh',
         'observe-php.sh',
         'prepare-node.sh',
@@ -1179,7 +1180,7 @@ describe('WorktreeSynchronizer', function () {
                 featureTarget('TST-126'),
                 $worktree,
             );
-            expect(synchronizerInstalledScripts($guest))->toHaveCount(30);
+            expect(synchronizerInstalledScripts($guest))->toHaveCount(33);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1324,7 +1325,7 @@ describe('WorktreeSynchronizer', function () {
                 ),
             ));
             expect($scriptInstalls)
-                ->toHaveCount(30)
+                ->toHaveCount(33)
                 ->and(array_column($scriptInstalls, 'path'))
                 ->each
                 ->toStartWith('/usr/local/bin/')
@@ -1337,7 +1338,7 @@ describe('WorktreeSynchronizer', function () {
                         && ! str_ends_with($push['destination'], '/guest-scripts.sha256')
                     ),
                 ))
-                ->toHaveCount(30)
+                ->toHaveCount(33)
                 ->and(array_filter(
                     $guest->execs,
                     fn (array $exec): bool => ($exec['command']->command[0] ?? null) === 'rm',
@@ -1563,7 +1564,7 @@ describe('WorktreeSynchronizer', function () {
         }
     });
 
-    it('records the host identity of a mounted worktree without transferring files', function () {
+    it('records the host identity of a mounted worktree and refreshes its guest helpers', function () {
         [$root, $worktree] = createSynchronizerRepositoryFixture('TST-142');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
@@ -1591,9 +1592,9 @@ describe('WorktreeSynchronizer', function () {
                 ->toMatch('/\A[0-9a-f]{64}\z/')
                 ->and($guest->sourceMarkers)
                 ->toBe([$target->instance('gateway') => $marker, $target->instance('app-dev') => $marker])
-                ->and($guest->execBatches)
-                ->toBe([['source-marker.gateway', 'source-marker.app-dev']])
-                ->and($guest->pushes)
+                ->and($guest->execBatches[array_key_last($guest->execBatches)])
+                ->toBe(['source-marker.gateway', 'source-marker.app-dev'])
+                ->and($guest->bundlePushes)
                 ->toBe([])
                 ->and($guest->directExecs)
                 ->toBe([]);
@@ -1620,7 +1621,7 @@ describe('WorktreeSynchronizer', function () {
                 ])
                 ->and($guest->sourceMarkers[$target->instance('app-dev')])
                 ->toBe(['sha' => $sha, 'tree' => $dirtyTree, 'mounted' => true, 'git_pointer_sha256' => $pointer])
-                ->and($guest->pushes)
+                ->and($guest->bundlePushes)
                 ->toBe([]);
 
             $synchronizer->assertWorkingTreeMatches($target, $worktree, $dirty);
@@ -1802,11 +1803,11 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('installs current mounted-worktree scripts on every extended physical Node', function (): void {
+    it('installs current mounted-worktree scripts on every physical Node', function (bool $extended): void {
         $fixture = createSynchronizerCandidateFixture('AUX-132');
         ['root' => $root, 'worktree' => $worktree] = $fixture;
         try {
-            $target = featureTarget('AUX-132', recipe: TopologyRecipe::extendedAppProd());
+            $target = featureTarget('AUX-132', recipe: $extended ? TopologyRecipe::extendedAppProd() : TopologyRecipe::registered());
             $guest = new WorktreeSynchronizerGuestFake('');
 
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
@@ -1819,21 +1820,21 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                     'script-prepare.gateway',
                     'script-prepare.app-dev',
                     'script-prepare.app-prod',
-                    'script-prepare.app-prod-2',
+                    ...($extended ? ['script-prepare.app-prod-2'] : []),
                 ])
                 ->and(array_values(array_unique(array_column($guest->pushes, 'instance'))))
                 ->toBe([
                     $target->instance('gateway'),
                     $target->instance('app-dev'),
                     $target->instance('app-prod'),
-                    $target->instance('app-prod-2'),
+                    ...($extended ? [$target->instance('app-prod-2')] : []),
                 ])
                 ->and($guest->execBatches[array_key_last($guest->execBatches)])
                 ->toBe(['source-marker.gateway', 'source-marker.app-dev']);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
-    });
+    })->with(['standard' => false, 'extended' => true]);
 
     it('uses physical recipe Nodes for checkout transfer and guest script verification', function () {
         $fixture = createSynchronizerCandidateFixture('SCN-1');

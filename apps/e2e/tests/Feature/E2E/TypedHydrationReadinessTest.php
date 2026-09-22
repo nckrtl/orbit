@@ -9,7 +9,7 @@ use Symfony\Component\Process\Process;
 function typedHydrationResponse(array $instances): string
 {
     return json_encode([
-        'app_instances' => $instances,
+        'instances' => $instances,
         'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
@@ -53,7 +53,7 @@ function typedHydrationReadinessFixture(
     $response = str_replace('__CHECKOUT__', $checkout, $response);
     $state = "{$root}/sample-app-state.json";
     file_put_contents($state, json_encode([
-        'shape' => 'app_instances',
+        'shape' => 'instances',
         'app_id' => 1,
         'node_id' => 2,
         'name' => 'e2e-dev',
@@ -85,7 +85,7 @@ function typedHydrationReadinessFixture(
             ;;
           *' cat-file -e '*)
             ;;
-          *' reset --hard --quiet '*)
+          *' merge-base --is-ancestor '*)
             printf '%s\n' "$*" >>"$TYPED_HYDRATION_GIT_RESET_CALLED"
             exit "$TYPED_HYDRATION_GIT_RESET_EXIT"
             ;;
@@ -294,9 +294,8 @@ it('hydrates once after readiness and six transient preflight failures within th
             ->toBe(array_fill(0, 6, '1'));
         expect(file("{$fixture['root']}/git-called", FILE_IGNORE_NEW_LINES))->toBe([
             '-C '.$fixture['checkout'].' remote get-url origin',
-            '-C '.$fixture['checkout'].' cat-file -e '.str_repeat('b', 40).'^{commit}',
-            '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
-            '-C '.$fixture['checkout'].' rev-parse HEAD',
+            '-C '.$fixture['checkout'].' cat-file -e '.str_repeat('a', 40).'^{commit}',
+            '-C '.$fixture['checkout'].' merge-base --is-ancestor '.str_repeat('a', 40).' HEAD',
         ]);
         expect(file("{$fixture['root']}/artisan-calls", FILE_IGNORE_NEW_LINES))
             ->toBe(['migrate --force --no-interaction']);
@@ -370,11 +369,11 @@ it('retries malformed instance envelopes before a bounded validation failure', f
 })->with([
     'malformed JSON' => 'not-json',
     'unsupported shape' => '{"data":[]}',
-    'ambiguous shape' => '{"instances":[],"app_instances":[]}',
-    'non-list collection' => '{"app_instances":{"named":{}}}',
+    'ambiguous shape' => '{"app_instances":[],"instances":[]}',
+    'non-list collection' => '{"instances":{"named":{}}}',
 ]);
 
-it('returns a non-retryable failure when a later hydration command exits 75', function (): void {
+it('refuses hydration when development no longer contains its registered source', function (): void {
     $response = typedHydrationResponse([[
         'id' => 4,
         'app_id' => 1,
@@ -398,10 +397,15 @@ it('returns a non-retryable failure when a later hydration command exits 75', fu
             $fixture['checkout'],
         ], env: $fixture['environment']);
 
-        expect($process->run())->toBe(1);
+        expect($process->run())->toBe(65);
         expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))
             ->toBe(['instance:list --json']);
-        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))->toHaveCount(1);
+        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))->toBe([
+            '-C '.$fixture['checkout'].' merge-base --is-ancestor '.str_repeat('a', 40).' HEAD',
+            '-C '.$fixture['checkout'].' merge-base --is-ancestor HEAD '.str_repeat('a', 40),
+        ]);
+        expect(file_exists("{$fixture['root']}/artisan-calls"))->toBeFalse();
+        expect(file_exists("{$fixture['root']}/mutation-calls"))->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
     }
@@ -432,7 +436,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
 })->with([
     'wrong checkout path' => [
         json_encode([
-            'app_instances' => [[
+            'instances' => [[
                 'id' => 4,
                 'app_id' => 1,
                 'node_id' => 2,
@@ -447,7 +451,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
     ],
     'wrong app identity' => [
         json_encode([
-            'app_instances' => [[
+            'instances' => [[
                 'id' => 4,
                 'app_id' => 9,
                 'node_id' => 2,
@@ -462,7 +466,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
     ],
     'wrong node identity' => [
         json_encode([
-            'app_instances' => [[
+            'instances' => [[
                 'id' => 4,
                 'app_id' => 1,
                 'node_id' => 9,
@@ -477,7 +481,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
     ],
     'inactive assignment' => [
         json_encode([
-            'app_instances' => [[
+            'instances' => [[
                 'id' => 4,
                 'app_id' => 1,
                 'node_id' => 2,

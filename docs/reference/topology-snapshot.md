@@ -9,6 +9,8 @@ This page is for the operator who maintains Orbit's one persistent topology snap
 
 ## Identity
 
+The registered layout places all three Nodes in one Cluster, with Router and WebSocket on Gateway, database and Metrics on app-dev, and Ingress on app-prod. See the [registered profile](/reference/incus-topologies#registered-profile-and-issue-extension). A recipe change does not update the saved generation until an explicit snapshot operation runs.
+
 A topology snapshot is a coordinated set of three Incus snapshots in one promoted generation. It never includes an issue's temporary `app-prod-2` Node. The primary checkout owns it, keeps its VMs stopped, and records the generation under `<primary>/.e2e/topology-snapshot/`: `promoted.json`, `generations/<id>.json`, `promotions/<id>.json` for lineage, `corrupt.json` after a failed rollback, and the recovery journal.
 
 | Resource | Name |
@@ -80,7 +82,7 @@ Convergence prepares the sample resources and every product projection before ve
 
 Every convergence runs, in order, `converge-sample-app.sh reproject` on `app-dev`, `metrics-publication`, a wait until `instance:list --json` answers on `app-dev`, `hydrate` on the sample checkouts, and `prepare-node.sh permissions` on every role. Reproject runs `node:role:add --converge` for every app role. On the legacy `instances` envelope it then runs `instance:php` for every Instance, development last.
 
-On the typed `app_instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample Project, target, scope, domain, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-Instance Route association rule from [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) to every active Instance.
+On the typed `instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample Project, target, scope, domain, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-Instance Route association rule from [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) to every active Instance.
 
 The rendered pools, Caddy fragments, firewall rules, and DNS records then match the checkout. When `create-resources` returns no typed checkout path, `internal-tls` on `app-prod` runs before reproject and places the `local_certs` global block as `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version behind `/etc/caddy/Caddyfile`; the product publisher carries unmanaged fragments forward, so Doctor reports no Caddy drift.
 
@@ -88,7 +90,7 @@ The rendered pools, Caddy fragments, firewall rules, and DNS records then match 
 
 The sample adapter selects its production creation contract before it changes sample state. When the complete candidate-clone and explicit-deployment command set is available, it creates production from the development candidate and deploys it explicitly. Otherwise it uses direct production creation. A failure after selection stops convergence and never switches to the older contract.
 
-Hydration derives each checkout, persistent environment file, optional SQLite database, production user, and active release from the Instance's recorded placement. It imports and synchronizes environment configuration only when the complete public command set is available. A repeated convergence keeps stored and local environment keys, database contents, sample identities, and the selected release.
+Hydration derives each checkout, persistent environment file, optional SQLite database, production user, and active release from the Instance's recorded placement. It imports and synchronizes environment configuration only when the complete public command set is available. Before the first production clone, a missing development source profile is recovered through the Instance command and environment import is retried. An import conflict preserves stored intent. A repeated convergence keeps stored and local environment keys, database contents, sample identities, and the selected release.
 
 Verification accepts two exact production layouts during this compatibility period. A flat placement uses the recorded home and web root with the shared PHP-FPM service and socket. A release placement uses the recorded persistent paths and `current` release with the recorded dedicated service and socket. A missing or mismatched home, web root, environment file, database, service, socket, owner, or current target fails verification; the verifier does not substitute the flat expectation for a malformed release placement.
 

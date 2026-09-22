@@ -93,7 +93,7 @@ describe('app requests', function (): void {
             ->toBeInstanceOf(AppResponse::class)
             ->and($response->toArray())
             ->toBe([
-                'apps' => [app_public_data()],
+                'projects' => [app_public_data()],
                 'request_id' => orbit_request_id(),
             ]);
     });

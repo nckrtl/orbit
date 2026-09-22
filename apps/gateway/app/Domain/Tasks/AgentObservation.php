@@ -19,6 +19,7 @@ final readonly class AgentObservation
         public ?int $linesDeleted = null,
         public ?string $error = null,
         public ?string $cursor = null,
+        public ?string $turnId = null,
     ) {}
 
     public function lastText(string $role): ?string

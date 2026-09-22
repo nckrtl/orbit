@@ -43,6 +43,8 @@ final readonly class TopologyVerifier
         'source.gateway' => 'gateway',
         'source.app-dev' => 'app-dev',
         'source.manifest' => 'gateway',
+        'cluster.shared' => 'app-dev',
+        'sample.fixtures' => 'app-dev',
     ];
 
     private const array EXTENDED_APP_PROD_PROBES = [
@@ -64,10 +66,11 @@ final readonly class TopologyVerifier
     }
 
     /**
-     * The probes one declared end state runs: every probe of a node it keeps.
+     * The probes one declared end state runs: Node probes and the remaining fleet checks.
      *
      * A probe runs on exactly one node, so a node the plan declares gone takes
-     * its own probes with it and nothing else. The two fleet probes still run:
+     * its own probes with it. The shared Cluster probe requires all three base
+     * Nodes. The fleet probes still run:
      * they are told which nodes to expect, so `role.assignments` is what fails
      * when a node declared absent is still registered, and
      * `wireguard.reachability` still proves every node that stayed. Only a
@@ -80,6 +83,9 @@ final readonly class TopologyVerifier
         $probes = [];
         foreach (self::probes($endState) as $name => $role) {
             if (! $endState->keeps($role)) {
+                continue;
+            }
+            if (in_array($name, ['cluster.shared', 'sample.fixtures'], true) && (! $endState->keeps('app-dev') || ! $endState->keeps('app-prod'))) {
                 continue;
             }
             if ($name === 'wireguard.reachability' && $endState->peers() === []) {
@@ -150,9 +156,13 @@ final readonly class TopologyVerifier
         $typedCheckoutPath = $sample['checkout_path'];
         $productionPlacement = $sample['production'];
         if ($typedCheckoutPath !== null && $productionPlacement === null) {
-            unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);
+            throw new RuntimeException('Native sample production placement is missing; run sample convergence.');
         } elseif ($typedCheckoutPath !== null) {
             unset($probes['workspace.app-dev']);
+        }
+
+        if (! in_array('router', $assignments[$target->recipe->nodeForRole('gateway')->key] ?? [], true)) {
+            unset($probes['cluster.shared'], $probes['sample.fixtures']);
         }
 
         $results = [];
@@ -172,13 +182,17 @@ final readonly class TopologyVerifier
             $commands = [];
             foreach ($pending as $name => $role) {
                 $arguments = [
-                    '/usr/local/bin/verify-topology.sh',
+                    $name === 'cluster.shared' && $source->mounted
+                        ? '/home/orbit/orbit/apps/e2e/resources/guest/verify-topology.sh'
+                        : '/usr/local/bin/verify-topology.sh',
                     $name,
                     $mode->value,
                     $source->guestSha,
                     $target->instance($role),
                 ];
-                if ($name === 'wireguard.reachability') {
+                if ($name === 'cluster.shared') {
+                    array_push($arguments, $target->recipe->nodeForRole('gateway')->key, $appDevNode, $target->recipe->nodeForRole('ingress')->key);
+                } elseif ($name === 'wireguard.reachability') {
                     array_push($arguments, ...$peerNodes);
                 } elseif (in_array($name, ['role.assignments', 'metrics.publication'], true)) {
                     $arguments[] = base64_encode(json_encode($assignments, JSON_THROW_ON_ERROR));
@@ -200,6 +214,9 @@ final readonly class TopologyVerifier
                     )
                 ) {
                     $arguments[] = base64_encode(json_encode($productionPlacement, JSON_THROW_ON_ERROR));
+                    if ($name === 'laravel.prod') {
+                        $arguments[] = $target->recipe->productionProbeAddress();
+                    }
                 }
                 // A mounted source adds the expected `.git` pointer hash: the guest
                 // must hash the pointer file it sees through the mount itself.
@@ -208,7 +225,7 @@ final readonly class TopologyVerifier
                 }
                 $commands[$name] = [
                     'instance' => $target->instance($role),
-                    'command' => new GuestCommand($arguments, min(30, $remainingSeconds)),
+                    'command' => new GuestCommand($arguments, min($name === 'sample.fixtures' ? 90 : 30, $remainingSeconds)),
                 ];
             }
 
@@ -296,7 +313,7 @@ final readonly class TopologyVerifier
             throw new RuntimeException('Sample App convergence state is malformed.', 0, $exception);
         }
 
-        if ($state === ['shape' => 'instances']) {
+        if ($state === ['shape' => 'workspaces']) {
             if ($nativeSamplesOnly) {
                 throw new RuntimeException('Declared replacement verification requires native AppInstance samples.');
             }
@@ -308,7 +325,7 @@ final readonly class TopologyVerifier
         if (
             ! is_array($state)
             || ! in_array($keys, [$baseKeys, [...$baseKeys, 'production']], true)
-            || ($state['shape'] ?? null) !== 'app_instances'
+            || ($state['shape'] ?? null) !== 'instances'
             || ! is_int($state['app_id'] ?? null)
             || ! is_int($state['node_id'] ?? null)
             || ($state['name'] ?? null) !== 'e2e-dev'

@@ -31,7 +31,7 @@ final readonly class AppInstanceRegistrationResponse
     ): self {
         $app = self::stringArray($data['app'] ?? null);
         $primary = self::stringArray($data['app_instance'] ?? null);
-        $rows = is_array($data['app_instances'] ?? null) ? $data['app_instances'] : [];
+        $rows = is_array($data['instances'] ?? null) ? $data['instances'] : [];
         $instances = [];
 
         foreach ($rows as $row) {
@@ -59,7 +59,7 @@ final readonly class AppInstanceRegistrationResponse
         return [
             'app' => $this->app->toArray(),
             'app_instance' => $this->appInstance->toArray(),
-            'app_instances' => array_map(
+            'instances' => array_map(
                 static fn (AppInstanceResponse $instance): array => $instance->toArray(),
                 $this->appInstances,
             ),

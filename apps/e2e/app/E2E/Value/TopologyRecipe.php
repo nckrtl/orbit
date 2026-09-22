@@ -63,7 +63,7 @@ final readonly class TopologyRecipe
                 TopologyNodePurpose::Extension,
                 13,
                 false,
-                TopologyProfile::ASSIGNMENTS['app-prod'],
+                ['app-prod'],
             ),
         ]);
     }
@@ -201,6 +201,11 @@ final readonly class TopologyRecipe
     public function resolveNode(string $nodeOrRole): TopologyNode
     {
         return $this->hasNode($nodeOrRole) ? $this->node($nodeOrRole) : $this->nodeForRole($nodeOrRole);
+    }
+
+    public function productionProbeAddress(): string
+    {
+        return in_array('router', $this->nodeForRole('gateway')->roles, true) ? '10.44.0.1' : '127.0.0.1';
     }
 
     /**

@@ -12,11 +12,11 @@ final readonly class AppInstancesResponse
         public string $requestId,
     ) {}
 
-    /** @return array{app_instances: list<array<string, bool|int|string|null|array<string, mixed>>>, request_id: string} */
+    /** @return array{instances: list<array<string, bool|int|string|null|array<string, mixed>>>, request_id: string} */
     public function toArray(): array
     {
         return [
-            'app_instances' => array_map(
+            'instances' => array_map(
                 static function (AppInstanceResponse $appInstance): array {
                     $data = $appInstance->toArray();
                     unset($data['request_id']);

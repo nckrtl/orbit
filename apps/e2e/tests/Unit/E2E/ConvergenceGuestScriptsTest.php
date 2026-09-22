@@ -290,7 +290,7 @@ function typed_sample_resource_fixture(): array
         case "$1" in
           list)
             [[ "$*" == 'list --raw' ]]
-            printf '%s\n' "${PROJECT_COMMAND_SURFACE-$'app:list\napp:create'}" "${COMMAND_SURFACE:-}"
+            printf '%s\n' "${PROJECT_COMMAND_SURFACE-$'project:list\nproject:create'}" "${COMMAND_SURFACE:-}"
             ;;
           node:list)
             if [[ -e "$state/active" && -n "${FINAL_NODE_RESPONSE:-}" ]]; then
@@ -340,13 +340,14 @@ function typed_sample_resource_fixture(): array
             ;;
           app:list|project:list)
             [[ "${PROJECT_LIST_FAILS:-0}" == 0 ]] || exit 19
+            collection=${PROJECT_COLLECTION:-projects}
             legacy=$(cat "$state/legacy-app.json")
             if [[ -n "${TYPED_APP_RESPONSE:-}" ]]; then
-              printf '{"apps":[%s,%s]}' "$legacy" "$TYPED_APP_RESPONSE"
+              printf '{"%s":[%s,%s]}' "$collection" "$legacy" "$TYPED_APP_RESPONSE"
             elif [[ -e "$state/app" ]]; then
-              printf '{"apps":[%s,{"id":1,"slug":"laravel-typed","type":"laravel-app","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' "$legacy"
+              printf '{"%s":[%s,{"id":1,"slug":"laravel-typed","type":"laravel-app","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' "$collection" "$legacy"
             else
-              printf '{"apps":[%s]}' "$legacy"
+              printf '{"%s":[%s]}' "$collection" "$legacy"
             fi
             ;;
           app:create|project:create)
@@ -369,7 +370,7 @@ function typed_sample_resource_fixture(): array
               if [[ -n "${TYPED_RESPONSE:-}" ]]; then
                 printf '%s' "$TYPED_RESPONSE"
               else
-                printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+                printf '{%s"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
                 if [[ -e "$state/production" ]]; then
                   production_endpoint='"domain":"e2e-prod.orbit.test"'
                   case "${PRODUCTION_ENDPOINT_SHAPE:-domain}" in
@@ -383,12 +384,16 @@ function typed_sample_resource_fixture(): array
                 printf ']}'
               fi
             else
-              printf '{%s"app_instances":[]}' "$prefix"
+              printf '{%s"instances":[]}' "$prefix"
             fi
             ;;
           instance:create)
             [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
-            [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
+            if [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --recover-source-profile --json' ]]; then
+              touch "$state/source-recovered"
+            else
+              [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
+            fi
             touch "$state/instance"
             touch "$state/route"
             printf '{"id":4}'
@@ -410,7 +415,14 @@ function typed_sample_resource_fixture(): array
             touch "$state/deployed"
             printf '{"id":5,"status":"active"}'
             ;;
-          env:import|env:sync) printf '{"status":"completed"}' ;;
+          env:import)
+            if [[ -n "${IMPORT_ERROR:-}" && ! -e "$state/source-recovered" ]]; then
+              printf '{"error":{"code":"%s"}}' "$IMPORT_ERROR"
+              exit 19
+            fi
+            printf '{"status":"completed"}'
+            ;;
+          env:sync) printf '{"status":"completed"}' ;;
           route:list)
             if [[ -e "$state/route" && -n "${FINAL_ROUTE_LIST_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_ROUTE_LIST_RESPONSE"
@@ -471,6 +483,7 @@ function typed_sample_app(array $branchFields, array $overrides = []): string
             [
                 'id' => 1,
                 'slug' => 'laravel-typed',
+                'type' => 'laravel-app',
                 'name' => 'Laravel',
                 'repository_url' => 'https://github.com/laravel/laravel.git',
                 'root' => 'public',
@@ -881,38 +894,41 @@ describe('Gateway host prerequisite convergence', function () {
         }
     });
 
-    it('installs only the missing Gateway prerequisite', function () {
+    it('installs only the missing Gateway prerequisites', function (string $missing, string $packages) {
         $root = gateway_prerequisite_fixture();
         try {
             $process = new Process(['bash', "{$root}/converge-gateway.sh", 'prerequisites'], env: [
                 'PATH' => "{$root}/bin:".getenv('PATH'),
-                'DPKG_MISSING_PACKAGES' => 'php8.5-fpm',
+                'DPKG_MISSING_PACKAGES' => $missing,
             ]);
             expect($process->run())
                 ->toBe(0)
                 ->and(file("{$root}/apt", FILE_IGNORE_NEW_LINES))
                 ->toBe([
                     'noninteractive update',
-                    'noninteractive install --yes --no-install-recommends -- php8.5-fpm',
+                    'noninteractive install --yes --no-install-recommends -- '.$packages,
                 ]);
         } finally {
             new Filesystem()->deleteDirectory($root);
         }
-    });
+    })->with([
+        'FPM' => ['php8.5-fpm', 'php8.5-fpm'],
+        'database drivers' => ['php8.5-mysql,php8.5-pgsql', 'php8.5-mysql php8.5-pgsql'],
+    ]);
 
     it('installs all Gateway prerequisites in fixed order', function () {
         $root = gateway_prerequisite_fixture();
         try {
             $process = new Process(['bash', "{$root}/converge-gateway.sh", 'prerequisites'], env: [
                 'PATH' => "{$root}/bin:".getenv('PATH'),
-                'DPKG_MISSING_PACKAGES' => 'caddy,dnsmasq,php8.5-fpm',
+                'DPKG_MISSING_PACKAGES' => 'caddy,dnsmasq,php8.5-fpm,php8.5-mysql,php8.5-pgsql',
             ]);
             expect($process->run())
                 ->toBe(0)
                 ->and(file("{$root}/apt", FILE_IGNORE_NEW_LINES))
                 ->toBe([
                     'noninteractive update',
-                    'noninteractive install --yes --no-install-recommends -- caddy dnsmasq php8.5-fpm',
+                    'noninteractive install --yes --no-install-recommends -- caddy dnsmasq php8.5-fpm php8.5-mysql php8.5-pgsql',
                 ]);
         } finally {
             new Filesystem()->deleteDirectory($root);
@@ -1083,19 +1099,21 @@ function verifierWireguardProcess(string $root, array $peers): Process
  * @param  list<int>  $targets
  * @return array{root:string,process:Process}
  */
-function appinstance_routes_probe_fixture(array $statuses, array $targets): array
+function appinstance_routes_probe_fixture(array $statuses, array $targets, array $types = []): array
 {
     $root = temporaryPath('orbit-appinstance-routes-probe-', 5);
     mkdir($root, 0o700, true);
     $db = "{$root}/gateway.sqlite";
     $pdo = new PDO("sqlite:{$db}");
-    $pdo->exec('CREATE TABLE app_instances (id INTEGER PRIMARY KEY, status TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE apps (id INTEGER PRIMARY KEY, type TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE app_instances (id INTEGER PRIMARY KEY, app_id INTEGER NOT NULL, status TEXT NOT NULL)');
     $pdo->exec(
         'CREATE TABLE route_targets (id INTEGER PRIMARY KEY, route_id INTEGER NOT NULL, app_instance_id INTEGER NOT NULL)',
     );
-    $instanceStatement = $pdo->prepare('INSERT INTO app_instances (id, status) VALUES (?, ?)');
+    $instanceStatement = $pdo->prepare('INSERT INTO app_instances (id, app_id, status) VALUES (?, ?, ?)');
     foreach ($statuses as $index => $status) {
-        $instanceStatement->execute([$index + 1, $status]);
+        $pdo->prepare('INSERT INTO apps (id, type) VALUES (?, ?)')->execute([$index + 1, $types[$index] ?? 'laravel-app']);
+        $instanceStatement->execute([$index + 1, $index + 1, $status]);
     }
     $targetStatement = $pdo->prepare(
         'INSERT INTO route_targets (id, route_id, app_instance_id) VALUES (?, ?, ?)',
@@ -1125,6 +1143,15 @@ function appinstance_routes_probe_fixture(array $statuses, array $targets): arra
 }
 
 describe('convergence guest scripts', function () {
+    it('requires no Routes for non-web Projects', function (array $targets, bool $passes): void {
+        $fixture = appinstance_routes_probe_fixture(['active', 'active', 'active'], $targets, ['laravel-app', 'monorepo', 'laravel-package']);
+        try {
+            expect($fixture['process']->run() === 0)->toBe($passes);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([[[1], true], [[1, 2], false], [[1, 3], false]]);
+
     it('requires exactly one Route association for every active AppInstance', function (
         array $statuses,
         array $targets,
@@ -2681,9 +2708,7 @@ describe('convergence guest scripts', function () {
             expect(array_values(array_filter(
                 $gitCommands,
                 fn (string $command): bool => str_contains($command, ' reset --hard --quiet '),
-            )))->toBe([
-                '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
-            ]);
+            )))->toBe(['-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40)]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -2875,11 +2900,40 @@ describe('convergence guest scripts', function () {
         'wrong head' => ['SAMPLE_HEAD_SHA', str_repeat('c', 40)],
     ]);
 
-    it('hydrates only an authoritative typed checkout path', function (): void {
+    it('hydrates the registered development history without losing local changes', function (string $history, bool $succeeds): void {
         $fixture = sample_hydration_fixture();
         try {
+            unlink("{$fixture['root']}/bin/git");
+            $git = static function (array $arguments) use ($fixture): string {
+                return trim(new Process(['git', '-C', $fixture['checkout'], ...$arguments])->mustRun()->getOutput());
+            };
+            $git(['init', '--quiet']);
+            $git(['config', 'user.email', 'fixture@example.invalid']);
+            $git(['config', 'user.name', 'Fixture']);
+            $git(['remote', 'add', 'origin', 'https://github.com/laravel/laravel.git']);
+            file_put_contents("{$fixture['checkout']}/source.txt", "old\n");
+            file_put_contents("{$fixture['checkout']}/local.txt", "original\n");
+            $git(['add', 'source.txt', 'local.txt']);
+            $git(['commit', '--quiet', '-m', 'old source']);
+            $old = $git(['rev-parse', 'HEAD']);
+            file_put_contents("{$fixture['checkout']}/source.txt", "registered\n");
+            $git(['commit', '--quiet', '-am', 'registered source']);
+            $registered = $git(['rev-parse', 'HEAD']);
+            if ($history !== 'descendant') {
+                $git(['reset', '--hard', '--quiet', $old]);
+            }
+            if (in_array($history, ['descendant', 'diverged'], true)) {
+                file_put_contents("{$fixture['checkout']}/extra.txt", "extra\n");
+                $git(['add', 'extra.txt']);
+                $git(['commit', '--quiet', '-m', 'local commit']);
+            }
+            $before = $git(['rev-parse', 'HEAD']);
+            file_put_contents("{$fixture['checkout']}/local.txt", "preserved local changes\n");
+            if ($history === 'conflict') {
+                file_put_contents("{$fixture['checkout']}/source.txt", "conflicting local changes\n");
+            }
             file_put_contents($fixture['state'], json_encode([
-                'shape' => 'app_instances',
+                'shape' => 'instances',
                 'app_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
@@ -2892,7 +2946,7 @@ describe('convergence guest scripts', function () {
                 [[ "$*" == 'instance:list --json' ]]
                 state=$(dirname "$0")
                 printf '%s\n' "$*" >>"$state/orbit-commands"
-                printf '{"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})"
+                printf '{"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$SAMPLE_STARTING_SHA"
                 BASH);
             chmod("{$fixture['root']}/orbit", 0o700);
             file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
@@ -2908,24 +2962,28 @@ describe('convergence guest scripts', function () {
                 str_repeat('b', 40),
                 'app-dev',
                 $fixture['checkout'],
-            ], env: $fixture['environment']);
+            ], env: [...$fixture['environment'], 'SAMPLE_STARTING_SHA' => $registered]);
 
-            expect($process->run())->toBe(0, $process->getErrorOutput());
+            expect($process->run() === 0)->toBe($succeeds, $process->getErrorOutput());
+            expect($git(['rev-parse', 'HEAD']))->toBe($history === 'older' ? $registered : $before)
+                ->and(file_get_contents("{$fixture['checkout']}/local.txt"))->toBe("preserved local changes\n");
+            if ($history === 'conflict') {
+                expect(file_get_contents("{$fixture['checkout']}/source.txt"))->toBe("conflicting local changes\n");
+            }
             expect(file("{$fixture['root']}/orbit-commands", FILE_IGNORE_NEW_LINES))->toBe([
                 'instance:list --json',
-            ]);
-            expect(array_values(array_filter(
-                file("{$fixture['root']}/git-commands", FILE_IGNORE_NEW_LINES) ?: [],
-                fn (string $command): bool => str_contains($command, ' reset --hard --quiet '),
-            )))->toBe([
-                '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
             ]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
-    });
+    })->with([
+        'older checkout fast-forwards' => ['older', true],
+        'descendant checkout stays intact' => ['descendant', true],
+        'divergent checkout is refused' => ['diverged', false],
+        'conflicting local edit is preserved' => ['conflict', false],
+    ]);
 
-    it('does not create duplicate sample resources on a second run', function () {
+    it('uses legacy App commands without creating duplicate workspace sample resources', function () {
         $root = temporaryPath('orbit-task7-resources-', 6);
         mkdir($root, 0o700, true);
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
@@ -2941,6 +2999,7 @@ describe('convergence guest scripts', function () {
             state=$(dirname "$0")
             printf '%s\n' "$*" >>"$state/commands"
             case "$1" in
+              list) printf 'workspace:new    Create a workspace.\n' ;;
               node:list) printf '{"nodes":[{"id":2,"name":"app-dev"},{"id":3,"name":"app-prod"}]}' ;;
               app:list)
                 if [[ -s "$state/app" ]]; then printf '{"apps":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://example.invalid/wrong.git"}]}'
@@ -2974,9 +3033,10 @@ describe('convergence guest scripts', function () {
         ];
         expect(new Process($arguments)->run())->toBe(0);
         $firstRunCommands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        expect(array_slice($firstRunCommands, 0, 5))->toBe([
+        expect(array_slice($firstRunCommands, 0, 6))->toBe([
             'node:list --json',
             'instance:list --json',
+            'list --raw',
             'app:list --json',
             'app:create laravel https://github.com/laravel/laravel.git --name=Laravel --json',
             'instance:list --json',
@@ -2993,6 +3053,7 @@ describe('convergence guest scripts', function () {
         expect($commands)->toBe([
             'node:list --json',
             'instance:list --json',
+            'list --raw',
             'app:list --json',
             'app:create laravel https://github.com/laravel/laravel.git --name=Laravel --json',
             'instance:list --json',
@@ -3002,6 +3063,7 @@ describe('convergence guest scripts', function () {
             'workspace:new 4 e2e --branch=e2e --json',
             'node:list --json',
             'instance:list --json',
+            'list --raw',
             'app:list --json',
             'instance:list --json',
             'workspace:list --json',
@@ -3014,11 +3076,12 @@ describe('convergence guest scripts', function () {
             ->toHaveCount(1);
     });
 
-    it('reuses the typed sample for each accepted App branch-field response', function (
+    it('reuses the typed sample for each accepted Project collection and branch-field response', function (
         array $branchFields,
+        string $collection,
     ): void {
         $fixture = typed_sample_resource_fixture();
-        $environment = ['TYPED_APP_RESPONSE' => typed_sample_app($branchFields)];
+        $environment = ['TYPED_APP_RESPONSE' => typed_sample_app($branchFields), 'PROJECT_COLLECTION' => $collection];
 
         try {
             $first = typed_sample_create_resources_process($fixture, $environment);
@@ -3028,7 +3091,7 @@ describe('convergence guest scripts', function () {
             expect($second->run())->toBe(0, $second->getErrorOutput());
 
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:create ')))
+            expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'project:create ')))
                 ->toHaveCount(0)
                 ->and(array_filter($commands, fn (string $command): bool => str_starts_with(
                     $command,
@@ -3043,7 +3106,7 @@ describe('convergence guest scripts', function () {
                 16,
                 JSON_THROW_ON_ERROR,
             ))->toBe([
-                'shape' => 'app_instances',
+                'shape' => 'instances',
                 'app_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
@@ -3057,7 +3120,7 @@ describe('convergence guest scripts', function () {
         'default branch' => [['default_branch' => '13.x']],
         'legacy main branch' => [['main_branch' => '13.x']],
         'default branch takes precedence' => [['default_branch' => '13.x', 'main_branch' => null]],
-    ]);
+    ])->with(['projects', 'apps']);
 
     it('rejects invalid App branch fields before App or AppInstance mutation', function (
         array $branchFields,
@@ -3073,7 +3136,7 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(implode("\n", $commands))
                 ->not
-                ->toContain('app:create ', 'instance:create ');
+                ->toContain('project:create ', 'instance:create ');
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
@@ -3110,7 +3173,7 @@ describe('convergence guest scripts', function () {
         $environment = ['TYPED_APP_RESPONSE' => $guard === 'duplicate' ? "{$app},{$app}" : $app];
         if (in_array($guard, ['slug', 'ownership'], true)) {
             $environment['INITIAL_TYPED_RESPONSE'] = json_encode([
-                'app_instances' => [[
+                'instances' => [[
                     'id' => 4,
                     'app_id' => $guard === 'ownership' ? 99 : 1,
                     'node_id' => 2,
@@ -3131,7 +3194,7 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(implode("\n", $commands))
                 ->not
-                ->toContain('app:create ', 'instance:create ');
+                ->toContain('project:create ', 'instance:create ');
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
@@ -3194,6 +3257,37 @@ describe('convergence guest scripts', function () {
             }
             $state = json_decode(file_get_contents($fixture['state']), true, flags: JSON_THROW_ON_ERROR);
             expect($state['production']['layout'])->toBe('release');
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('migrates previous sample metadata without changing resource identity', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        try {
+            $create = typed_sample_create_resources_process($fixture);
+            expect($create->run())->toBe(0, $create->getErrorOutput());
+            $current = json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR);
+            $previous = [...$current, 'shape' => 'app_instances'];
+            file_put_contents($fixture['state'], json_encode($previous, JSON_THROW_ON_ERROR));
+            file_put_contents("{$fixture['root']}/commands", '');
+
+            foreach (range(1, 2) as $attempt) {
+                $migration = new Process(['bash', $fixture['script'], 'migrate-state']);
+                expect($migration->run())->toBe(0, $migration->getErrorOutput());
+                expect(json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR))
+                    ->toBe($current);
+            }
+
+            expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+                ->toBe(['instance:list --json', 'instance:list --json']);
+            expect(fileperms($fixture['state']) & 0o777)->toBe(0o600);
+
+            $invalid = json_encode([...$previous, 'app_id' => 999], JSON_THROW_ON_ERROR);
+            file_put_contents($fixture['state'], $invalid);
+            $refused = new Process(['bash', $fixture['script'], 'migrate-state']);
+            expect($refused->run())->not->toBe(0);
+            expect(file_get_contents($fixture['state']))->toBe($invalid);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -3290,11 +3384,15 @@ describe('convergence guest scripts', function () {
         if ($type !== null) {
             $project['type'] = $type;
         }
+        $response = json_decode(typed_sample_app($project), true, flags: JSON_THROW_ON_ERROR);
+        if ($type === null) {
+            unset($response['type']);
+        }
 
         try {
             $process = typed_sample_create_resources_process($fixture, [
                 'PROJECT_COMMAND_SURFACE' => "project:list  List projects.\nproject:create  Create a project.\n",
-                'TYPED_APP_RESPONSE' => typed_sample_app($project),
+                'TYPED_APP_RESPONSE' => json_encode($response, JSON_THROW_ON_ERROR),
             ]);
 
             expect($process->run())->toBe($status, $process->getErrorOutput());
@@ -3339,7 +3437,6 @@ describe('convergence guest scripts', function () {
         'list' => ['PROJECT_LIST_FAILS', 'project:list --json'],
         'create' => ['PROJECT_CREATE_FAILS', 'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json'],
     ]);
-
     it('creates one typed development AppInstance with only authorized source inputs', function (): void {
         $fixture = typed_sample_resource_fixture();
         try {
@@ -3349,8 +3446,8 @@ describe('convergence guest scripts', function () {
 
             expect($firstCommands)->toBe([
                 ...typed_cluster_creation_commands(),
-                'app:list --json',
-                'app:create laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
+                'project:list --json',
+                'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
                 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json',
                 'instance:list --json',
                 'route:list --json',
@@ -3372,7 +3469,7 @@ describe('convergence guest scripts', function () {
 
             $state = json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR);
             expect($state)->toBe([
-                'shape' => 'app_instances',
+                'shape' => 'instances',
                 'app_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
@@ -3389,10 +3486,10 @@ describe('convergence guest scripts', function () {
                 'instance:list --json',
                 'list --raw',
                 'cluster:list --json',
-                'app:list --json',
+                'project:list --json',
                 'route:list --json',
             ]);
-            expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:create ')))
+            expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'project:create ')))
                 ->toHaveCount(1)
                 ->and(array_filter($allCommands, fn (string $command): bool => str_starts_with(
                     $command,
@@ -3410,7 +3507,7 @@ describe('convergence guest scripts', function () {
 
             $emptyInspection = new Process(
                 ['bash', $fixture['script'], 'inspect-state'],
-                env: ['TYPED_RESPONSE' => '{"app_instances":[]}'],
+                env: ['TYPED_RESPONSE' => '{"instances":[]}'],
             );
             expect($emptyInspection->run())->not->toBe(0);
         } finally {
@@ -3499,8 +3596,8 @@ describe('convergence guest scripts', function () {
     it('selects candidate creation and explicit deployment once without repeat mutation', function (): void {
         $fixture = typed_sample_resource_fixture();
         $surface = implode("\n", [
-            'instance:clone',
-            'instance:deploy',
+            'instance:clone                 Clone a candidate',
+            'instance:deploy                Deploy an Instance',
             'instance:deploy-step:create',
             'env:import',
             'env:update',
@@ -3528,8 +3625,24 @@ describe('convergence guest scripts', function () {
                     'e2e-candidate',
                 );
 
-            $second = typed_sample_create_resources_process($fixture, ['COMMAND_SURFACE' => $surface]);
+            $production = $state['production'];
+            unset($state['production']);
+            file_put_contents($fixture['state'], json_encode($state, JSON_THROW_ON_ERROR));
+            $second = typed_sample_create_resources_process($fixture, [
+                'COMMAND_SURFACE' => $surface,
+                'TYPED_RESPONSE' => json_encode(['instances' => [
+                    [...$state, 'id' => 4, 'status' => 'active', 'selected_branch' => 'e2e-dev', 'starting_commit' => str_repeat('a', 40)],
+                    [
+                        'id' => 5, 'app_id' => 1, 'node_id' => 3, 'name' => 'e2e-prod',
+                        'status' => 'active', 'environment' => 'production', 'source_layout' => 'checkout',
+                        'checkout_path' => $production['current_target'],
+                        'production_user' => $production['user'], 'production_home' => $production['home'],
+                        'effective_root' => $production['effective_root'], 'domain' => $production['domain'],
+                    ],
+                ]], JSON_THROW_ON_ERROR),
+            ]);
             expect($second->run())->toBe(0, $second->getErrorOutput());
+            expect(json_decode(file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR)['production'])->toBe($production);
             $all = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(array_filter($all, fn (string $command): bool => str_starts_with($command, 'instance:clone ')))
                 ->toHaveCount(1)
@@ -3541,6 +3654,34 @@ describe('convergence guest scripts', function () {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
+
+    it('recovers missing development source metadata before the first production clone', function (string $error, bool $recovers, bool $succeeds): void {
+        $fixture = typed_sample_resource_fixture();
+        mkdir("{$fixture['root']}/laravel-typed/e2e-dev", 0700, true);
+        file_put_contents("{$fixture['root']}/laravel-typed/e2e-dev/.env", "APP_NAME=fixture\n");
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'COMMAND_SURFACE' => "instance:clone\ninstance:deploy\ninstance:deploy-step:create\nenv:import\nenv:update\nenv:sync\n",
+                'IMPORT_ERROR' => $error,
+            ]);
+            expect($process->run() === 0)->toBe($succeeds, $process->getErrorOutput());
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES);
+            $recovery = array_search('instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --recover-source-profile --json', $commands, true);
+            $clone = array_search('instance:clone 4 3 e2e-prod --branch=main --preview-name=e2e-prod --json', $commands, true);
+            expect($recovery !== false)->toBe($recovers)
+                ->and($clone !== false)->toBe($succeeds);
+            if ($recovers) {
+                expect($recovery)->toBeLessThan($clone)
+                    ->and(array_values(array_filter($commands, static fn (string $command): bool => $command === 'env:import --instance=4 --json')))->toHaveCount(2);
+            }
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing profile' => ['instance.source_profile_missing', true, true],
+        'stored environment is preserved' => ['env.import_conflict', false, true],
+        'unrelated failure refuses clone' => ['instance.node_unreachable', false, false],
+    ]);
 
     it('does not enter the direct path after a selected clone fails', function (): void {
         $fixture = typed_sample_resource_fixture();
@@ -3611,7 +3752,7 @@ describe('convergence guest scripts', function () {
                     'instance:list --json',
                     'list --raw',
                     'cluster:list --json',
-                    'app:list --json',
+                    'project:list --json',
                     'route:list --json',
                     'route:create 1 e2e-dev.orbit --publication=private --target=4 --json',
                     'route:list --json',
@@ -3801,7 +3942,7 @@ describe('convergence guest scripts', function () {
             expect($first->run())->not->toBe(0);
             $firstCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect(typed_cluster_mutations($firstCommands))->toBe($firstMutations);
-            expect(implode("\n", $firstCommands))->not->toContain('app:create ');
+            expect(implode("\n", $firstCommands))->not->toContain('project:create ');
             expect(implode("\n", $firstCommands))->not->toContain('instance:create ');
             expect(file_exists("{$fixture['root']}/app-before-cluster"))->toBeFalse();
             expect(file_exists("{$fixture['root']}/instance-before-cluster"))->toBeFalse();
@@ -3924,7 +4065,7 @@ describe('convergence guest scripts', function () {
             expect($transcript)->not->toContain('cluster:node:add ');
             expect($transcript)->not->toContain('cluster:router:set ');
             expect($transcript)->not->toContain('cluster:update ');
-            expect($transcript)->not->toContain('app:create ');
+            expect($transcript)->not->toContain('project:create ');
             expect($transcript)->not->toContain('instance:create ');
             expect(file_exists("{$fixture['root']}/app"))->toBeFalse();
             expect(file_exists("{$fixture['root']}/instance"))
@@ -4085,7 +4226,7 @@ describe('convergence guest scripts', function () {
                 ], JSON_THROW_ON_ERROR),
             ],
             'AppInstance' => ['INITIAL_TYPED_RESPONSE' => json_encode([
-                'app_instances' => [[
+                'instances' => [[
                     'id' => 4,
                     'app_id' => 99,
                     'node_id' => 2,
@@ -4108,7 +4249,7 @@ describe('convergence guest scripts', function () {
             expect($process->run())->not->toBe(0);
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
                 ...typed_cluster_creation_commands(),
-                'app:list --json',
+                'project:list --json',
             ]);
             expect(file_exists("{$fixture['root']}/app"))->toBe($conflict === 'AppInstance');
             expect(file_exists("{$fixture['root']}/instance"))
@@ -4134,7 +4275,7 @@ describe('convergence guest scripts', function () {
             $checkout = 'relative/laravel-typed/e2e-dev';
             touch("{$fixture['root']}/instance");
             file_put_contents($fixture['state'], json_encode([
-                'shape' => 'app_instances',
+                'shape' => 'instances',
                 'app_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
@@ -4142,7 +4283,7 @@ describe('convergence guest scripts', function () {
                 'effective_root' => 'public',
             ], JSON_THROW_ON_ERROR));
             $response = json_encode([
-                'app_instances' => [[
+                'instances' => [[
                     'app_id' => 1,
                     'node_id' => 2,
                     'name' => 'e2e-dev',
@@ -4235,12 +4376,12 @@ describe('convergence guest scripts', function () {
         }
     })->with([
         'invalid JSON' => ['{'],
-        'both recognized keys' => ['{"instances":[],"app_instances":[]}'],
+        'both recognized keys' => ['{"app_instances":[],"instances":[]}'],
         'neither recognized key' => ['{"data":[]}'],
         'legacy key is not an array' => ['{"instances":{}}'],
-        'typed key is not an array' => ['{"app_instances":"invalid"}'],
+        'typed key is not an array' => ['{"instances":"invalid"}'],
         'duplicate legacy target' => ['{"instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
-        'duplicate typed target' => ['{"app_instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
+        'duplicate typed target' => ['{"instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
     ]);
 
     it('fails closed when created typed source state is not authoritative', function (string $response): void {
@@ -4274,29 +4415,29 @@ describe('convergence guest scripts', function () {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
-        'empty later read' => ['{"app_instances":[]}'],
-        'ambiguous later shape' => ['{"instances":[],"app_instances":[]}'],
-        'duplicate target' => ['{"app_instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
+        'empty later read' => ['{"instances":[]}'],
+        'ambiguous later shape' => ['{"app_instances":[],"instances":[]}'],
+        'duplicate target' => ['{"instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
         'wrong App' => [
-            '{"app_instances":[{"app_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"app_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'wrong Node' => [
-            '{"app_instances":[{"app_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"app_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'inactive lifecycle' => [
-            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'missing branch evidence' => [
-            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'invalid commit evidence' => [
-            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","effective_root":"public"}]}',
+            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","effective_root":"public"}]}',
         ],
         'relative checkout identity' => [
-            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
         ],
         'wrong effective root' => [
-            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"web"}]}',
+            '{"instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"web"}]}',
         ],
     ]);
 
@@ -4317,6 +4458,7 @@ describe('convergence guest scripts', function () {
               node:list) printf '{"nodes":[{"id":1,"name":"gateway","roles":["gateway","vpn"]},{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
               node:role:add) [[ "$4" == --converge && "$5" == --json ]]; printf '{"node_id":%s,"node_name":"n","role":"%s","assignment":{"id":9,"role":"%s","status":"active"}}' "$2" "$3" "$3" ;;
               instance:list) printf '{"instances":[{"id":1,"name":"e2e-dev","node_id":2,"environment":"development","php_version":"8.5"},{"id":2,"name":"e2e-prod","node_id":3,"environment":"production","php_version":"8.4"}]}' ;;
+              list) printf 'workspace:new    Create a workspace.\n' ;;
               instance:php) status=active; [[ -e "$state/fail-$2" ]] && status=failed; printf '{"id":%s,"name":"i","node_id":0,"status":"%s"}' "$2" "$status" ;;
               *) exit 70 ;;
             esac
@@ -4329,6 +4471,7 @@ describe('convergence guest scripts', function () {
             'node:role:add 2 app-dev --converge --json',
             'node:role:add 3 app-prod --converge --json',
             'instance:list --json',
+            'list --raw',
             'instance:php 2 8.4 --json',
             'instance:php 1 8.5 --json',
         ]);
@@ -4350,7 +4493,7 @@ describe('convergence guest scripts', function () {
         $checkout = "{$root}/laravel-typed/e2e-dev";
         $state = "{$root}/sample-app-state.json";
         file_put_contents($state, json_encode([
-            'shape' => 'app_instances',
+            'shape' => 'instances',
             'app_id' => 1,
             'node_id' => 2,
             'name' => 'e2e-dev',
@@ -4371,7 +4514,8 @@ describe('convergence guest scripts', function () {
             case "$1" in
               node:list) printf '{"nodes":[{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
               node:role:add) printf '{"node_id":%s,"role":"%s","assignment":{"status":"active"}}' "$2" "$3" ;;
-              instance:list) printf '{"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
+              instance:list) printf '{"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
+              list) printf 'instance:create\n' ;;
               instance:php) exit 99 ;;
               *) exit 70 ;;
             esac
@@ -4386,6 +4530,7 @@ describe('convergence guest scripts', function () {
                 'node:role:add 2 app-dev --converge --json',
                 'node:role:add 3 app-prod --converge --json',
                 'instance:list --json',
+                'list --raw',
             ]);
         } finally {
             new Filesystem()->deleteDirectory($root);
@@ -4808,4 +4953,28 @@ describe('convergence guest scripts', function () {
             new Filesystem()->deleteDirectory($root);
         }
     });
+});
+
+it('reuses the expanded sample Cluster without moving Router back to app-dev', function () {
+    $fixture = typed_sample_resource_fixture();
+    try {
+        foreach (['cluster', 'attached', 'router', 'active'] as $marker) {
+            touch($fixture['root'].'/'.$marker);
+        }
+        $nodes = [
+            ['id' => 1, 'name' => 'gateway', 'status' => 'active', 'cluster_id' => 3],
+            ['id' => 2, 'name' => 'app-dev', 'status' => 'active', 'cluster_id' => 3],
+            ['id' => 3, 'name' => 'app-prod', 'status' => 'active', 'cluster_id' => 3],
+        ];
+        $cluster = ['id' => 3, 'name' => 'e2e-development', 'tld' => null, 'state' => 'active', 'nodes' => $nodes, 'router' => $nodes[0]];
+        $process = typed_sample_create_resources_process($fixture, [
+            'TYPED_NODE_RESPONSE' => json_encode(['nodes' => $nodes], JSON_THROW_ON_ERROR),
+            'CLUSTER_RESPONSE' => json_encode(['clusters' => [$cluster]], JSON_THROW_ON_ERROR),
+        ]);
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+        $commands = file($fixture['root'].'/commands', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect(typed_cluster_mutations($commands))->toBe([]);
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['root']);
+    }
 });

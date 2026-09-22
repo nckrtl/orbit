@@ -9,6 +9,9 @@ A Project stores one repository, access URL, `type`, default branch, and relativ
 
 The canonical HTTP surface is `/api/v1/projects` and the canonical CLI family is `project:*`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records so older CLI binaries and `app-*` MCP tools keep working.
 
+CLI JSON and SDK array output name the Project collection `projects` and the Instance collection `instances`. Instance registration also returns its collection as `instances`. These outputs do not emit the former `apps` or `app_instances` collection keys. Gateway list responses keep their standard `data` envelope. Stored table names and foreign keys are unchanged.
+
+
 Project removal requires default-No interactive confirmation or explicit `--yes`. JSON and piped calls never imply consent. Inputs remain explicit; human requests show progress and preserve request IDs.
 
 ## Create a Project
@@ -118,3 +121,5 @@ Generated Route preparation saves replacement Routes, original replacement point
 ## Incomplete source defaults
 
 A Project whose source defaults are incomplete can have a null default branch or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading or retrying creation does not infer missing values.
+
+Source-profile recovery for an existing production Instance accepts its recorded release checkout after deployment. It preserves the Instance identity and refuses paths outside that Instance’s releases directory.

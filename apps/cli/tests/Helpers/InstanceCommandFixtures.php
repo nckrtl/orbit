@@ -59,7 +59,7 @@ function registration_payload(): array
             'defaults' => null,
         ],
         'app_instance' => $instance,
-        'app_instances' => [$instance],
+        'instances' => [$instance],
         'status' => 'active',
         'source_count' => 1,
         'completed_count' => 1,
@@ -78,7 +78,7 @@ function registration_json(): string
 {
     $data = registration_payload();
     $data['app']['request_id'] = instance_request_id();
-    foreach (['app_instance', 'app_instances'] as $key) {
+    foreach (['app_instance', 'instances'] as $key) {
         if ($key === 'app_instance') {
             $data[$key] = [
                 ...$data[$key],

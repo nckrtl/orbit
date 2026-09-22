@@ -17116,7 +17116,7 @@
             "description": "Not used: Caddy proxies the site once the awake marker exists and never calls this endpoint for an awake Instance."
           },
           "401": {
-            "description": "An HTML progress page with a two-second refresh while the Gateway starts the desired-running Processes.",
+            "description": "An HTML progress page with the animated Orbit mark. The browser polls the original path once a second while X-Orbit-Runtime-Activation-State is pending.",
             "content": {
               "text/html": {
                 "schema": {
@@ -17126,7 +17126,7 @@
             }
           },
           "503": {
-            "description": "An HTML failure page with a five-second retry after a failed start.",
+            "description": "An HTML failure page with the animated Orbit mark, the stored error, and a Try again link. It does not poll.",
             "content": {
               "text/html": {
                 "schema": {
@@ -20872,7 +20872,7 @@
           "app_instance": {
             "$ref": "#/components/schemas/AppInstance"
           },
-          "app_instances": {
+          "instances": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AppInstance"

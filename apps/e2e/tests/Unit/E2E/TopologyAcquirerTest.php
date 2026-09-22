@@ -478,7 +478,7 @@ it('prepares the mounted Gateway schema before standard discovery readiness with
     ));
     $verification = array_find_key($commands, static fn (string $command): bool => str_contains(
         $command,
-        '/usr/local/bin/verify-topology.sh',
+        ' -- /usr/local/bin/verify-topology.sh ',
     ));
 
     expect($topology->source->mounted)
@@ -492,7 +492,7 @@ it('prepares the mounted Gateway schema before standard discovery readiness with
         ->toBeInt()
         ->toBeGreaterThan($migration)
         ->and(implode("\n", $commands))
-        ->not->toContain('/usr/local/bin/converge-gateway.sh', 'orbit:bootstrap', 'converge-sample-app.sh');
+        ->not->toContain(' -- /usr/local/bin/converge-gateway.sh ', 'orbit:bootstrap', 'converge-sample-app.sh create-resources', 'converge-sample-app.sh reproject');
 });
 
 it('retains the old successful source after failed sync and accepts a corrected retry at the same HEAD', function (): void {

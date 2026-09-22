@@ -6,6 +6,7 @@ use App\E2E\Git\GitRepository;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\PreparedFingerprint;
+use App\E2E\Value\TopologyProfile;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
@@ -132,6 +133,27 @@ describe('PreparedStateFingerprint', function (): void {
             ->toBe(['commit' => str_repeat('b', 40), 'tag' => 'v13.2.1'])
             ->and($pinned)
             ->toEqual($fingerprints->forCommit('HEAD', $release));
+    });
+
+    it('preserves old assignment fingerprints and distinguishes the expanded profile', function (): void {
+        file_put_contents($this->path.'/contracts/a.php', "contract\n");
+        $manifest = preparedManifest();
+        writePreparedManifest($this->path, $manifest);
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'previous assignments']);
+        $previousSha = fingerprintGit($this->path, ['rev-parse', 'HEAD']);
+        $fingerprints = new PreparedStateFingerprint(new GitRepository($this->path), 'resources/prepared-state.json');
+        $previous = $fingerprints->forCommit($previousSha);
+        expect($previous->manifest['topology']['assignments'])->toBe($manifest['topology']['assignments']);
+
+        $manifest['topology']['assignments'] = TopologyProfile::ASSIGNMENTS;
+        writePreparedManifest($this->path, $manifest);
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'expanded assignments']);
+        $expanded = $fingerprints->forCommit();
+        expect($expanded->value)->not->toBe($previous->value);
+        expect($expanded->manifest['topology']['assignments'])->toBe($manifest['topology']['assignments']);
+        expect($fingerprints->forCommit($previousSha)->value)->toBe($previous->value);
     });
 
     it('rejects malformed manifest schema and topology', function (array $change): void {
@@ -374,7 +396,7 @@ describe('PreparedStateFingerprint', function (): void {
         }
     });
 
-    it('requires every current manifest selector to match a tracked file', function (): void {
+    it('requires every current manifest selector to match a tracked or unignored worktree file', function (): void {
         $root = dirname(__DIR__, 5);
         $manifest = json_decode(
             (string) file_get_contents($root.'/apps/e2e/resources/prepared-state.json'),
@@ -384,7 +406,7 @@ describe('PreparedStateFingerprint', function (): void {
         );
 
         foreach ($manifest['paths'] as $selector) {
-            expect(fingerprintGit($root, ['ls-files', '--', $selector]))->not->toBe('');
+            expect(fingerprintGit($root, ['ls-files', '--cached', '--others', '--exclude-standard', '--', $selector]))->not->toBe('', $selector);
         }
     });
 

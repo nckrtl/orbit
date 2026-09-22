@@ -123,15 +123,16 @@ it('sends a completion reminder through the recorded implementer driver', functi
     $dispatcher = router_dispatcher();
     $observation = router_observation($group);
 
-    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->remindCompletion(
+    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->remindRubric(
         $group,
         $observation->thread(TaskThreadRole::Implementer),
+        'composer check did not pass. Run composer check again.',
     );
 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('implementer-thread')
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('ready_for_review', 'composer check');
+        ->and($dispatcher->commands[0]['message']['text'])->toBe('composer check did not pass. Run composer check again.');
 });
 
 it('surfaces a refused reminder instead of swallowing the dispatch', function (): void {
@@ -144,9 +145,10 @@ it('surfaces a refused reminder instead of swallowing the dispatch', function ()
         }
     };
 
-    expect(fn () => new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->remindCompletion(
+    expect(fn () => new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->remindRubric(
         $group,
         router_observation($group)->thread(TaskThreadRole::Implementer),
+        'composer check did not pass. Run composer check again.',
     ))->toThrow(T3DispatchException::class, 'T3 reminder failed.');
 });
 
