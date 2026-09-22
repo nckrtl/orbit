@@ -112,11 +112,11 @@ abstract class GatewayRequest extends Request
             throw new GatewayApiException('Gateway response is not valid JSON.');
         }
 
-        $data = $body['data'] ?? [];
-
         if ($rejectMalformed) {
-            return $this->strictDataList($data);
+            return $this->strictDataList($body['data'] ?? null);
         }
+
+        $data = $body['data'] ?? [];
 
         if (! is_array($data)) {
             return [];

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Requests\Tools;
 
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
@@ -27,23 +26,9 @@ final class ListToolManagersRequest extends GatewayRequest
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): ToolManagersResponse
     {
-        $data = $response->json('data');
-        if (! is_array($data) || ! array_is_list($data)) {
-            throw new GatewayApiException('Gateway tool manager list contains invalid data.');
-        }
-
-        foreach ($data as $item) {
-            if (
-                ! is_array($item)
-                || ! array_all(array_keys($item), static fn (int|string $key): bool => is_string($key))
-            ) {
-                throw new GatewayApiException('Gateway tool manager list contains invalid data.');
-            }
-        }
-
+        $data = $this->unwrapDataList($response, rejectMalformed: true);
         $requestId = $this->successRequestId($response);
 
-        /** @var list<array<string, mixed>> $data */
         $managers = array_map(
             static fn (array $item): ToolManagerResponse => ToolManagerResponse::fromGatewayData(
                 $item,

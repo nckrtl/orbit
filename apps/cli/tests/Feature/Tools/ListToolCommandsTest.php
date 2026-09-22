@@ -212,6 +212,22 @@ it('writes exact one-line DTO JSON for all read commands', function (
     ['tool:show', ShowToolRequest::class, tool_data(), 'https://10.44.0.1/api/v1/tools/41', []],
 ]);
 
+it('renders safe JSON when a tool collection response is invalid JSON', function (string $command, string $request): void {
+    $mock = MockClient::global([$request => MockResponse::make('{"data": tools-invalid-json-secret')]);
+
+    expect(Artisan::call($command, ['--node' => 12, '--json' => true]))->toBe(1)
+        ->and(trim(Artisan::output()))->toBe(json_encode(['error' => [
+            'code' => 'gateway.request_failed',
+            'message' => 'Gateway response is not valid JSON.',
+            'request_id' => null,
+        ]], JSON_THROW_ON_ERROR))
+        ->and(Artisan::output())->not->toContain('tools-invalid-json-secret')
+        ->and($mock->getLastPendingRequest()?->body())->toBeNull();
+})->with([
+    ['tool:list', ListToolsRequest::class],
+    ['tool:manager:list', ListToolManagersRequest::class],
+]);
+
 it('rejects invalid input with exact JSON and sends no request', function (
     string $command,
     array $args,
