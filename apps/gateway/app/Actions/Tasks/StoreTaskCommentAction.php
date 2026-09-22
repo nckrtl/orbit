@@ -22,7 +22,8 @@ final readonly class StoreTaskCommentAction
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
     {
-        $comment = DB::transaction(function () use ($task, $payload): TaskComment {
+        $deliverResolution = false;
+        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->task_group_id,
@@ -37,27 +38,36 @@ final readonly class StoreTaskCommentAction
                 $task->taskGroup()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $this->log($task, $comment, 'assistance requested');
             }
-            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '') {
-                $task->loadMissing('implementerThread', 'taskGroup');
-                if ($task->assistance_requested && $task->resolution_delivered_comment_id !== $comment->id) {
-                    try {
-                        $thread = $task->implementerThread;
-                        if ($thread === null) {
-                            throw new AgentDriverException('Blocked AgentThread is unavailable.');
-                        }
-                        $this->drivers->get($thread->driver)->send($thread, $comment->body);
-                        $task->update(['assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'completion_attempt' => $task->completion_attempt + 1, 'resolution_delivered_comment_id' => $comment->id]);
-                        $task->update(['review_reminder_attempt' => null]);
-                        $task->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
-                        $this->log($task, $comment, 'resolution delivered');
-                    } catch (AgentDriverException) {
-                        $this->log($task, $comment, 'resolution delivery failed');
-                    }
-                }
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
+                $deliverResolution = true;
             }
 
             return $comment;
         });
+
+        if ($deliverResolution) {
+            $task->loadMissing('implementerThread', 'taskGroup');
+            try {
+                $thread = $task->implementerThread;
+                if ($thread === null) {
+                    throw new AgentDriverException('Blocked AgentThread is unavailable.');
+                }
+                $this->drivers->get($thread->driver)->send($thread, $comment->body);
+                DB::transaction(function () use ($task, $comment): void {
+                    $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+                    if (! $locked->assistance_requested) {
+                        return;
+                    }
+                    $locked->update(['assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'completion_attempt' => $locked->completion_attempt + 1, 'review_reminder_attempt' => null, 'resolution_delivered_comment_id' => $comment->id]);
+                    $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+                    $this->log($locked, $comment, 'resolution delivered');
+                });
+            } catch (AgentDriverException) {
+                DB::transaction(function () use ($task, $comment): void {
+                    $this->log($task, $comment, 'resolution delivery failed');
+                });
+            }
+        }
 
         if (TaskCommentType::tryFrom((string) $comment->getRawOriginal('type')) === TaskCommentType::AssistanceRequested) {
             $this->notifier->assistance($task->taskGroup()->firstOrFail(), $comment->body);
