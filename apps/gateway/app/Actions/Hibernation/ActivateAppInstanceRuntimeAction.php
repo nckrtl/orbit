@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Actions\Hibernation;
 
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\Process;
@@ -32,21 +35,13 @@ final readonly class ActivateAppInstanceRuntimeAction
 
     public function execute(#[SensitiveParameter] AppInstance $instance): void
     {
-        $instance->loadMissing('node');
-
-        if (! $this->policy->appliesToInstance($instance)) {
-            throw new HibernationException(
-                errorCode: 'hibernation.target_ineligible',
-                message: "AppInstance [{$instance->name}] is not an app-dev development target.",
-                status: 404,
-            );
-        }
-
         $instanceId = (int) $instance->getKey();
+        $nodeId = $instance->node_id;
+        $checkoutPath = $instance->checkout_path;
 
         try {
-            $this->admissions->run([$instanceId], function () use ($instance, $instanceId): void {
-                $instance->load('processes');
+            $this->admissions->run([$instanceId], function () use ($instanceId, $nodeId, $checkoutPath): void {
+                $instance = $this->currentInstance($instanceId, $nodeId, $checkoutPath);
                 $key = RuntimeHibernation::key($instanceId);
 
                 if ($this->markers->isCold($instance->node, $key)) {
@@ -73,6 +68,35 @@ final readonly class ActivateAppInstanceRuntimeAction
                 message: $exception->getMessage(),
             );
         }
+    }
+
+    private function currentInstance(int $instanceId, int $nodeId, string $checkoutPath): AppInstance
+    {
+        $instance = AppInstance::query()
+            ->whereKey($instanceId)
+            ->where('node_id', $nodeId)
+            ->where('checkout_path', $checkoutPath)
+            ->with(['node.roles', 'processes'])
+            ->first();
+
+        if (
+            ! $instance instanceof AppInstance
+            || StoragePath::tryParse($checkoutPath) === null
+            || $instance->environment !== 'development'
+            || $instance->status !== AppInstanceState::Active
+            || $instance->migration_required
+            || $instance->provisioning_step !== 'active'
+            || $instance->node->status !== LifecycleStatus::Active
+            || ! $this->policy->appliesToInstance($instance)
+        ) {
+            throw new HibernationException(
+                errorCode: 'hibernation.target_ineligible',
+                message: "AppInstance [{$instanceId}] is not an active app-dev development target at the requested placement.",
+                status: 404,
+            );
+        }
+
+        return $instance;
     }
 
     /** @return list<Process> */

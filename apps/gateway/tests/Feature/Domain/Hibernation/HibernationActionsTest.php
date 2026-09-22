@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Hibernation\ActivateAppInstanceRuntimeAction;
+use App\Actions\Hibernation\ScheduleAppInstanceRuntimeWakeAction;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
@@ -10,6 +11,7 @@ use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\DesiredProcessState;
@@ -18,10 +20,14 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAppInstanceCheckoutInspector;
 use Tests\Support\FakeAppInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
@@ -122,6 +128,97 @@ it('does not write the awake marker when readiness fails', function (): void {
     expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
         ->toThrow(HibernationException::class);
     expect($this->markers->awake)->toBe([]);
+});
+
+it('refuses a wake whose owner changes before admission without observing or mutating runtime state', function (string $change, bool $hasProcess): void {
+    if ($hasProcess) {
+        hibernation_action_process($this->instance, 'worker', DesiredProcessState::Running);
+    }
+    $this->instance->load(['node.roles', 'processes']);
+    $key = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->cold[] = $key;
+    $observations = 0;
+    $this->markers->beforeObservation = static function () use (&$observations): void {
+        $observations++;
+    };
+    $admissions = new HibernationAdmissionLock(function () use ($change): void {
+        $current = $this->instance->fresh();
+        $node = $this->node->fresh();
+
+        if ($change === 'relocated') {
+            $destination = Node::query()->create([
+                'name' => 'destination',
+                'status' => LifecycleStatus::Active,
+                'platform' => 'linux',
+                'public_ssh_host' => '192.0.2.21',
+                'user' => 'orbit',
+                'wireguard_ip' => '10.44.0.4',
+            ]);
+            $destination->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+            $current->update(['node_id' => $destination->id]);
+
+            return;
+        }
+
+        match ($change) {
+            'deleted' => $current->delete(),
+            'removing' => hibernation_accept_removal($current),
+            'inactive' => $current->update(['status' => 'reserved']),
+            'checkout' => $current->update(['checkout_path' => '/srv/relocated']),
+            'environment' => $current->update(['environment' => 'production']),
+            'migration-required' => $current->update(['migration_required' => true]),
+            'provisioning' => $current->update(['provisioning_step' => 'prepare']),
+            'node-inactive' => $node->update(['status' => LifecycleStatus::Failed]),
+            'role-inactive' => $node->roles()->update(['status' => LifecycleStatus::Failed]),
+            'role-removed' => $node->roles()->delete(),
+        };
+    });
+    app()->instance(ProcessAdmissionLock::class, $admissions);
+
+    expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
+        ->toThrow(function (HibernationException $exception): void {
+            expect($exception->errorCode)->toBe('hibernation.target_ineligible');
+        });
+
+    expect($observations)->toBe(0);
+    expect($this->runtime->started)->toBe([]);
+    expect($this->checkouts->restored)->toBe([]);
+    expect($this->readiness->waited)->toBeFalse();
+    expect($this->markers->awake)->toBe([]);
+    expect($this->markers->cold)->toBe([$key]);
+    expect($admissions->runs)->toBe([[$this->instance->id]]);
+})->with(['deleted', 'removing', 'inactive', 'checkout', 'environment', 'migration-required', 'provisioning', 'node-inactive', 'role-inactive', 'role-removed', 'relocated'])
+    ->with(['empty Process set' => false, 'running Process' => true]);
+
+it('refuses an unnormalized requested checkout before observing its markers', function (): void {
+    $this->instance->update(['checkout_path' => '/home/orbit/apps/docs/..']);
+    $observations = 0;
+    $this->markers->beforeObservation = static function () use (&$observations): void {
+        $observations++;
+    };
+
+    expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
+        ->toThrow(function (HibernationException $exception): void {
+            expect($exception->errorCode)->toBe('hibernation.target_ineligible');
+        });
+
+    expect($observations)->toBe(0);
+    expect($this->markers->awake)->toBe([]);
+    expect($this->readiness->waited)->toBeFalse();
+});
+
+it('delivers a refused deferred wake through the existing failure store', function (): void {
+    $this->instance->load(['node.roles', 'processes']);
+    app(ScheduleAppInstanceRuntimeWakeAction::class)->afterResponse($this->instance);
+    $this->instance->fresh()->update(['checkout_path' => '/srv/relocated']);
+
+    app(DeferredCallbackCollection::class)->invoke();
+
+    expect(app(HibernationWakeFailureStore::class)->pull($this->instance->id))
+        ->toBe("AppInstance [{$this->instance->id}] is not an active app-dev development target at the requested placement.");
+    expect($this->runtime->started)->toBe([]);
+    expect($this->markers->awake)->toBe([]);
+    expect($this->readiness->waited)->toBeFalse();
 });
 
 it('halts idle desired-running Processes without changing desired state or Schedules', function (): void {
@@ -559,6 +656,54 @@ it('keeps the cold marker and skips the awake marker when restore fails', functi
         ->and($this->markers->awake)
         ->toBe([]);
 });
+
+function hibernation_accept_removal(AppInstance $instance): void
+{
+    $instance->app->update(['repository_identity' => 'example.test/docs']);
+    $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+    $route = Route::query()->create([
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'generation_basis_node_id' => $instance->node_id,
+        'domain' => 'hibernation.test',
+        'provenance' => 'generated',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $removal = AppInstanceRemoval::query()->create([
+        'id' => (string) Str::uuid(),
+        'requested_app_instance_id' => $instance->id,
+        'requested_name' => $instance->name,
+        'force' => false,
+        'inventory_digest' => str_repeat('b', 64),
+        'total' => 1,
+        'status' => 'removing',
+        'current_step' => 'source_preparation',
+    ]);
+    $removal->members()->create([
+        'position' => 0,
+        'app_instance_id' => $instance->id,
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'route_id' => $route->id,
+        'name' => $instance->name,
+        'environment' => $instance->environment,
+        'source_layout' => $instance->source_layout,
+        'repository_identity' => $instance->app->repository_identity,
+        'checkout_path' => $instance->checkout_path,
+        'root' => $instance->effectiveRoot(),
+        'branch' => $instance->branch,
+        'starting_commit' => $instance->starting_commit,
+        'source_commit' => $instance->starting_commit,
+        'common_repository_path' => $instance->checkout_path,
+        'source_identity' => '1:100',
+        'linked_worktree_paths' => [$instance->checkout_path],
+        'source_digest' => str_repeat('c', 64),
+    ]);
+    $instance->update(['status' => 'removing']);
+}
 
 function hibernation_action_process(
     AppInstance $instance,
