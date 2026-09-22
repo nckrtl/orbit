@@ -155,7 +155,9 @@ def execute(command, cwd, log, remaining):
 
 def run(root, references, projects=PROJECTS, commands=COMMANDS, seconds=840):
     started = time.monotonic()
-    directory = Path(tempfile.mkdtemp(prefix='orbit-task-check-'))
+    runtime = Path(os.environ.get('ORBIT_HOME', str(Path.home() / '.orbit'))) / 'task-checks'
+    runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix='run-', dir=runtime))
     directory.chmod(0o700)
     tested = identity(root, projects)
     result = {'profile': PROFILE, 'identity': tested, 'checks': [], 'evidence': {}, 'passed': False,

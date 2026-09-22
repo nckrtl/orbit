@@ -1,11 +1,11 @@
 """Real subprocess/file regressions; fake executables model framework reports."""
 import importlib.util
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.dont_write_bytecode = True
 
@@ -20,7 +20,11 @@ REFERENCE = {'criterion_id': 'criterion', 'project': PROJECT, 'path': 'tests/Sce
 class TaskCheckTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='orbit-check-test-')
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name) / 'checkout'
+        self.runtime = Path(self.temp.name) / 'runtime'
+        environment = patch.dict(runner.os.environ, {'ORBIT_HOME': str(self.runtime)})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.project = self.root / PROJECT
         (self.project / 'tests').mkdir(parents=True)
         (self.project / 'tests/ScenarioTest.php').write_text('<?php // expected observation\n')
@@ -50,7 +54,6 @@ ET.ElementTree(root).write(sys.argv[sys.argv.index('--log-junit')+1])
 
     def run_checks(self, references=None, **kwargs):
         result = runner.run(self.root, references or [REFERENCE], (PROJECT,), (('./check',),), **kwargs)
-        self.addCleanup(shutil.rmtree, result['log_directory'])
         return result
 
     def test_dirty_files_and_test_evidence_pass_without_changing_the_index(self):
@@ -60,6 +63,9 @@ ET.ElementTree(root).write(sys.argv[sys.argv.index('--log-junit')+1])
         self.assertTrue(result['passed'])
         self.assertEqual('passed', result['evidence']['criterion']['result'])
         self.assertEqual(before, (self.root / '.git/index').read_bytes())
+        directory = Path(result['log_directory'])
+        self.assertTrue(directory.is_relative_to(self.runtime))
+        self.assertEqual(0o700, directory.stat().st_mode & 0o777)
 
     def test_printed_success_cannot_override_a_failed_process(self):
         (self.project / 'check').write_text('#!/bin/sh\necho "exit code 0 passed"\nexit 9\n')
