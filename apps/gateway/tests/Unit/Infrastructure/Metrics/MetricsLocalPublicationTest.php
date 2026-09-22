@@ -10,6 +10,9 @@ use App\Infrastructure\Metrics\MetricsPublicationReceipt;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 it('publishes the Metrics certificate and Caddy fragment through protected versioned local operations', function (): void {
     $processes = new MetricsLocalPublicationProcessRunner;
@@ -148,6 +151,54 @@ it('removes only Metrics-owned local publication state', function (): void {
         ->toContain('orbit-metrics-cert-current')
         ->toContain('orbit-metrics-cert-versions')
         ->toContain('test "$(cat -- "$owner")" = metrics-certificate');
+});
+
+it('withdraws an existing Metrics route with valid global options and preserves other sites', function (): void {
+    $processes = new MetricsLocalPublicationProcessRunner;
+    new MetricsCaddyPublisher($processes)->withdrawForCutover();
+    $invocation = $processes->invocations[0];
+    $root = sys_get_temp_dir().'/orbit-metrics-withdrawal-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory("{$root}/versions/previous/fragments", 0o755, true);
+    $previous = "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n    respond metrics\n}\n";
+    $unrelated = "example.orbit {\n    respond example\n}\n";
+    $filesystem->put("{$root}/versions/previous/fragments/metrics.caddy", $previous);
+    $filesystem->put("{$root}/versions/previous/fragments/example.caddy", $unrelated);
+    $filesystem->put("{$root}/versions/previous/Caddyfile", "import {$root}/versions/previous/fragments/*.caddy\n");
+    symlink("{$root}/versions/previous/Caddyfile", "{$root}/Caddyfile");
+    $arguments = $invocation->arguments;
+    $arguments[6] = "{$root}/versions";
+    $arguments[7] = "{$root}/Caddyfile";
+    $arguments[9] = "{$root}/caddy.lock";
+    $boundaries = <<<'BASH'
+        install() { command install -d -m 0750 -- "$versions" "$candidate/fragments"; }
+        chown() { :; }
+        caddy() { :; }
+        systemctl() { :; }
+        BASH;
+
+    try {
+        $process = new Process(array_slice($arguments, 1));
+        $process->setInput($boundaries."\n".$invocation->input);
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
+        expect(MetricsPublicationReceipt::fromProcessOutput($process->getOutput())->previousPublication())
+            ->toBe($previous);
+        $published = dirname((string) readlink("{$root}/Caddyfile"));
+        expect(file_get_contents("{$published}/Caddyfile"))
+            ->toBe("{\n    auto_https disable_certs\n}\nimport {$published}/fragments/*.caddy\n");
+        expect(file_get_contents("{$published}/fragments/example.caddy"))->toBe($unrelated);
+        expect(file_exists("{$published}/fragments/metrics.caddy"))->toBeFalse();
+
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
+        expect(MetricsPublicationReceipt::fromProcessOutput($process->getOutput())->isUnchanged())->toBeTrue();
+        expect(dirname((string) readlink("{$root}/Caddyfile")))->toBe($published);
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
 });
 
 it('returns a stable error when local Caddy activation fails', function (): void {

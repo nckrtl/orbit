@@ -294,6 +294,7 @@ it('hydrates once after readiness and six transient preflight failures within th
             ->toBe(array_fill(0, 6, '1'));
         expect(file("{$fixture['root']}/git-called", FILE_IGNORE_NEW_LINES))->toBe([
             '-C '.$fixture['checkout'].' remote get-url origin',
+            '-C '.$fixture['checkout'].' cat-file -e '.str_repeat('a', 40).'^{commit}',
             '-C '.$fixture['checkout'].' merge-base --is-ancestor '.str_repeat('a', 40).' HEAD',
         ]);
         expect(file("{$fixture['root']}/artisan-calls", FILE_IGNORE_NEW_LINES))
@@ -399,7 +400,12 @@ it('refuses hydration when development no longer contains its registered source'
         expect($process->run())->toBe(65);
         expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))
             ->toBe(['instance:list --json']);
-        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))->toHaveCount(1);
+        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))->toBe([
+            '-C '.$fixture['checkout'].' merge-base --is-ancestor '.str_repeat('a', 40).' HEAD',
+            '-C '.$fixture['checkout'].' merge-base --is-ancestor HEAD '.str_repeat('a', 40),
+        ]);
+        expect(file_exists("{$fixture['root']}/artisan-calls"))->toBeFalse();
+        expect(file_exists("{$fixture['root']}/mutation-calls"))->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
     }
