@@ -1961,8 +1961,8 @@ describe('convergence guest scripts', function () {
             );
 
             $script = str_replace(
-                '/home/orbit/orbit',
-                $repository,
+                ['/home/orbit/orbit', 'source_marker=/var/lib/orbit-e2e/source-state'],
+                [$repository, "source_marker={$root}/source-state"],
                 file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
             );
             file_put_contents("{$root}/verify.sh", $script);
@@ -1989,6 +1989,10 @@ describe('convergence guest scripts', function () {
                     'expected' => $sha.':'.$treeHash,
                     'observed' => $sha.':'.$treeHash,
                 ]);
+
+            file_put_contents("{$root}/source-state", 'an unrelated mounted checkout');
+            expect(new Process($command)->run())->not->toBe(0);
+            unlink("{$root}/source-state");
 
             file_put_contents("{$repository}/.git/orbit-overlay.paths", "wrong.txt\0");
             expect(new Process($command)->run())->not->toBe(0);
