@@ -58,6 +58,8 @@ An explicit Route domain and a generated Route whose destination domain stays th
 
 A generated Route whose destination domain changes uses the destination Cluster TLD and the replacement Route lifecycle from [ADR 0065](/decisions/0065-replace-routes-when-domains-change). The new generated domain is `{app-slug}.{tld}` when the destination name is `default`, and `{name}.{app-slug}.{tld}` otherwise.
 
+Route preparation records the replacement Route, target, source replacement link, transfer Route ID, and prepared checkpoint in one database transaction. If the domain stays the same, the same transaction records the existing Route ID and checkpoint. A failed write leaves no partial replacement. After an interruption, an identical retry uses the recorded preparation; it does not create another candidate. Remote source, environment, and runtime work stays outside this transaction.
+
 ## Recover from failure
 
 A failure before cutover restores the source Route, environment, processes, and schedules as authoritative. The Gateway removes successfully reversible destination state and retains bounded recovery evidence when that cleanup is incomplete. Only the identical request can resume.

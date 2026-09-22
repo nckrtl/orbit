@@ -461,7 +461,6 @@ final readonly class TransferAppInstanceAction
 
         if ($transfer->current_step === AppInstanceTransferStep::RuntimeRelocated) {
             $this->prepareRoute($instance, $destination, $transfer);
-            $this->checkpoint($transfer, AppInstanceTransferStep::RoutePrepared);
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::RoutePrepared) {
@@ -597,34 +596,96 @@ final readonly class TransferAppInstanceAction
 
     private function prepareRoute(AppInstance $instance, Node $destination, AppInstanceTransfer $transfer): void
     {
-        $route = Route::query()->findOrFail($transfer->source_route_id);
-        $placement = $this->routeState->forNode($destination);
+        DB::transaction(function () use ($instance, $destination, $transfer): void {
+            $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $lockedTransfer = AppInstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
+            $route = Route::query()->lockForUpdate()->findOrFail($lockedTransfer->source_route_id);
+            $targets = $route->targets()->lockForUpdate()->get();
+            $placement = $this->routeState->forNode($destination->refresh());
 
-        if ($route->domain === $transfer->destination_domain) {
-            $transfer->update(['destination_route_id' => $route->id]);
-            $transfer->refresh();
+            if (
+                $lockedTransfer->app_instance_id !== $lockedInstance->id
+                || $lockedTransfer->source_node_id !== $lockedInstance->node_id
+                || $lockedTransfer->source_path !== $lockedInstance->checkout_path
+                || $lockedTransfer->destination_node_id !== $destination->id
+                || $lockedTransfer->current_step !== AppInstanceTransferStep::RuntimeRelocated
+                || $lockedTransfer->cutover_at !== null
+                || $lockedTransfer->completed_at !== null
+                || $lockedInstance->status !== AppInstanceState::Active
+                || $lockedInstance->provisioning_step !== 'active'
+                || $route->app_id !== $lockedInstance->app_id
+                || ! $route->isAuthoritative()
+                || $route->replaces_route_id !== null
+                || $targets->count() !== 1
+                || $targets->sole()->app_instance_id !== $lockedInstance->id
+                || $targets->sole()->position !== 0
+            ) {
+                throw $this->conflict('instance.lifecycle_conflict', 'The transfer Route owner changed before preparation.');
+            }
 
-            return;
-        }
+            if ($route->domain === $lockedTransfer->destination_domain) {
+                if (
+                    $route->replaced_by_route_id !== null
+                    || ($lockedTransfer->destination_route_id !== null && $lockedTransfer->destination_route_id !== $route->id)
+                ) {
+                    throw $this->conflict('instance.lifecycle_conflict', 'The transfer Route identity changed before preparation.');
+                }
 
-        $replacement = Route::query()->create([
-            'app_id' => $instance->app_id,
-            'node_id' => $placement->nodeId,
-            'cluster_id' => $placement->clusterId,
-            'generation_basis_node_id' => $destination->id,
-            'domain' => $transfer->destination_domain,
-            'provenance' => RouteProvenance::Generated,
-            'publication' => $route->publication,
-            'status' => RouteStatus::Pending,
-            'replaces_route_id' => $route->id,
-            'replacement_step' => RouteReplacementStep::Reserved,
-        ]);
-        $replacement->targets()->create([
-            'app_instance_id' => $instance->id,
-            'position' => 0,
-        ]);
-        $route->update(['replaced_by_route_id' => $replacement->id]);
-        $transfer->update(['destination_route_id' => $replacement->id]);
+                $destinationRoute = $route;
+            } elseif ($lockedTransfer->destination_route_id !== null) {
+                $destinationRoute = Route::query()->lockForUpdate()->find($lockedTransfer->destination_route_id);
+                $destinationTargets = $destinationRoute?->targets()->lockForUpdate()->get();
+
+                if (
+                    ! $destinationRoute instanceof Route
+                    || $destinationRoute->app_id !== $lockedInstance->app_id
+                    || $destinationRoute->domain !== $lockedTransfer->destination_domain
+                    || $destinationRoute->node_id !== $placement->nodeId
+                    || $destinationRoute->cluster_id !== $placement->clusterId
+                    || $destinationRoute->generation_basis_node_id !== $destination->id
+                    || $destinationRoute->provenance !== RouteProvenance::Generated
+                    || $destinationRoute->publication !== $route->publication
+                    || $destinationRoute->status !== RouteStatus::Pending
+                    || $destinationRoute->replaces_route_id !== $route->id
+                    || $destinationRoute->replaced_by_route_id !== null
+                    || $destinationRoute->replacement_step !== RouteReplacementStep::Reserved
+                    || $destinationRoute->failed_step !== null
+                    || $destinationRoute->error_code !== null
+                    || $route->replaced_by_route_id !== $destinationRoute->id
+                    || $destinationTargets?->count() !== 1
+                    || $destinationTargets->sole()->app_instance_id !== $lockedInstance->id
+                    || $destinationTargets->sole()->position !== 0
+                ) {
+                    throw $this->conflict('instance.lifecycle_conflict', 'The recorded transfer Route preparation changed.');
+                }
+            } else {
+                if ($route->replaced_by_route_id !== null || $route->provenance !== RouteProvenance::Generated) {
+                    throw $this->conflict('instance.lifecycle_conflict', 'The source Route cannot reserve this transfer replacement.');
+                }
+
+                $destinationRoute = Route::query()->create([
+                    'app_id' => $lockedInstance->app_id,
+                    'node_id' => $placement->nodeId,
+                    'cluster_id' => $placement->clusterId,
+                    'generation_basis_node_id' => $destination->id,
+                    'domain' => $lockedTransfer->destination_domain,
+                    'provenance' => RouteProvenance::Generated,
+                    'publication' => $route->publication,
+                    'status' => RouteStatus::Pending,
+                    'replaces_route_id' => $route->id,
+                    'replacement_step' => RouteReplacementStep::Reserved,
+                ]);
+                $destinationRoute->targets()->create([
+                    'app_instance_id' => $lockedInstance->id,
+                    'position' => 0,
+                ]);
+                $route->update(['replaced_by_route_id' => $destinationRoute->id]);
+            }
+
+            $this->checkpoint($lockedTransfer, AppInstanceTransferStep::RoutePrepared, [
+                'destination_route_id' => $destinationRoute->id,
+            ]);
+        });
         $transfer->refresh();
     }
 
