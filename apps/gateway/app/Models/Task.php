@@ -15,6 +15,9 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $task_group_id
  * @property int $position
+ * @property int $completion_attempt
+ * @property int|null $completion_handoff_comment_id
+ * @property int|null $completion_reminder_attempt
  * @property string $title
  * @property string $brief
  * @property TaskStatus $status
@@ -52,6 +55,9 @@ final class Task extends Model
         'duration_ms',
         'started_at',
         'settled_at',
+        'completion_attempt',
+        'completion_handoff_comment_id',
+        'completion_reminder_attempt',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */
@@ -85,6 +91,9 @@ final class Task extends Model
             'duration_ms' => 'integer',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
+            'completion_attempt' => 'integer',
+            'completion_handoff_comment_id' => 'integer',
+            'completion_reminder_attempt' => 'integer',
         ];
     }
 }

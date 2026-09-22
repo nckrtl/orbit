@@ -64,6 +64,10 @@ final readonly class TaskScheduler
                     continue;
                 }
 
+                if ($task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
+                    continue;
+                }
+
                 try {
                     $decision = ! $observation->available
                         ? $this->unavailableDecision($group)
@@ -85,6 +89,44 @@ final readonly class TaskScheduler
         }
 
         return $decisions;
+    }
+
+    private function handleImplementerCompletion(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
+    {
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($implementer === null || ! $implementer->idle) {
+            return false;
+        }
+
+        $comment = $task->comments()->where('type', 'ready_for_review')->latest('posted_at')->first();
+        $mentionsComposerCheck = array_any($implementer->recentMessages, static fn (array $message): bool => str_contains(strtolower($message['text']), 'composer check'));
+        if ($comment === null && ! $mentionsComposerCheck) {
+            return false;
+        }
+        $validEvidence = array_any($implementer->recentMessages, static function (array $message): bool {
+            $text = strtolower($message['text'].' '.$message['label']);
+
+            return $message['kind'] === 'activity'
+                && $message['label'] !== 'assistant'
+                && str_contains($text, 'composer check')
+                && (str_contains($text, 'passed') || str_contains($text, 'exit code 0') || str_contains($text, 'code 0'));
+        });
+
+        if ($comment !== null && $validEvidence && $task->completion_handoff_comment_id !== $comment->id) {
+            $task->completion_handoff_comment_id = $comment->id;
+            $task->save();
+            $this->settleImplementer($task);
+
+            return true;
+        }
+
+        if ($task->completion_reminder_attempt !== $task->completion_attempt) {
+            $this->actor->remindCompletion($group, $implementer);
+            $task->completion_reminder_attempt = $task->completion_attempt;
+            $task->save();
+        }
+
+        return true;
     }
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision

@@ -59,6 +59,15 @@ final readonly class TaskSessionActor
         $this->drivers->get($thread->driver)->send($thread, $message);
     }
 
+    public function remindCompletion(TaskGroup $group, TaskThreadObservation $observed): void
+    {
+        $thread = $this->thread($group, $observed);
+        $this->drivers->get($thread->driver)->send(
+            $thread,
+            'Before requesting review, post a ready_for_review comment with the full validation evidence from a passing composer check.',
+        );
+    }
+
     private function thread(TaskGroup $group, TaskThreadObservation $observed): AgentThread
     {
         if (! $observed->available) {
