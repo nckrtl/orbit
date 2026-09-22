@@ -490,6 +490,108 @@ it('reports a local dnsmasq refresh failure', function (): void {
     expect($result)->toBe(['status' => 'refresh_failed', 'changed' => true]);
 });
 
+describe('confirmed resolver reset changes', function (): void {
+    it('stops before system resolver removal when native mapping unlink is refused', function (): void {
+        seed_wildcard_override($this, 'beast', '192.168.6.20');
+        $mapping = $this->configurationDirectory.'/shop.app.beast.conf';
+        mkdir($mapping);
+        file_put_contents($mapping.'/keep', 'native directory cannot be unlinked as a file');
+        file_put_contents($this->resolverDirectory.'/shop.app.beast', "nameserver 127.0.0.1\n");
+        fake_local_resolver_processes();
+
+        $result = local_resolver_for_test($this)->reset('shop.app.beast');
+
+        expect($result)->toBe(['status' => 'write_failed', 'changed' => false])
+            ->and(file_get_contents($mapping.'/keep'))->toBe('native directory cannot be unlinked as a file')
+            ->and(file_get_contents($this->resolverDirectory.'/shop.app.beast'))->toBe("nameserver 127.0.0.1\n")
+            ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))->toBe("address=/beast/192.168.6.20\n");
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === ['sudo', '-v']);
+        Process::assertRanTimes(fn (PendingProcess $process): bool => true, 1);
+    });
+
+    it('preserves completed mapping removal after a later system resolver failure and supports retry', function (bool $throws): void {
+        seed_wildcard_override($this, 'beast', '192.168.6.20');
+        file_put_contents($this->configurationDirectory.'/shop.app.beast.conf', "host-record=shop.app.beast,192.168.1.40\n");
+        file_put_contents($this->resolverDirectory.'/shop.app.beast', "nameserver 127.0.0.1\n");
+        $remove = ['sudo', '-n', 'rm', '--', $this->resolverDirectory.'/shop.app.beast'];
+        Process::fake(function (PendingProcess $process) use ($remove, $throws) {
+            if ($process->command === $remove) {
+                return $throws ? throw new RuntimeException('private native error') : Process::result(exitCode: 1);
+            }
+
+            return Process::result();
+        });
+        Process::preventStrayProcesses();
+        $resolver = local_resolver_for_test($this);
+
+        $result = $resolver->reset('shop.app.beast');
+
+        expect($result)->toBe(['status' => 'write_failed', 'changed' => true])
+            ->and(file_exists($this->configurationDirectory.'/shop.app.beast.conf'))->toBeFalse()
+            ->and(file_get_contents($this->resolverDirectory.'/shop.app.beast'))->toBe("nameserver 127.0.0.1\n")
+            ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))->toBe("address=/beast/192.168.6.20\n");
+        Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === ['sudo', '-n', $this->brewExecutable, 'services', 'restart', 'dnsmasq']);
+        Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === ['dscacheutil', '-flushcache']);
+
+        fake_local_resolver_processes();
+
+        $retry = $resolver->reset('shop.app.beast');
+
+        expect($retry)->toBe(['status' => 'reset', 'changed' => true])
+            ->and(file_exists($this->configurationDirectory.'/shop.app.beast.conf'))->toBeFalse()
+            ->and(file_exists($this->resolverDirectory.'/shop.app.beast'))->toBeFalse()
+            ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))->toBe("address=/beast/192.168.6.20\n");
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === $remove);
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === ['sudo', '-n', $this->brewExecutable, 'services', 'restart', 'dnsmasq']);
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === ['dscacheutil', '-flushcache']);
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === ['sudo', '-n', 'killall', '-HUP', 'mDNSResponder']);
+
+    })->with(['failed removal' => false, 'thrown removal' => true]);
+
+    it('leaves absent mappings unchanged without authorizing or refreshing', function (): void {
+        seed_wildcard_override($this, 'beast', '192.168.6.20');
+        fake_local_resolver_processes();
+
+        $result = local_resolver_for_test($this)->reset('shop.app.beast');
+
+        expect($result)->toBe(['status' => 'already_absent', 'changed' => false])
+            ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))->toBe("address=/beast/192.168.6.20\n");
+        Process::assertNothingRan();
+    });
+
+    it('reports no completed change when only the system resolver exists and removal fails', function (): void {
+        new Filesystem()->ensureDirectoryExists($this->resolverDirectory);
+        file_put_contents($this->resolverDirectory.'/shop.app.beast', "nameserver 127.0.0.1\n");
+        Process::fake(fn (PendingProcess $process) => Process::result(exitCode: $process->command === ['sudo', '-v'] ? 0 : 1));
+        Process::preventStrayProcesses();
+
+        $result = local_resolver_for_test($this)->reset('shop.app.beast');
+
+        expect($result)->toBe(['status' => 'write_failed', 'changed' => false])
+            ->and(file_get_contents($this->resolverDirectory.'/shop.app.beast'))->toBe("nameserver 127.0.0.1\n");
+        Process::assertRanTimes(fn (PendingProcess $process): bool => true, 2);
+    });
+
+    it('retains confirmed removals but does not flush caches when refresh fails', function (): void {
+        seed_wildcard_override($this, 'beast', '192.168.6.20');
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === ['sudo', '-n', 'rm', '--', $this->resolverDirectory.'/beast']) {
+                unlink($this->resolverDirectory.'/beast');
+            }
+
+            return Process::result(exitCode: $process->command === ['sudo', '-n', $this->brewExecutable, 'services', 'restart', 'dnsmasq'] ? 1 : 0);
+        });
+        Process::preventStrayProcesses();
+
+        $result = local_resolver_for_test($this)->reset('beast');
+
+        expect($result)->toBe(['status' => 'refresh_failed', 'changed' => true])
+            ->and(file_exists($this->configurationDirectory.'/beast.conf'))->toBeFalse()
+            ->and(file_exists($this->resolverDirectory.'/beast'))->toBeFalse();
+        Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === ['dscacheutil', '-flushcache']);
+    });
+});
+
 function local_resolver_for_test(object $test): LocalResolver
 {
     return new LocalResolver(

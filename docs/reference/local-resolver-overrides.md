@@ -47,6 +47,8 @@ orbit dns:resolve beast --reset
 
 Repeating an identical install or reset is idempotent. A write or dnsmasq refresh failure returns a bounded error and does not overwrite unrelated local resolver configuration.
 
+Reset stops if it cannot remove the selected dnsmasq mapping. It does not remove the system resolver in that case. If the mapping is removed but removing the system resolver fails, the completed removal stays in place; retry the same reset to finish.
+
 ## Output
 
 Human output names the exact Route name or the dotted TLD. `--json` returns one success object.

@@ -123,29 +123,37 @@ final readonly class LocalResolver implements ResolvesLocalDns
             return ['status' => 'write_failed', 'changed' => false];
         }
 
+        $changed = false;
+
         try {
             if ($hasConfiguration) {
-                $this->files->delete($configurationPath);
+                if (! $this->files->delete($configurationPath)) {
+                    return ['status' => 'write_failed', 'changed' => false];
+                }
+
+                $changed = true;
             }
 
             if ($hasResolver) {
                 $result = $this->privilegedProcess()->run(['sudo', '-n', 'rm', '--', $resolverPath]);
 
                 if (! $result->successful()) {
-                    return ['status' => 'write_failed', 'changed' => $hasConfiguration];
+                    return ['status' => 'write_failed', 'changed' => $changed];
                 }
+
+                $changed = true;
             }
         } catch (Throwable) {
-            return ['status' => 'write_failed', 'changed' => $hasConfiguration];
+            return ['status' => 'write_failed', 'changed' => $changed];
         }
 
         if (! $this->refreshDnsmasq()) {
-            return ['status' => 'refresh_failed', 'changed' => true];
+            return ['status' => 'refresh_failed', 'changed' => $changed];
         }
 
         $this->flushResolverCache();
 
-        return ['status' => 'reset', 'changed' => true];
+        return ['status' => 'reset', 'changed' => $changed];
     }
 
     private function mapping(string $name, string $target, string $kind): string
