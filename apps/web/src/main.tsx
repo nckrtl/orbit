@@ -19,9 +19,8 @@ configureCommander({
     enabled: import.meta.env.VITE_COMMANDER_ENABLED !== "0",
     project: import.meta.env.VITE_COMMANDER_PROJECT || "commander",
 });
-ensureAnnotationRuntime();
-
 const router = createAppRouter();
+ensureAnnotationRuntime(router.history);
 
 createRoot(document.getElementById("app") as HTMLElement).render(
     <StrictMode>

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import { createMemoryHistory, RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-react";
 import { setTransport, type Transport } from "../../src/api/client";
@@ -21,6 +21,7 @@ export async function openApp(
         proxycli?: boolean;
         tasks?: boolean;
         wrapTransport?: (inner: Transport) => Transport;
+        history?: RouterHistory;
     } = {},
 ) {
     document.getElementById("app")?.remove();
@@ -34,7 +35,10 @@ export async function openApp(
         enabled: import.meta.env.VITE_COMMANDER_ENABLED !== "0",
         project: import.meta.env.VITE_COMMANDER_PROJECT || "commander",
     });
-    ensureAnnotationRuntime();
+    const router = createAppRouter(
+        options.history ?? createMemoryHistory({ initialEntries: [path] }),
+    );
+    ensureAnnotationRuntime(router.history);
 
     const gateway = installDemo();
 
@@ -53,7 +57,6 @@ export async function openApp(
     container.id = "app";
     document.body.append(container);
 
-    const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
     await render(
         <QueryClientProvider client={queryClient}>
             <RouterProvider router={router} />

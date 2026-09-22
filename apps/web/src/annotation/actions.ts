@@ -50,7 +50,7 @@ export function draftFromPoint(clientX: number, clientY: number): AnnotationDraf
         comment: "",
         targetElement: element,
         url: window.location.href,
-        pathname: window.location.pathname,
+        pathname: currentPathname || window.location.pathname,
         screenSize: currentScreenSize(),
         scrollPosition: currentScrollPosition(),
         breakpoint: currentBreakpoint(),
@@ -416,19 +416,9 @@ export function handleExternalToolbar(): void {
     }
 }
 
-export function handleNavigation(): void {
-    const pathname = window.location.pathname;
-    const pathChanged = pathname !== currentPathname;
-
-    currentPathname = pathname;
-    annotations.value = loadAnnotations(pathname).filter(
-        (annotation) => annotation.status !== "resolved",
-    );
-
-    if (pathChanged) {
-        clearPendingPlacement();
-        draft.value = null;
-        hover.value = null;
+export function handleNavigation(pathname: string): void {
+    if (pathname !== currentPathname) {
+        reloadAnnotations(pathname);
     }
 }
 

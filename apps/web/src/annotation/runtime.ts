@@ -1,5 +1,6 @@
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
+import type { RouterHistory } from "@tanstack/react-router";
 import {
     handleDocumentClick,
     handleDocumentMouseDown,
@@ -13,7 +14,7 @@ import {
 import AnnotationOverlay from "@/annotation/components/AnnotationOverlay";
 import { ensureAnnotationRoot, removeAnnotationHost } from "@/annotation/host";
 import { resolveDictationSettings } from "@/annotation/dictation-settings";
-import { cacheInertiaPage, readInertiaPage, resetInertiaPage } from "@/annotation/inertia-page";
+import { readInertiaPage, resetInertiaPage } from "@/annotation/inertia-page";
 import { dictationSettings, viewportTick } from "@/annotation/state";
 
 export { annotationMode, annotations, draft, hover, shakeToken } from "@/annotation/state";
@@ -30,6 +31,7 @@ export {
 let overlayRoot: Root | null = null;
 let listenersBound = false;
 let toolbarObserver: MutationObserver | null = null;
+let stopNavigation: (() => void) | null = null;
 
 function bumpViewport(): void {
     viewportTick.value += 1;
@@ -44,11 +46,8 @@ function bindListeners(): void {
     document.addEventListener("click", handleDocumentClick, true);
     document.addEventListener("mousemove", handleMouseMove, true);
     document.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("popstate", handleNavigation);
     window.addEventListener("scroll", bumpViewport, true);
     window.addEventListener("resize", bumpViewport);
-    document.addEventListener("inertia:navigate", handleInertiaNavigation);
-    document.addEventListener("inertia:success", handleInertiaNavigation);
 
     const toolbarHost = document.getElementById("laravel-toolbar-shadow-host");
 
@@ -69,19 +68,17 @@ function unbindListeners(): void {
     document.removeEventListener("click", handleDocumentClick, true);
     document.removeEventListener("mousemove", handleMouseMove, true);
     document.removeEventListener("keydown", handleKeyDown, true);
-    window.removeEventListener("popstate", handleNavigation);
     window.removeEventListener("scroll", bumpViewport, true);
     window.removeEventListener("resize", bumpViewport);
-    document.removeEventListener("inertia:navigate", handleInertiaNavigation);
-    document.removeEventListener("inertia:success", handleInertiaNavigation);
     toolbarObserver?.disconnect();
     toolbarObserver = null;
     listenersBound = false;
 }
 
-export function ensureAnnotationRuntime(toolConfig?: {
-    dictation?: Record<string, unknown>;
-}): void {
+export function ensureAnnotationRuntime(
+    history: RouterHistory,
+    toolConfig?: { dictation?: Record<string, unknown> },
+): void {
     dictationSettings.value = resolveDictationSettings(toolConfig);
 
     if (overlayRoot) {
@@ -93,15 +90,13 @@ export function ensureAnnotationRuntime(toolConfig?: {
     overlayRoot.render(createElement(AnnotationOverlay));
     bindListeners();
     readInertiaPage();
-    reloadAnnotations();
-}
-
-function handleInertiaNavigation(event: Event): void {
-    cacheInertiaPage((event as CustomEvent).detail?.page);
-    handleNavigation();
+    reloadAnnotations(history.location.pathname);
+    stopNavigation = history.subscribe(({ location }) => handleNavigation(location.pathname));
 }
 
 export function teardownAnnotationRuntime(): void {
+    stopNavigation?.();
+    stopNavigation = null;
     unbindListeners();
     overlayRoot?.unmount();
     overlayRoot = null;
