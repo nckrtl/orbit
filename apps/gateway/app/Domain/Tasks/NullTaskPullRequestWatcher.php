@@ -12,4 +12,9 @@ final readonly class NullTaskPullRequestWatcher implements TaskPullRequestWatche
     {
         return null;
     }
+
+    public function verifies(TaskGroup $group, string $commit): bool
+    {
+        return false;
+    }
 }

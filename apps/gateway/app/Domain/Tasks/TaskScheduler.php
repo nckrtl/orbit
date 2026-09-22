@@ -22,6 +22,7 @@ final readonly class TaskScheduler
         private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
         private TaskWorkspaceDiffReader $diff,
+        private TaskWorkspaceStateReader $workspace,
         private TaskPullRequestWatcher $pullRequestWatcher,
         private CompleteTaskGroupAction $completeGroup,
         private CoderSettleNotifier $coder,
@@ -102,6 +103,13 @@ final readonly class TaskScheduler
                         : $this->classifyAvailable($group, $observation);
                 } catch (TaskSessionClassificationException $exception) {
                     $decision = TaskSessionDecision::escalate($exception->getMessage());
+                }
+
+                if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+                    $this->requestAssistance($task, $group, $decision->reason, $observation);
+                    $decisions[] = $decision;
+
+                    continue;
                 }
 
                 try {
@@ -208,13 +216,18 @@ final readonly class TaskScheduler
         }
 
         $instance = $group->taskable;
+        $head = $instance instanceof AppInstance ? $this->workspace->headCommit($instance) : null;
         $hasCommit = is_string($comment->commit_sha)
             && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $comment->commit_sha) === 1
             && $instance instanceof AppInstance
-            && is_string($instance->starting_commit)
-            && $this->diff->hasCommitsSince($instance, $instance->starting_commit);
+            && $comment->commit_sha === $head
+            && $this->workspace->currentBranch($instance) === 'task-'.$group->id
+            && $this->workspace->isClean($instance)
+            && $comment->commit_sha !== $task->subtask_start_commit
+            && $this->diff->hasCommitsSince($instance, (string) $task->subtask_start_commit);
         $isFinal = ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
-        $hasPr = ! $isFinal || (is_string($comment->pr_url) && filter_var($comment->pr_url, FILTER_VALIDATE_URL) !== false);
+        $hasPr = ! $isFinal || (is_string($comment->pr_url) && filter_var($comment->pr_url, FILTER_VALIDATE_URL) !== false
+            && $this->pullRequestWatcher->verifies($group, (string) $comment->commit_sha));
         if (! $hasCommit || ! $hasPr) {
             return $this->remindReviewer($group, $task, $reviewer, true, $observation);
         }
@@ -245,9 +258,7 @@ final readonly class TaskScheduler
         }
         $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        if ($observation !== null) {
-            $this->coder->escalate($group, $observation, TaskSessionDecision::escalate($reason));
-        }
+        $this->coder->assistance($group, $reason);
     }
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
@@ -382,6 +393,7 @@ final readonly class TaskScheduler
 
             if (! $this->ceilings->canActivate($group)) {
                 $group->status = TaskGroupStatus::Queued;
+                $group->taskable()->dissociate();
                 $group->save();
 
                 return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
@@ -438,6 +450,7 @@ final readonly class TaskScheduler
     public function startTask(Task $task): TaskGroup
     {
         $started = $this->activateRunningTask($task);
+        $this->recordSubtaskStart($started);
         $this->assignImplementer($started);
 
         $group = $started->taskGroup;
@@ -487,6 +500,7 @@ final readonly class TaskScheduler
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
+            $this->recordSubtaskStart($next);
             $this->assignImplementer($next);
         }
 
@@ -616,6 +630,14 @@ final readonly class TaskScheduler
 
         $task->implementer_agent_thread_id = $threadId;
         $task->save();
+    }
+
+    private function recordSubtaskStart(Task $task): void
+    {
+        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
+        if ($instance instanceof AppInstance) {
+            $task->update(['subtask_start_commit' => $this->workspace->headCommit($instance)]);
+        }
     }
 
     /** @return Collection<int, Task> */

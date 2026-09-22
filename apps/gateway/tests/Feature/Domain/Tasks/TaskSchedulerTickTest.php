@@ -156,7 +156,10 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
             $this->reason = $decision->reason;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -254,7 +257,10 @@ it('notifies Coder when classification fails closed', function (): void {
             $this->reason = $decision->reason;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -307,7 +313,10 @@ it('dispatches nothing when Jev selects noop', function (): void {
             $this->called = true;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->called = true;
+        }
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader

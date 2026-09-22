@@ -35,6 +35,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $line_diff
  * @property int|null $duration_ms
  * @property Carbon|null $started_at
+ * @property string|null $subtask_start_commit
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */
@@ -61,6 +62,7 @@ final class Task extends Model
         'lines_deleted',
         'duration_ms',
         'started_at',
+        'subtask_start_commit',
         'settled_at',
         'completion_attempt',
         'completion_handoff_comment_id',

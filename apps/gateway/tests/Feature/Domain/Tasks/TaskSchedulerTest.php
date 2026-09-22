@@ -454,7 +454,7 @@ it('leaves a provisioned group reserved when the Node is already at the ceiling'
 
     expect($claimed)->toBeNull()
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued)
-        ->and($queued->fresh()?->taskable_id)->toBe($instance->id)
+        ->and($queued->fresh()?->taskable_id)->toBeNull()
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 
