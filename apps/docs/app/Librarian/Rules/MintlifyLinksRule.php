@@ -74,14 +74,17 @@ final readonly class MintlifyLinksRule implements GroupedRule
             return [new Finding('docs/docs.json', null, FindingSeverity::Error, self::RULE, 'Mintlify configuration must define navigation.')];
         }
 
-        return $this->navigationPages($config['navigation']);
+        $specifications = [];
+
+        return $this->navigationPages($config['navigation'], $specifications);
     }
 
     /**
      * @param  array<array-key, mixed>  $navigation
+     * @param  array<string, array<array-key, mixed>|null>  $specifications
      * @return list<Finding>
      */
-    private function navigationPages(array $navigation, ?string $openApi = null): array
+    private function navigationPages(array $navigation, array &$specifications, ?string $openApi = null): array
     {
         $findings = [];
         $openApi = is_string($navigation['openapi'] ?? null) ? $navigation['openapi'] : $openApi;
@@ -93,36 +96,47 @@ final readonly class MintlifyLinksRule implements GroupedRule
             if ($key === 'pages') {
                 foreach ($value as $page) {
                     if (is_string($page) && ! $this->exists('docs/docs.json', $page)
-                        && ! $this->openApiOperationExists($openApi, $page)) {
+                        && ! $this->openApiOperationExists($openApi, $page, $specifications)) {
                         $findings[] = $this->missing('docs/docs.json', $page);
                     }
                 }
             }
 
-            array_push($findings, ...$this->navigationPages($value, $openApi));
+            array_push($findings, ...$this->navigationPages($value, $specifications, $openApi));
         }
 
         return $findings;
     }
 
-    private function openApiOperationExists(?string $specification, string $page): bool
+    /** @param array<string, array<array-key, mixed>|null> $specifications */
+    private function openApiOperationExists(?string $specification, string $page, array &$specifications): bool
     {
         if ($specification === null || preg_match('/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TRACE) (\/\S+)$/', $page, $matches) !== 1) {
             return false;
         }
 
         $path = $this->repository->docsPath.'/'.ltrim($specification, '/');
+        if (! array_key_exists($path, $specifications)) {
+            $specifications[$path] = $this->readSpecification($path);
+        }
+
+        return is_array($specifications[$path]['paths'][$matches[2]][strtolower($matches[1])] ?? null);
+    }
+
+    /** @return array<array-key, mixed>|null */
+    private function readSpecification(string $path): ?array
+    {
         if (! is_file($path)) {
-            return false;
+            return null;
         }
 
         try {
             $spec = json_decode(file_get_contents($path) ?: '', true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            return false;
+            return null;
         }
 
-        return is_array($spec) && is_array($spec['paths'][$matches[2]][strtolower($matches[1])] ?? null);
+        return is_array($spec) ? $spec : null;
     }
 
     private function exists(string $source, string $target): bool

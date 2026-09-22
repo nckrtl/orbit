@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Documentation\DocumentationRepository;
 use App\Librarian\Rules\MintlifyLinksRule;
+use HardImpact\Librarian\Linting\Finding;
 use Illuminate\Filesystem\Filesystem;
 
 beforeEach(function (): void {
@@ -113,3 +114,88 @@ it('rejects operation navigation when its specification is missing or malformed'
 
     expect($this->rule->check())->toHaveCount(1);
 })->with([null, '{broken', 'null', '{"paths":{}}']);
+
+it('keeps inherited specifications separate while preserving every diagnostic field and its order', function (): void {
+    file_put_contents($this->root.'/primary.json', '{"paths":{"/one":{"get":{}}}}');
+    file_put_contents($this->root.'/secondary.json', '{"paths":{"/two":{"get":{}}}}');
+    file_put_contents($this->root.'/index.mdx', "[Missing](/missing-markdown)\n");
+    file_put_contents($this->root.'/docs.json', json_encode([
+        'navigation' => ['groups' => [
+            ['openapi' => '/primary.json', 'pages' => [
+                'GET /one',
+                ['group' => 'Other specification', 'openapi' => '/secondary.json', 'pages' => [
+                    'GET /two',
+                    'POST /one',
+                    ['group' => 'Inherited other specification', 'pages' => ['GET /two']],
+                ]],
+                ['group' => 'Inherited primary specification', 'pages' => ['GET /one', 'DELETE /one']],
+                'GET /top-missing',
+                'reference/apps',
+            ]],
+            ['openapi' => 'secondary.json', 'pages' => ['GET /two']],
+        ]],
+    ], JSON_THROW_ON_ERROR));
+
+    expect(array_map(static fn (Finding $finding): array => $finding->toArray(), $this->rule->check()))->toBe([
+        [
+            'path' => 'docs/index.mdx',
+            'line' => 1,
+            'severity' => 'error',
+            'rule' => MintlifyLinksRule::RULE,
+            'message' => 'Local documentation target [/missing-markdown] does not exist.',
+        ],
+        ...array_map(static fn (string $page): array => [
+            'path' => 'docs/docs.json',
+            'line' => null,
+            'severity' => 'error',
+            'rule' => MintlifyLinksRule::RULE,
+            'message' => "Local documentation target [{$page}] does not exist.",
+        ], ['GET /top-missing', 'POST /one', 'DELETE /one']),
+    ]);
+});
+
+it('reuses invalid specification results only within one check and reads repaired files on the next', function (?string $contents): void {
+    if ($contents !== null) {
+        file_put_contents($this->root.'/openapi.json', $contents);
+    }
+    file_put_contents($this->root.'/docs.json', json_encode([
+        'navigation' => ['groups' => [
+            ['openapi' => '/openapi.json', 'pages' => [
+                'GET /one',
+                'POST /two',
+                ['group' => 'Nested', 'pages' => ['GET /one']],
+            ]],
+            ['openapi' => 'openapi.json', 'pages' => ['POST /two']],
+        ]],
+    ], JSON_THROW_ON_ERROR));
+
+    expect(array_column($this->rule->check(), 'message'))->toBe([
+        'Local documentation target [GET /one] does not exist.',
+        'Local documentation target [POST /two] does not exist.',
+        'Local documentation target [GET /one] does not exist.',
+        'Local documentation target [POST /two] does not exist.',
+    ]);
+
+    file_put_contents($this->root.'/openapi.json', '{"paths":{"/one":{"get":{}},"/two":{"post":{}}}}');
+
+    expect($this->rule->check())->toBe([]);
+})->with([
+    'missing file' => null,
+    'malformed JSON' => '{broken',
+    'non-object JSON' => 'null',
+    'empty specification' => '{"paths":{}}',
+]);
+
+it('rereads a changed valid specification on the next check of the same rule', function (): void {
+    file_put_contents($this->root.'/docs.json', '{"navigation":{"openapi":"openapi.json","pages":["GET /one","GET /one"]}}');
+    file_put_contents($this->root.'/openapi.json', '{"paths":{"/one":{"get":{}}}}');
+
+    expect($this->rule->check())->toBe([]);
+
+    file_put_contents($this->root.'/openapi.json', '{"paths":{"/two":{"get":{}}}}');
+
+    expect(array_column($this->rule->check(), 'message'))->toBe([
+        'Local documentation target [GET /one] does not exist.',
+        'Local documentation target [GET /one] does not exist.',
+    ]);
+});
