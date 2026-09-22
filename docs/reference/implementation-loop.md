@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, implement a complete PR, a
 
 # Feature delivery
 
-The [contributor guide](/contributor-guide) explains architecture, documentation, implementation, and PR submission. This reference covers review evidence, merge responsibilities, and local verification tools. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records the delivery decision.
+The [contributor guide](/contributor-guide) explains architecture, documentation, implementation, and PR submission. This reference covers review evidence, merge responsibilities, and local verification tools. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records the delivery decision. Task completion gates are defined by [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review).
 
 ## CI and local verification
 

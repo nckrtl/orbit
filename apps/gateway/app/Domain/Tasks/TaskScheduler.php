@@ -39,7 +39,7 @@ final readonly class TaskScheduler
 
         $groups = TaskGroup::query()
             ->with(['app', 'tasks', 'taskable'])
-            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing])
+            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
             ->orderBy('id')
             ->get();
 
@@ -125,7 +125,7 @@ final readonly class TaskScheduler
             return false;
         }
 
-        $comment = $task->comments()->where('type', 'ready_for_review')->latest('posted_at')->first();
+        $comment = $task->comments()->where('type', 'ready_for_review')->where('completion_attempt', $task->completion_attempt)->latest('posted_at')->latest('id')->first();
         $mentionsComposerCheck = array_any($implementer->recentMessages, static fn (array $message): bool => str_contains(strtolower($message['text']), 'composer check'));
         if ($comment === null && ! $mentionsComposerCheck) {
             return false;
@@ -166,7 +166,7 @@ final readonly class TaskScheduler
         $comment = $task->comments()
             ->whereIn('type', ['changes_requested', 'approved'])
             ->where('review_attempt', $task->review_attempt)
-            ->latest('posted_at')->first();
+            ->latest('posted_at')->latest('id')->first();
         if ($comment?->type === 'changes_requested') {
             if ($task->review_handled_comment_id === $comment->id) {
                 return true;

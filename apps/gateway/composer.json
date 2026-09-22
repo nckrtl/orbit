@@ -64,7 +64,8 @@
             "@guidance:check",
             "@rector",
             "@format:check",
-            "@analyse"
+            "@analyse",
+            "vendor/bin/pest --parallel --no-tia --compact"
         ],
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",

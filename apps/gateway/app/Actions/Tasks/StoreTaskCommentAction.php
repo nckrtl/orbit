@@ -21,6 +21,7 @@ final readonly class StoreTaskCommentAction
             ...$payload,
             'task_group_id' => $task->task_group_id,
             'task_id' => $task->id,
+            'completion_attempt' => $task->completion_attempt,
             'posted_at' => Carbon::now(),
         ]);
 

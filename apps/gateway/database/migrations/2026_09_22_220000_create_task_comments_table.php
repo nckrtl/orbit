@@ -15,6 +15,7 @@ return new class extends Migration
             $table->foreignId('task_group_id')->constrained()->cascadeOnDelete();
             $table->foreignId('task_id')->constrained()->cascadeOnDelete();
             $table->foreignId('agent_thread_id')->nullable()->constrained()->nullOnDelete();
+            $table->unsignedInteger('completion_attempt')->nullable();
             $table->string('type');
             $table->text('body');
             $table->string('author');

@@ -13,7 +13,7 @@ final class TaskComment extends Model
 {
     #[\Override]
     protected $fillable = [
-        'task_group_id', 'task_id', 'agent_thread_id', 'type', 'body', 'author',
+        'task_group_id', 'task_id', 'agent_thread_id', 'completion_attempt', 'type', 'body', 'author',
         'review_attempt', 'reviewer_thread_id', 'driver_turn', 'commit_sha', 'pr_url', 'posted_at',
     ];
 
@@ -37,6 +37,6 @@ final class TaskComment extends Model
 
     protected function casts(): array
     {
-        return ['review_attempt' => 'integer', 'posted_at' => 'immutable_datetime'];
+        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'posted_at' => 'immutable_datetime'];
     }
 }

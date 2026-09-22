@@ -61,7 +61,7 @@ final class TaskGroupsController extends Controller
         return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
     }
 
-    #[RequiresNodeAccess(ServingNode::Collection)]
+    #[RequiresNodeAccess(ServingNode::Gateway)]
     public function comments(Request $request, TaskGroup $group, Task $task): JsonResponse
     {
         abort_unless($task->task_group_id === $group->id, 404);

@@ -25,7 +25,7 @@ final class TickTaskSessionsCommand extends Command
             return self::SUCCESS;
         }
 
-        $lock = Cache::lock('orbit:tasks:tick', 55);
+        $lock = Cache::lock('orbit:tasks:tick', 300);
         if (! $lock->get()) {
             $this->info('Another tasks tick is already running.');
 
