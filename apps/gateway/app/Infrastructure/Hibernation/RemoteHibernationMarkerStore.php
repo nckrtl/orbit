@@ -7,6 +7,7 @@ namespace App\Infrastructure\Hibernation;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -97,22 +98,60 @@ final readonly class RemoteHibernationMarkerStore implements HibernationMarkerSt
 
     private function mtime(Node $node, string $path): ?int
     {
-        $result = $this->ssh->execute(
-            $this->connection($node),
-            new RemoteCommand(['sudo', 'stat', '-c', '%Y', '--', $path]),
+        $input = ProtectedInput::fromString(<<<'PYTHON'
+            import os, sys
+
+            try:
+                metadata = os.stat(sys.argv[1], follow_symlinks=False)
+            except FileNotFoundError:
+                print('absent')
+            except OSError:
+                sys.exit(1)
+            else:
+                print('present:' + str(metadata.st_mtime_ns // 1_000_000_000))
+            PYTHON);
+
+        try {
+            $result = $this->ssh->execute(
+                $this->connection($node),
+                new RemoteCommand(
+                    ['sudo', 'python3', '-', $path],
+                    protectedInput: $input,
+                    maxOutputBytes: 128,
+                    timeout: 10.0,
+                ),
+            );
+        } finally {
+            $input->close();
+        }
+
+        if (! $result->succeeded() || $result->truncated || $result->stderr !== '') {
+            $this->readFailed($node);
+        }
+
+        if ($result->stdout === "absent\n") {
+            return null;
+        }
+
+        if (preg_match('/\Apresent:(0|[1-9][0-9]*)\n\z/D', $result->stdout, $matches) !== 1) {
+            $this->readFailed($node);
+        }
+
+        $stamp = filter_var($matches[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+
+        if (! is_int($stamp)) {
+            $this->readFailed($node);
+        }
+
+        return $stamp;
+    }
+
+    private function readFailed(Node $node): never
+    {
+        throw new HibernationException(
+            errorCode: 'hibernation.marker_failed',
+            message: "Hibernation marker read failed on Node [{$node->name}].",
         );
-
-        if (! $result->succeeded()) {
-            return null;
-        }
-
-        $stamp = trim($result->stdout);
-
-        if (preg_match('/\A[1-9][0-9]*\z/D', $stamp) !== 1) {
-            return null;
-        }
-
-        return (int) $stamp;
     }
 
     /** @param non-empty-list<string> $arguments */

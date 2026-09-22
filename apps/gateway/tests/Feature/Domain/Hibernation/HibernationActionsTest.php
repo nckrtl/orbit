@@ -522,6 +522,26 @@ it('restores cold checkout dependencies before it starts Processes', function ()
         ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
 });
 
+it('does not mutate a runtime when its initial marker observation fails', function (string $operation): void {
+    hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    $this->markers->beforeObservation = static function (): never {
+        throw new HibernationException('hibernation.marker_failed', 'Hibernation marker read failed.');
+    };
+
+    expect(fn () => match ($operation) {
+        'wake' => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance),
+        'sweep' => app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now()),
+    })->toThrow(HibernationException::class, 'Hibernation marker read failed.');
+
+    expect($this->runtime->started)->toBe([]);
+    expect($this->runtime->stopped)->toBe([]);
+    expect($this->checkouts->restored)->toBe([]);
+    expect($this->checkouts->pruned)->toBe([]);
+    expect($this->markers->awake)->toBe([]);
+    expect($this->markers->asleep)->toBe([]);
+    expect($this->markers->cold)->toBe([]);
+})->with(['wake', 'sweep']);
+
 it('keeps the cold marker and skips the awake marker when restore fails', function (): void {
     hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     $this->markers->cold[] = RuntimeHibernation::key((int) $this->instance->id);
