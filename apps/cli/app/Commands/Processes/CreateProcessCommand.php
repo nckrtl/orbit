@@ -61,12 +61,21 @@ final class CreateProcessCommand extends TargetedProcessCommand
             );
         }
 
+        $selector = $this->exclusiveProcessTarget();
+
+        if ($selector === null) {
+            return self::FAILURE;
+        }
+
         $preset = $this->stringOption('preset');
         if ($preset !== null) {
             if (! in_array($preset, ['vp-dev', 'agentation-mcp', 'antigravity-watch'], true)) {
                 return $this->renderGatewayFailure('process.preset_invalid', 'Supported Process presets are vp-dev, agentation-mcp, and antigravity-watch.');
             }
-            foreach (['app', 'node', 'runtime', 'command', 'image', 'working-directory', 'environment', 'port', 'volume'] as $option) {
+            if ($selector !== 'instance') {
+                return $this->renderGatewayFailure('process.preset_option_invalid', 'A Process preset requires --instance and owns runtime, command, working directory, and environment configuration.');
+            }
+            foreach (['runtime', 'command', 'image', 'working-directory', 'environment', 'port', 'volume'] as $option) {
                 if ($this->input->hasParameterOption('--'.$option)) {
                     return $this->renderGatewayFailure('process.preset_option_invalid', 'A Process preset requires --instance and owns runtime, command, working directory, and environment configuration.');
                 }
@@ -159,12 +168,6 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $selector = $this->exclusiveProcessTarget();
-
-        if ($selector === null) {
-            return self::FAILURE;
-        }
-
         if ($selector === 'app') {
             return $this->createDefinition(
                 $repository,
@@ -195,7 +198,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        $target = $this->processTarget($connector, allowDomain: true);
+        $target = $this->processTarget($connector, $selector, allowDomain: true);
 
         if ($target === null) {
             return self::FAILURE;

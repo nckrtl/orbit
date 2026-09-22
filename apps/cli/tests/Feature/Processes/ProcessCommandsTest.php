@@ -1550,7 +1550,61 @@ it('refuses preset overrides without sending a request', function (array $option
     $mock = MockClient::global([]);
     $this->artisan('process:create', ['name' => 'assets', '--instance' => 'commander.test', '--preset' => 'vp-dev', '--json' => true, ...$options])->assertExitCode(1);
     $mock->assertNothingSent();
-})->with([[['--runtime' => 'systemd']], [['--command' => ['/bin/true']]], [['--working-directory' => '/tmp']], [['--port' => ['5173:5173']]]]);
+})->with([[['--runtime' => 'systemd']], [['--command' => ['/bin/true']]], [['--working-directory' => '/tmp']], [['--port' => ['5173:5173']]], [['--image' => 'example:latest']], [['--environment' => ['MODE=test']]], [['--volume' => ['data:/data']]]]);
+
+it('refuses every preset for either Project alias before sending a request', function (string $preset, string $alias): void {
+    $mock = MockClient::global([CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201)]);
+
+    expect(Artisan::call('process:create', ['name' => 'assets', $alias => '7', '--for' => 'development', '--preset' => $preset, '--json' => true]))->toBe(1)
+        ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe(['error' => [
+            'code' => 'process.preset_option_invalid',
+            'message' => 'A Process preset requires --instance and owns runtime, command, working directory, and environment configuration.',
+            'request_id' => null,
+        ]]);
+    $mock->assertNothingSent();
+})->with(['vp-dev', 'agentation-mcp', 'antigravity-watch'])->with(['--project', '--app']);
+
+it('refuses every preset for a Node before looking up its name', function (string $preset): void {
+    $mock = MockClient::global([]);
+
+    expect(Artisan::call('process:create', ['name' => 'assets', '--node' => 'beast', '--preset' => $preset, '--json' => true]))->toBe(1)
+        ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.preset_option_invalid');
+    $mock->assertNothingSent();
+})->with(['vp-dev', 'agentation-mcp', 'antigravity-watch']);
+
+it('preserves generic Project definition create and list for both aliases', function (string $alias): void {
+    $mock = MockClient::global([
+        CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
+        ListProcessDefinitionsRequest::class => MockResponse::make(process_definition_cli_collection_envelope()),
+    ]);
+
+    expect(Artisan::call('process:create', ['name' => 'queue', $alias => '7', '--for' => 'development', '--command' => ['/bin/true'], '--json' => true]))->toBe(0)
+        ->and($mock->getLastRequest())->toBeInstanceOf(CreateProcessDefinitionRequest::class)
+        ->and($mock->getLastPendingRequest()?->getUrl())->toBe('https://10.44.0.1/api/v1/projects/7/process-definitions');
+    expect(Artisan::call('process:list', [$alias => '7', '--json' => true]))->toBe(0)
+        ->and($mock->getLastRequest())->toBeInstanceOf(ListProcessDefinitionsRequest::class)
+        ->and($mock->getLastPendingRequest()?->body())->toBeNull();
+})->with(['--project', '--app']);
+
+it('resolves invalid ownership before preset configuration', function (array $options): void {
+    $mock = MockClient::global([]);
+
+    expect(Artisan::call('process:create', ['name' => 'assets', '--preset' => 'vp-dev', '--runtime' => 'docker', '--json' => true, ...$options]))->toBe(1)
+        ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.target_invalid');
+    $mock->assertNothingSent();
+})->with([
+    'missing' => [[]],
+    'both aliases' => [['--project' => '7', '--app' => '7']],
+    'project and instance' => [['--project' => '7', '--instance' => '7']],
+    'node and instance' => [['--node' => 'beast', '--instance' => '7']],
+]);
+
+it('refuses a domain for process list while create accepts it', function (): void {
+    $mock = MockClient::global([]);
+    expect(Artisan::call('process:list', ['--instance' => 'commander.test', '--json' => true]))->toBe(1)
+        ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.target_id_invalid');
+    $mock->assertNothingSent();
+});
 
 it('sends Agentation presets without synthesizing runtime configuration', function (string $preset): void {
     $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
@@ -1566,14 +1620,14 @@ it('sends Agentation presets without synthesizing runtime configuration', functi
     ]);
 })->with(['agentation-mcp', 'antigravity-watch']);
 
-it('refuses Agentation keep-alive without sending a request', function (): void {
+it('refuses Agentation keep-alive without sending a request', function (string $preset): void {
     $mock = MockClient::global([]);
     $this->artisan('process:create', [
         'name' => 'watch',
         '--instance' => 'commander.test',
-        '--preset' => 'antigravity-watch',
+        '--preset' => $preset,
         '--keep-alive' => true,
         '--json' => true,
     ])->assertExitCode(1);
     $mock->assertNothingSent();
-});
+})->with(['agentation-mcp', 'antigravity-watch']);

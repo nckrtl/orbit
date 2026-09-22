@@ -63,7 +63,7 @@ final class ListProcessesCommand extends TargetedProcessCommand
                 : self::FAILURE;
         }
 
-        $target = $this->processTarget($connector);
+        $target = $this->processTarget($connector, $selector);
 
         if ($target === null) {
             return self::FAILURE;

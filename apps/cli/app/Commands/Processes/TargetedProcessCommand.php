@@ -55,14 +55,9 @@ abstract class TargetedProcessCommand extends ProcessCommand
         };
     }
 
-    protected function processTarget(GatewayConnector $connector, bool $allowDomain = false): AppInstanceProcessTarget|NodeProcessTarget|null
+    /** @param 'instance'|'node' $target */
+    protected function processTarget(GatewayConnector $connector, string $target, bool $allowDomain = false): AppInstanceProcessTarget|NodeProcessTarget|null
     {
-        $target = $this->exclusiveProcessTarget();
-
-        if ($target === null || $target === 'app') {
-            return null;
-        }
-
         if ($target === 'instance') {
             $id = filter_var($this->option('instance'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
