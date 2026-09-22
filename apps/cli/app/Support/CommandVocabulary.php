@@ -39,6 +39,7 @@ final readonly class CommandVocabulary
             'register',
             'rollback',
             'scan',
+            'setup',
             'transfer',
         ],
         'metrics' => ['status'],

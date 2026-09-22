@@ -28,6 +28,7 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
         private readonly ?string $instanceName = null,
         private readonly ?string $root = null,
         private readonly ?string $domain = null,
+        private readonly bool $setup = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -50,6 +51,10 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
 
         if ($this->includeWorktrees) {
             $body['include_worktrees'] = true;
+        }
+
+        if ($this->setup) {
+            $body['setup'] = true;
         }
 
         foreach ([

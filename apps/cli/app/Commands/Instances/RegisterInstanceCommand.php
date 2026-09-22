@@ -36,6 +36,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--root= : Confirmed Project root or existing-Project root override}
         {--domain= : Optional explicit Route domain}
         {--yes : Confirm source ownership transfer without prompting}
+        {--setup : Run the Project setup steps after adoption}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -101,6 +102,7 @@ final class RegisterInstanceCommand extends GatewayCommand
                 instanceName: $this->stringOption('name'),
                 root: $values['root'],
                 domain: $this->stringOption('domain'),
+                setup: $this->option('setup') === true,
             ),
             AppInstanceRegistrationResponse::class,
             ['Register source', 'Registering source', 'Registered source'],

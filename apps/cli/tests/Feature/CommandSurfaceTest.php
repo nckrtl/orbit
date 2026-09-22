@@ -125,7 +125,16 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:register',
         'instance:release:list',
         'instance:rollback',
+        'instance:setup',
+        'instance:setup-step:create',
+        'instance:setup-step:destroy',
+        'instance:setup-step:list',
+        'instance:setup-step:update',
         'instance:show',
+        'instance:teardown-step:create',
+        'instance:teardown-step:destroy',
+        'instance:teardown-step:list',
+        'instance:teardown-step:update',
         'instance:transfer',
         'instance:update',
         'metrics:credentials',
@@ -305,7 +314,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(140);
+    expect($orbitCommands)->toHaveCount(149);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -699,6 +708,56 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'root' => null,
                 'domain' => null,
                 'yes' => false,
+                'setup' => false,
+                'json' => false,
+            ],
+        ],
+        'instance:setup' => [['instance'], ['json' => false]],
+        'instance:setup-step:create' => [
+            ['name'],
+            [
+                'project' => null,
+                'command' => null,
+                'timeout' => null,
+                'before' => null,
+                'after' => null,
+                'json' => false,
+            ],
+        ],
+        'instance:setup-step:destroy' => [['name'], ['project' => null, 'yes' => false, 'json' => false]],
+        'instance:setup-step:list' => [[], ['project' => null, 'json' => false]],
+        'instance:setup-step:update' => [
+            ['name'],
+            [
+                'project' => null,
+                'command' => null,
+                'timeout' => null,
+                'before' => null,
+                'after' => null,
+                'json' => false,
+            ],
+        ],
+        'instance:teardown-step:create' => [
+            ['name'],
+            [
+                'project' => null,
+                'command' => null,
+                'timeout' => null,
+                'before' => null,
+                'after' => null,
+                'json' => false,
+            ],
+        ],
+        'instance:teardown-step:destroy' => [['name'], ['project' => null, 'yes' => false, 'json' => false]],
+        'instance:teardown-step:list' => [[], ['project' => null, 'json' => false]],
+        'instance:teardown-step:update' => [
+            ['name'],
+            [
+                'project' => null,
+                'command' => null,
+                'timeout' => null,
+                'before' => null,
+                'after' => null,
                 'json' => false,
             ],
         ],
@@ -1088,6 +1147,15 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'instance.source_invalid',
             'message' => 'The current path is not a supported Git checkout or worktree.',
         ],
+        'instance:setup' => [['instance' => '1'], ...$profileMissing],
+        'instance:setup-step:create' => [['name' => 'install-php', '--project' => '1', '--command' => 'true'], ...$profileMissing],
+        'instance:setup-step:destroy' => [['name' => 'install-php', '--project' => '1', '--yes' => true], ...$profileMissing],
+        'instance:setup-step:list' => [['--project' => '1'], ...$profileMissing],
+        'instance:setup-step:update' => [['name' => 'install-php', '--project' => '1', '--command' => 'true'], ...$profileMissing],
+        'instance:teardown-step:create' => [['name' => 'drop-sqlite', '--project' => '1', '--command' => 'true'], ...$profileMissing],
+        'instance:teardown-step:destroy' => [['name' => 'drop-sqlite', '--project' => '1', '--yes' => true], ...$profileMissing],
+        'instance:teardown-step:list' => [['--project' => '1'], ...$profileMissing],
+        'instance:teardown-step:update' => [['name' => 'drop-sqlite', '--project' => '1', '--command' => 'true'], ...$profileMissing],
         'instance:release:list' => [['instance' => '1'], ...$profileMissing],
         'instance:rollback' => [['instance' => '1', '--release' => 'release-a'], ...$profileMissing],
         'instance:dependencies:scan' => [[], ...$profileMissing],
@@ -1241,3 +1309,10 @@ function orbitProductCommandNames(): array
         ->values()
         ->all();
 }
+
+it('refuses a malformed lifecycle timeout before contacting the Gateway', function (string $command): void {
+    MockClient::destroyGlobal();
+    $this->artisan($command, ['name' => 'install', '--project' => '1', '--command' => 'true', '--timeout' => 'invalid', '--json' => true])
+        ->expectsOutputToContain('lifecycle_step.timeout_invalid')
+        ->assertFailed();
+})->with(['instance:setup-step:create', 'instance:setup-step:update', 'instance:teardown-step:create', 'instance:teardown-step:update']);

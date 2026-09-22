@@ -32,6 +32,7 @@ final class RegisterAppInstanceRequest extends FormRequest
             'instance_name' => ['sometimes', 'string', 'max:63'],
             'root' => ['sometimes', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
+            'setup' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -50,6 +51,7 @@ final class RegisterAppInstanceRequest extends FormRequest
                 'instance_name',
                 'root',
                 'domain',
+                'setup',
             ]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -100,6 +102,7 @@ final class RegisterAppInstanceRequest extends FormRequest
             instanceName: is_string($values['instance_name'] ?? null) ? $values['instance_name'] : null,
             root: is_string($values['root'] ?? null) ? $values['root'] : null,
             domain: is_string($values['domain'] ?? null) ? $values['domain'] : null,
+            runSetup: ($values['setup'] ?? false) === true,
         );
     }
 }

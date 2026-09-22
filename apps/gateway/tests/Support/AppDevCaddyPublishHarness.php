@@ -171,6 +171,18 @@ final class AppDevCaddyPublishHarness
             ."\"\n",
         );
         file_put_contents(
+            filename: $this->root.'/bin/runuser',
+            data: <<<'BASH'
+                #!/usr/bin/env bash
+                set -euo pipefail
+                test "$1" = -u && test "$2" = caddy && test "$3" = -- && test "$4" = caddy
+                shift 3
+                printf 'user=caddy\n' >> "$HARNESS_VALIDATE_LOG"
+                exec "$@"
+                BASH,
+        );
+        chmod($this->root.'/bin/runuser', permissions: 0o755);
+        file_put_contents(
             filename: $this->root.'/bin/caddy',
             data: <<<'BASH'
                 #!/usr/bin/env bash

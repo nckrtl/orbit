@@ -176,7 +176,7 @@ A stopped reviewer with `changes_requested` is relayed, and the task returns to 
 
 The Gateway sends one reminder that names every failed item. The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder. A missing Jev answer counts as a communication failure and asks for assistance on the fifth consecutive failure.
 
-[ADR 0115](/decisions/0115-verify-task-evidence-before-review) defines the opt-in verification pilot below. Pilot tasks use captured execution results and required Noul questions in place of the three transcript-derived check items. Runtime state, pending input, the blocker question, and independent review still apply.
+[ADR 0116](/decisions/0116-verify-task-evidence-before-review) defines the opt-in verification pilot below. Pilot tasks use captured execution results and required Noul questions in place of the three transcript-derived check items. Runtime state, pending input, the blocker question, and independent review still apply.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not supply verification evidence. The pilot runner owns that record. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
 
@@ -205,7 +205,7 @@ The Gateway registers `tasks:tick` every ten seconds when the tasks extension is
 
 ## Task verification pilot
 
-The pilot is disabled by default. It supports the Orbit monorepo and local PHP test evidence. Enable it only after the held-out evaluation in [ADR 0115](/decisions/0115-verify-task-evidence-before-review#smallest-experiment-and-release-condition) passes. The [live diagnostic](/decisions/0115-verify-task-evidence-before-review#live-noul-diagnostic) passed on a small author-labeled corpus; independent labels and review remain required. There is no default Noul threshold or established production error rate.
+The pilot is disabled by default. It supports the Orbit monorepo and local PHP test evidence. Enable it only after the held-out evaluation in [ADR 0116](/decisions/0116-verify-task-evidence-before-review#smallest-experiment-and-release-condition) passes. The [live diagnostic](/decisions/0116-verify-task-evidence-before-review#live-noul-diagnostic) passed on a small author-labeled corpus; independent labels and review remain required. There is no default Noul threshold or established production error rate.
 
 Set `ORBIT_TASKS_VERIFICATION_APP_IDS` to the comma-separated App IDs in the pilot and `ORBIT_TASKS_VERIFICATION_NOUL_THRESHOLD` to an evaluated probability greater than `0.5` and at most `1`. New tasks for those Apps require one to three criteria. Existing tasks retain their contract. Removing an App from the setting does not remove verification from its existing pilot tasks. A missing threshold refuses pilot task creation with `tasks.verification_not_calibrated` (409).
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Support\GatewayFailureRenderer;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
@@ -1005,3 +1006,12 @@ function gateway_failed_create_diagnostic(string $output): string
 
     return substr($output, strlen($prefix));
 }
+
+it('keeps lifecycle failure names and safe outcomes without command output', function (): void {
+    $details = GatewayFailureRenderer::safeDetails('instance.setup_step_failed', [
+        'step' => 'bootstrap', 'teardown_step' => 'cleanup', 'outcome' => 'failed', 'cleanup' => 'incomplete',
+        'command' => 'private-command', 'stdout' => 'private-output',
+    ]);
+    expect($details)->toBe(['step' => 'bootstrap', 'teardown_step' => 'cleanup', 'outcome' => 'failed', 'cleanup' => 'incomplete'])
+        ->and(GatewayFailureRenderer::safeDetails('instance.setup_step_failed', ['step' => "bad\nname", 'outcome' => 'secret']))->toBe([]);
+});

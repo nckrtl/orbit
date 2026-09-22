@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ProxyCliController;
 use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
@@ -211,6 +212,22 @@ Route::prefix('v1')->group(function (): void {
         Route::post('projects', [AppsController::class, 'store'])->name('project:create');
         Route::patch('projects/{app}', [AppsController::class, 'update'])->name('project:update');
         Route::delete('projects/{app}', [AppsController::class, 'destroy'])->name('project:destroy');
+        Route::get('projects/{app}/setup-steps', [ProjectLifecycleStepsController::class, 'setupIndex'])->name('instance:setup-step:list');
+        Route::post('projects/{app}/setup-steps', [ProjectLifecycleStepsController::class, 'setupStore'])->name('instance:setup-step:create');
+        Route::patch('projects/{app}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupUpdate'])
+            ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+            ->name('instance:setup-step:update');
+        Route::delete('projects/{app}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupDestroy'])
+            ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+            ->name('instance:setup-step:destroy');
+        Route::get('projects/{app}/teardown-steps', [ProjectLifecycleStepsController::class, 'teardownIndex'])->name('instance:teardown-step:list');
+        Route::post('projects/{app}/teardown-steps', [ProjectLifecycleStepsController::class, 'teardownStore'])->name('instance:teardown-step:create');
+        Route::patch('projects/{app}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownUpdate'])
+            ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+            ->name('instance:teardown-step:update');
+        Route::delete('projects/{app}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownDestroy'])
+            ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+            ->name('instance:teardown-step:destroy');
         Route::get('apps', [AppsController::class, 'index'])->name('app:list');
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
         Route::post('apps', [AppsController::class, 'store'])->name('app:create');
@@ -286,6 +303,9 @@ Route::prefix('v1')->group(function (): void {
             ->name('instance:transfer');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:destroy');
+        Route::post('instances/{instance}/setup', [AppInstancesController::class, 'setup'])
+            ->whereNumber('instance')
+            ->name('instance:setup');
         Route::get(
             'instances/{instance}/deploy-steps',
             [AppInstanceDeployStepsController::class, 'index'],

@@ -49,6 +49,11 @@ use Orbit\Sdk\Requests\Herdr\IssueObservationGrantRequest;
 use Orbit\Sdk\Requests\Herdr\ListHerdrSessionsRequest;
 use Orbit\Sdk\Requests\Herdr\RestartHerdrSessionRequest;
 use Orbit\Sdk\Requests\Herdr\ShowHerdrSessionRequest;
+use Orbit\Sdk\Requests\Instances\CreateProjectLifecycleStepRequest;
+use Orbit\Sdk\Requests\Instances\DestroyProjectLifecycleStepRequest;
+use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
+use Orbit\Sdk\Requests\Instances\SetupAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
@@ -214,7 +219,14 @@ describe('repository guidance bootstrap', function (): void {
             ShowProxyCliProviderRequest::class,
             UpdateProxyCliAccountRequest::class,
         ];
-        $expectedOperationCount = $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests);
+        $lifecycleRequests = [
+            CreateProjectLifecycleStepRequest::class,
+            DestroyProjectLifecycleStepRequest::class,
+            ListProjectLifecycleStepsRequest::class,
+            SetupAppInstanceRequest::class,
+            UpdateProjectLifecycleStepRequest::class,
+        ];
+        $expectedOperationCount = count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -308,6 +320,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toBe($expectedOperationCount + 4)
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
+            ->toContain(...$lifecycleRequests)
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(TransferAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
