@@ -6,6 +6,7 @@ use App\Actions\AppInstances\CloneAppInstanceAction;
 use App\Actions\AppInstances\CloneAppInstanceEnvironmentAction;
 use App\Actions\AppInstances\InstantiateAppRuntimeDefinitionsAction;
 use App\Actions\AppInstances\RemoveAppInstanceAction;
+use App\Actions\AppInstances\UpdateAppInstanceEnvironmentAction;
 use App\Data\AppInstances\CloneAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
@@ -30,8 +31,10 @@ use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -39,12 +42,19 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     $this->orbitApp = OrbitApp::query()->create([
@@ -190,6 +200,133 @@ it('prepares an independent production target and activates its explicit private
         ->and($targetValues->pluck('id')->intersect($sourceValues->pluck('id'))->all())->toBeEmpty()
         ->and($this->lock->owners)->toContain([$this->candidate->id], [$this->candidate->id, $target->id]);
 });
+
+it('completes a route-less Project clone with ordinary environment access and a terminal identical retry', function (ProjectType $type): void {
+    orb198_route_less_candidate($this->candidate, $type);
+    $this->freezeSecond();
+
+    $result = $this->action->execute($this->candidate, $this->data);
+    $target = $result['appInstance'];
+
+    expect($result['created'])->toBeTrue();
+    expect($target->status)->toBe(AppInstanceState::Active);
+    expect($target->provisioning_step)->toBe('active');
+    expect($target->clone_completed_at?->equalTo(now()))->toBeTrue();
+    expect($target->routes)->toBeEmpty();
+    expect($target->runtime_definitions_captured_at)->not->toBeNull();
+    expect($target->production_php_service)->toBeNull();
+    expect($target->deployment_branch)->toBeNull();
+    expect($this->writer->contents)->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://literal.example.test\"\n");
+    expect($this->writer->observedRouteStatus)->toBeNull();
+    expect($this->writer->observedTargetStatus)->toBe(AppInstanceState::SourceResolved);
+
+    app(UpdateAppInstanceEnvironmentAction::class)->execute($target, 'APP_KEY', 'base64:target-edited-key');
+    $inspectionCount = $this->inspector->calls;
+    $this->inspector->fail = true;
+    $retry = $this->action->execute($this->candidate, $this->data);
+
+    expect($retry['created'])->toBeFalse();
+    expect($retry['appInstance']->id)->toBe($target->id);
+    expect($retry['appInstance']->provisioning_step)->toBe('active');
+    expect($retry['appInstance']->clone_completed_at?->equalTo($target->clone_completed_at))->toBeTrue();
+    expect($retry['appInstance']->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)
+        ->toBe('base64:target-edited-key');
+    expect($this->candidate->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)
+        ->toBe('base64:literal-candidate-key');
+    expect($this->inspector->calls)->toBe($inspectionCount);
+    expect($this->source->calls)->toBe(['user', 'source', 'resolve', 'profile', 'caddy-access']);
+    expect($this->sqlite->calls)->toHaveCount(1);
+    expect($this->writer->calls)->toBe(1);
+    expect($this->projection->calls)->toBe([]);
+    expect($this->cloneProjection->calls)->toBe([]);
+    $this->metrics->shouldHaveReceived('reconcile')->twice();
+    $this->assertDatabaseCount('routes', 0);
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo]);
+
+it('admits a completed route-less clone through the native candidate lifecycle gate but still requires a selected release', function (ProjectType $type): void {
+    orb198_route_less_candidate($this->candidate, $type);
+    $target = $this->action->execute($this->candidate, $this->data)['appInstance'];
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->once()->andReturn(new CommandResult(
+        0, "REFUSED\tinstance.clone_candidate_release_missing\n", '', 1, false,
+    ));
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->once()->andReturn('/tmp/orbit-clone-test-key');
+    $knownHosts = Mockery::mock(KnownHostsStore::class);
+    $knownHosts->shouldReceive('path')->once()->andReturn('/tmp/orbit-clone-known-hosts');
+    $inspector = new RemoteAppInstanceCloneCandidateInspector($ssh, $keys, $knownHosts, app(RepositoryReadAccess::class));
+
+    expect(fn () => $inspector->inspect($target, 'main'))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.clone_candidate_release_missing');
+        });
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo]);
+
+it('keeps route-less activation incomplete when its terminal database write fails and resumes without repeating effects', function (): void {
+    orb198_route_less_candidate($this->candidate, ProjectType::LaravelPackage);
+    DB::unprepared(<<<'SQL'
+        CREATE TEMP TRIGGER clone_completion_failure BEFORE UPDATE ON app_instances
+        WHEN NEW.clone_completed_at IS NOT NULL AND OLD.clone_completed_at IS NULL
+        BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END
+        SQL);
+
+    try {
+        expect(fn () => $this->action->execute($this->candidate, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER clone_completion_failure');
+    }
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    expect($target->status)->toBe(AppInstanceState::SourceResolved);
+    expect($target->provisioning_step)->toBe('clone-definitions-instantiated');
+    expect($target->clone_completed_at)->toBeNull();
+    expect($target->failed_step)->toBe('clone-definitions-instantiated');
+
+    $retry = $this->action->execute($this->candidate, $this->data);
+
+    expect($retry['created'])->toBeFalse();
+    expect($retry['appInstance']->id)->toBe($target->id);
+    expect($retry['appInstance']->status)->toBe(AppInstanceState::Active);
+    expect($retry['appInstance']->provisioning_step)->toBe('active');
+    expect($retry['appInstance']->clone_completed_at)->not->toBeNull();
+    expect($retry['appInstance']->failed_step)->toBeNull();
+    expect($retry['appInstance']->error_code)->toBeNull();
+    expect($this->source->calls)->toBe(['user', 'source', 'resolve', 'profile', 'caddy-access']);
+    expect($this->sqlite->calls)->toHaveCount(1);
+    expect($this->writer->calls)->toBe(1);
+});
+
+it('refuses route-less activation when the recorded lifecycle or routing capability changes', function (string $mutation): void {
+    orb198_route_less_candidate($this->candidate, ProjectType::LaravelPackage);
+    DB::unprepared(<<<SQL
+        CREATE TEMP TRIGGER clone_lifecycle_change AFTER UPDATE ON app_instances
+        WHEN NEW.provisioning_step = 'clone-definitions-instantiated' AND OLD.provisioning_step <> NEW.provisioning_step
+        BEGIN {$mutation} END
+        SQL);
+
+    try {
+        expect(fn () => $this->action->execute($this->candidate, $this->data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('instance.lifecycle_conflict');
+            });
+    } finally {
+        DB::unprepared('DROP TRIGGER clone_lifecycle_change');
+    }
+
+    $target = AppInstance::query()->where('name', 'preview')->sole();
+    expect($target->status)->not->toBe(AppInstanceState::Active);
+    expect($target->clone_completed_at)->toBeNull();
+    expect($this->projection->calls)->toBe([]);
+    expect($this->cloneProjection->calls)->toBe([]);
+})->with([
+    'lifecycle changed' => "UPDATE app_instances SET status = 'checkout_prepared' WHERE id = NEW.id;",
+    'Route now required' => "UPDATE apps SET type = 'laravel-app' WHERE id = NEW.app_id;",
+    'optional Route attached' => <<<'SQL'
+        INSERT INTO routes (app_id, node_id, domain, provenance, publication, status)
+        VALUES (NEW.app_id, NEW.node_id, 'unexpected.prod.orbit', 'explicit', 'private', 'pending');
+        INSERT INTO route_targets (route_id, app_instance_id, position) VALUES (last_insert_rowid(), NEW.id, 0);
+        SQL,
+]);
 
 it('prepares a production target from an eligible production candidate', function (): void {
     $user = "orbit-app-{$this->orbitApp->id}";
@@ -488,6 +625,16 @@ it('refuses candidate removal while an incomplete clone retains its source depen
         ->and(AppInstance::query()->where('name', 'preview')->sole()->clone_completed_at)->toBeNull();
 });
 
+function orb198_route_less_candidate(AppInstance $candidate, ProjectType $type): void
+{
+    $candidate->app->update(['type' => $type]);
+    foreach ($candidate->routes()->get() as $route) {
+        $route->targets()->delete();
+        $route->delete();
+    }
+    $candidate->environmentValues()->where('env_key', 'APP_URL')->sole()->update(['env_value' => 'https://literal.example.test']);
+}
+
 function orb198_clone_node(string $name, string $address, ?string $tld = null): Node
 {
     return Node::query()->create([
@@ -602,6 +749,8 @@ final class Orb198EnvironmentPreflight implements AppInstanceOperationPreflight
 
 final class Orb198DomainCloneEnvironmentWriter implements AppInstanceEnvironmentWriter
 {
+    public int $calls = 0;
+
     public ?string $contents = null;
 
     public ?RouteStatus $observedRouteStatus = null;
@@ -610,8 +759,9 @@ final class Orb198DomainCloneEnvironmentWriter implements AppInstanceEnvironment
 
     public function write(AppInstanceEnvironmentContext $context, string $contents): AppInstanceEnvironmentWriteResult
     {
+        $this->calls++;
         $this->contents = $contents;
-        $this->observedRouteStatus = Route::query()->findOrFail($context->routeId)->status;
+        $this->observedRouteStatus = $context->routeId === null ? null : Route::query()->findOrFail($context->routeId)->status;
         $this->observedTargetStatus = AppInstance::query()->findOrFail($context->appInstanceId)->status;
 
         return AppInstanceEnvironmentWriteResult::changed();

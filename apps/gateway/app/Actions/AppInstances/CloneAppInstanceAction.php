@@ -374,13 +374,27 @@ final readonly class CloneAppInstanceAction
 
         if ($target->provisioning_step === 'clone-definitions-instantiated') {
             if (! $route instanceof Route) {
-                $this->checkpoint($target, 'clone-completed', AppInstanceState::Active);
-                $target->update([
-                    'clone_completed_at' => now(),
-                    'provisioning_step' => 'clone-completed',
-                    'failed_step' => null,
-                    'error_code' => null,
-                ]);
+                DB::transaction(function () use ($target): void {
+                    $lockedTarget = AppInstance::query()->with('app')->lockForUpdate()->findOrFail($target->id);
+
+                    if (
+                        $lockedTarget->provisioning_step !== 'clone-definitions-instantiated'
+                        || $lockedTarget->status !== AppInstanceState::SourceResolved
+                        || $lockedTarget->clone_completed_at !== null
+                        || $lockedTarget->requiresRoute()
+                        || $lockedTarget->routes()->exists()
+                    ) {
+                        throw $this->conflict('instance.lifecycle_conflict', 'The clone lifecycle changed before activation.');
+                    }
+
+                    $lockedTarget->update([
+                        'status' => AppInstanceState::Active,
+                        'provisioning_step' => 'active',
+                        'failed_step' => null,
+                        'error_code' => null,
+                        'clone_completed_at' => now(),
+                    ]);
+                });
 
                 return $target->refresh()->load('routes.targets');
             }

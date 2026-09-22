@@ -99,7 +99,9 @@ Cloning does not stop source processes or schedules, pause queue processing, cle
 
 ## Complete without deployment
 
-A successful request returns the ordinary active production Instance and its sole private preview Route. The prepared target has no selected deployment release. Cloning does not require an application response, run a framework command, deploy code, select `current`, or start a Process or Schedule.
+When cloning succeeds, the Gateway returns the ordinary active production Instance, with a sole private preview Route for a web-serving Project. Package and monorepo clones complete without a Route, PHP-FPM, or Caddy publication. Both branches record `status=active`, `provisioning_step=active`, and the clone completion timestamp together. The completed Instance accepts ordinary environment operations.
+
+The prepared target has no selected deployment release. Cloning does not require an application response, run a framework command, deploy code, select `current`, or start a Process or Schedule. A production candidate still needs a selected release before another clone can use it.
 
 The first deployment is a separate explicit request. It fetches the target's configured branch, synchronizes its stored environment, runs only configured deployment steps, and selects the new release as described in [Production release layout](/reference/deployments). That sequence is the only path to the release layout.
 
@@ -113,7 +115,7 @@ The Gateway records the immutable clone request and bounded provisioning checkpo
 
 A source, certificate, firewall, Caddy, Router, or private DNS failure records its bounded clone boundary for the retry. A request that changes the candidate, destination, name, preview, branch override, or SQLite selection refuses without adopting or replacing that target.
 
-After completion, an identical request returns the same Instance and Route. It does not revalidate changing candidate state or replace target source, database, stored environment edits, definition copies, runtime desired state, or final domain. Temporary SQLite work belongs to the clone operation and is cleaned without removing unrelated files.
+After completion, an identical request returns the same Instance and its Route when present. It does not revalidate changing candidate state or replace target source, database, stored environment edits, definition copies, runtime desired state, or final domain. The retry does not change recorded completion fields. Temporary SQLite work belongs to the clone operation and is cleaned without removing unrelated files.
 
 Orbit does not clean application data in either database. Before target workers start, the operating agent removes copied target queue entries or performs other target-only application cleanup when the application requires it. External storage and databases other than SQLite need separate preparation.
 
