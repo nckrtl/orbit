@@ -256,8 +256,8 @@ final class TransferArchiveProgram
             def run_checked(arguments, **options):
                 return subprocess.run(arguments, check=True, stderr=subprocess.DEVNULL, **options)
 
-            def git_output(source, arguments):
-                return run_checked(["git", *arguments], cwd=source, stdout=subprocess.PIPE).stdout.decode().strip()
+            def git_output(source, arguments, checkout):
+                return run_checked(["git", *arguments], cwd=source, pass_fds=(checkout,), stdout=subprocess.PIPE).stdout.decode().strip()
 
             def open_artifact(workspace, key, flags):
                 descriptor = os.open(artifact_names[key], flags | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=workspace)
@@ -271,12 +271,19 @@ final class TransferArchiveProgram
                     raise
 
             def capture(workspace):
-                source = request["source_path"]
-                head = git_output(source, ["rev-parse", "HEAD"])
-                branch = git_output(source, ["rev-parse", "--abbrev-ref", "HEAD"])
+                with TransferSource(request["source_attempt"]) as owner:
+                    checkout = owner.directory()
+                    result = capture_owned(workspace, checkout, owner.expected)
+                    owner.confirm_current()
+                    return result
+
+            def capture_owned(workspace, checkout, receipt):
+                source = "/proc/self/fd/" + str(checkout)
+                head = git_output(source, ["rev-parse", "HEAD"], checkout)
+                branch = git_output(source, ["rev-parse", "--abbrev-ref", "HEAD"], checkout)
                 detached = branch == "HEAD"
-                common = git_output(source, ["rev-parse", "--git-common-dir"]) if os.path.isfile(source + "/.git") else ""
-                refs = git_output(source, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+                common = receipt["common_path"] or ""
+                refs = git_output(source, ["for-each-ref", "--format=%(refname:short)", "refs/heads"], checkout)
                 archive = open_artifact(workspace, "archive", os.O_RDWR)
                 try:
                     os.ftruncate(archive, 0)
@@ -284,16 +291,16 @@ final class TransferArchiveProgram
                         bundle = open_artifact(workspace, "bundle", os.O_RDWR)
                         try:
                             os.ftruncate(bundle, 0)
-                            run_checked(["git", "bundle", "create", "-", "HEAD"], cwd=source, stdout=bundle)
+                            run_checked(["git", "bundle", "create", "-", "HEAD"], cwd=source, pass_fds=(checkout,), stdout=bundle)
                         finally:
                             os.close(bundle)
-                        run_checked(["tar", "--exclude=.git", "-cf", "-", "."], cwd=source, stdout=archive)
+                        run_checked(["tar", "--exclude=.git", "-cf", "-", "."], cwd=source, pass_fds=(checkout,), stdout=archive)
                         run_checked([
                             "tar", "-rf", "/proc/self/fd/" + str(archive),
                             "-C", "/proc/self/fd/" + str(workspace), bundle_name,
                         ], pass_fds=(archive, workspace), stdout=subprocess.DEVNULL)
                     else:
-                        run_checked(["tar", "-cf", "-", "."], cwd=source, stdout=archive)
+                        run_checked(["tar", "-cf", "-", "."], cwd=source, pass_fds=(checkout,), stdout=archive)
                     os.fsync(archive)
                 finally:
                     os.close(archive)

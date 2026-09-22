@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
-use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
 use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
+use App\Domain\AppInstances\Transfer\TransferSourceAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
@@ -45,16 +45,26 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         return $attempt;
     }
 
-    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture
+    public function prepareSource(TransferSourceAttempt $attempt): TransferSourceAttempt
+    {
+        return $attempt->withReceipt($this->sourceOperation($attempt, 'observe'));
+    }
+
+    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt, TransferSourceAttempt $sourceAttempt): TransferSourceCapture
     {
         $instance->loadMissing('node');
         $layout = AppInstanceSourceLayout::from($instance->source_layout);
+        if ($sourceAttempt->nodeId !== $instance->node_id || $sourceAttempt->sourcePath !== $instance->checkout_path
+            || $sourceAttempt->layout !== $layout->value || $sourceAttempt->transferId !== $attempt->transferId
+            || $sourceAttempt->phase !== 'owned') {
+            throw $this->failed();
+        }
         $facts = $this->facts($this->archiveOperation(
             $instance->node,
             $attempt,
             'source',
             'capture',
-            ['source_path' => $instance->checkout_path, 'layout' => $layout->value],
+            ['source_path' => $instance->checkout_path, 'layout' => $layout->value, 'source_attempt' => $sourceAttempt->toArray()],
         ));
         if ($facts['archive'] !== $attempt->archivePath('source')) {
             throw $this->failed();
@@ -152,27 +162,14 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
 
     public function cleanupSource(AppInstanceTransfer $transfer): TransferCleanupResult
     {
-        $source = Node::query()->findOrFail($transfer->source_node_id);
-        $common = $transfer->common_repository_path;
-
         try {
-            $this->ssh->execute(
-                $source,
-                new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $transfer->source_path,
-                        $transfer->source_layout->value,
-                        $common ?? '',
-                    ],
-                    input: $this->cleanupScript(),
-                ),
-                step: 'app-instance-transfer-cleanup',
-                errorCode: 'instance.transfer_cleanup_incomplete',
-            );
-        } catch (RuntimeConvergenceException) {
+            $attempt = TransferSourceAttempt::fromArray($transfer->source_attempt, $transfer);
+            if ($transfer->cutover_at === null || $attempt->phase !== 'owned'
+                || $transfer->common_repository_path !== ($attempt->receipt['common_path'] ?? null)
+                || $this->sourceOperation($attempt, 'cleanup') !== 'CLEANED') {
+                return new TransferCleanupResult(false, true, ['source-placement']);
+            }
+        } catch (Throwable) {
             return new TransferCleanupResult(false, true, ['source-placement']);
         }
 
@@ -268,7 +265,11 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             $result = $this->ssh->execute(
                 $node,
                 new RemoteCommand(
-                    arguments: ['python3', '-c', ($operation === 'materialize' ? TransferDestinationProgram::definitions()."\n" : '').TransferArchiveProgram::script(), $operation],
+                    arguments: ['python3', '-c', match ($operation) {
+                        'capture' => TransferSourceProgram::definitions()."\n",
+                        'materialize' => TransferDestinationProgram::definitions()."\n",
+                        default => '',
+                    }.TransferArchiveProgram::script(), $operation],
                     input: json_encode([
                         'id' => $attempt->id,
                         'transfer_id' => $attempt->transferId,
@@ -325,6 +326,33 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             'Transfer destination ownership or cleanup is unconfirmed. Retry the identical request.',
             409,
         );
+    }
+
+    private function sourceOperation(TransferSourceAttempt $attempt, string $operation): mixed
+    {
+        try {
+            $node = Node::query()->findOrFail($attempt->nodeId);
+            if ($node->user !== $attempt->executionUser) {
+                throw $this->failed();
+            }
+            $result = $this->ssh->execute(
+                $node,
+                new RemoteCommand(
+                    arguments: ['python3', '-c', TransferSourceProgram::script(), $operation],
+                    input: json_encode($attempt->toArray(), JSON_THROW_ON_ERROR),
+                    maxOutputBytes: 8192,
+                ),
+                step: 'app-instance-transfer-source-'.$operation,
+                errorCode: 'instance.transfer_cleanup_incomplete',
+            );
+            if ($result->truncated || $result->stderr !== '') {
+                throw $this->failed();
+            }
+
+            return json_decode($result->stdout, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            throw new ResourceOperationException('instance.transfer_cleanup_incomplete', 'Captured source ownership is unconfirmed. Retain the transfer for recovery.', 409);
+        }
     }
 
     /** @return non-empty-list<string> */
@@ -390,22 +418,6 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             'head' => $facts['head'], 'branch' => $facts['branch'], 'detached' => $facts['detached'],
             'archive' => $facts['archive'], 'common' => $facts['common'], 'refs' => $facts['refs'],
         ];
-    }
-
-    private function cleanupScript(): string
-    {
-        return <<<'BASH'
-            source=$1
-            layout=$2
-            common=$3
-            if [ ! -e "$source" ] && [ ! -L "$source" ]; then
-              exit 0
-            fi
-            if [ -n "$common" ] && [ "$source" = "$common" ]; then
-              exit 20
-            fi
-            rm -rf -- "$source"
-            BASH;
     }
 
     private function failed(): ResourceOperationException

@@ -13,7 +13,9 @@ interface AppInstanceTransferSource
 {
     public function prepareArchives(TransferArchiveAttempt $attempt): TransferArchiveAttempt;
 
-    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture;
+    public function prepareSource(TransferSourceAttempt $attempt): TransferSourceAttempt;
+
+    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt, TransferSourceAttempt $sourceAttempt): TransferSourceCapture;
 
     public function prepareDestination(TransferDestinationAttempt $attempt): TransferDestinationAttempt;
 

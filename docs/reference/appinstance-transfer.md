@@ -46,7 +46,9 @@ An unconfirmed archive cleanup stops the transfer and retains bounded recovery e
 
 Destination recovery removes only the directory created for the recorded transfer attempt. The Gateway records creation intent before remote work and the exact directory identity before extraction. It preserves a foreign directory that arrives after preflight or replaces the created checkout. Changed parent identity, missing ownership evidence, or unconfirmed cleanup stops recovery and retains the attempt for an identical retry. Legacy incomplete transfers without destination ownership evidence require recovery; the Gateway never adopts their current destination path for deletion. Post-cutover recovery does not discard the destination.
 
-Archive and destination metadata each keep two checksummed records in one bounded, protected file. After an interrupted update, retry uses the latest valid record. An incomplete first record or an unsupported metadata format cannot prove ownership and stops cleanup.
+Archive, source, and destination metadata each keep two checksummed records in one bounded, protected file. After an interrupted update, retry uses the latest valid record. An incomplete first record or an unsupported metadata format cannot prove ownership and stops cleanup.
+
+Before capture, the Gateway records the source directory's exact identity. Post-cutover cleanup claims and removes only that directory. A changed source or parent, unexplained disappearance, or missing legacy receipt stops cleanup; the destination remains authoritative. Linked-worktree cleanup preserves the shared Git repository, sibling worktrees, and local refs. It intentionally leaves the old worktree's Git administration in the shared repository rather than pruning shared state.
 
 Ownership receipts use private directories owned by the managed account. These checks do not protect against malicious code running as that same account and rewriting its private receipts. Directory creation does not atomically return an identity; checks detect drift after the first observation, before use and after placement or cleanup claims.
 

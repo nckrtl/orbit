@@ -23,6 +23,7 @@ use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
 use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
+use App\Domain\AppInstances\Transfer\TransferSourceAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -111,6 +112,15 @@ final class Orb245TransferSource implements AppInstanceTransferSource
 
     public bool $destinationCleanupIncomplete = false;
 
+    /** @var list<array<string, mixed>|null> */
+    public array $preparedSourceEvidence = [];
+
+    /** @var list<array<string, mixed>|null> */
+    public array $capturedSourceEvidence = [];
+
+    /** @var list<array<string, mixed>|null> */
+    public array $cleanedSourceEvidence = [];
+
     /** @var list<string> */
     public array $calls = [];
 
@@ -154,8 +164,20 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         return $this->archiveCleanupPending;
     }
 
-    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture
+    public function prepareSource(TransferSourceAttempt $attempt): TransferSourceAttempt
     {
+        $this->preparedSourceEvidence[] = AppInstanceTransfer::query()->findOrFail($attempt->transferId)->source_attempt;
+
+        return $attempt->withReceipt([
+            'root' => '4:1', 'parent' => '4:2', 'scope' => '4:3', 'checkout' => '4:4',
+            'common_path' => $attempt->layout === 'worktree' ? ($this->common ?? '/home/orbit/.orbit/worktrees/shop.git') : null,
+            'common' => $attempt->layout === 'worktree' ? '4:5' : null,
+        ]);
+    }
+
+    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt, TransferSourceAttempt $sourceAttempt): TransferSourceCapture
+    {
+        $this->capturedSourceEvidence[] = AppInstanceTransfer::query()->findOrFail($attempt->transferId)->source_attempt;
         $this->capturedArchiveEvidence[] = AppInstanceTransfer::query()->findOrFail($attempt->transferId)->archive_attempt;
         $this->capturedArchiveAttempts[] = $attempt;
         $this->calls[] = 'capture';
@@ -221,6 +243,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
 
     public function cleanupSource(AppInstanceTransfer $transfer): TransferCleanupResult
     {
+        $this->cleanedSourceEvidence[] = AppInstanceTransfer::query()->findOrFail($transfer->id)->source_attempt;
         $this->calls[] = 'cleanup';
         $this->cleanupCommon = $transfer->common_repository_path;
 

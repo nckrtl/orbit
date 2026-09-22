@@ -30,6 +30,7 @@ use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
+use App\Domain\AppInstances\Transfer\TransferSourceAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -225,6 +226,7 @@ final readonly class TransferAppInstanceAction
             'current_step' => AppInstanceTransferStep::Reserved,
         ]);
         $transfer->destination_attempt = TransferDestinationAttempt::create($transfer, $this->accounts->resolve($destination))->toArray();
+        $transfer->source_attempt = TransferSourceAttempt::create($transfer, $this->accounts->resolve($instance->node))->toArray();
         $transfer->save();
 
         return $transfer;
@@ -464,7 +466,16 @@ final readonly class TransferAppInstanceAction
             try {
                 $attempt = $this->sources->prepareArchives($attempt);
                 $transfer->update(['archive_attempt' => $attempt->toArray()]);
-                $capture = $this->sources->capture($instance, $attempt);
+                $sourceAttempt = TransferSourceAttempt::fromArray($transfer->source_attempt, $transfer);
+                if ($sourceAttempt->phase === 'reserved') {
+                    $sourceAttempt = $sourceAttempt->acquiring();
+                    $transfer->update(['source_attempt' => $sourceAttempt->toArray()]);
+                }
+                if ($sourceAttempt->phase === 'acquiring') {
+                    $sourceAttempt = $this->sources->prepareSource($sourceAttempt);
+                    $transfer->update(['source_attempt' => $sourceAttempt->toArray()]);
+                }
+                $capture = $this->sources->capture($instance, $attempt, $sourceAttempt);
                 $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
                     'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
                 ]);
@@ -775,6 +786,9 @@ final readonly class TransferAppInstanceAction
         DB::transaction(function () use ($instance, $destination, $transfer, $sourceClusterId): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
             $lockedTransfer = AppInstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
+            if (TransferSourceAttempt::fromArray($lockedTransfer->source_attempt, $lockedTransfer)->phase !== 'owned') {
+                throw $this->conflict('instance.transfer_cleanup_incomplete', 'Captured source ownership is unconfirmed.');
+            }
             $sourceRoute = Route::query()->lockForUpdate()->find($lockedTransfer->source_route_id);
             $destinationRoute = Route::query()->lockForUpdate()->find($lockedTransfer->destination_route_id);
             $sourceNode = Node::query()->lockForUpdate()->find($lockedTransfer->source_node_id);
@@ -943,6 +957,9 @@ final readonly class TransferAppInstanceAction
     private function cleanupSource(AppInstance $instance, AppInstanceTransfer $transfer): void
     {
         DB::transaction(fn (): array => $this->lockCleanupRoutes($instance, $transfer));
+        if (TransferSourceAttempt::fromArray($transfer->source_attempt, $transfer)->phase !== 'owned') {
+            throw $this->conflict('instance.transfer_cleanup_incomplete', 'Captured source ownership is unconfirmed.');
+        }
         $sourceNode = Node::query()->findOrFail($transfer->source_node_id);
         $this->transferProjection->retireSource($transfer);
         $this->runtime->cleanupSourceArtifacts($instance, $sourceNode, $transfer->source_path);
@@ -983,6 +1000,7 @@ final readonly class TransferAppInstanceAction
                 'status' => AppInstanceTransferStatus::Completed,
                 'completed_at' => now(),
                 'destination_attempt' => null,
+                'source_attempt' => null,
                 'recovery_evidence' => null,
                 'failed_step' => null,
                 'error_code' => null,

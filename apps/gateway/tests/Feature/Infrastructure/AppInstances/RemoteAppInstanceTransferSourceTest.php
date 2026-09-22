@@ -6,6 +6,8 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
+use App\Domain\AppInstances\Transfer\TransferSourceAttempt;
+use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -38,7 +40,7 @@ it('protects a source archive from creation under a permissive remote umask', fu
             ->and(fileperms($fixture->attempt->archivePath('source')) & 0777)->toBe(0600)
             ->and(filesize($fixture->attempt->archivePath('destination')))->toBe(0)
             ->and(fileperms($fixture->attempt->archivePath('destination')) & 0777)->toBe(0600);
-        $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+        $capture = $fixture->capture();
 
         expect(fileperms($capture->archiveIdentity) & 0777)->toBe(0600)
             ->and(fileperms(dirname($capture->archiveIdentity)) & 0777)->toBe(0700);
@@ -46,6 +48,331 @@ it('protects a source archive from creation under a permissive remote umask', fu
         $fixture->close();
     }
 });
+
+it('preserves a foreign source replacement during post-cutover cleanup', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    $checkout = $fixture->instance->checkout_path;
+    rename($checkout, $checkout.'.retained');
+    mkdir($checkout, 0700);
+    file_put_contents($checkout.'/foreign', 'foreign-source-sentinel');
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        $result = $fixture->source->cleanupSource($fixture->transfer);
+        expect($result->sourcePlacementRemoved)->toBeFalse()
+            ->and(file_get_contents($checkout.'/foreign'))->toBe('foreign-source-sentinel')
+            ->and(is_file($checkout.'.retained/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves a common repository aliased to the recorded source path', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $checkout = $fixture->instance->checkout_path;
+    $alias = $fixture->directory.'/common-alias';
+    symlink($checkout, $alias);
+    $fixture->transfer->update([
+        'source_layout' => 'worktree', 'common_repository_path' => $alias, 'cutover_at' => now(),
+    ]);
+
+    try {
+        $result = $fixture->source->cleanupSource($fixture->transfer);
+        expect($result->sourcePlacementRemoved)->toBeFalse()
+            ->and(is_file($checkout.'/.env'))->toBeTrue()
+            ->and(is_dir($checkout.'/.git'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('deletes only the captured source and preserves parent siblings and later arrivals', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    $checkout = $fixture->instance->checkout_path;
+    $parent = dirname($checkout);
+    mkdir($parent.'/sibling');
+    file_put_contents($parent.'/sibling/foreign', 'sibling-sentinel');
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
+            ->and(is_dir($checkout))->toBeFalse()
+            ->and(file_get_contents($parent.'/sibling/foreign'))->toBe('sibling-sentinel');
+        mkdir($checkout);
+        file_put_contents($checkout.'/foreign', 'later-sentinel');
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
+            ->and(file_get_contents($checkout.'/foreign'))->toBe('later-sentinel');
+        expect(fn () => $fixture->capture())->toThrow(ResourceOperationException::class);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves common repository sibling worktree and local refs when deleting a captured worktree', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $commonCheckout = $fixture->instance->checkout_path;
+    $worktree = $fixture->directory.'/linked-source';
+    $sibling = $fixture->directory.'/linked-sibling';
+    $fixture->git(['worktree', 'add', '--quiet', '-b', 'preview', $worktree], $commonCheckout);
+    $fixture->git(['worktree', 'add', '--quiet', '-b', 'sibling', $sibling], $commonCheckout);
+    file_put_contents($sibling.'/untracked', 'sibling-sentinel');
+    $refs = $fixture->git(['show-ref'], $commonCheckout);
+    $sharedSnapshot = static function () use ($commonCheckout): array {
+        $snapshot = [];
+        foreach (File::allFiles($commonCheckout.'/.git') as $file) {
+            $snapshot[$file->getRelativePathname()] = hash_file('sha256', $file->getPathname());
+        }
+        ksort($snapshot);
+
+        return $snapshot;
+    };
+    $administration = $sharedSnapshot();
+    $fixture->instance->update(['checkout_path' => $worktree, 'source_layout' => 'worktree']);
+    $fixture->capture();
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
+            ->and(is_dir($worktree))->toBeFalse()
+            ->and(is_dir($commonCheckout.'/.git'))->toBeTrue()
+            ->and(file_get_contents($sibling.'/untracked'))->toBe('sibling-sentinel')
+            ->and($fixture->git(['show-ref'], $commonCheckout))->toBe($refs)
+            ->and(file_get_contents($commonCheckout.'/.git/worktrees/linked-source/gitdir'))->toBe($worktree."/.git\n")
+            ->and($sharedSnapshot())->toBe($administration);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses captured source deletion after its parent changes', function (bool $symlink): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $parent = dirname($fixture->instance->checkout_path).'/projects';
+    mkdir($parent);
+    rename($fixture->instance->checkout_path, $parent.'/source');
+    $fixture->instance->update(['checkout_path' => $parent.'/source']);
+    $fixture->capture();
+    rename($parent, $parent.'.retained');
+    $foreign = $fixture->directory.'/foreign-parent';
+    mkdir($foreign);
+    if ($symlink) {
+        symlink($foreign, $parent);
+    } else {
+        mkdir($parent);
+    }
+    mkdir($parent.'/source');
+    file_put_contents($parent.'/source/foreign', 'foreign-sentinel');
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(file_get_contents($parent.'/source/foreign'))->toBe('foreign-sentinel')
+            ->and(is_file($parent.'.retained/source/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+})->with(['symlink' => true, 'replacement' => false]);
+
+it('refuses a source cleanup claim occupied by a foreign directory', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    $claim = dirname($fixture->instance->checkout_path).'/.orbit-transfer-sources/'.$fixture->sourceAttempt->id.'.claimed';
+    mkdir($claim, 0700);
+    file_put_contents($claim.'/foreign', 'claim-sentinel');
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(file_get_contents($claim.'/foreign'))->toBe('claim-sentinel')
+            ->and(is_file($fixture->instance->checkout_path.'/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('restores a foreign source swapped between validation and atomic cleanup claim', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    $fixture->transfer->update(['cutover_at' => now()]);
+    $fixture->ssh->programReplacements = [
+        'self.rename(parent, self.name, scope, self.claim_name)' => implode("\n", [
+            'os.rename(self.name, self.name + ".retained", src_dir_fd=parent, dst_dir_fd=parent)',
+            '            os.mkdir(self.name, 0o755, dir_fd=parent)',
+            '            foreign = os.open(self.name + "/foreign", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600, dir_fd=parent)',
+            '            os.write(foreign, b"foreign-sentinel")',
+            '            os.close(foreign)',
+            '            self.rename(parent, self.name, scope, self.claim_name)',
+        ]),
+    ];
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(file_get_contents($fixture->instance->checkout_path.'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_file($fixture->instance->checkout_path.'.retained/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('does not acknowledge unexplained disappearance of the captured source', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    rename($fixture->instance->checkout_path, $fixture->instance->checkout_path.'.retained');
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(is_file($fixture->instance->checkout_path.'.retained/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('resumes source cleanup after claim deletion and metadata interruptions', function (string $window): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    $fixture->transfer->update(['cutover_at' => now()]);
+    $fixture->ssh->programReplacements = match ($window) {
+        'after claim' => ['moved = self.metadata(scope, self.claim_name)' => 'raise OSError("claim interrupted")'],
+        'during deletion' => ['os.unlink(name, dir_fd=directory)' => "os.unlink(name, dir_fd=directory)\n                raise OSError(\"deletion interrupted\")"],
+        'after deletion' => ['os.fsync(scope)' => 'raise OSError("cleanup acknowledgment lost")'],
+        'torn journal' => ['written = os.pwrite(descriptor, frame[position:], offset + position)' => implode("\n", [
+            'written = os.pwrite(descriptor, frame[position:position + 24] if self.state["phase"] == "cleaned" else frame[position:], offset + position)',
+            '            if self.state["phase"] == "cleaned":',
+            '                os.fsync(descriptor)',
+            '                os.kill(os.getpid(), 9)',
+        ])],
+    };
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse();
+        $fixture->ssh->programReplacements = [];
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
+            ->and($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
+            ->and(is_dir($fixture->instance->checkout_path))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+})->with(['after claim', 'during deletion', 'after deletion', 'torn journal']);
+
+it('recovers the same observed source receipt after its creation acknowledgment is lost', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->after = fn (SshConnection $connection, RemoteCommand $command, CommandResult $result): CommandResult => $command->arguments[array_key_last($command->arguments)] === 'observe' ? new CommandResult(1, '', '', 1, false) : $result;
+
+    try {
+        expect(fn () => $fixture->prepareSource())->toThrow(ResourceOperationException::class);
+        $attemptId = $fixture->sourceAttempt->id;
+        expect($fixture->sourceAttempt->phase)->toBe('acquiring');
+        $fixture->ssh->after = null;
+        $fixture->prepareSource();
+        expect($fixture->sourceAttempt->id)->toBe($attemptId)
+            ->and($fixture->sourceAttempt->phase)->toBe('owned');
+        $fixture->capture();
+        $fixture->transfer->update(['cutover_at' => now()]);
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses capture after the observed source has been replaced', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->prepareSource();
+    $checkout = $fixture->instance->checkout_path;
+    rename($checkout, $checkout.'.retained');
+    mkdir($checkout);
+    file_put_contents($checkout.'/foreign', 'foreign-sentinel');
+
+    try {
+        expect(fn () => $fixture->capture())->toThrow(ResourceOperationException::class);
+        expect(filesize($fixture->attempt->archivePath('source')))->toBe(0)
+            ->and(file_get_contents($checkout.'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_file($checkout.'.retained/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('acknowledges lost source cleanup completion without deleting a later arrival', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    $fixture->transfer->update(['cutover_at' => now()]);
+    $fixture->ssh->after = fn (SshConnection $connection, RemoteCommand $command, CommandResult $result): CommandResult => new CommandResult(1, '', '', 1, false);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(is_dir($fixture->instance->checkout_path))->toBeFalse();
+        mkdir($fixture->instance->checkout_path);
+        file_put_contents($fixture->instance->checkout_path.'/foreign', 'later-sentinel');
+        $fixture->ssh->after = null;
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
+            ->and(file_get_contents($fixture->instance->checkout_path.'/foreign'))->toBe('later-sentinel');
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves the source worktree when its captured common repository is replaced', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $commonCheckout = $fixture->instance->checkout_path;
+    $worktree = $fixture->directory.'/linked-source';
+    $fixture->git(['worktree', 'add', '--quiet', '-b', 'preview', $worktree], $commonCheckout);
+    $fixture->instance->update(['checkout_path' => $worktree, 'source_layout' => 'worktree']);
+    $fixture->capture();
+    $common = $fixture->sourceAttempt->receipt['common_path'];
+    rename($common, $common.'.retained');
+    mkdir($common);
+    file_put_contents($common.'/foreign', 'common-sentinel');
+    $fixture->transfer->update(['cutover_at' => now()]);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(file_get_contents($common.'/foreign'))->toBe('common-sentinel')
+            ->and(is_file($worktree.'/.git'))->toBeTrue()
+            ->and(is_file($common.'.retained/HEAD'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('never dispatches source deletion before cutover or without captured evidence', function (bool $legacy): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->capture();
+    if ($legacy) {
+        $fixture->transfer->update(['source_attempt' => null, 'cutover_at' => now()]);
+    }
+    $calls = count($fixture->ssh->calls);
+
+    try {
+        expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse()
+            ->and(count($fixture->ssh->calls))->toBe($calls)
+            ->and(is_file($fixture->instance->checkout_path.'/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+})->with(['pre-cutover' => false, 'legacy' => true]);
+
+it('refuses source admission when a linked common directory is nested or aliased', function (bool $symlink): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $checkout = $fixture->instance->checkout_path;
+    $common = $checkout.'/shared.git';
+    rename($checkout.'/.git', $common);
+    if ($symlink) {
+        symlink($common, $checkout.'/common-alias');
+    }
+    file_put_contents($checkout.'/.git', 'gitdir: '.($symlink ? $checkout.'/common-alias' : $common)."\n");
+    $fixture->instance->update(['source_layout' => 'worktree']);
+
+    try {
+        expect(fn () => $fixture->capture())->toThrow(ResourceOperationException::class);
+        expect(filesize($fixture->attempt->archivePath('source')))->toBe(0)
+            ->and(is_file($checkout.'/.env'))->toBeTrue()
+            ->and(is_file($common.'/HEAD'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+})->with(['nested common directory' => false, 'symlinked common directory' => true]);
 
 it('preserves a foreign destination when capture failed before destination materialization', function (): void {
     $fixture = new TransferArchiveNativeFixture;
@@ -354,7 +681,7 @@ it('settles a never-started acquisition without creating the destination and ref
 
 it('refuses delayed materialization after the destination cleanup tombstone is durable', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $capture = $fixture->capture();
     $fixture->prepareDestination();
 
     try {
@@ -584,7 +911,7 @@ it('keeps a worktree bundle private and removes only its temporary archive paylo
     file_put_contents($worktree.'/.env', "KEY=archive-secret-sentinel\n");
 
     try {
-        $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+        $capture = $fixture->capture();
         $bundle = dirname($capture->archiveIdentity).'/'.$fixture->attempt->id.'.bundle';
 
         expect(fileperms($bundle) & 0777)->toBe(0600)
@@ -601,13 +928,13 @@ it('keeps overlapping attempts unique without removing the other attempt', funct
     $fixture = new TransferArchiveNativeFixture;
 
     try {
-        $first = $fixture->source->capture($fixture->instance, $fixture->attempt);
+        $first = $fixture->capture();
         $accounts = app(ManagedUserAccountResolver::class);
         $secondAttempt = TransferArchiveAttempt::create(
             $fixture->transfer, $accounts->resolve($fixture->instance->node), $accounts->resolve($fixture->destination),
         );
         $secondAttempt = $fixture->source->prepareArchives($secondAttempt);
-        $second = $fixture->source->capture($fixture->instance, $secondAttempt);
+        $second = $fixture->source->capture($fixture->instance, $secondAttempt, $fixture->sourceAttempt);
 
         expect($first->archiveIdentity)->not->toBe($second->archiveIdentity)
             ->and($fixture->source->cleanupArchives($fixture->attempt))->toBe([])
@@ -672,7 +999,7 @@ it('cleans empty prepared scopes after acknowledgement loss without starting pay
 
 it('retains unconfirmed cleanup after a lost acknowledgement and confirms an identical retry', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->capture();
     $fixture->ssh->after = static function (SshConnection $connection, RemoteCommand $command, CommandResult $result): CommandResult {
         if ($command->arguments[3] === 'cleanup' && $connection->host === '10.44.47.1') {
             throw new RuntimeException('archive-secret-sentinel');
@@ -686,7 +1013,7 @@ it('retains unconfirmed cleanup after a lost acknowledgement and confirms an ide
             ->and(is_dir(dirname($fixture->attempt->archivePath('source'))))->toBeFalse();
         $fixture->ssh->after = null;
         expect($fixture->source->cleanupArchives($fixture->attempt->withCleanupPending(['source'])))->toBe([]);
-        expect(fn () => $fixture->source->capture($fixture->instance, $fixture->attempt))
+        expect(fn () => $fixture->capture())
             ->toThrow(ResourceOperationException::class);
         expect(is_dir(dirname($fixture->attempt->archivePath('source'))))->toBeFalse();
     } finally {
@@ -725,7 +1052,7 @@ it('unlinks a destination archive while an upload still holds its open descripto
 
 it('refuses a late upload open after native archive cleanup removed its workspace', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $capture = $fixture->capture();
     $stage = $fixture->directory.'/late-upload.tar';
     copy($capture->archiveIdentity, $stage);
 
@@ -746,7 +1073,7 @@ it('refuses a late upload open after native archive cleanup removed its workspac
 
 it('preserves unknown content inside an owned archive workspace until it can be resolved', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $capture = $fixture->capture();
     $foreign = dirname($capture->archiveIdentity).'/foreign';
     file_put_contents($foreign, 'foreign-sentinel');
 
@@ -763,7 +1090,7 @@ it('preserves unknown content inside an owned archive workspace until it can be 
 
 it('refuses a replaced workspace without deleting its foreign contents', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $capture = $fixture->capture();
     $workspace = dirname($capture->archiveIdentity);
     rename($workspace, $workspace.'.retained');
     mkdir($workspace, 0700);
@@ -780,7 +1107,7 @@ it('refuses a replaced workspace without deleting its foreign contents', functio
 
 it('retains archive evidence when its private root identity changes', function (bool $symlink): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->capture();
     $root = $fixture->attempt->source['private_root'];
     rename($root, $root.'.retained');
     $foreign = $fixture->directory.'/foreign-root';
@@ -804,7 +1131,7 @@ it('retains archive evidence when its private root identity changes', function (
 
 it('preserves a foreign directory swapped between archive validation and its atomic claim', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->capture();
     $fixture->ssh->programReplacements = [
         'rename_without_replacement(root, workspace_name, claim_name)' => implode("\n", [
             'if side == "source":',
@@ -841,7 +1168,7 @@ it('refuses an archive file substituted after workspace validation before openin
     ];
 
     try {
-        expect(fn () => $fixture->source->capture($fixture->instance, $fixture->attempt))->toThrow(ResourceOperationException::class);
+        expect(fn () => $fixture->capture())->toThrow(ResourceOperationException::class);
         expect(file_get_contents($fixture->attempt->archivePath('source')))->toBe('foreign-sentinel')
             ->and($fixture->source->cleanupArchives($fixture->attempt))->toBe(['source']);
     } finally {
@@ -851,7 +1178,7 @@ it('refuses an archive file substituted after workspace validation before openin
 
 it('resumes exact archive cleanup after interruption at its claim or deletion boundary', function (string $fault): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->capture();
     $fixture->ssh->programReplacements = match ($fault) {
         'after claim' => [
             'moved = metadata_at(root, claim_name)' => 'raise OSError("after claim")',
@@ -873,7 +1200,7 @@ it('resumes exact archive cleanup after interruption at its claim or deletion bo
 
 it('recovers archive cleanup after killed partial and complete metadata writes', function (bool $partial): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->capture();
     $journals = [];
     foreach (['source', 'destination'] as $side) {
         $journals[$side] = $fixture->attempt->{$side}['private_root'].'/'.$fixture->attempt->id.'.json';
@@ -917,7 +1244,7 @@ it('recovers archive cleanup after killed partial and complete metadata writes',
 
 it('retains archive payloads when their metadata journal has no valid ownership record', function (string $fault): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->capture();
     $archive = $fixture->attempt->archivePath('source');
     $hash = hash_file('sha256', $archive);
     $journal = $fixture->attempt->source['private_root'].'/'.$fixture->attempt->id.'.json';
@@ -981,6 +1308,8 @@ final class TransferArchiveNativeFixture
     public TransferArchiveAttempt $attempt;
 
     public TransferDestinationAttempt $destinationAttempt;
+
+    public ?TransferSourceAttempt $sourceAttempt = null;
 
     public function __construct(bool $prepare = true)
     {
@@ -1097,7 +1426,7 @@ final class TransferArchiveNativeFixture
     public function materialize(): TransferCheckout
     {
         try {
-            $capture = $this->source->capture($this->instance, $this->attempt);
+            $capture = $this->capture();
             $this->prepareDestination();
 
             return $this->source->materialize(
@@ -1105,6 +1434,30 @@ final class TransferArchiveNativeFixture
             );
         } finally {
             expect($this->source->cleanupArchives($this->attempt))->toBe([]);
+        }
+    }
+
+    public function capture(): TransferSourceCapture
+    {
+        $this->prepareSource();
+
+        return $this->source->capture($this->instance, $this->attempt, $this->sourceAttempt);
+    }
+
+    public function prepareSource(): void
+    {
+        if ($this->sourceAttempt === null) {
+            $this->transfer->update(['source_path' => $this->instance->checkout_path, 'source_layout' => $this->instance->source_layout]);
+            $account = app(ManagedUserAccountResolver::class)->resolve($this->instance->node);
+            $this->sourceAttempt = TransferSourceAttempt::create($this->transfer, $account)->acquiring();
+            $this->transfer->update(['source_attempt' => $this->sourceAttempt->toArray()]);
+        }
+        if ($this->sourceAttempt->phase === 'acquiring') {
+            $this->sourceAttempt = $this->source->prepareSource($this->sourceAttempt);
+            $this->transfer->update([
+                'source_attempt' => $this->sourceAttempt->toArray(),
+                'common_repository_path' => $this->sourceAttempt->receipt['common_path'],
+            ]);
         }
     }
 

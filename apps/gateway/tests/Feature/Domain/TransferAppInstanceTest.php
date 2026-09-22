@@ -16,6 +16,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentValidator;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
+use App\Domain\AppInstances\Transfer\TransferSourceAttempt;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -183,6 +184,109 @@ it('records archive intent and exact prepared identities before capture and clea
         ->and($result['transfer']->archive_attempt)->toBeNull()
         ->and($result['transfer']->toArray())->not->toHaveKey('archive_attempt');
 });
+
+it('records exact source ownership before capture and retains it through cleanup', function (): void {
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($this->sources->preparedSourceEvidence)->toHaveCount(1)
+        ->and($this->sources->preparedSourceEvidence[0]['phase'])->toBe('acquiring')
+        ->and($this->sources->preparedSourceEvidence[0]['receipt'])->toBeNull()
+        ->and($this->sources->capturedSourceEvidence)->toHaveCount(1)
+        ->and($this->sources->capturedSourceEvidence[0]['phase'])->toBe('owned')
+        ->and($this->sources->capturedSourceEvidence[0]['receipt']['checkout'])->toBe('4:4')
+        ->and($this->sources->cleanedSourceEvidence)->toBe($this->sources->capturedSourceEvidence)
+        ->and($result['transfer']->source_attempt)->toBeNull()
+        ->and($result['transfer']->toArray())->not->toHaveKey('source_attempt');
+});
+
+it('does not perform remote work when source intent cannot be reserved', function (): void {
+    DB::unprepared("CREATE TRIGGER fail_source_intent BEFORE INSERT ON app_instance_transfers WHEN NEW.source_attempt IS NOT NULL BEGIN SELECT RAISE(FAIL, 'source intent refused'); END");
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_source_intent');
+    }
+
+    $this->assertDatabaseCount('app_instance_transfers', 0);
+    expect($this->sources->archiveCalls)->toBeEmpty()
+        ->and($this->sources->calls)->toBeEmpty()
+        ->and($this->sources->preparedSourceEvidence)->toBeEmpty();
+});
+
+it('retains the same source attempt across failed pre-cutover database writes', function (string $predicate, string $phase, int $captured): void {
+    DB::unprepared("CREATE TRIGGER fail_source_checkpoint BEFORE UPDATE ON app_instance_transfers WHEN {$predicate} BEGIN SELECT RAISE(FAIL, 'source checkpoint refused'); END");
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_source_checkpoint');
+    }
+    $transfer = AppInstanceTransfer::query()->sole();
+    $id = $transfer->source_attempt['id'];
+    expect($transfer->source_attempt['phase'])->toBe($phase)
+        ->and($transfer->cutover_at)->toBeNull()
+        ->and($this->sources->capturedSourceEvidence)->toHaveCount($captured)
+        ->and($this->sources->cleanedSourceEvidence)->toBeEmpty()
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->runtime->calls)->not->toContain('relocate');
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($result['transfer']->source_attempt)->toBeNull()
+        ->and($this->sources->cleanedSourceEvidence[0]['id'])->toBe($id);
+})->with([
+    'observation intent' => ["json_extract(NEW.source_attempt, '$.phase') = 'acquiring'", 'reserved', 0],
+    'owned receipt' => ["json_extract(NEW.source_attempt, '$.phase') = 'owned'", 'acquiring', 0],
+    'capture checkpoint' => ["NEW.current_step = 'source-captured'", 'owned', 1],
+]);
+
+it('retries only forward cleanup when its completion database checkpoint fails', function (): void {
+    DB::unprepared("CREATE TRIGGER fail_source_completion BEFORE UPDATE ON app_instance_transfers WHEN NEW.current_step = 'completed' BEGIN SELECT RAISE(FAIL, 'cleanup checkpoint refused'); END");
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_source_completion');
+    }
+    $transfer = AppInstanceTransfer::query()->sole();
+    $receipt = $transfer->source_attempt;
+    expect($receipt['phase'])->toBe('owned')
+        ->and($transfer->cutover_at)->not->toBeNull()
+        ->and($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
+        ->and($this->sources->capturedSourceEvidence)->toHaveCount(1)
+        ->and($this->sources->cleanedSourceEvidence)->toBe([$receipt])
+        ->and($this->runtime->calls)->not->toContain('restore');
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+    expect($result['transfer']->source_attempt)->toBeNull()
+        ->and($this->sources->cleanedSourceEvidence)->toBe([$receipt, $receipt])
+        ->and($this->sources->capturedSourceEvidence)->toHaveCount(1)
+        ->and($this->runtime->calls)->not->toContain('restore');
+});
+
+it('retains unproven legacy or malformed source evidence without post-cutover adoption', function (string $fault): void {
+    $this->sources->cleanupIncomplete = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $evidence = $transfer->source_attempt;
+    $evidence = match ($fault) {
+        'legacy' => null,
+        'scalar' => 'unknown-secret-sentinel',
+        'wrong path' => [...$evidence, 'source_path' => '/foreign/source'],
+        'wrong node' => [...$evidence, 'node_id' => $this->destinationNode->id],
+        'unknown field' => [...$evidence, 'unknown' => true],
+        'missing receipt' => [...$evidence, 'receipt' => null],
+    };
+    $stored = $evidence === null ? null : json_encode($evidence, JSON_THROW_ON_ERROR);
+    DB::table('app_instance_transfers')->where('id', $transfer->id)->update(['source_attempt' => $stored]);
+    $this->sources->cleanupIncomplete = false;
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->getMessage())->not->toContain('unknown-secret-sentinel'));
+    expect(DB::table('app_instance_transfers')->where('id', $transfer->id)->value('source_attempt'))->toBe($stored)
+        ->and($this->sources->cleanedSourceEvidence)->toHaveCount(1)
+        ->and($this->sources->capturedSourceEvidence)->toHaveCount(1)
+        ->and($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
+        ->and($this->runtime->calls)->not->toContain('restore');
+})->with(['legacy', 'scalar', 'wrong path', 'wrong node', 'unknown field', 'missing receipt']);
 
 it('records destination acquisition before remote creation and exact ownership before materialization', function (): void {
     $result = $this->action->execute($this->instance, $this->data);
@@ -1613,6 +1717,15 @@ function orb245_prepared_transfer(AppInstance $instance, Route $source, Node $de
         $attempt = $attempt->acquiring()->withReceipt(['root' => '3:1', 'parent' => '3:2', 'scope' => '3:3', 'checkout' => '3:4']);
     }
     $transfer->update(['destination_attempt' => $attempt->toArray()]);
+    $sourceAttempt = TransferSourceAttempt::create($transfer, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+    if ($step !== AppInstanceTransferStep::Reserved) {
+        $sourceAttempt = $sourceAttempt->acquiring()->withReceipt([
+            'root' => '4:1', 'parent' => '4:2', 'scope' => '4:3', 'checkout' => '4:4',
+            'common_path' => $transfer->source_layout->value === 'worktree' ? '/home/orbit/.orbit/worktrees/shop.git' : null,
+            'common' => $transfer->source_layout->value === 'worktree' ? '4:5' : null,
+        ]);
+    }
+    $transfer->update(['source_attempt' => $sourceAttempt->toArray()]);
 
     return $transfer;
 }
