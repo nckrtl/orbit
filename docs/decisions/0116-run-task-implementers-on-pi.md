@@ -46,7 +46,7 @@ Placement requires a Node that allows both selected drivers. A thread keeps its 
 
 ### Pi server
 
-`apps/pi-server` is a TypeScript service that uses the Pi SDK. It runs as an Orbit-managed systemd Process named `pi-server` on `app-dev` Nodes. It listens on the Node's WireGuard address and requires a bearer token. The token uses the same node-scoped settings pattern as T3: `nodes.settings.pi.token` and an optional `nodes.settings.pi.url`. The Gateway never receives provider credentials.
+`apps/pi-server` is a TypeScript service that uses the Pi SDK. It runs as an Orbit-managed systemd Process named `pi-server` on `app-dev` Nodes. It listens on the Node's WireGuard address and requires a bearer token. The token follows the T3 pattern: `ORBIT_PI_TOKEN` on the Gateway, overridden by `pi` settings on a Node record. The server takes its settings as command-line flags, because Orbit's systemd Processes pass only arguments, and reads the token from a file. A `pi-server login` command runs a provider's subscription sign-in on the Node. The Gateway never receives provider credentials.
 
 The server owns these operations:
 

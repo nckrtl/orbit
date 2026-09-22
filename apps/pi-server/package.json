@@ -7,7 +7,8 @@
         "start": "bun src/main.ts",
         "check": "vp check",
         "test": "vp test run",
-        "build": "tsc && bun build src/main.ts --compile --outfile dist/pi-server"
+        "build": "tsc && bun build src/main.ts --compile --outfile dist/pi-server",
+        "build:linux": "bun build src/main.ts --compile --target=bun-linux-x64 --outfile dist/pi-server-linux-x64 && bun build src/main.ts --compile --target=bun-linux-arm64 --outfile dist/pi-server-linux-arm64"
     },
     "dependencies": {
         "@earendil-works/pi-agent-core": "0.87.1",

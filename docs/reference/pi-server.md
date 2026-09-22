@@ -9,26 +9,44 @@ The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessi
 
 ## Configure the server
 
-The server reads its configuration from the environment. It refuses to start without a bind address and a token.
+The server reads command-line flags first, then the environment. Orbit's systemd Processes pass only arguments, so every setting has a flag. The token has only a file flag, because arguments are visible to other users and are stored in the Process definition. The server refuses to start without a bind address and a token.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PI_SERVER_HOST` | required | Address to listen on, normally the Node's WireGuard address |
-| `PI_SERVER_PORT` | `3774` | Port to listen on |
-| `PI_SERVER_TOKEN` or `PI_SERVER_TOKEN_FILE` | required | Bearer token of at least 32 characters. The file form reads the token from a file |
-| `PI_SERVER_AGENT_DIR` | `~/.pi/agent` | Pi's directory, which holds the provider sign-ins |
-| `PI_SERVER_SESSION_DIR` | `<agent dir>/orbit-sessions` | Session transcripts and Orbit's session records |
-| `PI_SERVER_WORKSPACE_ROOTS` | none | Colon-separated directories. When set, a session's workspace must be inside one of them |
-| `PI_SERVER_ALLOW_API_KEYS` | off | Set to `1` to allow providers signed in with an API key |
-| `PI_SERVER_IDLE_UNLOAD_SECONDS` | `900` | Unload a session with no turn and no stream after this many seconds |
+| Flag | Variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `--host` | `PI_SERVER_HOST` | required | Address to listen on, normally the Node's WireGuard address |
+| `--port` | `PI_SERVER_PORT` | `3774` | Port to listen on |
+| `--token-file` | `PI_SERVER_TOKEN_FILE` or `PI_SERVER_TOKEN` | required | Bearer token of at least 32 characters |
+| `--agent-dir` | `PI_SERVER_AGENT_DIR` | `~/.pi/agent` | Pi's directory, which holds the provider sign-ins |
+| `--session-dir` | `PI_SERVER_SESSION_DIR` | `<agent dir>/orbit-sessions` | Session transcripts and Orbit's session records |
+| `--workspace-root`, repeatable | `PI_SERVER_WORKSPACE_ROOTS`, colon-separated | none | When set, a session's workspace must be inside one of these directories |
+| `--allow-api-keys` | `PI_SERVER_ALLOW_API_KEYS=1` | off | Allow providers signed in with an API key |
+| `--idle-unload-seconds` | `PI_SERVER_IDLE_UNLOAD_SECONDS` | `900` | Unload a session with no turn and no stream after this many seconds |
 
-The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` with the token from `nodes.settings.pi.token`. `nodes.settings.pi.url` overrides the address. A Node without `pi` settings uses `ORBIT_PI_TOKEN`. `ORBIT_PI_PORT` defaults to `3774`.
+The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` with the token in `ORBIT_PI_TOKEN`. `ORBIT_PI_PORT` defaults to `3774`. A Node record that carries `pi` settings uses its own `token` and optional `url` instead and never falls back to `ORBIT_PI_TOKEN`. The Node settings API does not set `pi`.
 
 ## Sign in to a provider
 
-Sign in once per provider on each Node, as the user that runs the server. Run `pi`, then `/login`, and choose the provider. Device-code sign-in works on a Node without a browser. Pi stores the credential in its own directory. The Gateway never receives it.
+Sign in once per provider on each Node, as the user that runs the server. Run `pi-server login openai-codex` or `pi-server login xai`, choose device-code sign-in, and approve the code from any browser. Pi stores the credential in its own directory, where the server reads it. The Gateway never receives it. `pi-server login anthropic` is refused.
 
 By default the server accepts only subscription sign-ins, such as ChatGPT for Codex models. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set. Claude models do not run on Pi: Anthropic permits subscription sign-ins only in its own applications.
+
+## Install on a Node
+
+Build the binary on a workstation with `bun run build:linux` in `apps/pi-server`. It writes `dist/pi-server-linux-x64` and `dist/pi-server-linux-arm64`. Each is one file that includes the Bun runtime.
+
+On the Node, as the managed runtime user:
+
+1. Copy the binary for the Node's architecture to `~/.local/bin/pi-server` and make it executable.
+2. Write a random token of at least 32 characters to `~/.pi/agent/orbit-token` with mode `600`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
+3. Run `pi-server login openai-codex` and complete the device-code sign-in.
+
+Then register the managed Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
+
+```bash
+orbit process:create pi-server --node=NODE --command=/home/orbit/.local/bin/pi-server --command=serve --command=--host=10.44.0.9 --command=--token-file=/home/orbit/.pi/agent/orbit-token --command=--workspace-root=/srv/orbit/apps --restart=always --keep-alive --start
+```
+
+The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
 
 ## API
 
