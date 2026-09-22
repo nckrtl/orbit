@@ -136,6 +136,21 @@ it('converges and removes only app production role-owned infrastructure', functi
     ]);
 });
 
+it('rebuilds shared publications when removing Router from a workload Node', function (RoleName $role): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Router);
+    $node->roles()->create([
+        'role' => $role,
+        'cluster_id' => $role === RoleName::Ingress ? $node->cluster_id : null,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    router_role_baseline($events)->remove($node, $assignment, purgeData: false);
+
+    expect($events)->toBe(['caddy:converge', 'firewall:remove:router']);
+    expect($node->roles()->where('role', $role)->where('status', LifecycleStatus::Active)->exists())->toBeTrue();
+})->with([RoleName::AppDev, RoleName::AppProd, RoleName::Ingress]);
+
 it('converges removes and dispatches the dedicated Router-only baseline', function (): void {
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::Router, 'router-only');
@@ -149,7 +164,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         'ssh:router',
         'caddy:converge',
         'firewall:converge:router',
-        'caddy:remove',
+        'caddy:converge',
         'firewall:remove:router',
     ]);
 
@@ -206,7 +221,7 @@ it('converges removes and dispatches the dedicated Router-only baseline', functi
         'metrics',
         "owner:exit:{$assignment->cluster_id}",
         "owner:enter:{$assignment->cluster_id}",
-        'caddy:remove',
+        'caddy:converge',
         'firewall:remove:router',
         'metrics',
         "owner:exit:{$assignment->cluster_id}",

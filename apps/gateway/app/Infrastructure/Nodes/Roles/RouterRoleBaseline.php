@@ -44,7 +44,8 @@ final readonly class RouterRoleBaseline implements RoleBaseline
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
         $account = $this->accounts->resolve($node);
-        $this->caddy->remove($node);
+        // Router and workload sites share one fragment; retain the current Route graph.
+        $this->caddy->converge($node);
         $this->firewall->remove($node, RoleName::Router, $account->user);
     }
 
