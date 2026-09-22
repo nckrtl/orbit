@@ -41,7 +41,7 @@
 ╰─
 
 ╭─ Schedules
-│  Name │ Instance │ Calendar │ Last run
+│  Name │ Owner │ Calendar │ Last run
 │› backup │ charlie-shop/dev │ *-*-* 03:00:00 │ succeeded
 │  prune │ charlie-shop/staging │ Mon *-*-* 04:00:00 │ never !
 ╰─

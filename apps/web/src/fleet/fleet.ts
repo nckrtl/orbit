@@ -52,15 +52,15 @@ export function instanceName(fleet: Fleet, id: number): string {
 export const instanceNodeName = (fleet: Fleet, id: number): string =>
     fleet.instances.find((instance) => instance.id === id)?.node.name ?? "—";
 
-export const processOwner = (fleet: Fleet, process: Process): string =>
-    process.target_type === "node"
-        ? `node ${nodeName(fleet, process.target_id)}`
-        : instanceName(fleet, process.target_id);
+export const runtimeOwner = (fleet: Fleet, runtime: Process | Schedule): string =>
+    runtime.target_type === "node"
+        ? `node ${nodeName(fleet, runtime.target_id)}`
+        : instanceName(fleet, runtime.target_id);
 
-export const processNodeName = (fleet: Fleet, process: Process): string =>
-    process.target_type === "node"
-        ? nodeName(fleet, process.target_id)
-        : instanceNodeName(fleet, process.target_id);
+export const runtimeNodeName = (fleet: Fleet, runtime: Process | Schedule): string =>
+    runtime.target_type === "node"
+        ? nodeName(fleet, runtime.target_id)
+        : instanceNodeName(fleet, runtime.target_id);
 
 export const instancesForNode = (fleet: Fleet, name: string): Instance[] =>
     fleet.instances.filter((instance) => instance.node.name === name);
@@ -76,7 +76,9 @@ export const schedulesForInstance = (fleet: Fleet, id: number): Schedule[] =>
 export function schedulesForProject(fleet: Fleet, slug: string): Schedule[] {
     const ids = new Set(instancesForProject(fleet, slug).map((instance) => instance.id));
 
-    return fleet.schedules.filter((schedule) => ids.has(schedule.target_id));
+    return fleet.schedules.filter(
+        (schedule) => schedule.target_type === "instance" && ids.has(schedule.target_id),
+    );
 }
 
 /** The section's list, narrowed by the node and project filters where the section admits them. */
@@ -95,6 +97,11 @@ export function listRows(
             )
             .map((instance) => instance.id),
     );
+    const matchesRuntimeTarget = (runtime: Process | Schedule): boolean =>
+        runtime.target_type === "node"
+            ? projectFilter === undefined &&
+              (nodeFilter === undefined || nodeName(fleet, runtime.target_id) === nodeFilter)
+            : ids.has(runtime.target_id);
 
     switch (section) {
         case "nodes":
@@ -104,17 +111,9 @@ export function listRows(
         case "instances":
             return fleet.instances.filter((instance) => ids.has(instance.id));
         case "processes":
-            return fleet.processes.filter((process) =>
-                process.target_type === "node"
-                    ? projectFilter === undefined &&
-                      (nodeFilter === undefined ||
-                          nodeName(fleet, process.target_id) === nodeFilter)
-                    : ids.has(process.target_id),
-            );
+            return fleet.processes.filter(matchesRuntimeTarget);
         case "schedules":
-            return fleet.schedules.filter(
-                (schedule) => schedule.target_type === "instance" && ids.has(schedule.target_id),
-            );
+            return fleet.schedules.filter(matchesRuntimeTarget);
         case "databases":
             return fleet.databases.filter(
                 (database) =>
@@ -178,7 +177,7 @@ export function attentionRows(fleet: Fleet): AttentionRow[] {
                     record: process,
                     label: "Process",
                     name: process.name,
-                    where: processOwner(fleet, process),
+                    where: runtimeOwner(fleet, process),
                     state: `${process.runtime_status}, wanted ${process.desired_state}`,
                 }),
             ),
@@ -191,7 +190,7 @@ export function attentionRows(fleet: Fleet): AttentionRow[] {
                     record: schedule,
                     label: "Schedule",
                     name: schedule.name,
-                    where: instanceName(fleet, schedule.target_id),
+                    where: runtimeOwner(fleet, schedule),
                     state: schedule.status === "failed" ? "failed" : schedule.desired_timer_state,
                 }),
             ),

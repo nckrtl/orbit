@@ -1,13 +1,6 @@
 import type { Fleet } from "../api/queries";
 import type { Instance, Process, Schedule } from "../api/types";
-import {
-    instanceName,
-    instanceNodeName,
-    processCpu,
-    processMemory,
-    processNodeName,
-    processOwner,
-} from "../fleet/fleet";
+import { processCpu, processMemory, runtimeNodeName, runtimeOwner } from "../fleet/fleet";
 import type { Column } from "../ui/Pane";
 
 const cpuSort = (process: Process): number => process.cpu ?? -1;
@@ -24,8 +17,8 @@ export const processColumns: Column<Process>[] = [
 
 export const processListColumns = (fleet: Fleet): Column<Process>[] => [
     { header: "Name", width: 18, value: (p) => p.name },
-    { header: "Owner", width: 26, value: (p) => processOwner(fleet, p) },
-    { header: "Node", width: 14, value: (p) => processNodeName(fleet, p) },
+    { header: "Owner", width: 26, value: (p) => runtimeOwner(fleet, p) },
+    { header: "Node", width: 14, value: (p) => runtimeNodeName(fleet, p) },
     { header: "Runtime", width: 12, value: (p) => p.runtime },
     { header: "Status", width: 14, value: (p) => p.runtime_status },
     { header: "CPU", width: 7, value: processCpu, sort: cpuSort, align: "right" },
@@ -34,20 +27,23 @@ export const processListColumns = (fleet: Fleet): Column<Process>[] => [
 
 export const processDashboardColumns = (fleet: Fleet): Column<Process>[] => [
     { header: "Name", width: 24, value: (p) => p.name },
-    { header: "Where", width: 30, value: (p) => processOwner(fleet, p) },
+    { header: "Where", width: 30, value: (p) => runtimeOwner(fleet, p) },
     { header: "Status", width: 22, value: (p) => p.runtime_status },
     { header: "CPU", width: 10, value: processCpu, sort: cpuSort, align: "right" },
     { header: "MEM", width: 10, value: processMemory, sort: memorySort, align: "right" },
 ];
 
-export const scheduleColumns = (fleet: Fleet, where: "none" | "instance"): Column<Schedule>[] => [
+export const scheduleColumns = (
+    fleet: Fleet,
+    where: "none" | "instance" | "owner",
+): Column<Schedule>[] => [
     { header: "Name", width: where === "none" ? 30 : 20, value: (s) => s.name },
-    ...(where === "instance"
+    ...(where !== "none"
         ? [
               {
-                  header: "Instance",
+                  header: where === "owner" ? "Owner" : "Instance",
                   width: 22,
-                  value: (s: Schedule) => instanceName(fleet, s.target_id),
+                  value: (s: Schedule) => runtimeOwner(fleet, s),
               },
           ]
         : []),
@@ -57,8 +53,8 @@ export const scheduleColumns = (fleet: Fleet, where: "none" | "instance"): Colum
 
 export const scheduleListColumns = (fleet: Fleet): Column<Schedule>[] => [
     { header: "Name", width: 18, value: (s) => s.name },
-    { header: "Instance", width: 20, value: (s) => instanceName(fleet, s.target_id) },
-    { header: "Node", width: 12, value: (s) => instanceNodeName(fleet, s.target_id) },
+    { header: "Owner", width: 20, value: (s) => runtimeOwner(fleet, s) },
+    { header: "Node", width: 12, value: (s) => runtimeNodeName(fleet, s) },
     { header: "Calendar", width: 30, value: (s) => s.calendar },
     { header: "Last run", width: 20, value: (s) => s.last_run_status ?? "never" },
 ];

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vite-plus/test";
 import type { Fleet } from "../api/queries";
-import type { Process } from "../api/types";
+import type { Process, Schedule } from "../api/types";
 import { demoFleet } from "../demo/fleet";
 import {
     attentionRows,
@@ -9,11 +9,14 @@ import {
     processCpu,
     processHealthy,
     processMemory,
-    processOwner,
+    runtimeOwner,
     processRuntimeIsActive,
     recordTitle,
     scheduleHealthy,
+    schedulesForInstance,
+    schedulesForProject,
 } from "./fleet";
+import { scheduleListColumns } from "../pages/columns";
 
 let fleet: Fleet;
 
@@ -128,8 +131,8 @@ describe("the fixture fleet", () => {
 
     it("names a process owner and formats its CPU and memory", () => {
         const [horizon, vite, , valkey] = fleet.processes;
-        expect(processOwner(fleet, horizon!)).toBe("charlie-shop/dev");
-        expect(processOwner(fleet, valkey!)).toBe("node beast");
+        expect(runtimeOwner(fleet, horizon!)).toBe("charlie-shop/dev");
+        expect(runtimeOwner(fleet, valkey!)).toBe("node beast");
         expect(processCpu(horizon!)).toBe("20%");
         expect(processMemory(horizon!)).toBe("1.2G");
         expect(processCpu(vite!)).toBe("—");
@@ -139,5 +142,62 @@ describe("the fixture fleet", () => {
     it("titles a record the way its page does", () => {
         expect(recordTitle("instances", fleet.instances[0]!)).toBe("charlie-shop/dev");
         expect(recordTitle("firewall", fleet.firewall[0]!)).toBe("22/tcp allow 10.44.0.0/16");
+    });
+});
+
+describe("Node and Instance schedule ownership", () => {
+    const withCollision = (): Fleet => ({
+        ...fleet,
+        schedules: [
+            ...fleet.schedules,
+            {
+                ...fleet.schedules[0]!,
+                id: "node-nightly",
+                name: "node-nightly",
+                target_type: "node",
+                target_id: 1,
+                desired_timer_state: "disabled",
+            },
+        ],
+    });
+
+    it("includes Node schedules by their own Node without admitting them to a Project", () => {
+        const scoped = withCollision();
+        const ids = (node?: string, project?: string) =>
+            listRows(scoped, "schedules", node, project).map((row) => row.id);
+
+        expect(ids()).toEqual(["backup", "prune", "node-nightly"]);
+        expect(ids("gateway")).toEqual(["node-nightly"]);
+        expect(ids("beast")).toEqual(["backup", "prune"]);
+        expect(ids(undefined, "charlie-shop")).toEqual(["backup", "prune"]);
+        expect(ids("gateway", "charlie-shop")).toEqual([]);
+        expect(ids("beast", "charlie-shop")).toEqual(["backup", "prune"]);
+    });
+
+    it("never confuses a Node ID with an Instance ID in owned sections", () => {
+        const scoped = withCollision();
+        expect(schedulesForProject(scoped, "charlie-shop").map((row) => row.id)).toEqual([
+            "backup",
+            "prune",
+        ]);
+        expect(schedulesForInstance(scoped, 1).map((row) => row.id)).toEqual(["backup"]);
+    });
+
+    it("labels Schedule owners and hosting Nodes consistently in lists and attention", () => {
+        const scoped = withCollision();
+        const node = scoped.schedules[2]!;
+        const columns = scheduleListColumns(scoped);
+        const value = (header: string, schedule: Schedule) =>
+            columns.find((column) => column.header === header)?.value(schedule);
+
+        expect(value("Owner", node)).toBe("node gateway");
+        expect(value("Node", node)).toBe("gateway");
+        expect(value("Owner", scoped.schedules[0]!)).toBe("charlie-shop/dev");
+        expect(value("Node", scoped.schedules[0]!)).toBe("beast");
+        expect(attentionRows(scoped).find((row) => row.id === "schedule-node-nightly")?.where).toBe(
+            "node gateway",
+        );
+        expect(value("Node", { ...node, target_id: 999 })).toBe("—");
+        expect(value("Owner", { ...node, target_type: "instance", target_id: 999 })).toBe("—");
     });
 });

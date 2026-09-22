@@ -35,8 +35,6 @@ import {
     deploymentHealthy,
     firewallHealthy,
     instanceHealthy,
-    instanceName,
-    instanceNodeName,
     instancesForProject,
     instancesForNode,
     nodeHealthy,
@@ -45,8 +43,8 @@ import {
     processCpu,
     processHealthy,
     processMemory,
-    processNodeName,
-    processOwner,
+    runtimeNodeName,
+    runtimeOwner,
     scheduleHealthy,
     schedulesForProject,
     schedulesForInstance,
@@ -603,8 +601,8 @@ function ProcessPage({ fleet, process }: { fleet: Fleet; process: Process }) {
             <Properties
                 properties={[
                     { name: "Name", value: process.name },
-                    { name: "Owner", value: processOwner(fleet, process) },
-                    { name: "Node", value: processNodeName(fleet, process) },
+                    { name: "Owner", value: runtimeOwner(fleet, process) },
+                    { name: "Node", value: runtimeNodeName(fleet, process) },
                     { name: "Runtime", value: process.runtime },
                     { name: "Command", value: processCommand(process) },
                     { name: "Working directory", value: process.working_directory },
@@ -639,8 +637,8 @@ function SchedulePage({ fleet, schedule }: { fleet: Fleet; schedule: Schedule })
             <Properties
                 properties={[
                     { name: "Name", value: schedule.name },
-                    { name: "Instance", value: instanceName(fleet, schedule.target_id) },
-                    { name: "Node", value: instanceNodeName(fleet, schedule.target_id) },
+                    { name: "Owner", value: runtimeOwner(fleet, schedule) },
+                    { name: "Node", value: runtimeNodeName(fleet, schedule) },
                     { name: "Calendar", value: schedule.calendar },
                     { name: "Timeout", value: `${schedule.timeout_seconds} s` },
                     {

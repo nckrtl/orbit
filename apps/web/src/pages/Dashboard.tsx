@@ -78,7 +78,7 @@ export function Dashboard() {
         [],
     );
     const processColumns = useMemo(() => processDashboardColumns(fleet), [fleet]);
-    const scheduleCols = useMemo(() => scheduleColumns(fleet, "instance"), [fleet]);
+    const scheduleCols = useMemo(() => scheduleColumns(fleet, "owner"), [fleet]);
 
     if (fleet.error !== null) {
         return (
