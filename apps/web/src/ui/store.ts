@@ -5,6 +5,8 @@ import type { AnyRecord, Kind } from "../api/types";
 export type Target = { kind: Kind; row: AnyRecord };
 
 export type MenuState = Target & {
+    /** One opening of the menu, retained when selection and confirmation state are copied. */
+    invocation: object;
     title: string;
     actions: Action[];
     selected: number;

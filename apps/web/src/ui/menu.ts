@@ -22,6 +22,7 @@ export function openMenu(
         ui.set({
             menu: {
                 ...target,
+                invocation: {},
                 title: menuTitle(target),
                 actions,
                 selected: 0,
@@ -46,8 +47,9 @@ export function chooseAction(index?: number): void {
     switch (action.kind) {
         case "report": {
             const title = `${action.label} · ${menu.title}`;
+            const pending = { title, output: null, failed: false };
 
-            ui.set({ menu: null, modal: { title, output: null, failed: false } });
+            ui.set({ menu: null, modal: pending });
             void action
                 .report()
                 .then(
@@ -55,9 +57,8 @@ export function chooseAction(index?: number): void {
                     (error: unknown) => ({ output: String(error), failed: true }),
                 )
                 .then((result) => {
-                    // The reader may have closed the modal while the command ran; leave it closed.
-                    if (ui.get().modal?.title === title) {
-                        ui.set({ modal: { title, ...result } });
+                    if (ui.get().modal === pending) {
+                        ui.set({ modal: { ...pending, ...result } });
                     }
                 });
 
@@ -86,13 +87,15 @@ export function chooseAction(index?: number): void {
     }
 
     ui.set({ menu: { ...menu, running: true } });
-    action
+    const complete = (message: string): void => {
+        ui.set({
+            ...(ui.get().menu?.invocation === menu.invocation ? { menu: null } : {}),
+            message,
+        });
+    };
+    void action
         .run()
-        .then((message) => ui.set({ menu: null, message }))
-        .catch((error: unknown) =>
-            ui.set({
-                menu: null,
-                message: error instanceof GatewayError ? error.message : String(error),
-            }),
+        .then(complete, (error: unknown) =>
+            complete(error instanceof GatewayError ? error.message : String(error)),
         );
 }
