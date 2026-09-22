@@ -44,6 +44,11 @@ export interface RegistryOptions {
     workspaceRoots: string[];
     /** Allow providers authenticated with an API key. Off by default: only subscription logins run. */
     allowApiKeys: boolean;
+    /**
+     * Providers allowed although Pi sees an API key, such as a CLIProxyAPI endpoint in
+     * `models.json` that serves pooled subscription accounts.
+     */
+    allowedProviders: string[];
     /** Unload a session with no turn and no stream after this many milliseconds. */
     idleUnloadMs: number;
 }
@@ -224,15 +229,18 @@ export class SessionRegistry {
 
     /**
      * Lists the models a session can use, as `provider/model`. Unless API keys are allowed, a
-     * provider counts only when it is signed in with a subscription, so a stray API key in the
-     * environment never enables per-token billing.
+     * provider counts only when it is signed in with a subscription or named in
+     * `allowedProviders`, so a stray API key in the environment never enables per-token billing.
      */
     async availableModels(): Promise<string[]> {
         const runtime = this.options.modelRuntime;
 
         return (await runtime.getAvailable())
             .filter(
-                (model) => this.options.allowApiKeys || runtime.isUsingSubscription(model.provider),
+                (model) =>
+                    this.options.allowApiKeys ||
+                    this.options.allowedProviders.includes(model.provider) ||
+                    runtime.isUsingSubscription(model.provider),
             )
             .map((model) => `${model.provider}/${model.id}`);
     }
@@ -403,7 +411,7 @@ export class SessionRegistry {
                 "model_unavailable",
                 this.options.allowApiKeys
                     ? `Provider ${model.provider} is not signed in on this Node, or it does not offer ${model.id}.`
-                    : `Provider ${model.provider} is not signed in with a subscription on this Node, or it does not offer ${model.id}.`,
+                    : `Provider ${model.provider} is not signed in with a subscription or allowed with --allow-provider on this Node, or it does not offer ${model.id}.`,
             );
         }
 

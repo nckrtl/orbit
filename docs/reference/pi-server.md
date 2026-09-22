@@ -19,10 +19,34 @@ The server reads command-line flags first, then the environment. Orbit's systemd
 | `--agent-dir` | `PI_SERVER_AGENT_DIR` | `~/.pi/agent` | Pi's directory, which holds the provider sign-ins |
 | `--session-dir` | `PI_SERVER_SESSION_DIR` | `<agent dir>/orbit-sessions` | Session transcripts and Orbit's session records |
 | `--workspace-root`, repeatable | `PI_SERVER_WORKSPACE_ROOTS`, colon-separated | none | When set, a session's workspace must be inside one of these directories |
-| `--allow-api-keys` | `PI_SERVER_ALLOW_API_KEYS=1` | off | Allow providers signed in with an API key |
+| `--allow-api-keys` | `PI_SERVER_ALLOW_API_KEYS=1` | off | Allow every provider signed in with an API key |
+| `--allow-provider`, repeatable | `PI_SERVER_ALLOW_PROVIDERS`, comma-separated | none | Allow one named provider although Pi sees an API key, such as a CLIProxyAPI endpoint |
 | `--idle-unload-seconds` | `PI_SERVER_IDLE_UNLOAD_SECONDS` | `900` | Unload a session with no turn and no stream after this many seconds |
 
 The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` with the token in `ORBIT_PI_TOKEN`. `ORBIT_PI_PORT` defaults to `3774`. A Node record that carries `pi` settings uses its own `token` and optional `url` instead and never falls back to `ORBIT_PI_TOKEN`. The Node settings API does not set `pi`.
+
+## Connect through CLIProxyAPI
+
+A Node can reuse the subscription accounts that CLIProxyAPI already holds, as Codex does. Pi then needs no sign-in of its own. Add the endpoint as a provider in `~/.pi/agent/models.json`, with mode `600`:
+
+```json
+{
+  "providers": {
+    "cliproxyapi": {
+      "baseUrl": "http://10.44.0.3:8317/v1",
+      "api": "openai-responses",
+      "apiKey": "!COMMAND THAT PRINTS THE CLIPROXYAPI KEY",
+      "models": [
+        { "id": "gpt-5.6-luna", "reasoning": true, "contextWindow": 272000, "maxTokens": 128000 }
+      ]
+    }
+  }
+}
+```
+
+A leading `!` runs the command at request time, so the key stays in the file or secret store that Codex already uses. List each model the Node should run; `GET /v1/models` on CLIProxyAPI shows the available IDs. Start the server with `--allow-provider=cliproxyapi`, because Pi sees an API key for this provider. Set `ORBIT_PI_PROVIDER=cliproxyapi` on the Gateway so plain model names, such as `gpt-5.6-luna`, use it.
+
+Claude models are refused through CLIProxyAPI as well. The proxy relays Claude subscription credentials, which Anthropic permits only in its own applications.
 
 ## Sign in to a provider
 
@@ -38,7 +62,7 @@ On the Node, as the managed runtime user:
 
 1. Copy the binary for the Node's architecture to `~/.local/bin/pi-server` and make it executable.
 2. Write a random token of at least 32 characters to `~/.pi/agent/orbit-token` with mode `600`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
-3. Run `pi-server login openai-codex` and complete the device-code sign-in.
+3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or run `pi-server login openai-codex` and complete the device-code sign-in.
 
 Then register the managed Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
 
@@ -46,7 +70,7 @@ Then register the managed Process from a machine with the Orbit CLI. Replace the
 orbit process:create pi-server --node=NODE --command=/home/orbit/.local/bin/pi-server --command=serve --command=--host=10.44.0.9 --command=--token-file=/home/orbit/.pi/agent/orbit-token --command=--workspace-root=/srv/orbit/apps --restart=always --keep-alive --start
 ```
 
-The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
+Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
 
 ## API
 

@@ -42,6 +42,8 @@ return [
     'pi' => [
         'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
         'token' => env('ORBIT_PI_TOKEN'),
+        // A models.json provider such as a CLIProxyAPI endpoint. Plain model names use it when set.
+        'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', env('ORBIT_TASKS_AGENT_DRIVER', 't3')),

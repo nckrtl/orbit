@@ -25,6 +25,7 @@ describe("readConfig", () => {
                 "--workspace-root=/srv/a",
                 "--workspace-root=/srv/b",
                 "--allow-api-keys",
+                "--allow-provider=cliproxyapi",
                 "--idle-unload-seconds=60",
             ],
             {},
@@ -38,6 +39,7 @@ describe("readConfig", () => {
             sessionDir: "/home/orbit/.pi/sessions",
             workspaceRoots: ["/srv/a", "/srv/b"],
             allowApiKeys: true,
+            allowedProviders: ["cliproxyapi"],
             idleUnloadMs: 60_000,
         });
     });
@@ -54,6 +56,7 @@ describe("readConfig", () => {
             sessionDir: "/agent/orbit-sessions",
             workspaceRoots: [],
             allowApiKeys: false,
+            allowedProviders: [],
             idleUnloadMs: 900_000,
         });
     });

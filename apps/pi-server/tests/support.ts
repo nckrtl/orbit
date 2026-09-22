@@ -30,7 +30,12 @@ export interface Harness {
 }
 
 export async function startHarness(
-    options: { tokensPerSecond?: number; root?: string; allowApiKeys?: boolean } = {},
+    options: {
+        tokensPerSecond?: number;
+        root?: string;
+        allowApiKeys?: boolean;
+        allowedProviders?: string[];
+    } = {},
 ): Promise<Harness> {
     const root = options.root ?? mkdtempSync(join(tmpdir(), "pi-server-test-"));
     const workspace = join(root, "workspace");
@@ -62,6 +67,7 @@ export async function startHarness(
         sessionDir: join(root, "sessions"),
         workspaceRoots: [root],
         allowApiKeys: options.allowApiKeys ?? true,
+        allowedProviders: options.allowedProviders ?? [],
         idleUnloadMs: 60_000,
     });
     const server: Server = createPiServer({

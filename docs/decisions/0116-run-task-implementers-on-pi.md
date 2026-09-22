@@ -80,7 +80,9 @@ Tokens come from Pi's cumulative session usage. Pi has no checkpoints, so per-th
 
 ### Authentication
 
-An operator signs in once per provider on each Node with Pi's own login, as the service user. Pi stores those credentials on the Node. Orbit does not create, read, copy, or refresh them. Implementer models use Pi's `provider/model` form, such as `openai-codex/<model>` or `xai/<model>`.
+A Node reaches models in one of two ways. It can reuse the subscription accounts that CLIProxyAPI already pools for Codex, through a `models.json` provider whose key comes from the same command Codex uses. Or an operator signs in once per provider with `pi-server login`. The server accepts subscription sign-ins and providers named with `--allow-provider`; any other API key stays unavailable, so a stray key never enables per-token billing. Orbit does not create, read, copy, or refresh provider credentials.
+
+Implementer models use Pi's `provider/model` form. `ORBIT_PI_PROVIDER` maps plain names to a configured provider such as `cliproxyapi`. Claude models are refused on Pi, including through CLIProxyAPI, because the proxy relays Claude subscription credentials.
 
 ### Implementer tools
 

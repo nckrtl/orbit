@@ -11,6 +11,7 @@ export interface PiServerConfig {
     sessionDir: string;
     workspaceRoots: string[];
     allowApiKeys: boolean;
+    allowedProviders: string[];
     idleUnloadMs: number;
 }
 
@@ -37,6 +38,7 @@ export function readConfig(
             "session-dir": { type: "string" },
             "workspace-root": { type: "string", multiple: true },
             "allow-api-keys": { type: "boolean" },
+            "allow-provider": { type: "string", multiple: true },
             "idle-unload-seconds": { type: "string" },
         },
     });
@@ -66,6 +68,9 @@ export function readConfig(
             flags["workspace-root"] ??
             (env.PI_SERVER_WORKSPACE_ROOTS ?? "").split(":").filter((root) => root !== ""),
         allowApiKeys: flags["allow-api-keys"] ?? env.PI_SERVER_ALLOW_API_KEYS === "1",
+        allowedProviders:
+            flags["allow-provider"] ??
+            (env.PI_SERVER_ALLOW_PROVIDERS ?? "").split(",").filter((provider) => provider !== ""),
         idleUnloadMs:
             integer(flags["idle-unload-seconds"] ?? env.PI_SERVER_IDLE_UNLOAD_SECONDS, 900) * 1000,
     };

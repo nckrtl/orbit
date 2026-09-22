@@ -10,7 +10,6 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Psr\Http\Message\StreamInterface;
 
 /**
  * Calls the Pi server on a Node. Every failure becomes an AgentDriverException that names the
@@ -80,34 +79,9 @@ final readonly class PiClient
         $body = $response->toPsrResponse()->getBody();
 
         try {
-            yield from $this->lines($body);
+            yield from new PiEventLines(self::STREAM_SECONDS)->read($body);
         } finally {
             $body->close();
-        }
-    }
-
-    /** @return iterable<array<string, mixed>> */
-    private function lines(StreamInterface $body): iterable
-    {
-        $deadline = microtime(true) + self::STREAM_SECONDS;
-        $buffer = '';
-        while (microtime(true) < $deadline && ! $body->eof() && ! connection_aborted()) {
-            $chunk = $body->read(8192);
-            if ($chunk === '') {
-                yield ['kind' => 'heartbeat'];
-
-                continue;
-            }
-            $buffer .= $chunk;
-            while (($newline = strpos($buffer, "\n")) !== false) {
-                $line = substr($buffer, 0, $newline);
-                $buffer = substr($buffer, $newline + 1);
-                $event = json_decode($line, true);
-                if (is_array($event) && is_string($event['kind'] ?? null)) {
-                    /** @var array<string, mixed> $event */
-                    yield $event;
-                }
-            }
         }
     }
 

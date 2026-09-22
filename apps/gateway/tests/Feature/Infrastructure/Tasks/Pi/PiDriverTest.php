@@ -142,6 +142,26 @@ describe('create and send', function (): void {
             ->toThrow(AgentDriverException::class, 'The Pi server refused the request (turn_active): Session is already working on a turn.');
     });
 
+    it('uses the configured provider, such as a CLIProxyAPI endpoint, for plain model names', function (): void {
+        config()->set('orbit.pi.provider', 'cliproxyapi');
+        Http::fake([PI_BASE.'/sessions' => Http::response(['id' => 'x'], 201), PI_BASE.'/sessions/*/messages' => Http::response(['duplicate' => false], 202)]);
+        $node = pi_node();
+
+        pi_driver()->create(new AgentThreadStart($node, pi_workspace($node), 'Task', 'Do the work', 'gpt-5.6-luna', 'low', TaskThreadRole::Implementer));
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions' && $request['model'] === 'cliproxyapi/gpt-5.6-luna');
+    });
+
+    it('refuses Claude models even through a configured or named provider', function (string $model): void {
+        config()->set('orbit.pi.provider', 'cliproxyapi');
+        Http::fake();
+        $node = pi_node();
+
+        expect(fn () => pi_driver()->create(new AgentThreadStart($node, pi_workspace($node), 'Task', 'Review', $model, 'high', TaskThreadRole::Reviewer)))
+            ->toThrow(AgentDriverException::class, 'Claude models run on the T3 driver, not on Pi.');
+        Http::assertNothingSent();
+    })->with(['claude-opus-5', 'cliproxyapi/claude-opus-5', 'anthropic/claude-opus-5']);
+
     it('refuses Claude models before calling the server', function (): void {
         Http::fake();
         $node = pi_node();

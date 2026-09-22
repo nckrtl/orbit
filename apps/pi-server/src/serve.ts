@@ -20,6 +20,7 @@ export async function serve(argv: string[]): Promise<void> {
         sessionDir: config.sessionDir,
         workspaceRoots: config.workspaceRoots,
         allowApiKeys: config.allowApiKeys,
+        allowedProviders: config.allowedProviders,
         idleUnloadMs: config.idleUnloadMs,
     });
     const server = createPiServer({

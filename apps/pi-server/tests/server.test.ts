@@ -111,6 +111,19 @@ describe("create", () => {
         expect((await harness.request("GET", "/capabilities")).body.models).toEqual([]);
     });
 
+    it("allows a named API-key provider, such as a CLIProxyAPI endpoint", async () => {
+        harness = await startHarness({ allowApiKeys: false, allowedProviders: ["faux"] });
+        const response = await harness.request("POST", "/sessions", {
+            id: "thread-2",
+            cwd: harness.workspace,
+            model: MODEL,
+            thinkingLevel: "low",
+        });
+
+        expect(response.status).toBe(201);
+        expect((await harness.request("GET", "/capabilities")).body.models).toEqual([MODEL]);
+    });
+
     it("returns not found for an unknown session", async () => {
         harness = await startHarness();
 

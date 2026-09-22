@@ -51,7 +51,7 @@ final readonly class PiDriver implements AgentDriver
         $this->client->create($intent->node, [
             'id' => $id,
             'cwd' => $cwd,
-            'model' => PiModel::forModel($intent->model),
+            'model' => PiModel::forModel($intent->model, $this->configuredProvider()),
             'thinkingLevel' => $intent->effort,
             'appendSystemPrompt' => null,
         ]);
@@ -191,6 +191,13 @@ final readonly class PiDriver implements AgentDriver
 
         /** @var T */
         return new CommandActivityInputSanitizer()->sanitizeProperties($data);
+    }
+
+    private function configuredProvider(): ?string
+    {
+        $provider = config('orbit.pi.provider');
+
+        return is_string($provider) && $provider !== '' ? $provider : null;
     }
 
     private function node(AgentThread $thread): Node

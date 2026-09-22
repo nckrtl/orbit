@@ -164,7 +164,7 @@ A reviewer posts `changes_requested` or `approved`. The Gateway relays the findi
 
 The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the Node that owns the Instance. [ADR 0116](/decisions/0116-run-task-implementers-on-pi) records the decision. A Node allows the driver while its `pi-server` Process is active with desired state `running`.
 
-The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form: `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused.
+The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
 
 Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`, so the `composer check` rubric items read Pi threads the same way as T3 threads. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 

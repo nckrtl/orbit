@@ -48,6 +48,7 @@ const registry = new SessionRegistry({
     sessionDir: join(root, "sessions"),
     workspaceRoots: [workspaceRoot],
     allowApiKeys: true,
+    allowedProviders: [],
     idleUnloadMs: 60_000,
 });
 createPiServer({
