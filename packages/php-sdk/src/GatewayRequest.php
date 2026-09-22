@@ -6,7 +6,6 @@ namespace Orbit\Sdk;
 
 use JsonException;
 use LogicException;
-use Orbit\Sdk\Support\CredentialRedactor;
 use Orbit\Sdk\Support\GatewayRequestId;
 use Saloon\Http\Request;
 use Saloon\Http\Response;
@@ -77,13 +76,12 @@ abstract class GatewayRequest extends Request
             ? $error['message']
             : "Gateway request failed with HTTP status {$response->status()}.";
         $errorCode = is_string($error['code'] ?? null) ? $error['code'] : null;
-        $redactor = new CredentialRedactor;
 
         return new GatewayApiException(
-            message: $redactor->redactText($message),
+            message: $message,
             errorCode: $errorCode,
-            details: $redactor->redactArray($this->stringKeyedArray($error['details'] ?? [])),
-            previous: $redactor->redactThrowable($senderException),
+            details: $this->stringKeyedArray($error['details'] ?? []),
+            previous: $senderException,
             requestId: $this->requestId($response),
         );
     }

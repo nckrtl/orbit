@@ -79,6 +79,7 @@ describe('gateway exception boundary', function (): void {
         $queryCredential = gateway_boundary_credential('query');
         $nestedCredential = gateway_boundary_credential('nested');
         $transportCredential = gateway_boundary_credential('transport');
+        $previousCredential = gateway_boundary_credential('previous');
         $mockClient = new MockClient([
             ShowGatewayStatusRequest::class => MockResponse::make(
                 [
@@ -113,10 +114,12 @@ describe('gateway exception boundary', function (): void {
                 $this->fail('Expected a recorded gateway response.');
             }
 
-            $translated = new ShowGatewayStatusRequest()->getRequestException(
-                $response,
-                new RuntimeException("Connection failed for https://alice:{$transportCredential}@example.test."),
+            $senderException = new RuntimeException(
+                message: "Connection failed for https://alice:{$transportCredential}@example.test.",
+                code: 17,
+                previous: new RuntimeException("password={$previousCredential}"),
             );
+            $translated = new ShowGatewayStatusRequest()->getRequestException($response, $senderException);
 
             expect($translated)->toBeInstanceOf(GatewayApiException::class);
 
@@ -140,6 +143,7 @@ describe('gateway exception boundary', function (): void {
                 print_r($exception, return: true),
                 (string) json_encode($exception->__debugInfo()),
                 gateway_owned_trace_output($exception),
+                print_r($translated, return: true),
                 $translated->getPrevious()?->getMessage() ?? '',
                 gateway_owned_trace_output($translated),
             ]);
@@ -163,8 +167,22 @@ describe('gateway exception boundary', function (): void {
                     'request_id' => null,
                     'previous' => null,
                 ])
+                ->and($translated->errorCode())
+                ->toBeNull()
+                ->and($translated->requestId())
+                ->toBeNull()
+                ->and($translated->getMessage())
+                ->toBe('Gateway failed with password=[REDACTED]')
+                ->and($translated->details())
+                ->toBe($expectedDetails)
+                ->and($translated->getPrevious())
+                ->not->toBe($senderException)
                 ->and($translated->getPrevious()?->getMessage())
                 ->toBe('Connection failed for https://[REDACTED]@example.test.')
+                ->and($translated->getPrevious()?->getCode())
+                ->toBe(17)
+                ->and($translated->getPrevious()?->getPrevious())
+                ->toBeNull()
                 ->and($diagnostics)
                 ->toContain('SensitiveParameterValue')
                 ->not->toContain(
@@ -175,6 +193,7 @@ describe('gateway exception boundary', function (): void {
                     $queryCredential,
                     $nestedCredential,
                     $transportCredential,
+                    $previousCredential,
                     $responseBody,
                 );
         }
