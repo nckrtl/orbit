@@ -160,7 +160,7 @@ The Gateway holds one runtime owner for a Process while it re-reads the record, 
 
 Create, start, and restart of an Instance Process also take a bounded Instance admission owner first. A competitor waits for at most 30 seconds or the remaining command deadline, then receives `process.operation_busy` before it mutates that Instance. The Gateway acquires the Instance admission owner before the Process runtime owner and does not take a second nested Process lock. Node-targeted create, start, and restart skip that Instance admission owner.
 
-Node role cleanup uses the same Process runtime owner. It removes exact-owned runtime artifacts and leaves the Process row for the parent removal to delete after recovery. A delayed start or stop that lost the owner cannot rewrite that row after cleanup has finished.
+Instance Process removal uses the same Process runtime owner. It removes exact-owned runtime artifacts and deletes the Process row only after cleanup succeeds. A delayed start or stop that lost the owner cannot rewrite that row after removal has finished. Node role removal does not remove Processes.
 
 Repeating an identical create refreshes the surviving Process and its desired state. It does not create a second record.
 
