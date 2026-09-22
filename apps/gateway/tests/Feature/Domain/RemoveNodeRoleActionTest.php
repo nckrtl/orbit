@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleDependencyInspector;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -17,13 +15,12 @@ use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
-use App\Domain\Processes\ProcessOperationException;
-use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolStatus;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
@@ -36,15 +33,12 @@ use Tests\Support\FakeNodeRoleFirewallManager;
 describe(RemoveNodeRoleAction::class, function (): void {
     it('rejects app role removal before mutation when a manager scope is busy', function (): void {
         [$node, $assignment] = removal_role_fixture();
-        $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
         $scope = Cache::lock("orbit:tool-manager:{$node->id}:vp", 3_600);
         expect($scope->get())->toBeTrue();
 
         try {
             expect(fn () => removal_action(
-                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-                $cleaner,
                 $baseline,
             )->execute($node, RoleName::AppDev, force: true))
                 ->toThrow(function (NodeRoleOperationException $exception): void {
@@ -59,8 +53,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         expect($assignment->refresh()->status)
             ->toBe(LifecycleStatus::Active)
-            ->and($cleaner->calls)
-            ->toBe(0)
             ->and($baseline->calls)
             ->toBe(0);
     });
@@ -73,15 +65,12 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'failed_step' => $otherStatus === LifecycleStatus::Failed ? 'converge:baseline' : null,
             'error_code' => $otherStatus === LifecycleStatus::Failed ? 'app-prod.baseline_failed' : null,
         ]);
-        $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
         $scope = Cache::lock("orbit:tool-manager:{$node->id}:vp", 3_600);
         expect($scope->get())->toBeTrue();
 
         try {
             expect(fn () => removal_action(
-                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-                $cleaner,
                 $baseline,
             )->execute($node, RoleName::AppDev, force: true))
                 ->toThrow(NodeRoleOperationException::class);
@@ -91,8 +80,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         expect($assignment->refresh()->status)
             ->toBe(LifecycleStatus::Active)
-            ->and($cleaner->calls)
-            ->toBe(0)
             ->and($baseline->calls)
             ->toBe(0);
     })->with([
@@ -108,8 +95,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         try {
             expect(fn () => removal_action(
-                new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-                new RemovalCleanerFake,
                 new RemovalBaselineFake,
             )->execute($node, RoleName::AppDev, force: true))
                 ->toThrow(NodeRoleOperationException::class);
@@ -126,10 +111,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
     });
     it('always returns a no-force preview without mutation even when dependents are empty', function (): void {
         [$node, $assignment] = removal_role_fixture();
-        $inspector = new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], []));
-        $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
-        $action = removal_action($inspector, $cleaner, $baseline);
+        $action = removal_action($baseline);
 
         expect(fn () => $action->execute($node, RoleName::AppDev, force: false, purgeData: false))
             ->toThrow(function (NodeRoleValidationException $exception): void {
@@ -146,8 +129,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         expect($assignment->refresh()->status)
             ->toBe(LifecycleStatus::Active)
-            ->and($cleaner->calls)
-            ->toBe(0)
             ->and($baseline->calls)
             ->toBe(0);
     });
@@ -163,8 +144,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'status' => LifecycleStatus::Active,
         ]);
         $action = removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         );
 
@@ -173,9 +152,9 @@ describe(RemoveNodeRoleAction::class, function (): void {
                 expect($exception->details['dependents'])->toBeEmpty();
             });
 
-        $removed = $action->execute($node, RoleName::AppDev, force: true);
+        $action->execute($node, RoleName::AppDev, force: true);
 
-        expect($removed->dependencies->summaries)->toBeEmpty();
+        expect($node->toolManagers()->count())->toBe(2);
     });
 
     it('omits manager retirement summaries while another supported app role remains', function (): void {
@@ -189,8 +168,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'status' => LifecycleStatus::Active,
         ]);
         $action = removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         );
 
@@ -221,11 +198,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
                 'installed_version' => '2.4.1',
             ]);
         }
-        $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
         $action = removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            $cleaner,
             $baseline,
         );
 
@@ -237,8 +211,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(12)
             ->and($node->toolManagers()->count())
             ->toBe(2)
-            ->and($cleaner->calls)
-            ->toBe(1)
             ->and($baseline->calls)
             ->toBe(1);
     })->with([
@@ -247,7 +219,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
     ]);
 
     it('allows removal of the last active app role when app-scoped Tool intent is protected', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        [$node, $assignment] = removal_role_fixture();
         $manager = $node->toolManagers()->create([
             'name' => ToolManagerName::Vp,
             'status' => LifecycleStatus::Active,
@@ -260,8 +232,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'installed_version' => '2.4.1',
         ]);
         $action = removal_action(
-            new RemovalInspectorFake($dependencies),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         );
 
@@ -278,8 +248,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         removal_tool(node: $aptNode, managerName: ToolManagerName::Apt, package: 'jq', toolStatus: ToolStatus::Failed);
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         )->execute($aptNode, RoleName::AppDev, force: true);
 
@@ -294,8 +262,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         );
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         )->execute($vpNode, RoleName::AppDev, force: true);
 
@@ -303,7 +269,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
     });
 
     it('allows app role removal while another active app role remains', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        [$node, $assignment] = removal_role_fixture();
         $node->roles()->create([
             'role' => RoleName::AppProd,
             'status' => LifecycleStatus::Active,
@@ -320,8 +286,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             'installed_version' => '2.4.1',
         ]);
         $action = removal_action(
-            new RemovalInspectorFake($dependencies),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         );
 
@@ -348,8 +312,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         );
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         )->execute($node, RoleName::AppDev, force: true);
 
@@ -361,34 +323,78 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(ToolStatus::Installed);
     });
 
-    it('cleans dependents and baseline outside short transactions before deleting records', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
-        $inspector = new RemovalInspectorFake($dependencies);
-        $events = [];
-        $cleaner = new RemovalCleanerFake;
-        $cleaner->events = &$events;
+    it('claims only the role and runs its baseline outside the claim transaction', function (): void {
+        [$node, $assignment, $process] = removal_role_fixture(withProcess: true);
+        $processState = $process->refresh()->getAttributes();
         $baseline = new RemovalBaselineFake;
-        $baseline->events = &$events;
-        $action = removal_action($inspector, $cleaner, $baseline);
+        $action = removal_action($baseline);
         $ambientTransactionLevel = DB::transactionLevel();
 
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: true);
 
-        expect($removed->dependencies)
-            ->toBe($dependencies)
-            ->and($events)
-            ->toBe([
-                "clean:{$ambientTransactionLevel}",
-                "baseline:1:{$ambientTransactionLevel}",
-            ])
-            ->and($cleaner->observedStatuses)
-            ->toBe([
-                LifecycleStatus::Removing,
-            ])
+        expect($baseline->events)
+            ->toBe(["baseline:1:{$ambientTransactionLevel}"])
+            ->and($baseline->observedStatuses)
+            ->toBe([LifecycleStatus::Removing])
+            ->and($removed->degradation)
+            ->toBeNull()
+            ->and($removed->retained)
+            ->toBe([])
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
-            ->toBeFalse();
+            ->toBeFalse()
+            ->and($process->refresh()->getAttributes())
+            ->toBe($processState);
+    });
 
-        expect(removal_dependency_rows_exist($dependencies))->toBeFalse();
+    it('preserves AppInstances and their processes when removing an unrelated role', function (): void {
+        [$node, $assignment, $nodeProcess] = removal_role_fixture(withProcess: true, role: RoleName::Database);
+        $instance = removal_app_instance($node);
+        $instanceProcess = removal_process(owner: $instance, name: 'queue', status: LifecycleStatus::Failed);
+        $instanceState = $instance->refresh()->getAttributes();
+        $nodeProcessState = $nodeProcess->refresh()->getAttributes();
+        $instanceProcessState = $instanceProcess->refresh()->getAttributes();
+
+        removal_action(new RemovalBaselineFake)->execute($node, RoleName::Database, force: true);
+
+        expect(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and($instance->refresh()->getAttributes())
+            ->toBe($instanceState)
+            ->and($nodeProcess->refresh()->getAttributes())
+            ->toBe($nodeProcessState)
+            ->and($instanceProcess->refresh()->getAttributes())
+            ->toBe($instanceProcessState);
+    });
+
+    it('rechecks AppInstance ownership under the role claim before teardown', function (): void {
+        [$node, $assignment] = removal_role_fixture();
+        $baseline = new RemovalBaselineFake;
+        $scope = Mockery::mock(ToolManagerScopeLock::class);
+        $scope->shouldReceive('run')
+            ->once()
+            ->with($node->id, ToolManagerName::Vp, Mockery::type(Closure::class))
+            ->andReturnUsing(static function (int $nodeId, ToolManagerName $manager, Closure $callback) use ($node): mixed {
+                removal_app_instance($node);
+
+                return $callback();
+            });
+        $scope->shouldReceive('run')
+            ->once()
+            ->with($node->id, ToolManagerName::Composer, Mockery::type(Closure::class))
+            ->andReturnUsing(static fn (int $nodeId, ToolManagerName $manager, Closure $callback): mixed => $callback());
+        app()->instance(ToolManagerScopeLock::class, $scope);
+
+        expect(fn () => removal_action($baseline)->execute($node, RoleName::AppDev, force: true))
+            ->toThrow(function (NodeRoleValidationException $exception): void {
+                expect($exception->details['reason'])->toBe('app_instances_attached');
+            });
+
+        expect($assignment->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($baseline->calls)
+            ->toBe(0)
+            ->and($node->appInstances()->count())
+            ->toBe(1);
     });
 
     it('retains active managers and every Tool after final app role removal', function (): void {
@@ -415,8 +421,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         );
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         )->execute($node, RoleName::AppDev, force: true);
 
@@ -462,8 +466,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         );
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
         )->execute($node, RoleName::AppDev, force: true);
 
@@ -476,143 +478,113 @@ describe(RemoveNodeRoleAction::class, function (): void {
         'removing assignment' => LifecycleStatus::Removing,
     ]);
 
-    it('keeps every row retryable when a remote stage fails', function (string $step): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+    it('keeps only the role retryable when its baseline fails', function (): void {
+        [$node, $assignment, $process] = removal_role_fixture(withProcess: true);
+        $processState = $process->refresh()->getAttributes();
         [$manager, $tool] = removal_tool(
             node: $node,
             managerName: ToolManagerName::Vp,
             package: '@openai/codex',
             protected: true,
         );
-        $inspector = new RemovalInspectorFake($dependencies);
-        $cleaner = new RemovalCleanerFake;
+        $managerState = $manager->refresh()->getAttributes();
+        $toolState = $tool->refresh()->getAttributes();
         $baseline = new RemovalBaselineFake;
+        $baseline->failure = new RuntimeException('baseline failed');
+        $action = removal_action($baseline);
 
-        if ($step === 'baseline') {
-            $baseline->failure = new RuntimeException('baseline failed');
-        }
-
-        if ($step !== 'baseline') {
-            $cleaner->failure = new RuntimeConvergenceException(
-                step: $step,
-                errorCode: "cleanup.{$step}_failed",
-                message: "{$step} failed",
-            );
-        }
-
-        $action = removal_action($inspector, $cleaner, $baseline);
-
-        expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false))
+        expect(fn () => $action->execute($node, RoleName::AppDev, force: true))
             ->toThrow(NodeRoleOperationException::class);
 
         expect($assignment->refresh()->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($assignment->failed_step)
-            ->toBe("remove:{$step}")
-            ->and($manager->refresh()->status)
-            ->toBe(LifecycleStatus::Active)
-            ->and(removal_dependency_rows_exist($dependencies))
-            ->toBeTrue();
+            ->toBe('remove:baseline')
+            ->and($assignment->error_code)
+            ->toBe('node_role.remove_unknown')
+            ->and($process->refresh()->getAttributes())
+            ->toBe($processState)
+            ->and($manager->refresh()->getAttributes())
+            ->toBe($managerState)
+            ->and($tool->refresh()->getAttributes())
+            ->toBe($toolState);
 
-        expect($tool->refresh()->status)
-            ->toBe(ToolStatus::Installed)
-            ->and($tool->installed_version)
-            ->toBe('2.4.1');
-
-        $cleaner->failure = null;
         $baseline->failure = null;
-        $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
+        $removed = $action->execute($node, RoleName::AppDev, force: true);
 
-        expect($removed->dependencies->instanceIds)
-            ->toBe($dependencies->instanceIds)
-            ->and($removed->dependencies->workspaceIds)
-            ->toBe($dependencies->workspaceIds)
-            ->and($removed->dependencies->processIds)
-            ->toBe($dependencies->processIds)
-            ->and($removed->degradation)
+        expect($removed->degradation)
             ->toBeNull()
             ->and($removed->retained)
             ->toBe([])
-            ->and($removed->dependencies->summaries)
-            ->toBe($dependencies->summaries)
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse()
-            ->and(removal_dependency_rows_exist($dependencies))
-            ->toBeFalse();
-
-        expect($manager->refresh()->status)->toBe(LifecycleStatus::Active);
-
-        expect($tool->refresh()->status)
-            ->toBe(ToolStatus::Installed)
-            ->and($tool->installed_version)
-            ->toBe('2.4.1');
-    })->with([
-        'process runtime' => 'process-runtime',
-        'workspace publication' => 'workspace-runtime',
-        'instance publication' => 'instance-runtime',
-        'role baseline' => 'baseline',
-    ]);
-
-    it('removes an app-dev role while leftover Instance and Workspace dependents stay empty', function (): void {
-        [$node, $assignment] = removal_role_fixture();
-        $inspector = app(NodeRoleDependencyInspector::class);
-        $cleaner = new RemovalCleanerFake;
-        $baseline = new RemovalBaselineFake;
-        $action = removal_action($inspector, $cleaner, $baseline);
-
-        $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
-
-        expect($node->roles()->where('role', RoleName::AppDev->value)->exists())
-            ->toBeFalse()
-            ->and(NodeRole::query()->whereKey($assignment->id)->exists())
-            ->toBeFalse()
-            ->and($removed->dependencies->instanceIds)
-            ->toBeEmpty()
-            ->and($removed->dependencies->workspaceIds)
-            ->toBeEmpty()
-            ->and($removed->dependencies->processIds)
-            ->toBeEmpty();
+            ->and($baseline->calls)
+            ->toBe(2)
+            ->and($process->refresh()->getAttributes())
+            ->toBe($processState)
+            ->and($manager->refresh()->getAttributes())
+            ->toBe($managerState)
+            ->and($tool->refresh()->getAttributes())
+            ->toBe($toolState);
     });
 
-    it('records the exact failure on a Process that could not be cleaned', function (): void {
-        [, , $dependencies] = removal_role_fixture(withDependents: true);
-        Process::query()->whereIn('id', $dependencies->processIds)->update(['status' => LifecycleStatus::Removing]);
-        $processes = Mockery::mock(ProcessRuntimeManager::class);
-        $processes
-            ->shouldReceive('remove')
-            ->once()
-            ->andThrow(new ProcessOperationException('stop', 'process.stop_failed', 'stop failed'));
-        $cleaner = new NativeNodeRoleDependentCleaner(
-            processes: $processes,
-        );
+    it('records a finalization failure on the role and permits removal retry', function (): void {
+        [$node, $assignment, $process] = removal_role_fixture(withProcess: true);
+        $processState = $process->refresh()->getAttributes();
+        $baseline = new RemovalBaselineFake;
+        $action = removal_action($baseline);
+        DB::unprepared(<<<'SQL'
+            CREATE TRIGGER role_removal_finalize_failure
+            BEFORE DELETE ON node_roles
+            BEGIN
+                SELECT RAISE(ABORT, 'Injected role deletion failure.');
+            END
+            SQL);
 
-        expect(fn () => $cleaner->clean($dependencies))->toThrow(NodeRoleOperationException::class);
+        try {
+            expect(fn () => $action->execute($node, RoleName::AppDev, force: true))
+                ->toThrow(function (NodeRoleOperationException $exception): void {
+                    expect($exception->step)
+                        ->toBe('remove:finalize')
+                        ->and($exception->errorCode)
+                        ->toBe('node_role.remove_failed')
+                        ->and($exception->underlyingErrorCode)
+                        ->toBe('node_role.finalize_failed');
+                });
+        } finally {
+            DB::unprepared('DROP TRIGGER role_removal_finalize_failure');
+        }
 
-        $failed = Process::query()->findOrFail($dependencies->processIds[0]);
-
-        expect($failed->status)
+        expect($assignment->refresh()->status)
             ->toBe(LifecycleStatus::Failed)
-            ->and($failed->failed_step)
-            ->toBe('stop')
-            ->and($failed->error_code)
-            ->toBe('process.stop_failed');
+            ->and($assignment->failed_step)
+            ->toBe('remove:finalize')
+            ->and($assignment->error_code)
+            ->toBe('node_role.finalize_failed')
+            ->and($process->refresh()->getAttributes())
+            ->toBe($processState);
+
+        $action->execute($node, RoleName::AppDev, force: true);
+
+        expect(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and($baseline->calls)
+            ->toBe(2)
+            ->and($process->refresh()->getAttributes())
+            ->toBe($processState);
     });
 
     it('sheds a role from an unreachable node without attempting anything on it', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
-        $inspector = new RemovalInspectorFake($dependencies);
-        $cleaner = new RemovalCleanerFake;
+        [$node, $assignment, $process] = removal_role_fixture(withProcess: true);
         $baseline = new RemovalBaselineFake;
         $probe = new RemovalReachabilityFake(ExporterDegradationReason::Unreachable);
         $firewall = new FakeNodeRoleFirewallManager;
-        $action = removal_action($inspector, $cleaner, $baseline, reachability: $probe, firewall: $firewall);
+        $action = removal_action($baseline, reachability: $probe, firewall: $firewall);
 
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false, offline: true);
 
         expect($probe->calls)
             ->toBe(1)
-            ->and($cleaner->calls)
-            ->toBe(0)
             ->and($firewall->restored)
             ->toBe([])
             ->and($baseline->events)
@@ -627,23 +599,21 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toContain('Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100')
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse()
-            ->and(removal_dependency_rows_exist($dependencies))
-            ->toBeFalse();
+            ->and($process->refresh()->status)
+            ->toBe(LifecycleStatus::Active);
     });
 
     it('keeps a reachable node fail-closed even when the offline claim is made', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
-        $cleaner = new RemovalCleanerFake;
-        $cleaner->failure = new RuntimeConvergenceException(
-            step: 'instance-runtime',
-            errorCode: 'cleanup.instance-runtime_failed',
-            message: 'instance-runtime failed',
+        [$node, $assignment, $process] = removal_role_fixture(withProcess: true);
+        $baseline = new RemovalBaselineFake;
+        $baseline->failure = new RuntimeConvergenceException(
+            step: 'baseline-runtime',
+            errorCode: 'baseline.runtime_failed',
+            message: 'baseline-runtime failed',
         );
         $probe = new RemovalReachabilityFake(null);
         $action = removal_action(
-            new RemovalInspectorFake($dependencies),
-            $cleaner,
-            new RemovalBaselineFake,
+            $baseline,
             reachability: $probe,
         );
 
@@ -652,40 +622,36 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         expect($probe->calls)
             ->toBe(1)
-            ->and($cleaner->calls)
-            ->toBe(1)
             ->and($assignment->refresh()->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($assignment->failed_step)
-            ->toBe('remove:instance-runtime')
-            ->and(removal_dependency_rows_exist($dependencies))
-            ->toBeTrue();
+            ->toBe('remove:baseline-runtime')
+            ->and($process->refresh()->status)
+            ->toBe(LifecycleStatus::Active);
     });
 
     it('names the offline flag on a node-side teardown failure', function (): void {
-        [$node, , $dependencies] = removal_role_fixture(withDependents: true);
-        $cleaner = new RemovalCleanerFake;
-        $cleaner->failure = new RuntimeConvergenceException(
-            step: 'instance-runtime',
-            errorCode: 'cleanup.instance-runtime_failed',
-            message: 'instance-runtime failed',
+        [$node] = removal_role_fixture();
+        $baseline = new RemovalBaselineFake;
+        $baseline->failure = new RuntimeConvergenceException(
+            step: 'baseline-runtime',
+            errorCode: 'baseline.runtime_failed',
+            message: 'baseline-runtime failed',
         );
-        $action = removal_action(new RemovalInspectorFake($dependencies), $cleaner, new RemovalBaselineFake);
+        $action = removal_action($baseline);
 
         expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false))
             ->toThrow(
                 NodeRoleOperationException::class,
-                "instance-runtime failed Retry with --offline if node [{$node->name}] is unreachable.",
+                "baseline-runtime failed Retry with --offline if node [{$node->name}] is unreachable.",
             );
     });
 
     it('still fails closed when the Gateway side cannot be converged for an unreachable node', function (): void {
-        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        [$node, $assignment, $process] = removal_role_fixture(withProcess: true);
         $baseline = new RemovalBaselineFake;
         $baseline->failure = new RuntimeException('gateway projection failed');
         $action = removal_action(
-            new RemovalInspectorFake($dependencies),
-            new RemovalCleanerFake,
             $baseline,
             reachability: new RemovalReachabilityFake(ExporterDegradationReason::Unreachable),
         );
@@ -697,16 +663,14 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(LifecycleStatus::Failed)
             ->and($assignment->failed_step)
             ->toBe('remove:baseline')
-            ->and(removal_dependency_rows_exist($dependencies))
-            ->toBeTrue();
+            ->and($process->refresh()->status)
+            ->toBe(LifecycleStatus::Active);
     });
 
     it('never probes reachability without the offline claim', function (): void {
-        [$node, , $dependencies] = removal_role_fixture(withDependents: true);
+        [$node] = removal_role_fixture();
         $probe = new RemovalReachabilityFake(ExporterDegradationReason::Unreachable);
         $action = removal_action(
-            new RemovalInspectorFake($dependencies),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
             reachability: $probe,
         );
@@ -731,8 +695,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $ambientTransactionLevel = DB::transactionLevel();
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             $baseline,
             firewall: $firewall,
         )->execute($node, RoleName::AppDev, force: true);
@@ -761,8 +723,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $firewall = new FakeNodeRoleFirewallManager;
 
         removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
             firewall: $firewall,
         )->execute($node, RoleName::AppDev, force: true);
@@ -788,8 +748,6 @@ describe(RemoveNodeRoleAction::class, function (): void {
             message: 'UFW is inactive during role-rule convergence.',
         );
         $action = removal_action(
-            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
-            new RemovalCleanerFake,
             new RemovalBaselineFake,
             firewall: $firewall,
         );
@@ -824,15 +782,11 @@ describe(RemoveNodeRoleAction::class, function (): void {
 });
 
 function removal_action(
-    NodeRoleDependencyInspector $inspector,
-    NodeRoleDependentCleaner $cleaner,
     RoleBaselineConverger $baseline,
     ?NodeReachabilityProbe $reachability = null,
     ?NodeRoleFirewallManager $firewall = null,
 ): RemoveNodeRoleAction {
     return new RemoveNodeRoleAction(
-        $inspector,
-        $cleaner,
         $baseline,
         app(RoleRegistry::class),
         app(ToolManagerScopeLock::class),
@@ -886,9 +840,9 @@ function removal_tool(
 }
 
 /**
- * @return array{Node, NodeRole, 2?: NodeRoleDependencySet}
+ * @return array{Node, NodeRole, 2?: Process}
  */
-function removal_role_fixture(bool $withDependents = false, RoleName $role = RoleName::AppDev): array
+function removal_role_fixture(bool $withProcess = false, RoleName $role = RoleName::AppDev): array
 {
     $node = removal_node('remove-node-'.strtolower(fake()->bothify('??##')));
     $assignment = $node->roles()->create([
@@ -896,19 +850,11 @@ function removal_role_fixture(bool $withDependents = false, RoleName $role = Rol
         'status' => LifecycleStatus::Active,
     ]);
 
-    if (! $withDependents) {
+    if (! $withProcess) {
         return [$node, $assignment];
     }
 
-    $process = removal_process(owner: $node, name: 'worker', status: LifecycleStatus::Active);
-    $dependencies = new NodeRoleDependencySet(
-        instanceIds: [],
-        workspaceIds: [],
-        processIds: [$process->id],
-        summaries: ['1 process record'],
-    );
-
-    return [$node, $assignment, $dependencies];
+    return [$node, $assignment, removal_process(owner: $node, name: 'worker', status: LifecycleStatus::Active)];
 }
 
 function removal_node(string $name): Node
@@ -921,7 +867,25 @@ function removal_node(string $name): Node
     ]);
 }
 
-function removal_process(Node $owner, string $name, LifecycleStatus $status): Process
+function removal_app_instance(Node $node): AppInstance
+{
+    $app = OrbitApp::query()->create([
+        'name' => 'Retained app',
+        'slug' => 'retained-app',
+        'repository_url' => 'git@example.test:retained.git',
+        'default_branch' => 'main',
+    ]);
+
+    return AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'retained',
+        'checkout_path' => '/home/orbit/apps/retained',
+        'status' => AppInstanceState::Active,
+    ]);
+}
+
+function removal_process(Node|AppInstance $owner, string $name, LifecycleStatus $status): Process
 {
     return Process::query()->create([
         'owner_type' => $owner::class,
@@ -936,59 +900,11 @@ function removal_process(Node $owner, string $name, LifecycleStatus $status): Pr
     ]);
 }
 
-function removal_dependency_rows_exist(NodeRoleDependencySet $dependencies): bool
+final class RemovalBaselineFake implements RoleBaselineConverger
 {
-    return Process::query()->whereIn('id', $dependencies->processIds)->exists();
-}
-
-final class RemovalInspectorFake implements NodeRoleDependencyInspector
-{
-    public function __construct(
-        public NodeRoleDependencySet $dependencies,
-    ) {}
-
-    public function inspect(Node $node, RoleName $role): NodeRoleDependencySet
-    {
-        return $this->dependencies;
-    }
-}
-
-final class RemovalCleanerFake implements NodeRoleDependentCleaner
-{
-    public int $calls = 0;
-
     /** @var list<LifecycleStatus> */
     public array $observedStatuses = [];
 
-    public ?Throwable $failure = null;
-
-    public ?Closure $afterClean = null;
-
-    /** @var list<string> */
-    public array $events = [];
-
-    public function clean(NodeRoleDependencySet $dependencies): void
-    {
-        $this->calls++;
-        $this->events[] = 'clean:'.DB::transactionLevel();
-        if ($dependencies->processIds !== []) {
-            $this->observedStatuses = [
-                Process::query()->findOrFail($dependencies->processIds[0])->status,
-            ];
-        }
-
-        if ($this->failure instanceof Throwable) {
-            throw $this->failure;
-        }
-
-        if ($this->afterClean instanceof Closure) {
-            ($this->afterClean)();
-        }
-    }
-}
-
-final class RemovalBaselineFake implements RoleBaselineConverger
-{
     public int $calls = 0;
 
     public ?Throwable $failure = null;
@@ -1002,6 +918,7 @@ final class RemovalBaselineFake implements RoleBaselineConverger
     {
         $this->calls++;
         $this->events[] = 'baseline:'.(int) $purgeData.':'.DB::transactionLevel();
+        $this->observedStatuses[] = $assignment->refresh()->status;
 
         if ($this->failure instanceof Throwable) {
             throw $this->failure;

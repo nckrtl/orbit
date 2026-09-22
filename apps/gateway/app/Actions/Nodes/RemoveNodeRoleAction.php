@@ -11,9 +11,6 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleDependencyInspector;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleRemovalOutcome;
@@ -22,7 +19,6 @@ use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
-use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
@@ -30,15 +26,12 @@ use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Models\Node;
 use App\Models\NodeRole;
-use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final readonly class RemoveNodeRoleAction
 {
     public function __construct(
-        private NodeRoleDependencyInspector $inspector,
-        private NodeRoleDependentCleaner $cleaner,
         private RoleBaselineConverger $baselines,
         private RoleRegistry $registry,
         private ToolManagerScopeLock $managerScope,
@@ -73,7 +66,6 @@ final readonly class RemoveNodeRoleAction
         }
 
         $this->guardPolicy($node, $role);
-        $preview = $this->inspector->inspect($node, $role);
 
         if (! $force) {
             throw new NodeRoleValidationException(
@@ -82,7 +74,7 @@ final readonly class RemoveNodeRoleAction
                     'field' => 'force',
                     'reason' => 'destructive_consent_required',
                     'role' => $role->value,
-                    'dependents' => $preview->summaries,
+                    'dependents' => [],
                 ],
             );
         }
@@ -136,7 +128,7 @@ final readonly class RemoveNodeRoleAction
             });
         }
 
-        return new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], []));
+        return new NodeRoleRemovalOutcome;
     }
 
     private function removeAppRole(
@@ -177,31 +169,30 @@ final readonly class RemoveNodeRoleAction
         bool $purgeData,
         ?ExporterDegradationReason $degradation,
     ): NodeRoleRemovalOutcome {
-        [$assignment, $dependencies] = $this->claim($node, $role);
+        $assignment = $this->claim($node, $role);
 
         if ($degradation instanceof ExporterDegradationReason) {
             $this->abandonNodeSide($node, $role, $assignment);
         } else {
-            $this->tearDownNodeSide($node, $role, $assignment, $dependencies, $purgeData);
+            $this->tearDownNodeSide($node, $role, $assignment, $purgeData);
         }
 
         try {
-            $this->finalize($node, $role, $assignment, $dependencies);
+            $this->finalize($assignment);
         } catch (Throwable $exception) {
             $failure = $exception instanceof NodeRoleOperationException
                 ? $exception
                 : new NodeRoleOperationException(
-                    step: 'dependency-race',
+                    step: 'finalize',
                     errorCode: 'node_role.remove_failed',
-                    underlyingErrorCode: 'node_role.dependencies_changed',
-                    message: "Role [{$role->value}] dependencies changed during removal from node [{$node->name}].",
+                    underlyingErrorCode: 'node_role.finalize_failed',
+                    message: "Role [{$role->value}] removal could not be finalized on node [{$node->name}].",
                     previous: $exception,
                 );
             $this->failRemoval($assignment, $failure);
         }
 
         return new NodeRoleRemovalOutcome(
-            dependencies: $dependencies,
             degradation: $degradation,
             retained: $degradation instanceof ExporterDegradationReason
                 ? $this->residue->describe([$role], nodeLeavesFleet: false)
@@ -210,22 +201,15 @@ final readonly class RemoveNodeRoleAction
     }
 
     /**
-     * The ordinary path: every dependent and every baseline step is torn down
+     * The ordinary path: every baseline step is torn down
      * on the node, and any failure leaves the assignment in `Failed`.
      */
     private function tearDownNodeSide(
         Node $node,
         RoleName $role,
         NodeRole $assignment,
-        NodeRoleDependencySet $dependencies,
         bool $purgeData,
     ): void {
-        try {
-            $this->cleaner->clean($dependencies);
-        } catch (Throwable $exception) {
-            $this->failRemoval($assignment, $this->offlineHint($this->cleanupFailure($exception), $node));
-        }
-
         try {
             $this->baselines->remove($node, $assignment, $purgeData);
         } catch (Throwable $exception) {
@@ -306,13 +290,9 @@ final readonly class RemoveNodeRoleAction
         return $this->routes ?? app(RouteRemovalGuard::class);
     }
 
-    /** @return array{NodeRole, NodeRoleDependencySet} */
-    private function claim(Node $node, RoleName $role): array
+    private function claim(Node $node, RoleName $role): NodeRole
     {
-        /**
-         * @var array{NodeRole, NodeRoleDependencySet} $claim
-         */
-        $claim = DB::transaction(function () use ($node, $role): array {
+        return DB::transaction(function () use ($node, $role): NodeRole {
             $assignment = NodeRole::query()
                 ->where('node_id', $node->id)
                 ->where('role', $role)
@@ -337,46 +317,20 @@ final readonly class RemoveNodeRoleAction
                 );
             }
 
-            $dependencies = $this->inspector->inspect($node, $role);
             $assignment->update([
                 'status' => LifecycleStatus::Removing,
                 'failed_step' => null,
                 'error_code' => null,
             ]);
-            Process::query()
-                ->whereIn('id', $dependencies->processIds)
-                ->update([
-                    'status' => LifecycleStatus::Removing,
-                    'failed_step' => null,
-                    'error_code' => null,
-                ]);
 
-            return [$assignment->refresh(), $dependencies];
+            return $assignment->refresh();
         });
-
-        return $claim;
     }
 
-    private function finalize(
-        Node $node,
-        RoleName $role,
-        NodeRole $assignment,
-        NodeRoleDependencySet $captured,
-    ): void {
-        DB::transaction(function () use ($node, $role, $assignment, $captured): void {
-            $current = $this->inspector->inspect($node, $role);
-
-            if (! $this->sameDependencies($captured, $current)) {
-                throw new NodeRoleOperationException(
-                    step: 'dependency-race',
-                    errorCode: 'node_role.remove_failed',
-                    underlyingErrorCode: 'node_role.dependencies_changed',
-                    message: "Role [{$role->value}] dependencies changed during removal from node [{$node->name}].",
-                );
-            }
-
-            Process::query()->whereIn('id', $captured->processIds)->delete();
-            $assignment->delete();
+    private function finalize(NodeRole $assignment): void
+    {
+        DB::transaction(static function () use ($assignment): void {
+            NodeRole::query()->whereKey($assignment->id)->lockForUpdate()->sole()->delete();
         });
     }
 
@@ -407,40 +361,6 @@ final readonly class RemoveNodeRoleAction
             || $assignment->status === LifecycleStatus::Failed
             && is_string($assignment->failed_step)
             && str_starts_with($assignment->failed_step, 'remove:');
-    }
-
-    private function sameDependencies(NodeRoleDependencySet $captured, NodeRoleDependencySet $current): bool
-    {
-        return
-            $captured->instanceIds === $current->instanceIds
-            && $captured->workspaceIds === $current->workspaceIds
-            && $captured->processIds === $current->processIds;
-    }
-
-    private function cleanupFailure(Throwable $exception): NodeRoleOperationException
-    {
-        if ($exception instanceof NodeRoleOperationException) {
-            return $exception;
-        }
-
-        if ($exception instanceof ProcessOperationException || $exception instanceof RuntimeConvergenceException) {
-            return new NodeRoleOperationException(
-                step: $exception->step,
-                errorCode: 'node_role.remove_failed',
-                underlyingErrorCode: $exception->errorCode,
-                message: $exception->getMessage(),
-                result: $exception->result,
-                previous: $exception,
-            );
-        }
-
-        return new NodeRoleOperationException(
-            step: 'dependents',
-            errorCode: 'node_role.remove_failed',
-            underlyingErrorCode: 'node_role.cleanup_unknown',
-            message: 'Node role dependent cleanup failed.',
-            previous: $exception,
-        );
     }
 
     private function baselineFailure(Node $node, RoleName $role, Throwable $exception): NodeRoleOperationException

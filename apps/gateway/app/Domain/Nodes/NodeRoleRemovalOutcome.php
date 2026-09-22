@@ -16,7 +16,6 @@ final readonly class NodeRoleRemovalOutcome
 {
     /** @param list<string> $retained */
     public function __construct(
-        public NodeRoleDependencySet $dependencies,
         public ?ExporterDegradationReason $degradation = null,
         public array $retained = [],
     ) {}

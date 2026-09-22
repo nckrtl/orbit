@@ -9,8 +9,6 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -35,7 +33,6 @@ beforeEach(function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     $this->roleLifecycle = new NodeRoleApiLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
-    app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager
     {
@@ -1344,7 +1341,7 @@ function node_roles_api_node(
     ]);
 }
 
-final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger
+final class NodeRoleApiLifecycleFake implements RoleBaselineConverger
 {
     /** @var list<string> */
     public array $converged = [];
@@ -1378,8 +1375,6 @@ final class NodeRoleApiLifecycleFake implements NodeRoleDependentCleaner, RoleBa
     }
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-
-    public function clean(NodeRoleDependencySet $dependencies): void {}
 }
 
 final class NodeRoleApiReachabilityFake implements NodeReachabilityProbe

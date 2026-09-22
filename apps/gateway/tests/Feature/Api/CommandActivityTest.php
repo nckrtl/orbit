@@ -17,8 +17,6 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -746,7 +744,6 @@ it('records node role commands against the node with bounded inputs and stable f
     ]);
     $lifecycle = new CommandActivityNodeRoleLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $lifecycle);
-    app()->instance(NodeRoleDependentCleaner::class, $lifecycle);
     $listRequestId = (string) Str::uuid();
     $addRequestId = (string) Str::uuid();
     $removeRequestId = (string) Str::uuid();
@@ -869,7 +866,6 @@ it('records complete SDK role removal input on success and before authentication
         ]);
     $lifecycle = new CommandActivityNodeRoleLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $lifecycle);
-    app()->instance(NodeRoleDependentCleaner::class, $lifecycle);
     app()->instance(NodeRoleFirewallManager::class, new FakeNodeRoleFirewallManager);
     $deniedRequestId = (string) Str::uuid();
     $successRequestId = (string) Str::uuid();
@@ -911,15 +907,13 @@ it('records complete SDK role removal input on success and before authentication
         ]);
 });
 
-final class CommandActivityNodeRoleLifecycleFake implements NodeRoleDependentCleaner, RoleBaselineConverger
+final class CommandActivityNodeRoleLifecycleFake implements RoleBaselineConverger
 {
     public function converge(Node $node, NodeRole $assignment): void {}
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void {}
-
-    public function clean(NodeRoleDependencySet $dependencies): void {}
 }
 
 it('records tool manager and tool lists with the node target and no tool subject', function (): void {

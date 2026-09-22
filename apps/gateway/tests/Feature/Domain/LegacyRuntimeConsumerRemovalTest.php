@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Nodes\NodeRoleDependencyInspector;
+use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -62,7 +63,7 @@ it('treats leftover Instance and Workspace checkouts as unmanaged for overlap an
         ->toBeFalse();
 });
 
-it('retires Orbit-owned public app-prod 80/443 rules and ignores leftover runtime dependents', function (): void {
+it('retires Orbit-owned public app-prod 80/443 rules without restoring ingress rules', function (): void {
     [$node] = leftover_runtime_models();
     $node->roles()->create([
         'role' => RoleName::AppProd,
@@ -75,12 +76,10 @@ it('retires Orbit-owned public app-prod 80/443 rules and ignores leftover runtim
         ->and(collect($catalog->retiredForRole($node, RoleName::AppProd))->map(fn ($rule) => $rule->shape->comment)->all())
         ->toContain('orbit:app-prod-http', 'orbit:app-prod-https')
         ->and($catalog->forRole($node, RoleName::Ingress))
-        ->toBeEmpty()
-        ->and(app(NodeRoleDependencyInspector::class)->inspect($node, RoleName::AppProd)->summaries)
         ->toBeEmpty();
 });
 
-it('keeps AppInstance-owned Processes independent of leftover Instance owners', function (): void {
+it('refuses app-dev role removal without changing its AppInstance or Process', function (): void {
     [$node, $app] = leftover_runtime_models();
     $appInstance = leftover_runtime_app_instance($node, $app);
     $process = Process::query()->create([
@@ -94,11 +93,22 @@ it('keeps AppInstance-owned Processes independent of leftover Instance owners', 
         'desired_state' => 'stopped',
         'status' => LifecycleStatus::Active,
     ]);
+    $assignment = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $originalAssignment = $assignment->refresh()->getRawOriginal();
+    $originalInstance = $appInstance->refresh()->getRawOriginal();
+    $originalProcess = $process->refresh()->getRawOriginal();
 
-    expect($process->refresh()->owner_type)
-        ->toBe(AppInstance::class)
-        ->and(app(NodeRoleDependencyInspector::class)->inspect($node, RoleName::AppDev)->processIds)
-        ->toBeEmpty();
+    expect(fn () => app(RemoveNodeRoleAction::class)->execute($node, RoleName::AppDev, force: true))
+        ->toThrow(function (NodeRoleValidationException $exception): void {
+            expect($exception->details)->toBe([
+                'reason' => 'app_instances_attached',
+                'role' => RoleName::AppDev->value,
+            ]);
+        });
+
+    expect($assignment->refresh()->getRawOriginal())->toBe($originalAssignment);
+    expect($appInstance->refresh()->getRawOriginal())->toBe($originalInstance);
+    expect($process->refresh()->getRawOriginal())->toBe($originalProcess);
 });
 
 /**

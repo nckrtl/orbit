@@ -18,8 +18,6 @@ use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalException;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -994,8 +992,8 @@ it('leaves a reachable node alone even when the offline claim is made', function
     $caller->accessibleNodes()->attach($target);
     remove_node_reachable_probe();
     remove_node_role_fixture($target, RoleName::AppProd);
-    $cleaner = new RemoveNodeCountingCleaner;
-    app()->instance(NodeRoleDependentCleaner::class, $cleaner);
+    $process = remove_node_owned_process($target);
+    $originalProcess = $process->refresh()->getRawOriginal();
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
@@ -1010,12 +1008,13 @@ it('leaves a reachable node alone even when the offline claim is made', function
         ->toBeNull()
         ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
         ->toBe(LifecycleStatus::Active)
-        ->and($cleaner->calls)
-        ->toBe(0)
         ->and($this->dns->convergences)
         ->toBe(0)
         ->and($this->peers->removed)
         ->toBe([]);
+
+    expect($process->refresh()->getRawOriginal())->toBe($originalProcess);
+    expect($this->processRuntime->removed)->toBeEmpty();
 });
 
 it('never sheds roles from a protected node, whatever the offline claim says', function (RoleName $role): void {
@@ -1344,15 +1343,5 @@ final class RemoveNodeFakeProcessRuntimeManager implements ProcessRuntimeManager
     {
         $this->commands[] = 'remove';
         $this->removed[] = $process->id;
-    }
-}
-
-final class RemoveNodeCountingCleaner implements NodeRoleDependentCleaner
-{
-    public int $calls = 0;
-
-    public function clean(NodeRoleDependencySet $dependencies): void
-    {
-        $this->calls++;
     }
 }

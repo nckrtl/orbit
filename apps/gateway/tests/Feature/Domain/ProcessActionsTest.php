@@ -14,8 +14,6 @@ use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -30,7 +28,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -814,7 +811,7 @@ it('leaves intent and lifecycle unchanged when a stop loses the runtime owner', 
     }
 });
 
-it('leaves a removing process unmarked when remove loses the runtime owner', function (): void {
+it('leaves the process definition unchanged when removal loses the runtime owner', function (): void {
     $process = process_actions_record($this->instance);
     $original = $process->fresh()->getRawOriginal();
     $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
@@ -822,7 +819,10 @@ it('leaves a removing process unmarked when remove loses the runtime owner', fun
 
     try {
         expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
-            ->toThrow(ProcessOperationException::class);
+            ->toThrow(function (ProcessOperationException $exception): void {
+                expect($exception->errorCode)->toBe('process.runtime_lock_failed');
+                expect($exception->step)->toBe('lock-runtime');
+            });
 
         expect($process->refresh()->getRawOriginal())
             ->toBe($original)
@@ -917,54 +917,18 @@ it('does not rewrite an existing process when an identical add loses the runtime
     }
 });
 
-it('does not mark a process failed when role cleanup loses the runtime owner', function (): void {
+it('keeps the process definition until runtime removal succeeds', function (): void {
     $process = process_actions_record($this->instance);
-    $original = $process->fresh()->getRawOriginal();
-    $lock = Cache::lock(process_actions_runtime_lock_key($process), 60);
-    expect($lock->get())->toBeTrue();
+    $statusDuringRemoval = null;
+    $this->runtime->duringRemove = function () use ($process, &$statusDuringRemoval): void {
+        $statusDuringRemoval = $process->fresh()?->status;
+    };
 
-    try {
-        $cleaner = new NativeNodeRoleDependentCleaner(
-            processes: $this->runtime,
-        );
+    new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
 
-        expect(fn () => $cleaner->clean(new NodeRoleDependencySet(
-            instanceIds: [],
-            workspaceIds: [],
-            processIds: [$process->id],
-            summaries: [],
-        )))->toThrow(function (NodeRoleOperationException $exception): void {
-            expect($exception->underlyingErrorCode)->toBe('process.runtime_lock_failed');
-        });
-
-        expect($process->refresh()->getRawOriginal())
-            ->toBe($original)
-            ->and($this->runtime->removed)
-            ->toBeEmpty();
-    } finally {
-        $lock->release();
-    }
-});
-
-it('role cleanup removes runtime artifacts and leaves the process row for the parent', function (): void {
-    $process = process_actions_record($this->instance);
-    $cleaner = new NativeNodeRoleDependentCleaner(
-        processes: $this->runtime,
-    );
-
-    $cleaner->clean(new NodeRoleDependencySet(
-        instanceIds: [],
-        workspaceIds: [],
-        processIds: [$process->id],
-        summaries: [],
-    ));
-
-    expect($this->runtime->removed)
-        ->toBe([$process->id])
-        ->and(Process::query()->whereKey($process->id)->exists())
-        ->toBeTrue()
-        ->and($process->refresh()->status)
-        ->toBe(LifecycleStatus::Active);
+    expect($statusDuringRemoval)->toBe(LifecycleStatus::Removing);
+    expect($this->runtime->removed)->toBe([$process->id]);
+    $this->assertModelMissing($process);
 });
 
 it('records stable lifecycle failure state without losing the process definition', function (): void {
@@ -984,11 +948,11 @@ it('records stable lifecycle failure state without losing the process definition
         ->error_code->toBe('process.start_failed')->and(Process::query()->count())->toBe(1);
 });
 
-it('retains the process definition when runtime removal fails', function (): void {
+it('retains the process definition and exact failure when runtime removal fails', function (string $errorCode): void {
     $process = process_actions_record($this->instance);
     $this->runtime->removeFailure = new ProcessOperationException(
         step: 'stop',
-        errorCode: 'process.remove_failed',
+        errorCode: $errorCode,
         message: 'The owned unit could not be stopped.',
     );
 
@@ -998,8 +962,11 @@ it('retains the process definition when runtime removal fails', function (): voi
     expect($process->refresh())
         ->status->toBe(LifecycleStatus::Failed)
         ->failed_step->toBe('stop')
-        ->error_code->toBe('process.remove_failed')->and(Process::query()->count())->toBe(1);
-});
+        ->error_code->toBe($errorCode)->and(Process::query()->count())->toBe(1);
+})->with([
+    'remove failure' => 'process.remove_failed',
+    'stop failure' => 'process.stop_failed',
+]);
 
 function process_actions_runtime_lock_key(Process $process): string
 {

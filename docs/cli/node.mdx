@@ -20,7 +20,7 @@ The [Node provisioning](/reference/node-provisioning), [Node settings](/referenc
 | [`node:role:add`](#orbit-noderoleadd) | Add or converge one role assignment. |
 | [`node:role:list`](#orbit-noderolelist) | List the role assignments of one Node. |
 | [`node:role:relocate`](#orbit-noderolerelocate) | Move a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node. |
-| [`node:role:remove`](#orbit-noderoleremove) | Remove one role assignment and its dependent state. |
+| [`node:role:remove`](#orbit-noderoleremove) | Remove one role assignment and its baseline. |
 | [`node:access:add`](#orbit-nodeaccessadd) | Allow one Node to run commands on another Node. |
 | [`node:access:remove`](#orbit-nodeaccessremove) | Remove one access edge. |
 | [`node:settings`](#orbit-nodesettings) | Update the typed storage settings of one Node. |
@@ -246,7 +246,7 @@ orbit node:role:relocate services websocket --from beast --force
 
 ## orbit node:role:remove
 
-Remove one role assignment from a Node. Removing the last role restores the public SSH recovery rule before the Gateway deletes the assignment.
+Remove one role assignment and its baseline from a Node. Unrelated Processes, Tools, and Tool managers remain. Removing the last role restores the public SSH recovery rule before the Gateway deletes the assignment.
 
 ```bash
 orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
@@ -254,7 +254,7 @@ orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--jso
 
 | Option | Meaning |
 | --- | --- |
-| `--force` | Confirm destructive role removal and dependent cleanup. |
+| `--force` | Confirm removal of the role and its baseline. |
 | `--purge-data` | Request supported role-owned data cleanup. For `metrics`, this deletes the Prometheus and Grafana volumes and stored credentials. For `websocket`, this deletes the Reverb checkout at its install path. |
 | `--offline` | Remove the role from a Node the Gateway cannot reach. |
 

@@ -118,8 +118,6 @@ use App\Domain\Nodes\Metrics\NodeMetricsReader;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeReachabilityProbe;
-use App\Domain\Nodes\NodeRoleDependencyInspector;
-use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
@@ -264,11 +262,9 @@ use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
-use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\Metrics\GrafanaPrometheusNodeMetricsReader;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
@@ -410,8 +406,6 @@ final class AppServiceProvider extends ServiceProvider
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         SqliteSnapshotTransfer::class => ProtectedSqliteSnapshotTransfer::class,
-        NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
-        NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RouterLanIngressPublisher::class => NativeNodeRoleFirewallManager::class,
         RouterLanIngressReconciler::class => NativeRouterLanIngressReconciler::class,

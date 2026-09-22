@@ -343,7 +343,8 @@
                 "Node",
                 "Process",
                 "Route",
-                "Router"
+                "Router",
+                "Tool"
             ],
             "governing_adrs": [
                 "0088",

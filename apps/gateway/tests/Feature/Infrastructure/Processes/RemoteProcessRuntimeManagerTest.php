@@ -2,17 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Actions\Processes\RemoveProcessAction;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\NodeRoleDependencySet;
-use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -1451,8 +1449,9 @@ it('serializes lifecycle mutations with runtime convergence', function (string $
     }
 })->with(['start', 'stop', 'restart', 'remove']);
 
-it('shares the process runtime owner with role-dependent cleanup', function (): void {
+it('shares the process runtime owner with process removal', function (): void {
     $process = runtime_manager_docker_process($this->instance);
+    $original = $process->fresh()->getRawOriginal();
     $lock = Cache::lock(
         "orbit:process-runtime:{$this->instance->node_id}:{$process->id}",
         60,
@@ -1460,31 +1459,69 @@ it('shares the process runtime owner with role-dependent cleanup', function (): 
     expect($lock->get())->toBeTrue();
 
     try {
-        $cleaner = new NativeNodeRoleDependentCleaner(
-            processes: $this->manager,
-        );
+        expect(fn () => new RemoveProcessAction($this->manager, new ProcessTargetResolver)->execute($process))
+            ->toThrow(function (ProcessOperationException $exception): void {
+                expect($exception->errorCode)
+                    ->toBe('process.runtime_lock_failed')
+                    ->and($exception->step)
+                    ->toBe('lock-runtime');
+            });
 
-        expect(fn () => $cleaner->clean(new NodeRoleDependencySet(
-            instanceIds: [],
-            workspaceIds: [],
-            processIds: [$process->id],
-            summaries: [],
-        )))->toThrow(function (NodeRoleOperationException $exception): void {
-            expect($exception->underlyingErrorCode)
-                ->toBe('process.runtime_lock_failed')
-                ->and($exception->step)
-                ->toBe('process-runtime');
-        });
-
-        expect($this->ssh->commands)
-            ->toBeEmpty()
-            ->and($process->refresh()->status)
-            ->toBe(LifecycleStatus::Active)
-            ->and($process->refresh()->error_code)
-            ->toBeNull();
+        expect($this->ssh->commands)->toBeEmpty();
+        expect($process->refresh()->getRawOriginal())->toBe($original);
     } finally {
         $lock->release();
     }
+});
+
+it('removes runtime artifacts under the action lease before deleting the process definition', function (): void {
+    $process = runtime_manager_systemd_process($this->instance);
+    $unit = "orbit-process-{$process->id}-queue.service";
+    $lockKey = "orbit:process-runtime:{$this->instance->node_id}:{$process->id}";
+    $lockWasAvailableDuringRemoval = null;
+    $statusDuringRemoval = null;
+    $this->ssh->beforeExecute = static function (RemoteCommand $command) use (
+        $process,
+        $unit,
+        $lockKey,
+        &$lockWasAvailableDuringRemoval,
+        &$statusDuringRemoval,
+    ): void {
+        if ($command->arguments !== ['sudo', 'systemctl', 'disable', '--now', $unit]) {
+            return;
+        }
+
+        $contendingLock = Cache::lock($lockKey, 60);
+        $lockWasAvailableDuringRemoval = $contendingLock->get();
+        $statusDuringRemoval = $process->fresh()?->status;
+
+        if ($lockWasAvailableDuringRemoval) {
+            $contendingLock->release();
+        }
+    };
+    $this->ssh->responses = [
+        process_runtime_result(),
+        process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n"),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(),
+    ];
+
+    new RemoveProcessAction($this->manager, new ProcessTargetResolver)->execute($process);
+
+    expect($lockWasAvailableDuringRemoval)->toBeFalse();
+    expect($statusDuringRemoval)->toBe(LifecycleStatus::Removing);
+    expect(array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $this->ssh->commands,
+    ))->toBe([
+        ['sudo', 'test', '-e', "/etc/systemd/system/{$unit}"],
+        ['sudo', 'cat', '--', "/etc/systemd/system/{$unit}"],
+        ['sudo', 'systemctl', 'disable', '--now', $unit],
+        ['sudo', 'rm', '-f', '--', "/etc/systemd/system/{$unit}"],
+        ['sudo', 'systemctl', 'daemon-reload'],
+    ]);
+    $this->assertModelMissing($process);
 });
 
 it('rechecks exact systemd ownership before lifecycle operations', function (string $operation): void {
