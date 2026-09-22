@@ -39,6 +39,18 @@ final readonly class GatewayCheckoutAccessConverger
             '0750',
             $this->checkoutPath.'/public',
         ]);
+        $this->run(
+            step: 'gateway-public-access',
+            errorCode: 'gateway.checkout_access_failed',
+            arguments: ['sudo', 'bash', '-seu', '--', $this->checkoutPath.'/public'],
+            input: <<<'BASH'
+                public=$1
+                test ! -L "$public"
+                test -d "$public"
+                find -P "$public" -type d -exec chown --no-dereference orbit:caddy -- {} + -exec chmod 0750 -- {} +
+                find -P "$public" -type f -exec chown --no-dereference orbit:caddy -- {} + -exec chmod 0640 -- {} +
+                BASH,
+        );
         $this->run('gateway-environment-protect', 'gateway.environment_protection_failed', [
             'sudo',
             'chmod',
@@ -83,6 +95,7 @@ final readonly class GatewayCheckoutAccessConverger
                     *) exit 1 ;;
                 esac
 
+                test ! -L "$resolved/public"
                 test -d "$resolved/public"
                 test -f "$resolved/.env"
                 BASH,
