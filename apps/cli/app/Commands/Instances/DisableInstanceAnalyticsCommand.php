@@ -28,17 +28,16 @@ final class DisableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
             return self::FAILURE;
         }
 
-        // Visits stop being counted the moment the hosts are gone, so this asks first.
+        $connector = $this->gatewayConnector($repository, $connectors);
+
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+
         if (! $this->confirmAction(
             "Remove every analytics tracking host of Instance #{$instanceId}?",
             'Analytics tracking was not disabled.',
         )) {
-            return self::FAILURE;
-        }
-
-        $connector = $this->gatewayConnector($repository, $connectors);
-
-        if ($connector === null) {
             return self::FAILURE;
         }
 

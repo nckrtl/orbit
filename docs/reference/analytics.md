@@ -68,6 +68,8 @@ The Router serves the host and reaches Plausible over WireGuard; the Ingress for
 
 `orbit instance:analytics:show INSTANCE` returns each host with its Route, its script URL, its event URL, and the DNS record to create. The Gateway knows no public address, so the record is a `CNAME` from the tracking host to the Instance's own domain, which already resolves to your Ingress. The answer also carries the script tag for the Project. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project yourself.
 
+Disabling tracking requires confirmation, which defaults to No. Use `--yes` for noninteractive or JSON calls. The CLI keeps the selected Gateway fixed while confirmation waits, even if another command changes the active Gateway profile.
+
 The Orbit web Instance page shows live visitors, visitors for the past day, 7 days, and 30 days, and the top ten pages when the analytics role is active and this Instance has a tracking host. The site is the Instance's own domain, the same `data-domain` as the script tag. If the Gateway cannot read the Stats API, the panel says so and shows no counts. See [Instance analytics stats](/reference/instance-analytics-stats).
 
 Removing the analytics role refuses with `analytics.tracking_hosts_exist` while an Instance still has a tracking host.

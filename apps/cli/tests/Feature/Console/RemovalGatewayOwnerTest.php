@@ -6,6 +6,7 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Analytics\DisableInstanceAnalyticsRequest;
 use Orbit\Sdk\Requests\Apps\DestroyProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Apps\DestroyScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
@@ -24,6 +25,18 @@ function removal_gateway_owner_case(string $family): array
         'environments' => ['production'], 'spec' => ['command' => ['/usr/bin/true']]];
 
     return match ($family) {
+        'analytics' => [
+            'arguments' => ['instance:analytics:disable', '41'],
+            'prompt' => 'Remove every analytics tracking host of Instance #41?',
+            'cancellation' => 'Analytics tracking was not disabled.',
+            'mutation' => DisableInstanceAnalyticsRequest::class,
+            'path' => '/api/v1/instances/41/analytics',
+            'reads' => 0,
+            'replies' => [removal_gateway_owner_reply(DisableInstanceAnalyticsRequest::class, [
+                'instance_id' => 41, 'enabled' => false, 'domain' => 'shop.example.com',
+                'dashboard_url' => 'https://analytics.orbit', 'hosts' => [], 'snippet' => null,
+            ])],
+        ],
         'tool' => [
             'arguments' => ['tool:remove', '41'],
             'prompt' => 'Remove Tool [curl] (apt on Node #12) by uninstalling it and deleting its record?',
@@ -131,12 +144,12 @@ describe('removal Gateway ownership', function (): void {
                     ->and($mutation['url'])->toBe('https://fixture.invalid'.$case['path'])
                     ->and($output)->toContain('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
             } else {
-                expect($output)->toContain('cancelled.');
+                expect($output)->toContain($case['cancellation'] ?? 'cancelled.');
             }
         } finally {
             new Filesystem()->deleteDirectory($directory);
         }
-    })->with(['tool', 'process', 'schedule', 'process definition', 'schedule definition'])->with([
+    })->with(['tool', 'process', 'schedule', 'process definition', 'schedule definition', 'analytics'])->with([
         'Yes' => [['y', "\r"], true],
         'default No' => [["\r"], false],
         'No' => [['n', "\r"], false],
