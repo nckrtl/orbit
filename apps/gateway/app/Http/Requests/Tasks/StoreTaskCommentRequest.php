@@ -24,6 +24,8 @@ final class StoreTaskCommentRequest extends FormRequest
             'review_attempt' => [Rule::requiredIf(fn (): bool => in_array($this->string('type')->toString(), $reviewType, true)), 'nullable', 'integer', 'min:1'],
             'reviewer_thread_id' => [Rule::requiredIf(fn (): bool => in_array($this->string('type')->toString(), $reviewType, true)), 'nullable', 'string', 'max:255'],
             'driver_turn' => [Rule::requiredIf(fn (): bool => in_array($this->string('type')->toString(), $reviewType, true)), 'nullable', 'string', 'max:255'],
+            'commit_sha' => ['nullable', 'string', 'regex:/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/'],
+            'pr_url' => ['nullable', 'url', 'max:2048'],
         ];
     }
 }

@@ -68,6 +68,12 @@ final readonly class TaskSessionActor
         );
     }
 
+    public function relayReviewBody(TaskGroup $group, TaskThreadObservation $observed, string $body): void
+    {
+        $thread = $this->thread($group, $observed);
+        $this->drivers->get($thread->driver)->send($thread, "Relay from the reviewer. Address these findings verbatim, then run composer check and post a new ready_for_review comment.\n\n".$body);
+    }
+
     private function thread(TaskGroup $group, TaskThreadObservation $observed): AgentThread
     {
         if (! $observed->available) {

@@ -19,6 +19,7 @@ final readonly class TaskScheduler
         private AgentSpawner $spawner,
         private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
+        private TaskWorkspaceDiffReader $diff,
         private CoderSettleNotifier $coder,
         private TaskExtensionState $extension,
         private TaskSessionObserver $observer,
@@ -65,6 +66,10 @@ final readonly class TaskScheduler
                 }
 
                 if ($task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
+                    continue;
+                }
+
+                if ($task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
                     continue;
                 }
 
@@ -125,6 +130,73 @@ final readonly class TaskScheduler
             $task->completion_reminder_attempt = $task->completion_attempt;
             $task->save();
         }
+
+        return true;
+    }
+
+    private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
+    {
+        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+        if ($reviewer === null || ! $reviewer->idle) {
+            return false;
+        }
+
+        $comment = $task->comments()
+            ->whereIn('type', ['changes_requested', 'approved'])
+            ->where('review_attempt', $task->review_attempt)
+            ->latest('posted_at')->first();
+        if ($comment?->type === 'changes_requested') {
+            if ($task->review_handled_comment_id === $comment->id) {
+                return true;
+            }
+            $implementer = $observation->thread(TaskThreadRole::Implementer);
+            if ($implementer === null) {
+                return false;
+            }
+            $this->actor->relayReviewBody($group, $implementer, $comment->body);
+            $task->update([
+                'status' => TaskStatus::Running,
+                'review_handled_comment_id' => $comment->id,
+                'review_attempt' => $task->review_attempt + 1,
+                'review_reminder_attempt' => null,
+                'completion_attempt' => $task->completion_attempt + 1,
+                'completion_handoff_comment_id' => null,
+                'completion_reminder_attempt' => null,
+            ]);
+            $group->update(['status' => TaskGroupStatus::Running]);
+
+            return true;
+        }
+
+        if ($comment?->type !== 'approved') {
+            return $this->remindReviewer($group, $task, $reviewer);
+        }
+
+        $instance = $group->taskable;
+        $hasCommit = is_string($comment->commit_sha)
+            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $comment->commit_sha) === 1
+            && $instance instanceof AppInstance
+            && is_string($instance->starting_commit)
+            && $this->diff->hasCommitsSince($instance, $instance->starting_commit);
+        $isFinal = ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
+        $hasPr = ! $isFinal || (is_string($comment->pr_url) && filter_var($comment->pr_url, FILTER_VALIDATE_URL) !== false);
+        if (! $hasCommit || ! $hasPr) {
+            return $this->remindReviewer($group, $task, $reviewer);
+        }
+
+        $task->update(['review_handled_comment_id' => $comment->id]);
+        $this->acceptReview($task);
+
+        return true;
+    }
+
+    private function remindReviewer(TaskGroup $group, Task $task, TaskThreadObservation $reviewer): bool
+    {
+        if ($task->review_reminder_attempt === $task->review_attempt) {
+            return true;
+        }
+        $this->actor->remindCompletion($group, $reviewer);
+        $task->update(['review_reminder_attempt' => $task->review_attempt]);
 
         return true;
     }

@@ -21,6 +21,8 @@ return new class extends Migration
             $table->unsignedInteger('review_attempt')->nullable();
             $table->string('reviewer_thread_id')->nullable();
             $table->string('driver_turn')->nullable();
+            $table->string('commit_sha', 64)->nullable();
+            $table->text('pr_url')->nullable();
             $table->timestamp('posted_at');
             $table->timestamps();
             $table->index(['task_id', 'posted_at']);
