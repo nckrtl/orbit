@@ -11,6 +11,17 @@ type OneShotBody = {
     creation_key?: string;
 };
 
+type OneShotOutcome =
+    | { task: { id: number } }
+    | { dry_run: true; warning: string }
+    | { error: string };
+
+function respond(res: ServerResponse, status: number, outcome: OneShotOutcome): void {
+    res.statusCode = status;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(outcome));
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = [];
@@ -66,14 +77,8 @@ export function commanderOneShot(): Plugin {
 
                 try {
                     await handleOneShot(req, res);
-                } catch (error) {
-                    res.statusCode = 500;
-                    res.setHeader("Content-Type", "application/json");
-                    res.end(
-                        JSON.stringify({
-                            error: error instanceof Error ? error.message : "oneshot failed",
-                        }),
-                    );
+                } catch {
+                    respond(res, 500, { error: "Commander one-shot request failed." });
                 }
             });
         },
@@ -91,9 +96,7 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
     const kind = body.kind || "one-shot";
 
     if (!title || !creationKey || kind !== "one-shot") {
-        res.statusCode = 422;
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ error: "title, creation_key, and kind=one-shot are required" }));
+        respond(res, 422, { error: "title, creation_key, and kind=one-shot are required" });
         return;
     }
 
@@ -101,21 +104,10 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
     const base = (process.env.COMMANDER_URL || "https://commander.test").replace(/\/$/, "");
 
     if (!token) {
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json");
-        res.end(
-            JSON.stringify({
-                task: {
-                    id: null,
-                    project_id: projectId,
-                    kind: "one-shot",
-                    title,
-                    creation_key: creationKey,
-                },
-                dry_run: true,
-                warning: "COMMANDER_MCP_TOKEN unset; one-shot not forwarded",
-            }),
-        );
+        respond(res, 200, {
+            dry_run: true,
+            warning: "COMMANDER_MCP_TOKEN unset; one-shot not forwarded",
+        });
         return;
     }
 
@@ -153,9 +145,9 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
 
     const text = await mcpResponse.text();
     if (!mcpResponse.ok) {
-        res.statusCode = mcpResponse.status;
-        res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ error: text || `Commander MCP HTTP ${mcpResponse.status}` }));
+        respond(res, mcpResponse.status, {
+            error: `Commander MCP returned HTTP ${mcpResponse.status}.`,
+        });
         return;
     }
 
@@ -167,38 +159,48 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
             .split("\n")
             .map((line) => line.trim())
             .find((line) => line.startsWith("data:"));
-        if (dataLine) {
-            payload = JSON.parse(dataLine.slice(5).trim());
+        try {
+            payload = dataLine ? JSON.parse(dataLine.slice(5).trim()) : null;
+        } catch {
+            // A malformed event has the same failed outcome as malformed JSON.
         }
     }
 
-    const result = extractTask(payload);
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ task: result, raw: payload }));
+    const outcome = taskOutcome(payload);
+    respond(res, "error" in outcome ? 502 : 200, outcome);
 }
 
-function extractTask(payload: unknown): { id?: number; title?: string } | null {
-    if (!payload || typeof payload !== "object") {
-        return null;
+function record(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+}
+
+function taskOutcome(payload: unknown): OneShotOutcome {
+    const root = record(payload);
+    if (root && "error" in root) {
+        return { error: "Commander MCP returned a JSON-RPC error." };
     }
-    const root = payload as Record<string, unknown>;
-    const result = root.result;
-    if (result && typeof result === "object") {
-        const structured = (result as { structuredContent?: { task?: unknown } }).structuredContent;
-        if (structured?.task && typeof structured.task === "object") {
-            return structured.task as { id?: number; title?: string };
-        }
-        const content = (result as { content?: Array<{ text?: string }> }).content;
-        const text = content?.[0]?.text;
-        if (text) {
+    const result = record(root?.result);
+    if (result && result.isError !== undefined && result.isError !== false) {
+        return { error: "Commander MCP tool call failed." };
+    }
+
+    let task = record(record(result?.structuredContent)?.task);
+    if (!task && Array.isArray(result?.content)) {
+        const text = record(result.content[0])?.text;
+        if (typeof text === "string") {
             try {
-                const parsed = JSON.parse(text) as { task?: { id?: number; title?: string } };
-                return parsed.task ?? null;
+                task = record(record(JSON.parse(text))?.task);
             } catch {
-                return null;
+                // Invalid text content cannot prove that a task was created.
             }
         }
     }
-    return null;
+
+    if (typeof task?.id === "number" && Number.isSafeInteger(task.id) && task.id > 0) {
+        return { task: { id: task.id } };
+    }
+
+    return { error: "Commander MCP did not return a valid created task." };
 }

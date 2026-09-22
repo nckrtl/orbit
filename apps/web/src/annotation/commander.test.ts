@@ -79,4 +79,66 @@ describe("submitOneShotTask", () => {
         const result = await submitOneShotTask({ ...annotation, id: "" });
         expect(result).toEqual({ ok: false, error: "Annotation id is required" });
     });
+
+    it.each([
+        null,
+        {},
+        { task: null },
+        { task: {} },
+        ...[0, -1, 1.5, "42", Number.MAX_SAFE_INTEGER + 1].map((id) => ({ task: { id } })),
+        { task: { id: 42 }, error: "failed" },
+        { task: { id: 42 }, dry_run: true },
+    ])("rejects a successful HTTP response without a valid task: %j", async (body) => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => Response.json(body)),
+        );
+        expect(await submitOneShotTask(annotation)).toMatchObject({ ok: false });
+    });
+
+    it.each([undefined, { id: null }])(
+        "keeps dry runs explicit without a task id: %j",
+        async (task) => {
+            vi.stubGlobal(
+                "fetch",
+                vi.fn(async () => Response.json({ dry_run: true, warning: "not forwarded", task })),
+            );
+            expect(await submitOneShotTask(annotation)).toEqual({
+                ok: true,
+                dryRun: true,
+                warning: "not forwarded",
+            });
+        },
+    );
+
+    it("bounds error messages returned by the adapter", async () => {
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => Response.json({ error: "x".repeat(1000) }, { status: 502 })),
+        );
+        expect(await submitOneShotTask(annotation)).toEqual({ ok: false, error: "x".repeat(512) });
+    });
+
+    it.each(["fetch", "read", "json"])(
+        "does not expose diagnostics after a %s failure",
+        async (failure) => {
+            vi.stubGlobal(
+                "fetch",
+                vi.fn(async () => {
+                    if (failure === "fetch") throw new Error("private diagnostic");
+                    if (failure === "read")
+                        return {
+                            json: async () => {
+                                throw new Error("private diagnostic");
+                            },
+                        };
+                    return new Response("private diagnostic", { status: 502 });
+                }),
+            );
+            expect(await submitOneShotTask(annotation)).toEqual({
+                ok: false,
+                error: "Could not submit the annotation to Commander.",
+            });
+        },
+    );
 });

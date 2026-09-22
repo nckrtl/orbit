@@ -9,6 +9,11 @@ export type CommanderConfig = {
     endpoint: string;
 };
 
+export type CommanderOutcome =
+    | { ok: true; taskId: number; dryRun?: false }
+    | { ok: true; dryRun: true; warning: string }
+    | { ok: false; error: string };
+
 const DEFAULTS: CommanderConfig = {
     enabled: true,
     project: "commander",
@@ -34,9 +39,7 @@ export function commanderConfig(): CommanderConfig {
  * create a kind=one-shot task with creation_key annotation:{id} and the full
  * annotation JSON as the description.
  */
-export async function submitOneShotTask(
-    annotation: Annotation,
-): Promise<{ ok: boolean; taskId?: number; error?: string }> {
+export async function submitOneShotTask(annotation: Annotation): Promise<CommanderOutcome> {
     if (!config.enabled) {
         return { ok: false, error: "Commander one-shot disabled" };
     }
@@ -61,14 +64,36 @@ export async function submitOneShotTask(
             }),
         });
 
+        const payload: unknown = await response.json();
+        const body =
+            payload !== null && typeof payload === "object" && !Array.isArray(payload)
+                ? (payload as Record<string, unknown>)
+                : null;
+
         if (!response.ok) {
-            const text = await response.text().catch(() => "");
-            return { ok: false, error: text || `HTTP ${response.status}` };
+            return {
+                ok: false,
+                error:
+                    typeof body?.error === "string"
+                        ? body.error.slice(0, 512)
+                        : `Commander returned HTTP ${response.status}.`,
+            };
+        }
+        if (body && !("error" in body)) {
+            if (body.dry_run === true) {
+                return typeof body.warning === "string" && body.warning !== ""
+                    ? { ok: true, dryRun: true, warning: body.warning.slice(0, 512) }
+                    : { ok: false, error: "Commander returned an invalid dry-run response." };
+            }
+
+            const task = body.task as { id?: unknown } | null | undefined;
+            if (typeof task?.id === "number" && Number.isSafeInteger(task.id) && task.id > 0) {
+                return { ok: true, taskId: task.id };
+            }
         }
 
-        const payload = (await response.json()) as { task?: { id?: number } };
-        return { ok: true, taskId: payload.task?.id };
-    } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "submit failed" };
+        return { ok: false, error: "Commander did not return a valid created task." };
+    } catch {
+        return { ok: false, error: "Could not submit the annotation to Commander." };
     }
 }

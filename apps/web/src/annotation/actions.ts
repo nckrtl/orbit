@@ -152,11 +152,14 @@ export function submitDraft(comment: string, source: AnnotationDraft | null = dr
 
     persist();
     void submitOneShotTask(saved).then((result) => {
-        if (result.ok) {
+        if (result.ok && !result.dryRun) {
             return;
         }
 
-        console.warn("[orbit annotation] Commander one-shot failed:", result.error);
+        console.warn(
+            "[orbit annotation] Commander one-shot not created:",
+            result.ok ? result.warning : result.error,
+        );
 
         // The saved object owns this revision. Edits, deletion, reload and teardown replace it.
         if (saved.status === "pending" || !annotations.value.includes(saved)) {

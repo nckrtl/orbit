@@ -11,7 +11,7 @@ import { openApp } from "./app";
 
 vi.mock("../../src/annotation/commander", () => ({
     configureCommander: vi.fn(),
-    submitOneShotTask: vi.fn(async () => ({ ok: true })),
+    submitOneShotTask: vi.fn(async () => ({ ok: true, taskId: 1 })),
 }));
 
 const firstPath = "/processes";

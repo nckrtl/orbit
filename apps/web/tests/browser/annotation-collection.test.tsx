@@ -63,7 +63,7 @@ beforeEach(() => {
 afterEach(async () => {
     teardownAnnotationRuntime();
     for (const request of requests) {
-        request.resolve({ ok: true });
+        request.resolve({ ok: true, taskId: 1 });
         await request.promise;
     }
     vi.restoreAllMocks();
@@ -85,7 +85,7 @@ function edit(comment: string) {
 
 async function complete(index: number, ok: boolean) {
     const request = requests[index]!;
-    request.resolve({ ok, error: ok ? undefined : "mock failure" });
+    request.resolve(ok ? { ok: true, taskId: 1 } : { ok: false, error: "mock failure" });
     await request.promise;
 }
 

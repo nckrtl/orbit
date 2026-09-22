@@ -79,7 +79,11 @@ export default defineConfig({
             // Pure logic: health rules, event application, log and uptime formatting.
             {
                 extends: true,
-                test: { name: "unit", environment: "node", include: ["src/**/*.test.ts"] },
+                test: {
+                    name: "unit",
+                    environment: "node",
+                    include: ["src/**/*.test.ts", "dev/**/*.test.ts"],
+                },
             },
             // The whole app in a real browser against the demo Gateway: keyboard, menus, forms, screens.
             {
