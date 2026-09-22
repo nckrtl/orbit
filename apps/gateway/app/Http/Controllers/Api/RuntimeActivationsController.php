@@ -30,20 +30,30 @@ final class RuntimeActivationsController extends Controller
         RuntimeActivationPage $pages,
     ): Response {
         $caller = $request->user();
+        $uri = $this->forwardedUri($request);
 
         if (! $caller instanceof Node) {
-            return $pages->failed('Active WireGuard peer identity required.');
+            return $pages->failed('Active WireGuard peer identity required.', $instance, $uri);
         }
 
         $instance->loadMissing('node');
 
         if (! $policy->appliesToInstance($instance)) {
-            return $pages->failed("AppInstance [{$instance->name}] is not an app-dev development target.");
+            return $pages->failed("AppInstance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
         }
 
         $failure = $failures->pull((int) $instance->getKey());
         $schedule->afterResponse($instance);
 
-        return $failure === null ? $pages->progress() : $pages->failed($failure);
+        return $failure === null
+            ? $pages->progress($instance, $uri)
+            : $pages->failed($failure, $instance, $uri);
+    }
+
+    private function forwardedUri(Request $request): string
+    {
+        $uri = $request->headers->get('X-Forwarded-Uri');
+
+        return is_string($uri) ? $uri : '/';
     }
 }

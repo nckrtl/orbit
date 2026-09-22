@@ -12340,7 +12340,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description An HTML progress page with a two-second refresh while the Gateway starts the desired-running Processes. */
+            /** @description An HTML progress page with the animated Orbit mark. The browser polls the original path once a second while X-Orbit-Runtime-Activation-State is pending. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -12358,7 +12358,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description An HTML failure page with a five-second retry after a failed start. */
+            /** @description An HTML failure page with the animated Orbit mark, the stored error, and a Try again link. It does not poll. */
             503: {
                 headers: {
                     [name: string]: unknown;
