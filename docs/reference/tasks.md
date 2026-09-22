@@ -95,7 +95,7 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A fitting claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. The selected driver must allow the Node. T3 requires an active `t3-code` Process whose desired state is `running`, matching the managed T3 service. This recorded state is the placement signal, not an HTTP health probe. If no such Node fits the ceiling, provisioning returns no Instance and the group remains `queued` without a workspace.
+A fitting claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. If no such Node fits the ceiling, provisioning returns no Instance and the group remains `queued` without a workspace.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the shared reviewer and first implementer through the selected driver. The Gateway stores their Orbit thread IDs only after creation and the opening turn succeed.
 
@@ -138,7 +138,7 @@ It is forward-only; reverting to an older Gateway requires restoring a database 
 
 Completion and failure remain visible until a new turn starts. Task completion still requires the scheduler workflow and review. Failed observations preserve the last known state and metrics and mark them unavailable. Connection health does not change a thread to idle or failed. Unavailable observations use the outage grace period and cannot advance a task from cached state.
 
-`ORBIT_TASKS_AGENT_DRIVER` selects the registered driver for new groups and defaults to `t3`. Existing groups and threads keep their recorded driver. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
+A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups. Each defaults to `ORBIT_TASKS_AGENT_DRIVER`, which defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
 The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
 
@@ -236,7 +236,9 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
 | `ORBIT_TASKS_GITHUB_TOKEN` | GitHub token with repository and pull-request read access for final approval verification and merge watching |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
-| `ORBIT_TASKS_AGENT_DRIVER` | Registered driver key for new groups. Defaults to `t3` |
+| `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
+| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
+| `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
 | `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |

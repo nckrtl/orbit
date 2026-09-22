@@ -44,7 +44,7 @@ function pi_workspace(Node $node): AppInstance
 function pi_thread(Node $node, string $externalId = 'session-1'): AgentThread
 {
     $workspace = pi_workspace($node);
-    $group = TaskGroup::query()->create(['app_id' => $workspace->app_id, 'agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $group = TaskGroup::query()->create(['app_id' => $workspace->app_id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
 
     return AgentThread::query()->create([
         'task_group_id' => $group->id,

@@ -62,7 +62,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode($intent->group->agent_driver);
+        $node = $this->selectNode([$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver]);
 
         if (! $node instanceof Node) {
             return null;
@@ -253,7 +253,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return is_string($app->root) && RelativeWebRoot::isValid($app->root);
     }
 
-    private function selectNode(string $driver): ?Node
+    /** @param list<string> $drivers Every driver the group uses must allow the Node. */
+    private function selectNode(array $drivers): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -268,7 +269,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             ->get();
 
         $eligible = $nodes
-            ->filter(fn (Node $node): bool => $this->drivers->get($driver)->allows($node))
+            ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)))
             ->filter(fn (Node $node): bool => $this->ceilings->activeForNode($node->id) < TaskCeilings::PerNode)
             ->sortBy(fn (Node $node): array => [$this->ceilings->activeForNode($node->id), $node->id])
             ->values();

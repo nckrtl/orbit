@@ -505,15 +505,28 @@ it('returns 409 tasks.not_settling when complete runs before settle', function (
         ->assertJsonPath('error.code', 'tasks.not_settling');
 });
 
-it('rejects an unregistered configured driver with 409 before storing a group', function (): void {
+it('stores the configured implementer and reviewer drivers on a new group', function (): void {
     tasks_gateway();
     enable_tasks();
     $app = tasks_app();
-    config()->set('orbit.tasks.agent_driver', 'missing-driver');
+    config()->set('orbit.tasks.implementer_agent_driver', 'pi');
+    config()->set('orbit.tasks.reviewer_agent_driver', 't3');
+
+    $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
+        ->assertCreated();
+
+    $this->assertDatabaseHas('task_groups', ['title' => 'Mixed', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+});
+
+it('rejects an unregistered configured driver with 409 before storing a group', function (string $role): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app();
+    config()->set("orbit.tasks.{$role}_agent_driver", 'missing-driver');
 
     $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
         ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_driver_unavailable');
 
     $this->assertDatabaseCount('task_groups', 0);
     $this->assertDatabaseCount('tasks', 0);
-});
+})->with(['implementer', 'reviewer']);

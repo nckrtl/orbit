@@ -28,14 +28,16 @@ final readonly class CreateTaskGroupAction
         $this->requireExtension->execute();
 
         try {
-            $driver = $this->drivers->get((string) config('orbit.tasks.agent_driver', 't3'))->key();
+            $implementerDriver = $this->drivers->get((string) config('orbit.tasks.implementer_agent_driver', 't3'))->key();
+            $reviewerDriver = $this->drivers->get((string) config('orbit.tasks.reviewer_agent_driver', 't3'))->key();
         } catch (AgentDriverException) {
             throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
         }
 
         $group = TaskGroup::query()->create([
             'app_id' => $data->appId,
-            'agent_driver' => $driver,
+            'implementer_agent_driver' => $implementerDriver,
+            'reviewer_agent_driver' => $reviewerDriver,
             'title' => $data->title,
             'brief' => $data->brief,
             'status' => TaskGroupStatus::Queued,

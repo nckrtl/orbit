@@ -37,7 +37,7 @@ function driver_group(): array
     $app = OrbitApp::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'agent-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.5', 'public_ssh_host' => '10.44.0.5']);
     $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $group = TaskGroup::query()->create(['app_id' => $app->id, 'implementer_agent_driver' => 'example', 'reviewer_agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
@@ -50,6 +50,28 @@ function driver_group(): array
 
     return [$group, $task, $driver, $registry];
 }
+
+it('creates the conversation for each role through the driver recorded for that role', function (): void {
+    $app = OrbitApp::query()->create(['name' => 'roles', 'slug' => 'roles', 'repository_url' => 'git@example.test:roles.git', 'default_branch' => 'main']);
+    $node = Node::query()->create(['name' => 'role-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.6', 'public_ssh_host' => '10.44.0.6']);
+    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/roles', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['app_id' => $app->id, 'implementer_agent_driver' => 'implementer-runtime', 'reviewer_agent_driver' => 'reviewer-runtime', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
+    $implementer = new FakeAgentDriver('implementer-runtime');
+    $reviewer = new FakeAgentDriver('reviewer-runtime');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$implementer, $reviewer]));
+    $spawner = app(AgentSpawner::class);
+
+    $reviewerThread = AgentThread::query()->findOrFail($spawner->spawnReviewer($group));
+    $implementerThread = AgentThread::query()->findOrFail($spawner->spawnImplementer($task));
+
+    expect($reviewerThread->driver)->toBe('reviewer-runtime')
+        ->and($implementerThread->driver)->toBe('implementer-runtime')
+        ->and(array_column($reviewer->calls, 'operation'))->toBe(['create'])
+        ->and(array_column($implementer->calls, 'operation'))->toBe(['create']);
+});
 
 it('creates and resumes conversations through a second driver without T3', function (): void {
     [$group, $task, $driver, $registry] = driver_group();

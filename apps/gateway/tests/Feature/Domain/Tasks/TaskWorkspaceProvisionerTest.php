@@ -298,6 +298,41 @@ it('returns null without creating a workspace when the only capable Node is full
     $this->assertDatabaseMissing('app_instances', ['node_id' => $incapable->id]);
 });
 
+it('places a group only on a Node that allows both its implementer and reviewer drivers', function (): void {
+    $app = provisioner_app('mixed');
+    $t3Only = provisioner_node('t3-only', '10.44.0.113');
+    $both = provisioner_node('t3-and-pi', '10.44.0.114');
+    $both->processes()->create([
+        'name' => 'pi-server',
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server']],
+        'restart_policy' => 'always',
+        'keep_alive' => true,
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $group = provisioner_group($app);
+    $group->update(['implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+    bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false));
+
+    expect($instance?->node_id)->toBe($both->id);
+    $this->assertDatabaseMissing('app_instances', ['node_id' => $t3Only->id]);
+});
+
+it('returns null when no Node allows the implementer driver', function (): void {
+    $app = provisioner_app('no-pi');
+    provisioner_node('t3-only', '10.44.0.115');
+    $group = provisioner_group($app);
+    $group->update(['implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+    $fakes = bind_task_workspace_fakes();
+
+    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeNull()
+        ->and($fakes->source->calls)->toBe([]);
+});
+
 it('returns null when the app-dev Node has no usable T3 process', function (string $reason): void {
     $app = provisioner_app('unavailable');
     $node = provisioner_node('unavailable', '10.44.0.112');
