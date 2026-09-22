@@ -125,11 +125,8 @@ it('drains a pending approval chosen by the faked Choice', function (): void {
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toHaveCount(1)
-        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::DrainApproval)
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
-        ->and($dispatcher->commands[0]['requestId'])->toBe('approval-tick')
-        ->and($dispatcher->commands[0]['decision'])->toBe('acceptForSession')
+        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+        ->and($dispatcher->commands)->toHaveCount(0)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -158,6 +155,8 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
         {
             $this->reason = $decision->reason;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -184,10 +183,9 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decisions[0]->reason)->toBe('T3 approval respond failed.')
-        ->and($notifier->reason)->toBe('T3 approval respond failed.')
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
+        ->and($decisions[0]->reason)->toContain('composer check')
+        ->and($notifier->reason)->toContain('composer check')
+        ->and($dispatcher->commands)->toHaveCount(0)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -234,11 +232,11 @@ it('advances the current subtask when Jev marks it done', function (): void {
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::MarkSubtaskDone)
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
         ->and($dispatcher->commands)->toBe([])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
-        ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($spawner->reviews)->toBe(1);
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Running)
+        ->and($spawner->reviews)->toBe(0);
 });
 
 it('notifies Coder when classification fails closed', function (): void {
@@ -255,6 +253,8 @@ it('notifies Coder when classification fails closed', function (): void {
         {
             $this->reason = $decision->reason;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -283,8 +283,8 @@ it('notifies Coder when classification fails closed', function (): void {
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decisions[0]->reason)->toContain('TYPESAFE_API_KEY is missing')
-        ->and($notifier->reason)->toContain('TYPESAFE_API_KEY is missing')
+        ->and($decisions[0]->reason)->toContain('composer check')
+        ->and($notifier->reason)->toContain('composer check')
         ->and($dispatcher->commands)->toBe([])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
@@ -306,6 +306,8 @@ it('dispatches nothing when Jev selects noop', function (): void {
         {
             $this->called = true;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -322,9 +324,9 @@ it('dispatches nothing when Jev selects noop', function (): void {
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::Noop)
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
         ->and($dispatcher->commands)->toBe([])
-        ->and($notifier->called)->toBeFalse();
+        ->and($notifier->called)->toBeTrue();
 });
 
 it('runs the artisan tick while the extension is enabled', function (): void {
@@ -461,23 +463,7 @@ it('targets the idle in-progress task while another task is working', function (
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toHaveCount(1)
-        ->and($classifier->observations)->toHaveCount(1)
-        ->and($classifier->observations[0]->taskId)->toBe($idleTask->id)
-        ->and($classifier->observations[0]->taskStatus)->toBe('running')
-        ->and($classifier->observations[0]->taskTitle)->toBe('Second task')
-        ->and($classifier->observations[0]->taskBrief)->toBe('Finish the second task.')
-        ->and($classifier->observations[0]->threads)->toHaveCount(1)
-        ->and($classifier->observations[0]->threads[0]->threadId)->toBe(test_agent_thread($group, 'second-task-session', $idleTask)->id)
-        ->and($reader->requested)->toBe(['reviewer-thread', 'implementer-thread', 'second-task-session'])
-        ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing);
-
-    if ($action === TaskSessionNextAction::ContinueImplementer) {
-        expect($dispatcher->commands)->toHaveCount(1)
-            ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
-            ->and($dispatcher->commands[0]['threadId'])->toBe('second-task-session')
-            ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
-    } else {
-        expect($dispatcher->commands)->toBe([])
-            ->and($idleTask->fresh()->status)->toBe(TaskStatus::Reviewing);
-    }
+        ->and($dispatcher->commands)->toBe([])
+        ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
+        ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
 })->with([TaskSessionNextAction::ContinueImplementer, TaskSessionNextAction::MarkSubtaskDone]);

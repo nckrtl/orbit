@@ -6,6 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskCommentType;
 use App\Models\Activity;
 use App\Models\Task;
@@ -16,12 +17,12 @@ use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
-    public function __construct(private AgentDriverRegistry $drivers) {}
+    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
     {
-        return DB::transaction(function () use ($task, $payload): TaskComment {
+        $comment = DB::transaction(function () use ($task, $payload): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->task_group_id,
@@ -57,6 +58,12 @@ final readonly class StoreTaskCommentAction
 
             return $comment;
         });
+
+        if (TaskCommentType::tryFrom((string) $comment->getRawOriginal('type')) === TaskCommentType::AssistanceRequested) {
+            $this->notifier->assistance($task->taskGroup()->firstOrFail(), $comment->body);
+        }
+
+        return $comment;
     }
 
     private function log(Task $task, TaskComment $comment, string $description): void

@@ -191,6 +191,8 @@ it('notifies Coder only when Jev escalates', function (): void {
             $this->escalated = $group;
             $this->decision = $decision;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
     $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
 
@@ -217,6 +219,8 @@ it('dispatches nothing for noop', function (): void {
         {
             $this->called = true;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
 
     new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute(

@@ -161,9 +161,8 @@ it('routes an attached conversation without a legacy pointer', function (): void
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::Noop)
+    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
-    Classification::assertClassified(fn (): bool => true);
 });
 
 it('rejects a drain when the requested input is no longer available', function (): void {
@@ -191,6 +190,8 @@ it('alerts once after a continuous observation outage and rearms after recovery'
         {
             $this->alerts++;
         }
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(CoderSettleNotifier::class, $notifier);
     Classification::fake([['next_action' => new ChoiceAnswer('noop', [], 1.0)]]);

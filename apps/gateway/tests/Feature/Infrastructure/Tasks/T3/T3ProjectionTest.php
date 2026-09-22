@@ -19,6 +19,20 @@ it('normalizes runtime states without collapsing completion or failure into idle
     'unknown' => [[], null],
 ]);
 
+it('projects structured composer check output and exit status as tool evidence', function (): void {
+    $observation = new T3Projection()->observe(['thread' => [
+        'session' => ['status' => 'idle'],
+        'activities' => [[
+            'id' => 'tool-1', 'kind' => 'command.completed', 'output' => 'composer check passed',
+            'exitCode' => 0, 'createdAt' => '2026-09-22T12:00:00Z',
+        ]],
+    ]]);
+
+    expect(array_any($observation->entries, static fn (array $entry): bool => $entry['kind'] === 'activity'
+        && str_contains($entry['text'], 'composer check passed')
+        && str_contains($entry['text'], 'exit code 0')))->toBeTrue();
+});
+
 it('ignores resolved requests and requests belonging to older turns', function (): void {
     $thread = [
         'session' => ['status' => 'waiting'], 'latestTurn' => ['id' => 'new', 'state' => 'waiting'],

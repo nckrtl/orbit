@@ -254,12 +254,11 @@ final readonly class TaskScheduler
     {
         $this->clearUnavailable($group);
 
-        // Legacy observations without projected tool output cannot support the
-        // typed Jev outcome contract. Keep the fail-closed path until a driver
-        // has supplied the evidence window.
+        // The typed outcome contract requires projected tool output. Never fall
+        // back to the legacy drain/continue actions when it is absent.
         $hasToolEvidence = array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => array_any($thread->recentMessages, static fn (array $message): bool => $message['kind'] === 'activity'));
         if (! $hasToolEvidence) {
-            return $this->classifier->classify($observation);
+            return TaskSessionDecision::escalate('Jev cannot verify a composer check in the recent tool output.');
         }
 
         $role = $observation->thread(TaskThreadRole::Reviewer) !== null && $group->status === TaskGroupStatus::Reviewing
@@ -269,11 +268,13 @@ final readonly class TaskScheduler
         if ($outcome->outcome === TaskJevOutcome::AssistanceRequired) {
             return TaskSessionDecision::escalate($outcome->reason, $outcome->confidence);
         }
-        if ($outcome->outcome === TaskJevOutcome::ChangesRequested) {
-            return new TaskSessionDecision(TaskSessionNextAction::RelayReviewToImplementer, $outcome->confidence, $outcome->reason);
-        }
 
-        return new TaskSessionDecision(TaskSessionNextAction::MarkSubtaskDone, $outcome->confidence, $outcome->reason);
+        return TaskSessionDecision::escalate(
+            $outcome->outcome === TaskJevOutcome::ChangesRequested
+                ? 'Jev requested changes without a typed reviewer comment.'
+                : 'Jev reported completion without the required typed comment and mechanical gates.',
+            $outcome->confidence,
+        );
     }
 
     private function clearUnavailable(TaskGroup $group): void

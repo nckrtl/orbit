@@ -5668,6 +5668,134 @@
       }
     },
     {
+      "name": "tasks-comment-create",
+      "title": "tasks:comment:create",
+      "description": "tasks:comment:create",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ready_for_review",
+              "changes_requested",
+              "approved",
+              "assistance_requested",
+              "resolution"
+            ]
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "agent_thread_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "review_attempt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Conditionally required."
+          },
+          "reviewer_thread_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "Conditionally required."
+          },
+          "driver_turn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "Conditionally required."
+          },
+          "commit_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
+          },
+          "pr_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task",
+          "type",
+          "body",
+          "author"
+        ]
+      }
+    },
+    {
+      "name": "tasks-comment-list",
+      "title": "tasks:comment:list",
+      "description": "tasks:comment:list",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
       "name": "tasks-complete",
       "title": "Complete a Task group",
       "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
@@ -5691,53 +5819,6 @@
         "required": [
           "group"
         ]
-      }
-    },
-    {
-      "name": "tasks-comment-create",
-      "title": "Post a task comment",
-      "description": "Posts a typed task comment with optional reviewer metadata.",
-      "method": "POST",
-      "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
-      "path_inputs": ["group", "task"],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "group": {"type": "integer", "minimum": 1},
-          "task": {"type": "integer", "minimum": 1},
-          "type": {"type": "string"},
-          "body": {"type": "string"},
-          "author": {"type": "string"},
-          "agent_thread_id": {"type": "integer"},
-          "review_attempt": {"type": "integer"},
-          "reviewer_thread_id": {"type": "string"},
-          "driver_turn": {"type": "string"},
-          "commit_sha": {"type": "string"},
-          "pr_url": {"type": "string", "format": "uri"}
-        },
-        "additionalProperties": false,
-        "required": ["group", "task", "type", "body", "author"]
-      }
-    },
-    {
-      "name": "tasks-comment-list",
-      "title": "List task comments",
-      "description": "Lists typed comments for a task.",
-      "method": "GET",
-      "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
-      "path_inputs": ["group", "task"],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "group": {"type": "integer", "minimum": 1},
-          "task": {"type": "integer", "minimum": 1}
-        },
-        "additionalProperties": false,
-        "required": ["group", "task"]
       }
     },
     {

@@ -728,6 +728,8 @@ it('opens the pull request, writes settle metrics, and notifies Coder after the 
         }
 
         public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void {}
     };
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
