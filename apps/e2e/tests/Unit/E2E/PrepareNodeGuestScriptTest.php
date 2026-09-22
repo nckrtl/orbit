@@ -46,6 +46,35 @@ describe('prepare node guest script', function () {
             ->toBe("existing key\n");
     });
 
+    it('persists public DNS before selecting the stub and keeps repeated preparation stable', function () {
+        $root = temporaryPath('orbit-persistent-dns-', 4);
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/etc", 0o700, true);
+        mkdir("{$root}/run/systemd/resolve", 0o700, true);
+        file_put_contents("{$root}/run/systemd/resolve/stub-resolv.conf", "nameserver 127.0.0.53\n");
+        file_put_contents("{$root}/etc/resolv.conf", "nameserver 1.1.1.1\n");
+        file_put_contents("{$root}/bin/systemctl", "#!/bin/sh\nprintf '%s\\n' \"\$*\" >> '{$root}/calls'\n");
+        file_put_contents("{$root}/bin/id", "#!/bin/sh\nprintf '1000\\n'\n");
+        file_put_contents("{$root}/bin/find", "#!/bin/sh\nexit 0\n");
+        foreach (['systemctl', 'id', 'find'] as $command) {
+            chmod("{$root}/bin/{$command}", 0o700);
+        }
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
+        $source = str_replace(['/etc/', '/run/systemd/'], ["{$root}/etc/", "{$root}/run/systemd/"], $source);
+        $source = str_replace("..{$root}/run/", '../run/', $source);
+        file_put_contents("{$root}/prepare-node.sh", $source);
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $process = new Process(['bash', "{$root}/prepare-node.sh", 'align-identity'], env: [
+                'PATH' => "{$root}/bin:".getenv('PATH'),
+            ]);
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            expect(realpath("{$root}/etc/resolv.conf"))->toBe("{$root}/run/systemd/resolve/stub-resolv.conf");
+            expect(file_get_contents("{$root}/etc/systemd/resolved.conf.d/orbit-e2e-upstream.conf"))
+                ->toBe("[Resolve]\nDNS=1.1.1.1 8.8.8.8\n");
+        }
+        expect(substr_count(file_get_contents("{$root}/calls"), 'restart systemd-resolved'))->toBe(1);
+    });
+
     /* ssh host pinning was removed; KnownHostsStore is authoritative. */
     it('moves the orbit account to uid and gid 1000 and re-owns stale files', function () {
         $root = sys_get_temp_dir().'/orbit-align-identity-'.bin2hex(random_bytes(4));
@@ -68,7 +97,7 @@ describe('prepare node guest script', function () {
         chmod("{$root}/bin/id", 0o700);
         chmod("{$root}/bin/getent", 0o700);
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        file_put_contents("{$root}/prepare-node.sh", $source);
+        file_put_contents("{$root}/prepare-node.sh", str_replace('/run/systemd/resolve/stub-resolv.conf', "{$root}/missing-stub", $source));
         $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
 
         try {

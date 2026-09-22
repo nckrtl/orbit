@@ -29,6 +29,19 @@ case "$mode" in
     # the private .orbit zone, which breaks the hibernation forward_auth to gateway.orbit. Point it
     # at the systemd-resolved stub, the way a default Ubuntu install does.
     if systemctl is-active --quiet systemd-resolved && [[ -e /run/systemd/resolve/stub-resolv.conf ]]; then
+      # Runtime resolver settings do not survive a snapshot reboot. Keep the base image's
+      # public upstreams persistent; Orbit's more specific private DNS routes still apply.
+      resolver_directory=/etc/systemd/resolved.conf.d
+      install -d -m 0755 "$resolver_directory"
+      resolver_candidate=$(mktemp)
+      printf '[Resolve]\nDNS=1.1.1.1 8.8.8.8\n' >"$resolver_candidate"
+      if ! cmp -s "$resolver_candidate" "$resolver_directory/orbit-e2e-upstream.conf"; then
+        install -m 0644 "$resolver_candidate" "$resolver_directory/orbit-e2e-upstream.conf"
+        rm -f "$resolver_candidate"
+        systemctl restart systemd-resolved
+      else
+        rm -f "$resolver_candidate"
+      fi
       if [[ "$(readlink -f /etc/resolv.conf)" != /run/systemd/resolve/stub-resolv.conf ]]; then
         ln -sfn ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
       fi
