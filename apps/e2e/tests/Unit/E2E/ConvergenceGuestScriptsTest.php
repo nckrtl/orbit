@@ -724,6 +724,7 @@ function convergence_app_fixture(string $scriptName): array
     mkdir("{$orbitHome}/ssh", 0o700, true);
     mkdir($caddy, 0o700, true);
     mkdir($state, 0o700, true);
+    file_put_contents("{$root}/commands", '');
     file_put_contents("{$checkout}/artisan", '');
     file_put_contents("{$orbitHome}/ssh/id_ed25519", 'private');
     file_put_contents("{$orbitHome}/ssh/known_hosts", '');
@@ -738,8 +739,14 @@ function convergence_app_fixture(string $scriptName): array
     );
     file_put_contents("{$root}/bin/php", str_replace('__COMMANDS__', "{$root}/commands", <<<'BASH'
         #!/usr/bin/env bash
+        if [[ "$1" == '-r' && -n "${ORBIT_PHP_NATIVE_QUERIES:-}" ]]; then
+          exec "$ORBIT_PHP_NATIVE_QUERIES" "$@"
+        fi
         printf '%s
         ' "$*" >> '__COMMANDS__'
+        if [[ "$*" == *' orbit:node-provision '* ]]; then
+          printf '%s\0' "$@" > '__COMMANDS__.provision'
+        fi
         if [[ "$*" == *'SELECT COUNT(*) FROM nodes'* ]]; then
           printf '%s\n' "${ORBIT_PHP_NODE_ACTIVE:-0}"
           exit 0
@@ -1786,29 +1793,100 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('always reconciles app-prod caddy after provisioning', function (): void {
+    it('provisions each production Node with its own namespace before reconciling caddy', function (string $node, string $publicIp, string $wireguardIp): void {
         $fixture = convergence_app_fixture('converge-app-prod-internal-tls.sh');
+        $pdo = new PDO('sqlite:'.$fixture['root'].'/orbit-home/gateway.sqlite');
+        $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT, tld TEXT)');
+        $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
+        $pdo->exec("INSERT INTO nodes VALUES (1, 'gateway', 'active', NULL)");
 
         try {
             $process = new Process([
                 'bash',
                 $fixture['script'],
-                'app-prod',
-                '192.0.2.12',
+                $node,
+                $publicIp,
                 'aarch64',
-                '10.44.0.3',
+                $wireguardIp,
             ], env: [
                 'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
+                'ORBIT_PHP_NATIVE_QUERIES' => PHP_BINARY,
             ]);
             expect($process->run())
                 ->toBe(0)
                 ->and(file_get_contents($fixture['commands']))
-                ->toContain('orbit:node-provision')
-                ->toContain('ssh:-i');
+                ->toContain("ssh:-i {$fixture['root']}/orbit-home/ssh/id_ed25519 -o UserKnownHostsFile={$fixture['root']}/orbit-home/ssh/known_hosts -o BatchMode=yes -o StrictHostKeyChecking=yes -- orbit@{$wireguardIp} bash -se");
+            expect(explode("\0", rtrim(file_get_contents($fixture['commands'].'.provision'), "\0")))->toBe([
+                "{$fixture['root']}/checkout/apps/gateway/artisan",
+                'orbit:node-provision',
+                $node,
+                $publicIp,
+                '--role=app-prod',
+                '--tld='.$node,
+                '--architecture=aarch64',
+                '--user=orbit',
+                '--wireguard-ip='.$wireguardIp,
+                '--host-key-fingerprint=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                '--no-interaction',
+            ]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
-    });
+    })->with([
+        'primary production Node' => ['app-prod', '192.0.2.12', '10.44.0.3'],
+        'extended production Node' => ['app-prod-2', '192.0.2.13', '10.44.0.4'],
+    ]);
+
+    it('reconciles an active production Node without reprovisioning its matching namespace', function (string $node): void {
+        $fixture = convergence_app_fixture('converge-app-prod-internal-tls.sh');
+        $pdo = new PDO('sqlite:'.$fixture['root'].'/orbit-home/gateway.sqlite');
+        $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT, tld TEXT)');
+        $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
+        $pdo->prepare('INSERT INTO nodes VALUES (3, ?, ?, ?)')->execute([$node, 'active', $node]);
+        $pdo->exec("INSERT INTO node_roles VALUES (3, 'app-prod', 'active')");
+
+        try {
+            $process = new Process(['bash', $fixture['script'], $node, '192.0.2.12', 'aarch64', '10.44.0.3'], env: [
+                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
+                'ORBIT_PHP_NATIVE_QUERIES' => PHP_BINARY,
+            ]);
+
+            expect($process->run())->toBe(0);
+            expect(file_get_contents($fixture['commands']))->toContain('ssh:-i')->not->toContain('orbit:node-provision');
+            expect($pdo->query('SELECT tld FROM nodes')->fetchColumn())->toBe($node);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with(['app-prod', 'app-prod-2']);
+
+    it('refuses an incompatible production namespace before provisioning or SSH', function (?string $tld, string $status): void {
+        $fixture = convergence_app_fixture('converge-app-prod-internal-tls.sh');
+        $database = $fixture['root'].'/orbit-home/gateway.sqlite';
+        $pdo = new PDO('sqlite:'.$database);
+        $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT, tld TEXT)');
+        $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
+        $pdo->prepare('INSERT INTO nodes VALUES (3, ?, ?, ?)')->execute(['app-prod', $status, $tld]);
+        $pdo->exec("INSERT INTO node_roles VALUES (3, 'app-prod', 'active')");
+        $before = file_get_contents($database);
+
+        try {
+            $process = new Process(['bash', $fixture['script'], 'app-prod', '192.0.2.12', 'aarch64', '10.44.0.3'], env: [
+                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
+                'ORBIT_PHP_NATIVE_QUERIES' => PHP_BINARY,
+            ]);
+
+            expect($process->run())->toBe(66);
+            expect($process->getErrorOutput())->toContain('The existing production Node TLD does not match its physical Node key.');
+            expect(file_get_contents($fixture['commands']))->toBe('');
+            expect(file_get_contents($database))->toBe($before);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing namespace' => [null],
+        'empty namespace' => [''],
+        'different namespace' => ['legacy'],
+    ])->with(['active', 'failed']);
 
     it('keeps the product-managed Caddyfile and places internal TLS as an unmanaged fragment', function (): void {
         $guest = dirname(__DIR__, 3).'/resources/guest';

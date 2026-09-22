@@ -204,4 +204,6 @@ Native sample creation selects one complete CLI command contract before changing
 
 The production sample clone uses the Project's resolved default branch explicitly. It does not inherit the development sample's local `e2e-dev` branch, which need not exist in the remote repository. Missing or invalid branch evidence stops setup before cloning; it does not select `main` or create a remote branch.
 
+Production Node provisioning declares the physical Node key as its TLD: `app-prod` or `app-prod-2`. This gives each Node a distinct namespace for required clone previews. Repeated convergence skips provisioning for an active Node with its active role and matching TLD. Convergence refuses an existing Node with a missing or different TLD before provisioning or SSH; it does not adopt or rewrite that namespace.
+
 Construction failure triggers exact cleanup. Cleanup first validates the owner and operation metadata of every present recipe resource, then stops and deletes VMs in reverse recipe order, deletes the network, and verifies absence. A resource owned by another operation refuses the entire deletion instead of being adopted or removed.

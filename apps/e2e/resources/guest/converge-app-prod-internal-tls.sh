@@ -6,6 +6,18 @@ cd /home/orbit/orbit/apps/gateway
 [[ "$3" =~ ^(x86_64|aarch64)$ && "$4" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 65
 wireguard_ip=$4
 db=/home/orbit/.orbit/gateway.sqlite
+if [[ -r "$db" ]]; then
+  php -r '
+    $pdo = new PDO("sqlite:".$argv[1], options: [PDO::SQLITE_ATTR_OPEN_FLAGS => PDO::SQLITE_OPEN_READONLY]);
+    $statement = $pdo->prepare("SELECT tld FROM nodes WHERE name = ?");
+    $statement->execute([$argv[2]]);
+    $node = $statement->fetch(PDO::FETCH_ASSOC);
+    if ($node !== false && $node["tld"] !== $argv[2]) {
+      fwrite(STDERR, "The existing production Node TLD does not match its physical Node key.\n");
+      exit(66);
+    }
+  ' -- "$db" "$1"
+fi
 # The Gateway store is the source of truth: an active node with an active
 # role is already provisioned. Public SSH closes after provisioning, so a
 # repeat provision cannot run against a converged node.
@@ -26,7 +38,7 @@ provision() {
   fingerprint=$(scan_host_key "$2" | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')
   [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
   sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php /home/orbit/orbit/apps/gateway/artisan orbit:node-provision "$1" "$2" \
-    --role=app-prod --architecture="$3" --user=orbit \
+    --role=app-prod --tld="$1" --architecture="$3" --user=orbit \
     --wireguard-ip="$wireguard_ip" \
     --host-key-fingerprint="$fingerprint" --no-interaction
 }
