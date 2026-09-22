@@ -24,14 +24,26 @@ import type {
 export type Action = {
     label: string;
     description: string;
-    destructive?: boolean;
-    command?: string;
-    run?: () => Promise<string>;
-    /** An action that prints a report: the menu shows what this resolves to in a modal. */
-    report?: () => Promise<{ ok: boolean; output: string }>;
-};
+} & (
+    | { kind: "command"; command: string; run?: never; report?: never; destructive?: never }
+    | {
+          kind: "run";
+          run: () => Promise<string>;
+          command?: never;
+          report?: never;
+          destructive?: boolean;
+      }
+    | {
+          kind: "report";
+          report: () => Promise<{ ok: boolean; output: string }>;
+          command?: never;
+          run?: never;
+          destructive?: never;
+      }
+);
 
 const leaves = (label: string, command: string, description: string): Action => ({
+    kind: "command",
     label,
     command,
     description,
@@ -71,6 +83,7 @@ function analyticsActions(instance: Instance, target: string): Action[] {
                 label: "disable analytics",
                 destructive: true,
                 description: `Remove every analytics tracking host of [${target}]? Plausible stops receiving its visits.`,
+                kind: "run",
                 run: async () => {
                     queryClient.setQueryData(
                         key,
@@ -95,6 +108,7 @@ function analyticsActions(instance: Instance, target: string): Action[] {
               {
                   label: "enable analytics",
                   description: `Publish analytics.${analytics.domain ?? instance.domain} for [${target}].`,
+                  kind: "report",
                   report: async () => {
                       try {
                           const enabled = await api<InstanceAnalytics>(
@@ -153,6 +167,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                 {
                     label: "doctor",
                     description: `Check node [${node.name}] for drift.`,
+                    kind: "run",
                     run: async () => {
                         const report = await api<DoctorReport>("POST", "/api/v1/doctor", {
                             node_id: node.id,
@@ -199,6 +214,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     // `orbit profile` sends its GET from the operator's machine, never through the
                     // Gateway, and a browser cannot read another origin's timings. The dev server
                     // runs the command here and returns what it printed.
+                    kind: "report",
                     report: async () => {
                         const response = await fetch(`/__orbit/profile?instance=${instance.id}`);
 
@@ -221,23 +237,27 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                 {
                     label: "restart",
                     description: `Restart process [${process.name}].`,
+                    kind: "run",
                     run: () => processAction(process, "restart", "restarted"),
                 },
                 processRuntimeIsActive(process)
                     ? {
                           label: "stop",
                           description: `Stop process [${process.name}].`,
+                          kind: "run",
                           run: () => processAction(process, "stop", "stopped"),
                       }
                     : {
                           label: "start",
                           description: `Start process [${process.name}].`,
+                          kind: "run",
                           run: () => processAction(process, "start", "started"),
                       },
                 {
                     label: "destroy",
                     destructive: true,
                     description: `Destroy process [${process.name}]? Its unit or container is removed from the node.`,
+                    kind: "run",
                     run: async () => {
                         await api("DELETE", `/api/v1/processes/${process.id}`);
                         applyRow(queryClient, "processes", "deleted", { id: process.id });
@@ -254,6 +274,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                 {
                     label: "run now",
                     description: `Run schedule [${schedule.name}] now.`,
+                    kind: "run",
                     run: () => scheduleAction(schedule, "run", "ran"),
                 },
                 ...(schedule.desired_timer_state === "enabled"
@@ -262,6 +283,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                           {
                               label: "enable",
                               description: `Enable schedule [${schedule.name}].`,
+                              kind: "run" as const,
                               run: () => scheduleAction(schedule, "activate", "enabled"),
                           },
                       ]),
@@ -275,6 +297,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     label: "destroy",
                     destructive: true,
                     description: `Destroy the Database connection record [${database.slug}]? The physical database is not dropped.`,
+                    kind: "run",
                     run: async () => {
                         await api(
                             "DELETE",
@@ -300,6 +323,7 @@ export function actionsFor(kind: Kind, row: AnyRecord): Action[] {
                     label: "remove",
                     destructive: true,
                     description: `Remove firewall rule [${rule.name}] on node [${rule.node}]?`,
+                    kind: "run",
                     run: async () => {
                         await api(
                             "DELETE",

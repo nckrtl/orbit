@@ -215,12 +215,15 @@ it("cancels a menu with Esc", async () => {
 });
 
 it("names the command for an action that has no request", async () => {
+    const copied = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     await openApp("/nodes/2");
     await expect.element(pane("Instances on this node")).toBeVisible();
 
     await userEvent.keyboard("x{ArrowDown}{Enter}");
 
     await expect.element(footer()).toHaveTextContent("orbit node:ssh beast");
+    expect(copied).toHaveBeenCalledWith("orbit node:ssh beast");
+    copied.mockRestore();
 });
 
 it("applies a realtime event to the open screen", async () => {

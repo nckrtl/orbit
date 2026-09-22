@@ -43,32 +43,40 @@ export function chooseAction(index?: number): void {
         return;
     }
 
-    if (action.report !== undefined) {
-        const title = `${action.label} · ${menu.title}`;
+    switch (action.kind) {
+        case "report": {
+            const title = `${action.label} · ${menu.title}`;
 
-        ui.set({ menu: null, modal: { title, output: null, failed: false } });
-        void action
-            .report()
-            .then(
-                ({ ok, output }) => ({ output, failed: !ok }),
-                (error: unknown) => ({ output: String(error), failed: true }),
-            )
-            .then((result) => {
-                // The reader may have closed the modal while the command ran; leave it closed.
-                if (ui.get().modal?.title === title) {
-                    ui.set({ modal: { title, ...result } });
-                }
-            });
+            ui.set({ menu: null, modal: { title, output: null, failed: false } });
+            void action
+                .report()
+                .then(
+                    ({ ok, output }) => ({ output, failed: !ok }),
+                    (error: unknown) => ({ output: String(error), failed: true }),
+                )
+                .then((result) => {
+                    // The reader may have closed the modal while the command ran; leave it closed.
+                    if (ui.get().modal?.title === title) {
+                        ui.set({ modal: { title, ...result } });
+                    }
+                });
 
-        return;
-    }
+            return;
+        }
 
-    if (action.run === undefined) {
-        const command = action.command ?? "";
-        void navigator.clipboard?.writeText(command).catch(() => {});
-        ui.set({ menu: null, message: `${command}  (copied; ${action.description})` });
+        case "command": {
+            const command = action.command;
+            void navigator.clipboard?.writeText(command).catch(() => {});
+            ui.set({ menu: null, message: `${command}  (copied; ${action.description})` });
 
-        return;
+            return;
+        }
+        case "run":
+            break;
+        default: {
+            const unreachable: never = action;
+            return unreachable;
+        }
     }
 
     if (action.destructive === true && !menu.confirm) {
