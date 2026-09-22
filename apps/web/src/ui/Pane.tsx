@@ -105,9 +105,21 @@ export function Pane<T extends Record<string, any>>({
         getRowId: rowId,
     });
     const model = table.getRowModel().rows;
-    const above = divide === undefined ? model : model.filter((row) => !divide.below(row.original));
-    const sorted = [...above, ...model.filter((row) => !above.includes(row))];
-    const dividerAt = above.length > 0 && above.length < sorted.length ? above.length : -1;
+    let sorted = model;
+    let dividerAt = -1;
+
+    if (divide !== undefined) {
+        const above: typeof model = [];
+        const below: typeof model = [];
+
+        for (const row of model) {
+            (divide.below(row.original) ? below : above).push(row);
+        }
+
+        sorted = [...above, ...below];
+        dividerAt = above.length > 0 && below.length > 0 ? above.length : -1;
+    }
+
     const selected = Math.min(selectedIndex, Math.max(0, sorted.length - 1));
 
     const desktopTemplate = columns
