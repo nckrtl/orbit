@@ -53,12 +53,14 @@ final readonly class T3Projection
         $error = $thread['error'] ?? $turn['error'] ?? $session['lastError'] ?? $session['error'] ?? null;
         $error = is_array($error) ? ($error['message'] ?? null) : $error;
         $cursor = $snapshot['snapshotSequence'] ?? $snapshot['sequence'] ?? null;
+        $turnId = $this->text($turn['id'] ?? $turn['turnId'] ?? $turn['turn_id'] ?? '');
 
         return new AgentObservation(
             state: $state, inputRequests: $requests, entries: $entries,
             tokens: $metrics->tokens, linesAdded: $metrics->linesAdded, linesDeleted: $metrics->linesDeleted,
             error: $state === AgentThreadState::Failed ? ($this->text($error) ?: ($retained ? $previousError : null) ?? 'Agent turn failed.') : null,
             cursor: is_int($cursor) ? (string) $cursor : null,
+            turnId: $turnId === '' ? null : $turnId,
         );
     }
 

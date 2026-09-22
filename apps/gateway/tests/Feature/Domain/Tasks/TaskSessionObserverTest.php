@@ -241,6 +241,7 @@ it('checks sessions attached to every task even after finding an active session'
     expect($reader->requested)->toBe([
         'reviewer-thread',
         'implementer-thread',
+        'reviewer-thread',
         'second-task-session',
     ]);
 });

@@ -3026,7 +3026,28 @@
                 "0103",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
+            ]
+        },
+        {
+            "path": "docs/decisions/0114-judge-task-completion-as-separate-checks.md",
+            "title": "ADR 0114: Judge task completion as separate checks",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0110",
+                "0113",
+                "0114"
             ]
         },
         {
@@ -3194,7 +3215,8 @@
                 "0109",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
@@ -3796,7 +3818,8 @@
                 "0052",
                 "0054",
                 "0076",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
@@ -4222,7 +4245,8 @@
                 "0103",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
