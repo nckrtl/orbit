@@ -405,7 +405,8 @@ it('preserves changed Route owners and rollback evidence through identical retri
     expect($transfer->recovery_evidence['incomplete'])->toContain('destination-route');
     expect($this->sources->calls)->toBe([]);
     expect($this->projection->calls)->toBe([]);
-    expect($this->runtime->calls)->not->toContain('relocate', 'activate');
+    expect($this->runtime->calls)->not->toContain('relocate');
+    expect($this->runtime->calls)->not->toContain('activate');
 })->with([
     'foreign Project candidate identity' => [function (object $test, AppInstanceTransfer $transfer): void {
         $foreign = OrbitApp::query()->create(['name' => 'Foreign', 'slug' => 'foreign', 'repository_url' => 'https://example.test/foreign.git', 'default_branch' => 'main', 'root' => 'public']);
