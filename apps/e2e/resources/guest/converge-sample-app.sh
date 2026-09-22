@@ -606,9 +606,9 @@ PHP
     esac
     run_as_runtime() {
       if [[ "$(id -u)" -eq 0 ]]; then
-        sudo -u "$runtime_user" -- env HOME="$runtime_home" "$@"
+        sudo -u "$runtime_user" -- env -u DB_DATABASE HOME="$runtime_home" "$@"
       else
-        "$@"
+        env -u DB_DATABASE "$@"
       fi
     }
     hydrate_composer_dependencies() {
