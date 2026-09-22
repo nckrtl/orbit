@@ -12,6 +12,7 @@ final readonly class TaskSchedule
     {
         $schedule->command('tasks:tick')
             ->everyTenSeconds()
+            ->runInBackground()
             ->when(static fn (): bool => app(TaskExtensionState::class)->enabled());
     }
 }

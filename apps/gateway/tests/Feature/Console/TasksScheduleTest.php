@@ -25,6 +25,8 @@ it('registers the task tick on the schedule when tasks are enabled', function ()
         ->toHaveCount(1)
         ->and($schedule->events()[0]->command)
         ->toContain('tasks:tick')
+        ->and($schedule->events()[0]->runInBackground)
+        ->toBeTrue()
         ->and($schedule->events()[0]->filtersPass(app()))
         ->toBeTrue();
 });

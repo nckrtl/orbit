@@ -31,6 +31,7 @@ final readonly class TaskScheduler
         private TaskSessionObserver $observer,
         private TaskSessionClassifier $classifier,
         private TaskSessionActor $actor,
+        private TaskStartupLock $startup,
     ) {}
 
     /**
@@ -532,6 +533,11 @@ final readonly class TaskScheduler
     }
 
     public function claimNext(): ?TaskGroup
+    {
+        return $this->startup->run(fn (): ?TaskGroup => $this->claimAvailableGroup());
+    }
+
+    private function claimAvailableGroup(): ?TaskGroup
     {
         $reserved = DB::transaction(function (): ?TaskGroup {
             $candidates = TaskGroup::query()

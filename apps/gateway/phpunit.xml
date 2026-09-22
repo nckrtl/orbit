@@ -28,7 +28,7 @@
         <env name="DB_DATABASE" value=":memory:" force="true"/>
         <env name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
-        <env name="ORBIT_HOME" value="/tmp/orbit-gateway-testing"/>
+        <env name="ORBIT_HOME" value="/tmp/orbit-gateway-testing" force="true"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

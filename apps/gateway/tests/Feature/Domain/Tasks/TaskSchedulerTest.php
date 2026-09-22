@@ -22,6 +22,7 @@ use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -30,9 +31,11 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskStartupLock;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspacePreparer;
 use App\Domain\Tasks\TaskWorkspaceSigner;
+use App\Infrastructure\Tasks\NativeTaskStartupLock;
 use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Models\AgentThread;
@@ -41,6 +44,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Cache;
 
 function scheduler_app(string $slug): OrbitApp
 {
@@ -162,6 +166,44 @@ function scheduler_bind_claim(AppInstance $instance, AgentSpawner $spawner): voi
     ));
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 }
+
+it('keeps task observation available and other groups queued during startup', function (): void {
+    $project = scheduler_app('startup-lock');
+    $node = scheduler_node('setup-node', '10.1.0.9');
+    $instance = scheduler_instance($project, $node, 'setup-instance');
+    $first = queued_group($project, 'First startup', $instance);
+    $second = queued_group($project, 'Second startup', $instance);
+    $directory = sys_get_temp_dir().'/orbit-startup-'.bin2hex(random_bytes(8));
+    app()->instance(TaskStartupLock::class, new NativeTaskStartupLock($directory));
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    app()->instance(InstanceProvisioning::class, new class($instance, $second) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance, private TaskGroup $second) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            $observation = Cache::lock('orbit:tasks:tick', 300);
+            expect($observation->get())->toBeTrue();
+            $observation->release();
+            expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+            expect($this->second->fresh()?->status)->toBe(TaskGroupStatus::Queued);
+
+            return $this->instance;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+
+    try {
+        $this->artisan('tasks:tick')->expectsOutput('Routed [0] tasks and started [1] groups.')->assertSuccessful();
+        expect($first->fresh()?->status)->toBe(TaskGroupStatus::Running);
+        expect($second->fresh()?->status)->toBe(TaskGroupStatus::Queued);
+        expect($spawner->events)->toBe(['reviewer', 'implementer:1']);
+    } finally {
+        @unlink($directory.'/startup.lock');
+        @rmdir($directory);
+    }
+});
 
 it('reserves queued groups without a per-Project ceiling', function (): void {
     $app = scheduler_app('ceiling-app');

@@ -34,13 +34,10 @@ final class TickTaskSessionsCommand extends Command
 
         try {
             $decisions = $scheduler->tick();
-            $started = 0;
-            while (($group = $scheduler->claimNext()) !== null) {
-                $started++;
-            }
         } finally {
             $lock->release();
         }
+        $started = $scheduler->claimNext() === null ? 0 : 1;
         $this->info('Routed ['.count($decisions).'] tasks and started ['.$started.'] groups.');
 
         return self::SUCCESS;

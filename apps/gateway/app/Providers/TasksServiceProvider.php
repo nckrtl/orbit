@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskEvidenceJudge;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskStartupLock;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspacePreparer;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -23,6 +24,7 @@ use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\LaravelAiTaskEvidenceJudge;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
+use App\Infrastructure\Tasks\NativeTaskStartupLock;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspacePreparer;
@@ -64,6 +66,10 @@ final class TasksServiceProvider extends ServiceProvider
     public function register(): void
     {
         parent::register();
+
+        $this->app->bind(TaskStartupLock::class, fn (): TaskStartupLock => new NativeTaskStartupLock(
+            rtrim((string) config('orbit.home'), '/').'/locks/tasks',
+        ));
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class)]));
 

@@ -199,9 +199,9 @@ Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
-Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest pending groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
+Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects observation and routing. A held lock skips that invocation. After routing releases the lock, the tick tries to start one queued group. A separate process-held lock permits one startup at a time across scheduled ticks and task creation requests. A busy startup leaves other groups queued without blocking observation of running tasks. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
-The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. Laravel runs each invocation in the background so a slow bootstrap does not hold the schedule. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
 ## Task verification pilot
 

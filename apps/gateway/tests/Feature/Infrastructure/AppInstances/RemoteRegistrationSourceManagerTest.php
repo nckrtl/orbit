@@ -875,7 +875,20 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
         }
 
         $this->interrupted = true;
-        $process = new SymfonyProcess($command->arguments);
+        $arguments = $command->arguments;
+        $arguments[2] = <<<'PYTHON'
+import os, signal
+cleanup_unlink = os.unlink
+def suspend_after_trigger(path, *args, **kwargs):
+    cleanup_unlink(path, *args, **kwargs)
+    if os.path.basename(path) == '00000-trigger':
+        os.kill(os.getpid(), signal.SIGSTOP)
+os.unlink = suspend_after_trigger
+if cleanup_unlink in os.supports_dir_fd:
+    os.supports_dir_fd.add(suspend_after_trigger)
+
+PYTHON.$arguments[2];
+        $process = new SymfonyProcess($arguments);
         $process->start();
         $deadline = microtime(true) + 30;
 

@@ -12,6 +12,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskStartupLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -19,6 +20,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\TaskGroup;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Classification;
@@ -43,6 +45,13 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(AgentationSiteProjection::class, new FakeAgentationSiteProjection);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
+        app()->instance(TaskStartupLock::class, new class implements TaskStartupLock
+        {
+            public function run(Closure $operation): ?TaskGroup
+            {
+                return $operation();
+            }
+        });
         Classification::fake();
     })
     ->in('Feature');
