@@ -214,6 +214,9 @@ final readonly class TopologyVerifier
                     )
                 ) {
                     $arguments[] = base64_encode(json_encode($productionPlacement, JSON_THROW_ON_ERROR));
+                    if ($name === 'laravel.prod') {
+                        $arguments[] = $target->recipe->productionProbeAddress();
+                    }
                 }
                 // A mounted source adds the expected `.git` pointer hash: the guest
                 // must hash the pointer file it sees through the mount itself.

@@ -484,13 +484,14 @@ describe('TopologyVerifier typed application state', function () {
         expect($argv)->toBe([]);
     });
 
-    it('passes the exact recorded production placement to every production probe', function (array $production): void {
+    it('passes the recorded production placement and recipe HTTPS destination to production probes', function (array $production, TopologyRecipe $recipe, string $address): void {
         setUpTopologyVerifierProcessFacade();
+        $target = featureTarget('TST-123', recipe: $recipe);
         $sha = str_repeat('a', 40);
         $encoded = base64_encode(json_encode($production, JSON_THROW_ON_ERROR));
         $argv = [];
-        Process::fake(function (PendingProcess $process) use ($sha, $production, &$argv): ProcessResult {
-            $inventory = topologyVerifierInventory($process);
+        Process::fake(function (PendingProcess $process) use ($sha, $production, &$argv, $target): ProcessResult {
+            $inventory = topologyVerifierInventory($process, $target);
             if ($inventory instanceof ProcessResult) {
                 return $inventory;
             }
@@ -538,14 +539,14 @@ describe('TopologyVerifier typed application state', function () {
         });
 
         $report = new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::topologySnapshot(),
+            $target,
             VerificationMode::Readiness,
             new SourceState($sha, $sha),
         );
 
         expect($report->passed)->toBeTrue();
         foreach (['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'] as $probe) {
-            expect($argv[$probe][array_key_last($argv[$probe])] ?? null)->toBe($encoded);
+            expect(array_slice($argv[$probe], 5))->toBe($probe === 'laravel.prod' ? [$encoded, $address] : [$encoded]);
         }
         expect(array_keys($report->probes))->not->toContain('workspace.app-dev');
     })->with([
@@ -577,6 +578,9 @@ describe('TopologyVerifier typed application state', function () {
             'current_target' => '/var/www/laravel/releases/20260910T120000Z',
             'domain' => 'e2e-prod.orbit.test',
         ]],
+    ])->with([
+        'shared Gateway Router' => [TopologyRecipe::registered(), '10.44.0.1'],
+        'direct cold Node' => [TopologyRecipe::coldAcceptance(), '127.0.0.1'],
     ]);
 
     it('passes a domain-shaped production placement to every production probe', function (): void {
@@ -654,7 +658,7 @@ describe('TopologyVerifier typed application state', function () {
 
         expect($report->passed)->toBeTrue();
         foreach (['role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'] as $probe) {
-            expect($argv[$probe][array_key_last($argv[$probe])] ?? null)->toBe($encoded);
+            expect(array_slice($argv[$probe], 5))->toBe($probe === 'laravel.prod' ? [$encoded, '10.44.0.1'] : [$encoded]);
         }
     });
 

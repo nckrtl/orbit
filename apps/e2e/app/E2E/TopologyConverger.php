@@ -198,6 +198,7 @@ final readonly class TopologyConverger
                             $laravel->commit,
                             'app-prod',
                             base64_encode(json_encode($productionPlacement, JSON_THROW_ON_ERROR)),
+                            $target->recipe->productionProbeAddress(),
                         ],
                     ],
                 ]);

@@ -203,6 +203,11 @@ final readonly class TopologyRecipe
         return $this->hasNode($nodeOrRole) ? $this->node($nodeOrRole) : $this->nodeForRole($nodeOrRole);
     }
 
+    public function productionProbeAddress(): string
+    {
+        return in_array('router', $this->nodeForRole('gateway')->roles, true) ? '10.44.0.1' : '127.0.0.1';
+    }
+
     /**
      * @param  array<array-key, mixed>  $nodes
      * @return array<string, TopologyNode>

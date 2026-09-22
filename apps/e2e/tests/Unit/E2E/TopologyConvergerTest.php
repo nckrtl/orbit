@@ -339,15 +339,16 @@ describe('TopologyConverger', function () {
         );
     });
 
-    it('hydrates both recorded typed placements without changing the topology', function (): void {
+    it('hydrates both recorded typed placements through the recipe production destination', function (TopologyRecipe $recipe, string $address): void {
+        $target = featureTarget('TST-123', recipe: $recipe);
         $recorded = [];
-        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
-            return task7_process_result($process, $recorded, typed: true, typedProduction: true);
+        Process::fake(function (PendingProcess $process) use (&$recorded, $target): ProcessResult {
+            return task7_process_result($process, $recorded, typed: true, target: $target, typedProduction: true);
         });
 
         $commit = str_repeat('b', 40);
         new TopologyConverger(task7_host())->converge(
-            featureTarget('TST-123'),
+            $target,
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', $commit),
         );
@@ -359,7 +360,7 @@ describe('TopologyConverger', function () {
         $encoded = base64_encode(json_encode(task7_production_placement(), JSON_THROW_ON_ERROR));
         expect($commands)
             ->toContain(
-                'incus --project orbit exec lab:orbit-e2e-tst-123-aaaaaaaa-app-dev -- '
+                'incus --project orbit exec lab:'.$target->instance($recipe->nodeForRole('app-dev')->key).' -- '
                 .'/usr/local/bin/converge-sample-app.sh hydrate '
                 .$commit
                 .' app-dev /srv/orbit/apps/laravel-typed/e2e-dev',
@@ -367,9 +368,12 @@ describe('TopologyConverger', function () {
                 .'/usr/local/bin/converge-sample-app.sh hydrate '
                 .$commit
                 .' app-prod '
-                .$encoded,
+                .$encoded.' '.$address,
             );
-    });
+    })->with([
+        'shared Gateway Router' => [TopologyRecipe::registered(), '10.44.0.1'],
+        'direct cold Node' => [TopologyRecipe::coldAcceptance(), '127.0.0.1'],
+    ]);
 
     it('hydrates the recorded domain-shaped production placement without rewriting it to hostname', function (): void {
         $recorded = [];
@@ -401,7 +405,7 @@ describe('TopologyConverger', function () {
                 .'/usr/local/bin/converge-sample-app.sh hydrate '
                 .$commit
                 .' app-prod '
-                .$encoded,
+                .$encoded.' 10.44.0.1',
             );
     });
 

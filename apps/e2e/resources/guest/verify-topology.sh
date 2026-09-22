@@ -13,7 +13,8 @@ case "$1" in
   source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
-  role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  role.app-prod|php-fpm.app-prod|caddy.app-prod) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  laravel.prod) [[ $# -eq 4 || ( $# -eq 6 && ( "$6" == 127.0.0.1 || "$6" == 10.44.0.1 ) ) ]] || exit 64 ;;
   cluster.shared) [[ $# -eq 7 ]] ;;
   wireguard.reachability) [[ $# -ge 5 ]] ;;
   role.assignments|metrics.publication) [[ $# -eq 5 ]] ;;
@@ -26,12 +27,14 @@ instance=$4
 expected_pointer=
 typed_checkout=
 production_placement=
+production_probe_address=
 case "$probe" in
   source.gateway|source.app-dev) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
   source.manifest) [[ $# -eq 6 ]] || expected_pointer=$7 ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 ]] || typed_checkout=$5 ;;
   role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 ]] || production_placement=$5 ;;
 esac
+if [[ "$probe" == laravel.prod && $# -eq 6 ]]; then production_probe_address=$6; fi
 [[ -z "$expected_pointer" || "$expected_pointer" =~ ^[0-9a-f]{64}$ ]]
 [[ -z "$typed_checkout" || "$typed_checkout" == /* ]]
 [[ -z "$production_placement" || "$production_placement" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
@@ -314,7 +317,7 @@ case "$probe" in
     if [[ -n "$production_placement" ]]; then
       assert_production_caddy
       sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" migrate:status --no-interaction >/dev/null
-      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt --resolve "$production_domain:443:10.44.0.1" "https://$production_domain/" >/dev/null
+      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt --resolve "$production_domain:443:$production_probe_address" "https://$production_domain/" >/dev/null
       expected="app-prod-laravel:$production_layout:https-operational"
       observed=$expected
     else

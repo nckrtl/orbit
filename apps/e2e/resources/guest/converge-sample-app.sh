@@ -554,7 +554,11 @@ PHP
     ;;
   hydrate)
     [[ "$2" =~ ^[0-9a-f]{40}$ ]]
-    [[ $# -eq 3 || ( $# -eq 4 && ( "$3" == app-dev || "$3" == app-prod ) ) ]]
+    [[ $# -eq 3 || ( $# -eq 4 && "$3" == app-dev ) || ( $# -eq 5 && "$3" == app-prod ) ]] || exit 64
+    if [[ $# -eq 5 ]]; then
+      production_probe_address=$5
+      [[ "$production_probe_address" == 127.0.0.1 || "$production_probe_address" == 10.44.0.1 ]] || exit 64
+    fi
     [[ $# -eq 4 && "$3" == app-dev && "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     if [[ $# -eq 4 && "$3" == app-dev ]]; then
       [[ -f "$sample_state" ]]
@@ -608,7 +612,7 @@ PHP
         if [[ $# -eq 4 ]]; then checkouts=("$4"); else checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e); fi
         ;;
       app-prod)
-        if [[ $# -eq 4 ]]; then
+        if [[ $# -eq 5 ]]; then
           mapfile -t placement < <(php -r '$v=json_decode(base64_decode($argv[1], true), true, 16, JSON_THROW_ON_ERROR); if(!is_array($v) || !is_string($v["user"] ?? null) || !is_string($v["home"] ?? null) || !is_string($v["checkout_path"] ?? null) || !in_array($v["layout"] ?? null, ["flat","release"], true) || ($v["current_target"] ?? null)!==null && !is_string($v["current_target"])) exit(65); $ok=static fn(mixed $e): bool => is_string($e) && preg_match("/\\A[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\\z/D", $e)===1; if(!array_key_exists("domain", $v) || !$ok($v["domain"])) exit(65); echo $v["layout"], "\n", $v["user"], "\n", $v["home"], "\n", $v["checkout_path"], "\n", ($v["current_target"] ?? ""), "\n", $v["domain"], "\n";' "$4")
           [[ "${#placement[@]}" -eq 6 ]]
           production_layout=${placement[0]}
@@ -684,13 +688,13 @@ PHP
       run_as_runtime php "$checkout/artisan" migrate --force --no-interaction
     done
     if [[ "$3" == app-prod ]]; then
-      # The product-managed Caddyfile serves the site with the internal CA that
-      # `internal-tls` placed inside the managed version.
+      # Legacy sites use the local internal CA; typed sites use Orbit's CA
+      # and the exact destination declared by the topology recipe.
       ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
       [[ -s "$ca" ]]
-      if [[ $# -eq 4 ]]; then
+      if [[ $# -eq 5 ]]; then
         ca=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
-        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve "$production_domain:443:10.44.0.1" "https://$production_domain/" >/dev/null
+        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve "$production_domain:443:$production_probe_address" "https://$production_domain/" >/dev/null
       else
         curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
       fi
