@@ -189,6 +189,22 @@ Snapshots exclude ignored environment files. The Incus guidance checks reported 
 
 These initial measurements do not establish production latency or savings. Profile v1 used 95% of the 840-second runner budget and repeated Gateway tests after `composer check` ran the full suite. Profile v2 removes that duplicate and preserves Pest TIA history. One larger-Node success does not establish a minimum Node size or performance under concurrent tasks.
 
+The v2 follow-up used the same task-owned topology, with 8 GiB of memory and four CPUs on App Dev. The final implementation also seeds its first private verification cache from the prepared checkout's existing Pest graph. This preserves preparation already done by `bin/worktree-create` and `bin/bootstrap`.
+
+| Source commit | Available Pest history | Runner | SSH plus final freshness check | Result |
+| --- | --- | --- | --- | --- |
+| `30572d304a` | Empty private cache | 716.037 s | 719.197 s | All sixteen commands passed |
+| `30572d304a` | Previous successful verification | 365.830 s | 369.098 s | All sixteen passed; TIA selected no affected tests |
+| `ce796eef79` | Existing prepared-checkout history; empty private cache | 528.005 s | 531.279 s | All sixteen passed; Gateway changes correctly selected its suite |
+
+The final run had 311.995 seconds left within the runner's 840-second budget. Its copied Gateway graph preceded two changed runner files, so Pest correctly reran Gateway tests in 165.932 seconds. The other four projects selected no affected tests. Quality checks took 353.321 seconds in total; retaining test history does not remove that work. Each successful run still executed the named evidence test through Pest with TIA disabled and captured its JUnit result. These are individual measurements, not latency percentiles or throughput guarantees.
+
+A separate failure probe changed `InterruptIntent` from `128 + $signal` to `127 + $signal` only in the owned guest checkout. The same verifier reused its history, selected 1,209 affected CLI tests, and rejected the run after eleven tests failed. The affected-test command took 24.019 seconds; the runner stopped after 85.624 seconds. The source was restored and its clean commit checked afterward. This demonstrates that reused history still detects this source regression; it does not prove every possible dependency relationship.
+
+The first attempt with the prepared source ran out of scratch disk while copying dependencies. Keeping two experimental checkouts caused the shortage. Removing the obsolete checkout allowed the measured run above. The failed attempt produced no accepted result. Preparation must leave enough space for the isolated snapshot; these timings exclude installing dependencies and transferring the source history.
+
+A script checked all nineteen log digests and the captured source digest from the final successful run and failure probe. Results, logs, reproduction scripts, source-cache digests, topology identity, and cleanup output are retained under `orbit-checks/ce796eef791eace252329e688f0f80139108c7a0/native` in the Git common directory. Earlier v2 results are under their own commit. This was author verification on the current monorepo harness, not independent review or automatic task-group topology provisioning.
+
 ### Live Noul diagnostic
 
 On 22 September 2026, the author ran 98 real requests to `jev-1.13.0` under a $0.30 cap, with no retries. The current vendor documentation still listed $0.042 per million input tokens, free output, 64k total context, and 32k state plus longest question. Reserving the maximum 65,536 input tokens per request bounded exposure to $0.26975. Returned usage totaled 144,164 input tokens, or $0.00605 at that published price. This is a usage-based cost calculation, not an invoice.
@@ -211,6 +227,8 @@ The held-out Brier score was 0.00697 and binned expected calibration error was 0
 
 Both the passing-check baseline and the linked-test baseline would accept all 40 held-out pairs under their stated execution assumptions. Nouls caught the 20 missing semantic relationships. For example, the parser test titled “ignores an assistant claim” supplies both a successful assistant claim and a successful tool result. It proves that the combined input passes; it does not establish that the assistant claim is ignored. Jev rejected the stronger claim, including when given the real captured evidence. A task author can instead require a test with only the assistant claim and an assertion that it fails. That deterministic acceptance test remains the stronger option when practical.
 
+A stronger data-modeling alternative reduces that advantage. Seven negative held-out requirements ask for effects on a running system. Declaring their environment as `incus` lets code refuse local evidence before inference. Thirteen incomplete pairs still have valid local test references, which code alone accepts. The scorer records this alternative. The author designed it after seeing results, so it is not a predeclared baseline measurement. Do not credit Jev for those seven machine-checkable environment mismatches. Require a new blinded comparison against correctly structured criteria before release.
+
 Keep the pilot disabled pending independent review and blinded adjudication of representative task evidence. This diagnostic passed its numerical rejection criteria, so a limited Noul pilot is worth reviewing. It does not establish that this corpus represents long tests, omitted framework setup, complex helper chains, unclear criteria, or operational Linux proof. Do not remove the reviewer or start the topology slice on this result alone.
 
 The evaluation bundle is retained under `orbit-checks/jev-evaluation-20260922` in the Git common directory. It includes predeclared labels and protocol, frozen-policy hashes, requests, raw responses, usage, per-case decisions, and `summary.json`. `score.py` consumes those records to reproduce the findings without a network call. `replay.py` validates a JSONL case file offline and requires `--execute`, an explicit `--budget-usd`, and `TYPESAFE_API_KEY` for live execution. These local diagnostic artifacts are not task receipts or a second production workflow.
@@ -232,9 +250,24 @@ The evaluation bundle is retained under `orbit-checks/jev-evaluation-20260922` i
 - The first slice has real integration cost: a trusted producer, structured task criteria, result persistence, and a consumer. A JSON file alone would be smaller but would not solve the problem.
 - Noul quality, test-report extraction, synchronous execution limits, and workspace write exclusion remain implementation gates. Independent review stays necessary.
 
-### Follow-up: one ephemeral Incus topology per task group
+### Follow-up: prepare instances before starting agents
 
-First close the workspace preparation gap. The manual `bin/worktree-create` path calls `bin/bootstrap`, installs dependencies, and seeds compatible test and quality caches. The automatic `TaskWorkspaceProvisioner` path for `app.slug = orbit` stops at source resolution and starts the agent without those bootstrap steps. The verifier requires installed dependencies and reuses available history; it does not install them. The native measurements below use an explicitly prepared checkout and do not prove automatic task-instance readiness. Make successful workspace preparation a consumed prerequisite of agent start before enabling the pilot for automatically created Orbit workspaces. Reuse the existing preparation steps and define failure recovery in a focused change; do not add an agent-written readiness receipt or blindly nest the manual worktree script inside an already allocated Instance.
+First close the workspace preparation gap. The manual `bin/worktree-create` path calls `bin/bootstrap`, installs dependencies, and seeds compatible test and quality caches. The automatic `TaskWorkspaceProvisioner` path for `app.slug = orbit` stops at source resolution and starts the agent without those bootstrap steps. The verifier requires installed dependencies and reuses available history; it does not install them. The native measurements use an explicitly prepared checkout and do not prove automatic task-instance readiness.
+
+Read-only inspection found Orbit registered as monorepo project 46 on the live Gateway. Its deployed commit, `12715ff83047c0e51f4b86618779b637b040471f`, has the same task preparation gap. The current `CreateAppInstanceAction`, used by `instance:create`, also has no setup-step runner. [ADR 0030](/decisions/0030-complete-appinstance-provisioning-without-application-health-gates) already requires explicitly configured setup after provisioning, but leaves its implementation contract separate. This requires code as well as project configuration.
+
+The retired repository contains useful behavior in `AppDevelopmentSetupStep`, `CopyAppDevelopmentSetupSteps`, `SetupApp`, and `AppSetupStepRunner`: copy ordered project defaults to a new development instance, run each command with a timeout, record its exit status, and stop on failure. Its tests cover independent instance copies, command order, and failure. Reuse those concepts through current instance services. Current deploy steps run around release activation and do not provide development setup. The old setup skip rule hashes commands and timeouts; that alone cannot prove a checkout still contains installed dependencies.
+
+The proposed next slice provides one preparation path behind `instance:create` and task-created instances:
+
+1. Run explicitly configured development setup after source and instance provisioning, including monorepos that need no Route. Keep provisioning state separate from setup state, as ADR 0030 requires.
+2. Configure Orbit to run `bin/bootstrap` in the allocated checkout with the correct PHP runtime and isolated development state. Reuse the preparation performed by `bin/worktree-create`; do not call that allocation script inside an existing instance.
+3. Make compatible successful cache publications available to each task checkout. Current instances are independent clones; their Git common directories do not share the local worktree cache store. Reuse the existing compatibility checks when copying publications. Missing or incompatible history may require a cold test run and must not prevent setup.
+4. Make the scheduler consume successful setup before agent start. Failure or incomplete setup blocks that start and supports retry on the same instance. Bind success to the current checkout and setup inputs, and verify required outputs before reuse. An `active` instance or unchanged command hash alone is insufficient.
+
+Verify both creation entry points, setup failure and retry, valid cache reuse, incompatible-cache fallback, and a source change that selects affected Pest tests. Reproduce the shared path on an allocated Incus topology before independent review. Code can decide these conditions from execution and filesystem state; Jev adds no useful judgment here. This follow-up needs no agent-written readiness receipt and does not enable automatic topologies.
+
+### Follow-up: one ephemeral Incus topology per task group
 
 The next runtime-proof slice gives each task group its own ephemeral Incus topology when its criteria require Linux behavior. The group owns the allocation; tasks in that group use it without sharing mutable machines with another group. Reuse the existing harness for capacity limits, exact resource ownership, inspection after failure, and cleanup at the end of the group's lifecycle.
 
