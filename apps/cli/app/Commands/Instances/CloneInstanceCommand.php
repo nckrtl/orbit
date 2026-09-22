@@ -89,7 +89,7 @@ HELP;
                     branch: $this->stringOption('branch'),
                     sqliteSourcePath: $this->stringOption('sqlite-source-path'),
                 ), AppInstanceResponse::class);
-                if (! $response instanceof AppInstanceResponse || $response->route === null || $response->route->domain === '') {
+                if (! $response instanceof AppInstanceResponse || $response->route?->domain === '') {
                     throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response instanceof AppInstanceResponse ? $response->requestId : null);
                 }
 
@@ -119,7 +119,7 @@ HELP;
             $this->writeJson([
                 'target_id' => $instance->id,
                 'configured_branch' => $instance->selectedBranch,
-                'preview_domain' => $instance->route->domain,
+                'preview_domain' => $instance->route?->domain,
                 'selected_release' => $releases->selectedRelease,
                 'request_ids' => [
                     'clone' => $instance->requestId,
@@ -133,7 +133,7 @@ HELP;
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'Target ID' => $instance->id,
             'Configured branch' => $instance->selectedBranch,
-            'Preview domain' => $instance->route->domain,
+            'Preview domain' => $instance->route?->domain,
             'Selected release' => $releases->selectedRelease,
             'Clone request ID' => $instance->requestId,
             'Release request ID' => $releases->requestId,

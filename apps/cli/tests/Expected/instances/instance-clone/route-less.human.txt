@@ -1,0 +1,26 @@
+Cloning source...
+Loading selected release...
+
+┌  Clone Instance
+│
+├  ● Cloned source
+│
+├  ● Loaded selected release
+│
+└  Instance cloned.
+
+
+┌  Instance: production
+│
+├  Target ID            29
+│
+├  Configured branch    release
+│
+├  Preview domain       —
+│
+├  Selected release     —
+│
+├  Clone request ID     0198e15c-bf97-7c23-8f1f-61b8fe67a844
+│
+└  Release request ID   0198e15c-bf97-7c23-8f1f-61b8fe67a845
+

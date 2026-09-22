@@ -157,8 +157,8 @@ describe('instance:clone request', function (): void {
 });
 
 describe('instance:clone output', function (): void {
-    it('reports the target, configured branch, actual preview, and absent first release', function (): void {
-        MockClient::global(clone_cli_responses());
+    it('reports the target, configured branch, optional preview, and absent first release', function (bool $routeLess): void {
+        $mock = MockClient::global(clone_cli_responses($routeLess));
 
         expect(Artisan::call('instance:clone', [
             'candidate' => '11',
@@ -166,19 +166,25 @@ describe('instance:clone output', function (): void {
             'name' => 'production',
             '--preview-name' => 'shop.com',
         ]))->toBe(0);
-        expect(instance_source_text(Artisan::output()))->toContain(
+        $output = Artisan::output();
+        expect(instance_source_text($output))->toContain(
             'Instance: production',
             'Target ID 29',
             'Configured branch release',
-            'Preview domain shop.com.prod.orbit',
+            'Preview domain '.($routeLess ? '—' : 'shop.com.prod.orbit'),
             'Selected release —',
             'Clone request ID '.clone_cli_request_id(),
             'Release request ID '.clone_cli_release_request_id(),
         );
-    });
+        expect($mock->getRecordedResponses())->toHaveCount(2);
 
-    it('renders a deterministic JSON result without prompting', function (): void {
-        MockClient::global(clone_cli_responses());
+        if ($routeLess) {
+            expect_output($output, 'instances/instance-clone/route-less.human.txt');
+        }
+    })->with(['routed' => false, 'route-less' => true]);
+
+    it('renders a deterministic JSON result without prompting', function (bool $routeLess): void {
+        $mock = MockClient::global(clone_cli_responses($routeLess));
 
         $exitCode = Artisan::call('instance:clone', [
             'candidate' => '11',
@@ -189,24 +195,30 @@ describe('instance:clone output', function (): void {
             '--no-interaction' => true,
         ]);
 
+        $output = Artisan::output();
         expect($exitCode)
             ->toBe(0)
-            ->and(trim(Artisan::output()))
+            ->and(trim($output))
             ->toBe(json_encode([
                 'target_id' => 29,
                 'configured_branch' => 'release',
-                'preview_domain' => 'shop.com.prod.orbit',
+                'preview_domain' => $routeLess ? null : 'shop.com.prod.orbit',
                 'selected_release' => null,
                 'request_ids' => [
                     'clone' => clone_cli_request_id(),
                     'releases' => clone_cli_release_request_id(),
                 ],
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    });
+        expect($mock->getRecordedResponses())->toHaveCount(2);
 
-    it('refuses a clone response without its sole preview Route', function (): void {
+        if ($routeLess) {
+            expect_output($output, 'instances/instance-clone/route-less.json');
+        }
+    })->with(['routed' => false, 'route-less' => true]);
+
+    it('refuses a supplied Route with an invalid domain', function (mixed $domain): void {
         $payload = clone_cli_payload();
-        $payload['route'] = null;
+        $payload['route']['domain'] = $domain;
         $payload['domain'] = null;
         $payload['url'] = null;
         $mock = MockClient::global([
@@ -231,7 +243,7 @@ describe('instance:clone output', function (): void {
             ->toBe(clone_cli_error('gateway.invalid_response', 'Gateway response is invalid.', clone_cli_request_id()))
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
-    });
+    })->with(['empty' => '', 'null' => null, 'non-string' => 41]);
 
     it('keeps a rejected SQLite path out of the bounded correlated error', function (): void {
         $path = '/srv/candidate/private-clone-secret.sqlite';
@@ -295,11 +307,11 @@ describe('instance:clone help and execution boundary', function (): void {
 });
 
 /** @return array<class-string, MockResponse> */
-function clone_cli_responses(): array
+function clone_cli_responses(bool $routeLess = false): array
 {
     return [
         CloneAppInstanceRequest::class => MockResponse::make([
-            'data' => clone_cli_payload(),
+            'data' => clone_cli_payload($routeLess),
             'meta' => ['request_id' => clone_cli_request_id()],
         ], 201),
         ListAppInstanceReleasesRequest::class => MockResponse::make([
@@ -310,9 +322,9 @@ function clone_cli_responses(): array
 }
 
 /** @return array<string, mixed> */
-function clone_cli_payload(): array
+function clone_cli_payload(bool $routeLess = false): array
 {
-    return [
+    $payload = [
         'id' => 29,
         'app_id' => 3,
         'node_id' => 7,
@@ -353,6 +365,14 @@ function clone_cli_payload(): array
         'transfer' => null,
         'deploy_steps' => [],
     ];
+
+    if ($routeLess) {
+        $payload['route'] = null;
+        $payload['domain'] = null;
+        $payload['url'] = null;
+    }
+
+    return $payload;
 }
 
 function clone_cli_error(string $code, string $message, ?string $requestId = null): string
@@ -376,8 +396,8 @@ function clone_cli_release_request_id(): string
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a845';
 }
 
-it('reports the created clone when the following release lookup fails', function (bool $json): void {
-    $responses = clone_cli_responses();
+it('reports the created clone when the following release lookup fails', function (bool $json, bool $routeLess): void {
+    $responses = clone_cli_responses($routeLess);
     $responses[ListAppInstanceReleasesRequest::class] = MockResponse::make([
         'error' => ['code' => 'deployment.releases_unavailable', 'message' => 'Releases are unavailable.'],
     ], 503, ['X-Orbit-Request-Id' => clone_cli_release_request_id()]);
@@ -395,4 +415,4 @@ it('reports the created clone when the following release lookup fails', function
             'Clone request ID: '.clone_cli_request_id(), 'Releases are unavailable.',
         )->not->toContain('Instance cloned.');
     }
-})->with([false, true]);
+})->with([false, true])->with(['routed' => false, 'route-less' => true]);
