@@ -1091,7 +1091,7 @@ it('resumes owned destination deletion after a native cleanup interruption', fun
     }
 })->with(['after claim', 'during deletion', 'after deletion']);
 
-it('recovers destination cleanup after a killed metadata update without growing its journal', function (bool $partial): void {
+it('recovers destination cleanup after a killed metadata update without growing its journal', function (bool $partial, bool $reusedIdentity): void {
     $fixture = new TransferArchiveNativeFixture;
     $fixture->materialize();
     $journal = $fixture->destinationAttempt->privateRoot.'/'.$fixture->destinationAttempt->id.'.json';
@@ -1118,6 +1118,14 @@ it('recovers destination cleanup after a killed metadata update without growing 
         mkdir($fixture->destinationPath);
         file_put_contents($fixture->destinationPath.'/foreign', 'later-sentinel');
         $fixture->ssh->programReplacements = [];
+        if ($reusedIdentity) {
+            clearstatcache(true, $fixture->destinationPath);
+            $foreign = stat($fixture->destinationPath);
+            $checkout = $fixture->destinationAttempt->receipt['checkout'];
+            $fixture->ssh->programReplacements = [
+                'return str(metadata.st_dev) + ":" + str(metadata.st_ino)' => 'return "'.$checkout.'" if (metadata.st_dev, metadata.st_ino) == ('.$foreign['dev'].', '.$foreign['ino'].') else str(metadata.st_dev) + ":" + str(metadata.st_ino)',
+            ];
+        }
         $fixture->source->discardDestination($fixture->destinationAttempt);
         $fixture->source->discardDestination($fixture->destinationAttempt);
         clearstatcache(true, $journal);
@@ -1129,7 +1137,36 @@ it('recovers destination cleanup after a killed metadata update without growing 
     } finally {
         $fixture->close();
     }
-})->with(['partial write' => true, 'complete write' => false]);
+})->with([
+    'partial write' => [true, false],
+    'complete write' => [false, false],
+    'partial write and reused identity' => [true, true],
+    'complete write and reused identity' => [false, true],
+]);
+
+it('refuses unexpected staged data after the claimed destination was deleted', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $fixture->ssh->programReplacements = ['os.fsync(scope)' => 'raise OSError("cleanup acknowledgment lost")'];
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(is_dir($fixture->destinationPath))->toBeFalse();
+        $stage = $fixture->destinationScope().'/'.$fixture->destinationAttempt->id.'.stage';
+        mkdir($stage);
+        file_put_contents($stage.'/foreign', 'staged-sentinel');
+        mkdir($fixture->destinationPath);
+        file_put_contents($fixture->destinationPath.'/foreign', 'public-sentinel');
+        $fixture->ssh->programReplacements = [];
+
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+
+        expect(file_get_contents($stage.'/foreign'))->toBe('staged-sentinel');
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('public-sentinel');
+    } finally {
+        $fixture->close();
+    }
+});
 
 it('refuses destination cleanup when its metadata journal cannot prove a committed receipt', function (string $fault): void {
     $fixture = new TransferArchiveNativeFixture;

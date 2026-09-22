@@ -311,21 +311,22 @@ final class TransferDestinationProgram
                         return "CLEANED"
                     receipt = self.state["receipt"]
                     parent, scope = self.parent_and_scope(receipt=receipt)
-                    original = self.metadata(parent, self.name)
                     staged = self.metadata(scope, self.stage_name)
                     claimed = self.metadata(scope, self.claim_name)
                     self.require(staged is None or claimed is None)
                     if claimed is None:
-                        if staged is not None:
-                            self.require(self.state["phase"] in ("staged", "claiming"))
-                            origin_parent, origin_name, origin = scope, self.stage_name, staged
-                        elif original is not None and self.identity(original) == receipt["checkout"]:
-                            origin_parent, origin_name, origin = parent, self.name, original
-                        else:
-                            self.require(self.state["phase"] == "claimed")
+                        if self.state["phase"] == "claimed":
+                            self.require(staged is None)
                             self.state["phase"] = "cleaned"
                             self.save_state()
                             return "CLEANED"
+                        if staged is not None:
+                            self.require(self.state["phase"] in ("staged", "claiming"))
+                            origin_parent, origin_name, origin = scope, self.stage_name, staged
+                        else:
+                            original = self.metadata(parent, self.name)
+                            self.require(original is not None and self.identity(original) == receipt["checkout"])
+                            origin_parent, origin_name, origin = parent, self.name, original
                         self.owned(origin)
                         self.require(self.identity(origin) == receipt["checkout"])
                         self.state["phase"] = "claiming"

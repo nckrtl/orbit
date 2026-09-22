@@ -48,7 +48,9 @@ Transfer archives can contain environment values and unpublished source. The Gat
 
 An unconfirmed archive cleanup stops the transfer and retains bounded recovery evidence. Retry the identical request to confirm cleanup before another archive attempt. A missing ownership receipt, changed workspace identity, or unexpected artifact prevents deletion; a reserved path alone does not authorize cleanup.
 
-Destination recovery removes only the directory created for the recorded transfer attempt. The Gateway records creation intent before remote work and the exact directory identity before extraction. It preserves a foreign directory that arrives after preflight or replaces the created checkout. Changed parent identity, missing ownership evidence, or unconfirmed cleanup stops recovery and retains the attempt for an identical retry. Legacy incomplete transfers without destination ownership evidence require recovery; the Gateway never adopts their current destination path for deletion. Post-cutover recovery does not discard the destination.
+Destination recovery removes only the directory created for the recorded transfer attempt. The Gateway records creation intent before remote work and the exact directory identity before extraction. It preserves a foreign directory that arrives after preflight or replaces the created checkout. Once cleanup records its private claim, retry never claims the public destination again, even if a later directory reuses the deleted checkout's inode.
+
+Changed parent identity, missing ownership evidence, or unconfirmed cleanup stops recovery and retains the attempt for an identical retry. Legacy incomplete transfers without destination ownership evidence require recovery; the Gateway never adopts their current destination path for deletion. Post-cutover recovery does not discard the destination.
 
 Archive, source, and destination metadata each keep two checksummed records in one bounded, protected file. After an interrupted update, retry uses the latest valid record. An incomplete first record or an unsupported metadata format cannot prove ownership and stops cleanup.
 
