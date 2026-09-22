@@ -27,6 +27,7 @@ export function dictationLifecycleTests() {
         let getUserMedia: ReturnType<typeof vi.fn<() => Promise<MediaStream>>>;
         let protocol: string;
         let failAudioSend: boolean;
+        let failWaveform: boolean;
         let sockets: FakeSocket[];
         let recorders: FakeRecorder[];
         let contexts: FakeAudioContext[];
@@ -118,11 +119,15 @@ export function dictationLifecycleTests() {
                 smoothingTimeConstant: 0,
                 getByteFrequencyData: vi.fn(),
                 getByteTimeDomainData: vi.fn(),
+                disconnect: vi.fn(),
             };
             readonly createMediaStreamSource = vi.fn(() => this.source);
             readonly createScriptProcessor = vi.fn(() => this.processor);
             readonly createGain = vi.fn(() => this.mute);
-            readonly createAnalyser = vi.fn(() => this.analyser);
+            readonly createAnalyser = vi.fn(() => {
+                if (failWaveform) throw new Error("Waveform unavailable");
+                return this.analyser;
+            });
             readonly resume = vi.fn(async () => undefined);
             readonly close = vi.fn(async () => {
                 this.state = "closed";
@@ -136,6 +141,7 @@ export function dictationLifecycleTests() {
         beforeEach(() => {
             protocol = "diction.opus.v1";
             failAudioSend = false;
+            failWaveform = false;
             sockets = [];
             recorders = [];
             contexts = [];
@@ -206,6 +212,29 @@ export function dictationLifecycleTests() {
                 expect(onLevels).toHaveBeenLastCalledWith([0.08, 0.08, 0.08, 0.08]);
             },
         );
+
+        it("keeps Opus dictation working when optional waveform setup fails", async () => {
+            failWaveform = true;
+            const stop = new AbortController();
+            const onLevels = vi.fn();
+            const result = dictate({
+                wsUrl: "wss://mock.invalid/dictation",
+                stopSignal: stop.signal,
+                onLevels,
+            });
+            await vi.waitFor(() => expect(sockets[0]?.listeners.has("close")).toBe(true));
+            stop.abort();
+
+            await expect(result).resolves.toBe("hello");
+            expect(contexts).toHaveLength(1);
+            expect(contexts[0]?.source.disconnect).toHaveBeenCalledOnce();
+            expect(contexts[0]?.close).toHaveBeenCalledOnce();
+            expect(recorders[0]?.stop).toHaveBeenCalledOnce();
+            expect(sockets[0]?.close).toHaveBeenCalledOnce();
+            expect(microphone.stop).not.toHaveBeenCalled();
+            expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+            expect(onLevels).toHaveBeenLastCalledWith([0.08, 0.08, 0.08, 0.08]);
+        });
 
         it("releases the replacement PCM graph when attaching its queued audio fails", async () => {
             protocol = "";

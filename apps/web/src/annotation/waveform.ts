@@ -65,39 +65,73 @@ export function attachWaveformMeter(
         return () => undefined;
     }
 
-    const context = new AudioContextCtor();
-    const source = context.createMediaStreamSource(stream);
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.5;
-    source.connect(analyser);
-
-    const frequency = new Uint8Array(analyser.frequencyBinCount);
-    const time = new Uint8Array(analyser.fftSize);
-    let frame = 0;
+    let context: AudioContext | undefined;
+    let source: MediaStreamAudioSourceNode | undefined;
+    let analyser: AnalyserNode | undefined;
+    let frame: number | undefined;
     let stopped = false;
-
-    const tick = (): void => {
+    const stop = (): void => {
         if (stopped) {
             return;
         }
 
-        analyser.getByteFrequencyData(frequency);
-        analyser.getByteTimeDomainData(time);
-        onLevels(mixWaveformLevels(frequency, time));
-        frame = window.requestAnimationFrame(tick);
-    };
-
-    void context.resume().then(() => {
-        if (!stopped) {
-            frame = window.requestAnimationFrame(tick);
-        }
-    });
-
-    return () => {
         stopped = true;
-        window.cancelAnimationFrame(frame);
-        source.disconnect();
-        void context.close().catch(() => undefined);
+        if (frame !== undefined) {
+            window.cancelAnimationFrame(frame);
+        }
+        for (const node of [source, analyser]) {
+            try {
+                node?.disconnect();
+            } catch {
+                // A failed node must not prevent the rest of this graph from closing.
+            }
+        }
+        try {
+            void context?.close().catch(() => undefined);
+        } catch {
+            // Closing an optional meter must not interrupt dictation.
+        }
     };
+
+    try {
+        context = new AudioContextCtor();
+        source = context.createMediaStreamSource(stream);
+        const meter = context.createAnalyser();
+        analyser = meter;
+        meter.fftSize = 256;
+        meter.smoothingTimeConstant = 0.5;
+        source.connect(meter);
+
+        const frequency = new Uint8Array(meter.frequencyBinCount);
+        const time = new Uint8Array(meter.fftSize);
+        const tick = (): void => {
+            if (stopped) {
+                return;
+            }
+
+            try {
+                meter.getByteFrequencyData(frequency);
+                meter.getByteTimeDomainData(time);
+                onLevels(mixWaveformLevels(frequency, time));
+                if (!stopped) {
+                    frame = window.requestAnimationFrame(tick);
+                }
+            } catch {
+                stop();
+            }
+        };
+
+        void context
+            .resume()
+            .then(() => {
+                if (!stopped) {
+                    frame = window.requestAnimationFrame(tick);
+                }
+            })
+            .catch(stop);
+    } catch {
+        stop();
+    }
+
+    return stop;
 }
