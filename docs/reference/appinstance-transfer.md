@@ -60,6 +60,8 @@ A generated Route whose destination domain changes uses the destination Cluster 
 
 Route preparation records the replacement Route, target, source replacement link, transfer Route ID, and prepared checkpoint in one database transaction. If the domain stays the same, the same transaction records the existing Route ID and checkpoint. A failed write leaves no partial replacement. After an interruption, an identical retry uses the recorded preparation; it does not create another candidate. Remote source, environment, and runtime work stays outside this transaction.
 
+The cutover transaction checks that preparation again, including on a retry at the prepared checkpoint. It locks the Routes and their targets, checks the transfer and Instance placement, and verifies the exact Project, domain, publication, target order, and replacement links before moving authority. Changed or missing evidence stops cutover before Instance movement, port reassignment, or destination runtime activation.
+
 ## Recover from failure
 
 A failure before cutover restores the source Route, environment, processes, and schedules as authoritative. The Gateway removes successfully reversible destination state and retains bounded recovery evidence when that cleanup is incomplete. Only the identical request can resume.
