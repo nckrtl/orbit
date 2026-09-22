@@ -29,12 +29,14 @@ function normalize(input?: DictationInput | null): DictationSettings {
         return {};
     }
 
-    return {
-        provider: input.provider,
-        wsUrl: input.wsUrl ?? input.ws_url,
-        codec: input.codec,
-        autoStart: input.autoStart ?? input.auto_start,
-    };
+    return Object.fromEntries(
+        Object.entries({
+            provider: input.provider,
+            wsUrl: input.wsUrl ?? input.ws_url,
+            codec: input.codec,
+            autoStart: input.autoStart ?? input.auto_start,
+        }).filter(([, value]) => value !== undefined),
+    );
 }
 
 export function resolveDictationSettings(
