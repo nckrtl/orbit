@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
@@ -16,19 +17,28 @@ use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
+use App\Domain\Tasks\TaskSettleMetrics;
+use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
+
+use function Pest\Laravel\mock;
 
 function tick_group(): TaskGroup
 {
@@ -90,6 +100,159 @@ function tick_dispatcher(): T3Dispatcher
         }
     };
 }
+
+function tick_final_review(string $url = 'https://github.com/acme/orbit/pull/42'): TaskGroup
+{
+    $group = tick_group();
+    $group->app->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->update(['status' => TaskGroupStatus::Reviewing, 'notify_coder' => true]);
+    $task = $group->tasks->sole();
+    $task->update(['status' => TaskStatus::Reviewing, 'subtask_start_commit' => str_repeat('b', 40)]);
+    $task->comments()->create([
+        'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Approved with the final PR.',
+        'author' => 'reviewer', 'review_attempt' => $task->review_attempt,
+        'reviewer_thread_id' => $group->reviewer_agent_thread_id, 'driver_turn' => 'approved-turn',
+        'commit_sha' => str_repeat('a', 40), 'pr_url' => $url, 'posted_at' => now(),
+    ]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+    mock(TaskWorkspaceStateReader::class)->shouldReceive([
+        'headCommit' => str_repeat('a', 40), 'currentBranch' => 'task-'.$group->id, 'isClean' => true,
+    ]);
+    mock(TaskWorkspaceDiffReader::class)->shouldReceive('hasCommitsSince')->andReturnTrue();
+    mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
+    config()->set('orbit.tasks.github_token', 'token');
+    Http::preventStrayRequests();
+
+    return $group->fresh(['app', 'tasks', 'taskable']);
+}
+
+/** @return array<string, mixed> */
+function tick_reviewed_pull_request(TaskGroup $group): array
+{
+    return [
+        'number' => 42, 'html_url' => 'https://github.com/acme/orbit/pull/42',
+        'state' => 'open', 'merged' => false,
+        'base' => ['repo' => ['full_name' => 'acme/orbit'], 'ref' => 'main'],
+        'head' => ['repo' => ['full_name' => 'acme/orbit'], 'ref' => 'task-'.$group->id, 'sha' => str_repeat('a', 40)],
+    ];
+}
+
+it('stores the final approved PR before settling and watches that same PR on later ticks', function (): void {
+    $group = tick_final_review();
+    $task = $group->tasks->sole();
+    $comment = $task->comments()->sole();
+    mock(CoderSettleNotifier::class)->shouldReceive('notify')->once()->withArgs(
+        fn (TaskGroup $settled): bool => $settled->pr_url === $comment->pr_url && $settled->tokens === 40,
+    );
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_reviewed_pull_request($group)),
+        'https://api.github.com/repos/acme/orbit' => Http::response(['default_branch' => 'main']),
+    ]);
+    expect($group->pr_url)->toBeNull();
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', [
+        'id' => $group->id, 'status' => TaskGroupStatus::Settling->value,
+        'pr_url' => 'https://github.com/acme/orbit/pull/42', 'assistance_requested' => false,
+        'tokens' => 40, 'line_diff' => 12, 'duration_ms' => 1500,
+    ]);
+    $this->assertDatabaseHas('tasks', [
+        'id' => $task->id, 'status' => TaskStatus::Completed->value, 'review_handled_comment_id' => $comment->id,
+    ]);
+    Http::assertSentCount(4);
+    Http::assertNotSent(fn (Request $request): bool => $request->method() !== 'GET');
+});
+
+it('keeps an unverified final approval in review and requests assistance after one reminder', function (string $failure): void {
+    $url = match ($failure) {
+        'wrong host' => 'https://evil.example/acme/orbit/pull/42',
+        'wrong repository' => 'https://github.com/acme/other/pull/42',
+        default => 'https://github.com/acme/orbit/pull/42',
+    };
+    $group = tick_final_review($url);
+    $task = $group->tasks->sole();
+    mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once();
+    if ($failure === 'no credentials') {
+        config()->set('orbit.tasks.github_token', null);
+    }
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/pulls/42' => $failure === 'network' ? Http::failedConnection() : Http::response([], 503),
+        'https://api.github.com/repos/acme/orbit' => Http::response(['default_branch' => 'main']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'reviewing', 'pr_url' => null, 'assistance_requested' => false]);
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'status' => 'reviewing', 'review_handled_comment_id' => null]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'reviewing', 'pr_url' => null, 'assistance_requested' => true]);
+    expect(app(T3Dispatcher::class)->commands)->toHaveCount(1);
+    Http::assertNotSent(fn (Request $request): bool => $request->method() !== 'GET');
+})->with(['wrong host', 'wrong repository', 'no credentials', 'HTTP', 'network']);
+
+it('flags a prior settling group without a reviewed PR once and retains its workspace', function (): void {
+    $group = tick_group();
+    $group->update(['status' => TaskGroupStatus::Settling]);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()->withArgs(
+        fn (TaskGroup $blocked, string $reason): bool => $blocked->id === $group->id && str_contains($reason, 'no reviewed pull request URL'),
+    );
+    Http::preventStrayRequests();
+
+    app(TaskScheduler::class)->settle($group);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', [
+        'id' => $group->id, 'status' => 'settling', 'pr_url' => null,
+        'assistance_requested' => true, 'taskable_id' => $group->taskable_id, 'settled_at' => null,
+    ]);
+    Http::assertNothingSent();
+});
+
+it('continues watching a prior settling PR and completes only after it merges', function (): void {
+    $group = tick_group();
+    $group->app->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
+    $group->tasks()->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    config()->set('orbit.tasks.github_token', 'token');
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->withArgs(
+        fn (AppInstance $instance, bool $force): bool => $instance->id === $group->taskable_id && $force,
+    )->andReturnUsing(function (AppInstance $instance): AppInstanceRemoval {
+        $instance->delete();
+
+        return new AppInstanceRemoval;
+    });
+    Http::preventStrayRequests();
+    Http::fakeSequence('https://api.github.com/repos/acme/orbit/pulls/42')
+        ->push(['merged' => false, 'state' => 'open'])
+        ->push(['merged' => true, 'state' => 'closed']);
+
+    app(TaskScheduler::class)->tick();
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'pr_url' => $group->pr_url]);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
+    $this->assertDatabaseMissing('app_instances', ['id' => $group->taskable_id]);
+    Http::assertSentCount(2);
+});
 
 it('returns no decisions when the tasks extension is disabled', function (): void {
     tick_group();

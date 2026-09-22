@@ -19,7 +19,6 @@ final readonly class TaskScheduler
         private TaskConcurrencyGuard $ceilings,
         private InstanceProvisioning $provisioning,
         private AgentSpawner $spawner,
-        private TaskPullRequestOpener $pullRequests,
         private TaskSettleMetricsCollector $metrics,
         private TaskWorkspaceDiffReader $diff,
         private TaskWorkspaceStateReader $workspace,
@@ -48,7 +47,12 @@ final readonly class TaskScheduler
             ->get();
 
         foreach ($groups as $group) {
-            if ($group->status !== TaskGroupStatus::Settling || ! is_string($group->pr_url) || $group->pr_url === '') {
+            if ($group->status !== TaskGroupStatus::Settling) {
+                continue;
+            }
+            if (! is_string($group->pr_url) || $group->pr_url === '') {
+                $this->requestMissingPullRequest($group);
+
                 continue;
             }
             $status = $this->pullRequestWatcher->status($group);
@@ -232,12 +236,15 @@ final readonly class TaskScheduler
             && $comment->commit_sha !== $task->subtask_start_commit
             && $this->diff->hasCommitsSince($instance, (string) $task->subtask_start_commit);
         $isFinal = ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
-        $hasPr = ! $isFinal || (is_string($comment->pr_url) && filter_var($comment->pr_url, FILTER_VALIDATE_URL) !== false
-            && $this->pullRequestWatcher->verifies($group, (string) $comment->commit_sha));
+        $hasPr = ! $isFinal || (is_string($comment->pr_url)
+            && $this->pullRequestWatcher->verifies($group, $comment->pr_url, (string) $comment->commit_sha));
         if (! $hasCommit || ! $hasPr) {
             return $this->remindReviewer($group, $task, $reviewer, true, $observation);
         }
 
+        if ($isFinal) {
+            $group->update(['pr_url' => $comment->pr_url]);
+        }
         $task->update(['review_handled_comment_id' => $comment->id]);
         $this->acceptReview($task);
 
@@ -528,11 +535,9 @@ final readonly class TaskScheduler
         $url = $group->pr_url;
 
         if (! is_string($url) || $url === '') {
-            $opened = $this->pullRequests->open($group);
+            $this->requestMissingPullRequest($group);
 
-            if (is_string($opened) && $opened !== '') {
-                $group->pr_url = $opened;
-            }
+            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
         }
 
         $metrics = $this->metrics->collect($group);
@@ -549,6 +554,17 @@ final readonly class TaskScheduler
         }
 
         return $settled->fresh(['tasks', 'app', 'taskable']) ?? $settled;
+    }
+
+    private function requestMissingPullRequest(TaskGroup $group): void
+    {
+        if ($group->assistance_requested) {
+            return;
+        }
+
+        $reason = 'The settling group has no reviewed pull request URL.';
+        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+        $this->coder->assistance($group, $reason);
     }
 
     private function spawnOpeningAgents(TaskGroup $group): void

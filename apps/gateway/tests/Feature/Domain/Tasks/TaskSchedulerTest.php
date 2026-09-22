@@ -19,13 +19,11 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\NullCoderSettleNotifier;
-use App\Domain\Tasks\NullTaskPullRequestOpener;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -158,7 +156,6 @@ function scheduler_bind_claim(AppInstance $instance, AgentSpawner $spawner): voi
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
-    app()->instance(TaskPullRequestOpener::class, new NullTaskPullRequestOpener);
     app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
         new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), new NullTaskWorkspaceDiffReader),
     ));
@@ -657,7 +654,6 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
-    app()->instance(TaskPullRequestOpener::class, new NullTaskPullRequestOpener);
     app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
         new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), new NullTaskWorkspaceDiffReader),
     ));
@@ -694,23 +690,17 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         ]);
 });
 
-it('opens the pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {
+it('keeps the reviewed pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {
     $this->freezeTime();
     $app = scheduler_app('settle-app');
     $node = scheduler_node('settle-node', '10.44.0.95');
     $instance = scheduler_instance($app, $node, 'settle');
     $group = queued_group($app, 'Settle', $instance);
     $group->notify_coder = true;
+    $group->pr_url = 'https://github.com/nckrtl/orbit/pull/543';
     $group->save();
     $first = $group->tasks->first();
     $first?->update(['tokens' => 40]);
-    $opener = new class implements TaskPullRequestOpener
-    {
-        public function open(TaskGroup $group): ?string
-        {
-            return 'https://github.com/nckrtl/orbit/pull/543';
-        }
-    };
     $metrics = new class implements TaskSettleMetricsCollector
     {
         public function collect(TaskGroup $group): TaskSettleMetrics
@@ -760,7 +750,6 @@ it('opens the pull request, writes settle metrics, and notifies Coder after the 
             return 'sha';
         }
     });
-    app()->instance(TaskPullRequestOpener::class, $opener);
     app()->instance(TaskSettleMetricsCollector::class, $metrics);
     app()->instance(CoderSettleNotifier::class, $notifier);
 

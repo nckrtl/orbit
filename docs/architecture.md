@@ -59,7 +59,7 @@ A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server 
 
 The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared Instance. After MCP create, the Gateway claims the group, provisions that instance on an `app-dev` Node, and starts the T3 reviewer and the first implementer on the instance-owning Node.
 
-Each remaining implementer starts only after reviewer sign-off, with at most one Task `running`. A scheduler tick then observes those task threads, asks TypeSafe Jev for one next action, and executes it without Coder or Nick in the loop. Coder is notified only on escalate or a settle that is ready for CLEAN. After the last sign-off the Gateway opens the pull request, fills settle metrics, and posts that settle webhook when opted in. `tasks:complete` removes the instance after merge.
+Each remaining implementer starts only after reviewer sign-off, with at most one Task `running`. A scheduler tick then observes those task threads, asks TypeSafe Jev for one next action, and executes it without Coder or Nick in the loop. Coder is notified only on escalate or a settle that is ready for CLEAN. After the last sign-off the Gateway verifies and stores the reviewer's pull request, fills settle metrics, and posts that settle webhook when opted in. `tasks:complete` removes the instance after merge.
 
 Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns Jev routing.
 

@@ -9,9 +9,7 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
-use App\Domain\Tasks\SequentialTaskPullRequestOpener;
 use App\Domain\Tasks\TaskAgentSpawner;
-use App\Domain\Tasks\TaskPullRequestOpener;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
@@ -19,10 +17,8 @@ use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
-use App\Infrastructure\Tasks\HttpGitHubTaskPullRequestOpener;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
-use App\Infrastructure\Tasks\RemoteTaskPullRequestOpener;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
@@ -62,9 +58,5 @@ final class TasksServiceProvider extends ServiceProvider
 
         $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class)]));
 
-        $this->app->bind(TaskPullRequestOpener::class, fn (Application $app): SequentialTaskPullRequestOpener => new SequentialTaskPullRequestOpener([
-            $app->make(RemoteTaskPullRequestOpener::class),
-            $app->make(HttpGitHubTaskPullRequestOpener::class),
-        ]));
     }
 }
