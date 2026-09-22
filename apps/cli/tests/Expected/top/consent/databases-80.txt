@@ -1,8 +1,8 @@
   orbit                                                    gateway.test · live  
 ╭──────────────────╮  Databases                                                 
 │  Dashboard       │╭──────────────────────────────────────────────────────────╮
-│  Nodes         1 ││  Slug        Driver  Node      Host              Database│
-│  Projects      1 ││› production- pgsql   productio 127.0.0.1:5432            │
+│  Nodes         1 ││Needs 123 columns. Resize to select.                      │
+│  Projects      1 ││                                                          │
 │  Instances     1 ││                                                          │
 │  Processes     1 ││                                                          │
 │  Sc╭ Confirm action ────────────────────────────────────────────────────╮    │

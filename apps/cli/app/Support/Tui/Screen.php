@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Tui;
 
+use App\Support\Console\TerminalText;
 use App\Support\Tui\Prompts\AnsiLine;
 use App\Support\Tui\Prompts\PanelMultiSelectPromptRenderer;
 use App\Support\Tui\Prompts\PanelTextPromptRenderer;
@@ -65,6 +66,12 @@ final class Screen
         $ui->paneOrder = [];
         $dim = Style::default()->fg(AnsiColor::DarkGray);
 
+        if ($ui->section === 'dashboard' && $ui->page() === null && $ui->form === null && $area->height < 18) {
+            $ui->menu = null;
+
+            return ParagraphWidget::fromString('Dashboard needs at least 18 rows. Resize the terminal.');
+        }
+
         $rows = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(10), Constraint::length(1)])->split($area);
         $columns = Layout::default()->direction(Direction::Horizontal)->constraints([Constraint::length(self::NAV_WIDTH), Constraint::min(40)])->split($rows->get(1));
         $ui->drawn['nav'] = ['area' => $columns->get(0), 'header' => false];
@@ -100,8 +107,8 @@ final class Screen
 
     /**
      * The sidebar: one row per section, its count right-aligned in yellow when that family has
-     * something needing a look, using the same lastColumnWidth()/alignLast() mechanism pane()
-     * uses for a data pane's last column. Dashboard has no family of its own, so its count cell
+     * something needing a look, using the same finite widths and last-cell alignment as pane().
+     * Dashboard has no family of its own, so its count cell
      * is left blank.
      */
     private function nav(State $state, UiState $ui): Widget
@@ -109,18 +116,23 @@ final class Screen
         $hovered = $ui->hover === 'nav' && $ui->focus === null && $ui->form === null;
         $counts = $state->counts();
         $widths = [Constraint::length(11), Constraint::length(4)];
-        $lastWidth = $this->lastColumnWidth($ui, 'nav', $widths);
         $rows = [];
 
         foreach (UiState::SECTIONS as $key => $title) {
             $countCell = $key === 'dashboard' ? TableCell::fromString('') : $this->cell((string) $counts[$title][0], $counts[$title][1] > 0);
-            $rows[] = $this->alignLast(TableRow::fromCells(TableCell::fromString($title), $countCell), $lastWidth);
+            $rows[] = TableRow::fromCells(TableCell::fromString($title), $countCell);
         }
+
+        $columns = TableColumns::resolve($ui->drawn['nav']['area']->width, [], $rows, $widths);
+        if ($columns->widths === []) {
+            return BlockWidget::default()->widget(ParagraphWidget::fromString("Needs {$columns->requiredWidth} columns."));
+        }
+        $rows = array_map(fn (TableRow $row): TableRow => $this->alignLast($row, $columns->widths[1]), $rows);
 
         $table = TableWidget::default();
         $table->columnSpacing = 1;
         $table
-            ->widths(...$widths)
+            ->widths(...$columns->constraints())
             ->rows(...$rows)
             ->select((int) array_search($ui->section, array_keys(UiState::SECTIONS), true))
             ->highlightSymbol('› ')
@@ -230,8 +242,8 @@ final class Screen
      */
     private function dashboard(State $state, UiState $ui, Area $area): Widget
     {
-        $nodesHeight = min(count($state->nodes) + 3, max(6, intdiv($area->height, 3)));
-        $familyHeight = 8;
+        $nodesHeight = min(count($state->nodes) + 3, max(3, intdiv($area->height, 3)), $area->height - 12);
+        $familyHeight = min(8, intdiv($area->height - $nodesHeight - 4, 2));
         $constraints = [
             Constraint::length($nodesHeight),
             Constraint::length($familyHeight),
@@ -265,7 +277,7 @@ final class Screen
             ->direction(Direction::Vertical)
             ->constraints(...$constraints)
             ->widgets(
-                $this->nodeSummaryTable($state, $rows->get(0)),
+                $this->nodeSummaryTable($state, $ui, $rows->get(0)),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
@@ -285,19 +297,66 @@ final class Screen
     }
 
     /** One line per node: name, status, cpu/mem/disk bars, and uptime; a yellow row means the node needs a look. */
-    private function nodeSummaryTable(State $state, Area $area): Widget
+    private function nodeSummaryTable(State $state, UiState $ui, Area $area): Widget
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
+        $block = BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->titles(Title::fromString(' Nodes '));
+        $headers = ['Name', 'Status', 'CPU', 'Mem', 'Disk', 'Uptime'];
         $widths = [Constraint::percentage(14), Constraint::percentage(9), Constraint::percentage(21), Constraint::percentage(21), Constraint::percentage(19), Constraint::percentage(16)];
-        $columns = $this->columnWidths($area, $widths);
-        $lastWidth = $columns[count($columns) - 1] ?? 0;
+        $rows = array_map(fn (array $node): TableRow => $this->nodeSummaryRow($state, $node, [0, 0, 0, 0, 0, 0]), $state->nodes);
+        if ($rows === []) {
+            $ui->selected['node-summary'] = 0;
+            if ($ui->focus === 'node-summary' || $ui->hover === 'node-summary') {
+                $ui->focus = null;
+                $ui->hover = $ui->paneOrder[0] ?? 'nav';
+            }
+
+            return $block->widget(ParagraphWidget::fromString('No nodes.')->style($dim));
+        }
+        $columns = TableColumns::resolve($area->width, $headers, $rows, $widths, selector: 0);
+        if ($columns->widths === []) {
+            return $this->nodeSummaryFallback($ui, $area, $headers, $rows);
+        }
+        $ui->selected['node-summary'] = 0;
+        if ($ui->focus === 'node-summary' || $ui->hover === 'node-summary') {
+            $ui->focus = null;
+            $ui->hover = $ui->paneOrder[0] ?? 'nav';
+        }
+        $lastWidth = $columns->widths[count($columns->widths) - 1];
 
         $table = TableWidget::default();
         $table->columnSpacing = 1;
-        $table->header($this->alignLast(TableRow::fromStrings('Name', 'Status', 'CPU', 'Mem', 'Disk', 'Uptime'), $lastWidth));
-        $table->widths(...$widths)->rows(...array_map(fn (array $node): TableRow => $this->alignLast($this->nodeSummaryRow($state, $node, $columns), $lastWidth), $state->nodes));
+        $table->header($this->alignLast(TableRow::fromStrings(...$headers), $lastWidth));
+        $table->widths(...$columns->constraints())->rows(...array_map(fn (array $node): TableRow => $this->alignLast($this->nodeSummaryRow($state, $node, $columns->widths), $lastWidth), $state->nodes));
 
-        return BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)->borderStyle($dim)->titles(Title::fromString(' Nodes '))->widget($table);
+        return $block->widget($table);
+    }
+
+    /**
+     * @param  list<string>  $headers
+     * @param  list<TableRow>  $rows
+     */
+    private function nodeSummaryFallback(UiState $ui, Area $area, array $headers, array $rows): Widget
+    {
+        $lines = [];
+        foreach ($rows as $row) {
+            foreach ($headers as $index => $header) {
+                array_push($lines, ...TerminalText::wrap($header.': '.TableColumns::text($row->getCell($index)), max(1, $area->width - 2)));
+            }
+            $lines[] = '';
+        }
+        array_pop($lines);
+        $height = max(0, $area->height - 2);
+        $offset = max(0, min($ui->selected['node-summary'] ?? 0, max(0, count($lines) - $height)));
+        $ui->selected['node-summary'] = $offset;
+        $ui->drawn['node-summary'] = ['area' => $area, 'header' => false, 'textLines' => count($lines)];
+        array_unshift($ui->paneOrder, 'node-summary');
+        $end = min(count($lines), $offset + $height);
+
+        return BlockWidget::default()->borders(Borders::ALL)->borderType(BorderType::Rounded)
+            ->borderStyle(Style::default()->fg($ui->focus === 'node-summary' ? AnsiColor::Cyan : AnsiColor::DarkGray))
+            ->titles(Title::fromString(' Nodes · '.($offset + 1)."–{$end}/".count($lines).' · ↑↓ scroll '))
+            ->widget(ParagraphWidget::fromString(implode("\n", array_slice($lines, $offset, $height))));
     }
 
     /**
@@ -309,8 +368,8 @@ final class Screen
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $warn = ! State::nodeHealthy($node);
         $textStyle = $warn ? Style::default()->fg(AnsiColor::Yellow) : Style::default();
-        $name = TableCell::fromLine(Line::fromSpan(Span::styled($node['name'], $textStyle)));
-        $status = TableCell::fromLine(Line::fromSpan(Span::styled($node['status'], $textStyle)));
+        $name = $this->styledCell($node['name'], $textStyle);
+        $status = $this->styledCell($node['status'], $textStyle);
         $metrics = $state->nodeMetrics($node['id']);
 
         if ($metrics === null) {
@@ -796,7 +855,8 @@ final class Screen
     private function bar(string $label, float $ratio, string $reading, int $width, array $thresholds = [60, 85]): array
     {
         $ratio = max(0, min(1, $ratio));
-        $inner = max(4, $width - strlen($label) - strlen($reading) - 3);
+        $label = TerminalText::safe($label);
+        $inner = max(4, $width - TerminalText::width($label) - TerminalText::width($reading) - 3);
         $filled = (int) round($ratio * $inner);
         $colour = match (true) {
             $ratio * 100 >= $thresholds[1] => AnsiColor::Red,
@@ -877,7 +937,14 @@ final class Screen
             return $block->widget(ParagraphWidget::fromString(' '.$empty)->style(Style::default()->fg(AnsiColor::DarkGray)));
         }
 
-        $lastWidth = $this->lastColumnWidth($ui, $name, $widths);
+        $columns = TableColumns::resolve($ui->drawn[$name]['area']->width, $headers, $rows, $widths);
+        if ($columns->widths === []) {
+            $ui->drawn[$name]['ids'] = [];
+            unset($ui->drawn[$name]['families'], $ui->drawn[$name]['table']);
+
+            return $block->widget(ParagraphWidget::fromString(implode("\n", TerminalText::wrap("Needs {$columns->requiredWidth} columns. Resize to select.", max(1, $ui->drawn[$name]['area']->width - 2)))));
+        }
+        $lastWidth = $columns->widths[count($columns->widths) - 1];
         $rows = array_map(fn (TableRow $row): TableRow => $this->alignLast($row, $lastWidth), $rows);
 
         $table = TableWidget::default();
@@ -891,7 +958,7 @@ final class Screen
 
         return $block->widget(
             $table
-                ->widths(...$widths)
+                ->widths(...$columns->constraints())
                 ->rows(...$rows)
                 ->select($ui->selected[$name])
                 ->highlightSymbol('› ')
@@ -908,54 +975,6 @@ final class Screen
             : array_column($records, 'id');
     }
 
-    /** @param list<Constraint> $widths */
-    private function lastColumnWidth(UiState $ui, string $pane, array $widths): int
-    {
-        $area = $ui->drawn[$pane]['area'] ?? null;
-
-        if ($area === null || $widths === []) {
-            return 0;
-        }
-
-        $columns = $this->columnWidths($area, $widths);
-
-        return $columns[count($columns) - 1];
-    }
-
-    /**
-     * The rendered pixel width of every column a `TableWidget` with these width constraints
-     * would give them inside $area, mirroring the borders, selector gutter, and one-cell
-     * column spacing `pane()` and `TableWidget` apply. Used wherever a cell's content (a bar,
-     * for example) needs to fit its column exactly rather than truncate or leave slack.
-     *
-     * @param  list<Constraint>  $widths
-     * @return list<int>
-     */
-    private function columnWidths(Area $area, array $widths): array
-    {
-        if ($widths === []) {
-            return [];
-        }
-
-        $constraints = [Constraint::length(2)];
-
-        foreach ($widths as $width) {
-            $constraints[] = $width;
-            $constraints[] = Constraint::length(1);
-        }
-
-        array_pop($constraints);
-        $chunks = Layout::default()->direction(Direction::Horizontal)->constraints($constraints)->split(Area::fromDimensions(max(1, $area->width - 2), 1));
-
-        $columns = [];
-
-        for ($index = 1; $index < count($constraints); $index += 2) {
-            $columns[] = $chunks->get($index)->width;
-        }
-
-        return $columns;
-    }
-
     private function alignLast(TableRow $row, int $width): TableRow
     {
         $cells = [];
@@ -969,9 +988,9 @@ final class Screen
         }
 
         $last = array_pop($cells);
-        $text = implode('', array_map(fn (Line $line): string => implode('', array_map(fn (Span $span): string => $span->content, iterator_to_array($line))), $last->content->lines));
+        $text = TableColumns::text($last);
         $room = $width - 1;
-        $aligned = TableCell::fromString(mb_strlen($text) >= $room ? $text : str_repeat(' ', $room - mb_strlen($text)).$text.' ');
+        $aligned = TableCell::fromString(TerminalText::width($text) >= $room ? $text : str_repeat(' ', $room - TerminalText::width($text)).$text.' ');
         $aligned->style = $last->style;
 
         return TableRow::fromCells(...[...$cells, $aligned]);
@@ -1021,7 +1040,7 @@ final class Screen
      */
     private function styledCell(string $text, Style $style): TableCell
     {
-        $cell = TableCell::fromString($text);
+        $cell = TableCell::fromString(TerminalText::safe($text));
         $cell->style = $style;
 
         return $cell;

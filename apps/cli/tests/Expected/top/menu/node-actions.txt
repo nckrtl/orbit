@@ -11,12 +11,12 @@
 │                  ││ SSH                root@10.0.0.1:22  ││                                                          │
 │                  │╰──────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
 │                  │╭ Instances on this node ──────────────────────────────────────────────────────────────────────────╮
-│                  ││  Project               Name             Environment     Domain                            Status │
-│                  ││› charlie-shop          dev              production      charlie-shop.test                 active │
+│                  ││  Project               Name            Environment     Domain                             Status │
+│                  ││› charlie-shop          dev             production      charlie-shop.test                  active │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Node processes ────────────────────────────────╮╭ Firewall ──────────────────────────────────────╮
-│                  ││ None.             ╭ beast ───────────────────────────────╮    Action   Source              Status│
-│                  ││                   │  doctor                              │    allow    10.44.0.0/16        active│
+│                  ││ None.             ╭ beast ───────────────────────────────╮    Action  Source              Status │
+│                  ││                   │  doctor                              │    allow   10.44.0.0/16        active │
 │                  ││                   │  ssh                                 │                                       │
 │                  ││                   │                                      │                                       │
 │                  ││                   │  Check node [beast] for drift.       │                                       │

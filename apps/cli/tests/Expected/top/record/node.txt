@@ -11,12 +11,12 @@
 │                  ││ SSH                root@10.0.0.1:22  ││                                                          │
 │                  │╰──────────────────────────────────────╯╰──────────────────────────────────────────────────────────╯
 │                  │╭ Instances on this node ──────────────────────────────────────────────────────────────────────────╮
-│                  ││  Project               Name             Environment     Domain                            Status │
-│                  ││› charlie-shop          dev              production      charlie-shop.test                 active │
+│                  ││  Project               Name            Environment     Domain                             Status │
+│                  ││› charlie-shop          dev             production      charlie-shop.test                  active │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Node processes ────────────────────────────────╮╭ Firewall ──────────────────────────────────────╮
-│                  ││ None.                                          ││  Port       Action   Source              Status│
-│                  ││                                                ││› 22/tcp     allow    10.44.0.0/16        active│
+│                  ││ None.                                          ││  Port       Action  Source              Status │
+│                  ││                                                ││› 22/tcp     allow   10.44.0.0/16        active │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │

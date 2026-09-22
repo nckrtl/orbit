@@ -1,8 +1,8 @@
   orbit            gateway.test · live  
   Firewall                              
 ╭──────────────────────────────────────╮
-│  Node     Port   Actio Source       S│
-│› producti 22/tcp allow 10.44.0.0/16 a│
+│Needs 72 columns. Resize to select.   │
+│                                      │
 │                                      │
 │╭ Confirm action ────────────────────╮│
 ││ Remove firewall rule [production-s ││

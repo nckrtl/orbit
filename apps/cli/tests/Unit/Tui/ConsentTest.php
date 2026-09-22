@@ -21,7 +21,7 @@ uses(TestCase::class);
 function open_tui_consent(State $state, UiState $ui, Interaction $interaction, string $kind): void
 {
     $ui->goTo($kind);
-    render_top_screen($ui, $state);
+    render_top_screen($ui, $state, columns: 240);
     $ui->focus = 'list';
     $interaction->handleChar('a');
     $interaction->handleKey(KeyCode::Enter);

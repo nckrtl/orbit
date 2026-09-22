@@ -1,8 +1,8 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮  ‹ back  Instance: charlie-shop/dev                                                                
 │  Dashboard       │╭ Properties ────────────────────╮╭ Processes ─────────────────────╮╭ Schedules ───────────────────╮
-│  Nodes         1 ││ Name               dev         ││  Name     Status       CPU/MEM ││  Name      Calendar     Last │
-│  Projects      1 ││ Project            charlie-sho ││› horizon  active    20%/1.23GB ││› backup    0 3 * * *    never│
+│  Nodes         1 ││ Name               dev         ││  Name     Status       CPU/MEM ││  Name     Calendar   Last run│
+│  Projects      1 ││ Project            charlie-sho ││› horizon  active    20%/1.23GB ││› backup   0 3 * * *    never │
 │› Instances     1 ││ Node               beast       ││                                ││                              │
 │  Processes     1 ││ Environment        production  ││                                ││                              │
 │  Schedules     1 ││ Domain             charlie-sho ││                                ││                              │
@@ -15,8 +15,8 @@
 │                  ││ No deploy steps. instance:deploy-step:create adds one.                                           │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Deployments ─────────────────────────────────────────────────────────────────────────────────────╮
-│                  ││  Started         Release            Branch       Commit      By           Duration        Status │
-│                  ││› 2026-01-01T00:0 20260101000000     main         aaaaaaa     gateway      42s          succeeded │
+│                  ││  Started                   Release          Branch     Commit     By        Duration      Status │
+│                  ││› 2026-01-01T00:00:00+00:00 20260101000000   main       aaaaaaa    gateway   42s        succeeded │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │

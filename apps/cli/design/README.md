@@ -44,6 +44,9 @@ bin/cli-flow node-add --keep /tmp/node-add-recording
 | `design:node-add` | Prompts for every missing input, host key approval, and the provisioning steps as a progress tree. |
 | `design:instance-show` | One Instance as tabs: Overview detail, Processes list, Schedules list; Tab switches, Enter selects a row. |
 | `design:top-consent` | A default-No TUI confirmation with a complete wrapped Database or Firewall target; keyboard and bounded mouse choices, no Gateway request. |
+| `design:top-columns` | A Dashboard-sized Process table with complete cells, finite columns, and a non-selectable required-width message. |
+
+The `top-columns` sketch takes `--outcome=normal`, `long`, or `empty`. At 80×24 the normal Process pane reports `Needs 48 columns.` and Enter or `a` selects nothing. Enlarge to 120 columns to show every field; Enter selects the complete Process name. `long` needs more room for its Unicode name. `empty` reports no Processes without creating a selection. Press `q` to leave. The real Dashboard's read-only Node table also needs a labeled fallback with keyboard/wheel scrolling when its full fields cannot fit on one line.
 
 The `top-consent` sketch takes `--outcome=database` or `--outcome=firewall`. At 80×24, Enter declines the initial No. Left/Right or `y`/`n` selects a choice; Enter accepts it. Escape cancels. A left-click on a visible No/Yes button chooses it; outside clicks and other buttons do nothing. A question that cannot fit refuses approval until the terminal is enlarged. Replay these paths live with the CLI recorder before changing the real `top` interaction.
 

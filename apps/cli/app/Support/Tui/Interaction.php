@@ -328,7 +328,7 @@ final readonly class Interaction
     {
         $drawn = $this->ui->drawn[$name] ?? null;
 
-        if ($drawn === null || $x <= $drawn['area']->left() || $x >= $drawn['area']->right() - 1) {
+        if ($drawn === null || isset($drawn['textLines']) || $x <= $drawn['area']->left() || $x >= $drawn['area']->right() - 1) {
             return null;
         }
 
@@ -362,7 +362,17 @@ final readonly class Interaction
             return;
         }
 
-        $rows = count($this->ui->drawn[$this->ui->focus]['ids'] ?? []);
+        $drawn = $this->ui->drawn[$this->ui->focus] ?? [];
+        if (isset($drawn['textLines'])) {
+            $maximum = max(0, $drawn['textLines'] - max(0, $drawn['area']->height - 2));
+            $this->ui->selected[$this->ui->focus] = max(0, min($maximum, ($this->ui->selected[$this->ui->focus] ?? 0) + $step));
+
+            return;
+        }
+        $rows = count($drawn['ids'] ?? []);
+        if ($rows === 0) {
+            return;
+        }
         $this->ui->selected[$this->ui->focus] = max(0, min(max(0, $rows - 1), ($this->ui->selected[$this->ui->focus] ?? 0) + $step));
     }
 

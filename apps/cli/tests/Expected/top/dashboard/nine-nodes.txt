@@ -1,35 +1,35 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮╭ Nodes ───────────────────────────────────────────────────────────────────────────────────────────╮
-│› Dashboard       ││Name          Status    CPU                   Mem                  Disk                  Uptime   │
-│  Nodes         9 ││node-1        active    —                     —                    —                          —   │
-│  Projects      1 ││node-2        active    —                     —                    —                          —   │
-│  Instances     1 ││node-3        active    [||||          ]  30% [|        ] 2.0G/16G /  [|    ] 40G/200G    5d 1h   │
-│  Processes     1 ││node-4        active    —                     —                    —                          —   │
-│  Schedules     1 ││node-5        active    —                     —                    —                          —   │
-│  Databases     1 ││node-6        active    —                     —                    —                          —   │
-│  Firewall      1 ││node-7        active    —                     —                    —                          —   │
-│                  ││node-8        active    —                     —                    —                          —   │
-│                  ││node-9        failed    —                     —                    —                          —   │
+│› Dashboard       ││Name          Status   CPU                  Mem                  Disk                      Uptime │
+│  Nodes         9 ││node-1        active   —                    —                    —                              — │
+│  Projects      1 ││node-2        active   —                    —                    —                              — │
+│  Instances     1 ││node-3        active   [||||         ]  30% [|        ] 2.0G/16G /  [|   ] 40G/200G         5d 1h │
+│  Processes     1 ││node-4        active   —                    —                    —                              — │
+│  Schedules     1 ││node-5        active   —                    —                    —                              — │
+│  Databases     1 ││node-6        active   —                    —                    —                              — │
+│  Firewall      1 ││node-7        active   —                    —                    —                              — │
+│                  ││node-8        active   —                    —                    —                              — │
+│                  ││node-9        failed   —                    —                    —                              — │
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Projects ──────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
-│                  ││  Slug                  Branch         Instances││  Name         Project      Node         Status │
-│                  ││› charlie-shop          main                  1 ││› dev          charlie-shop node-1       active │
+│                  ││  Slug                 Branch         Instances ││  Name        Project      Node          Status │
+│                  ││› charlie-shop         main                   1 ││› dev         charlie-shop node-1        active │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  │╰────────────────────────────────────────────────╯╰────────────────────────────────────────────────╯
 │                  │╭ Processes ─────────────────────────────────────╮╭ Schedules ─────────────────────────────────────╮
-│                  ││  Name      Where        Status         CPU/MEM ││  Name       Where          Calendar     Last ru│
-│                  ││› horizon   charlie-shop active      20%/1.23GB ││› backup     charlie-shop/d 0 3 * * *     never │
+│                  ││  Name     Where            Status      CPU/MEM ││  Name     Where            Calendar   Last run │
+│                  ││› horizon  charlie-shop/dev active   20%/1.23GB ││› backup   charlie-shop/dev 0 3 * * *     never │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  │╰────────────────────────────────────────────────╯╰────────────────────────────────────────────────╯
 │                  │╭ Needs attention ─────────────────────────────────────────────────────────────────────────────────╮
-│                  ││  Kind        Name                             Where                                        State │
-│                  ││› Node        node-9                           —                                           failed │
+│                  ││  Kind        Name                            Where                                         State │
+│                  ││› Node        node-9                          —                                            failed │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │
 │                  ││                                                                                                  │

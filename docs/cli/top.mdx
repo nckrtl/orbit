@@ -35,6 +35,10 @@ The sidebar lists eight sections: Dashboard, Nodes, Projects, Instances, Process
 
 Every Processes pane carries a right-aligned `CPU/MEM` column, read from cAdvisor (see [Metrics role](/reference/metrics#per-process-cpu-and-memory-cadvisor)): whole-percent CPU over one core and memory in GiB, like `20%/1.2G`. A Process that is not running, or that cAdvisor has no series for, shows `—` instead.
 
+Record tables keep each header and value on one line. Their minimum pane width includes every complete cell, borders, the selection marker, and column spacing. A pane that is too narrow reports `Needs N columns. Resize to select.` It cannot select a row or open an action until the table fits. Enlarge the terminal to restore the table and its selection. Empty panes keep their empty message without creating a selection.
+
+When the Dashboard's read-only Node summary is too narrow for its table, it shows labeled fields. Focus that pane and use Up/Down, or use the mouse wheel over it, to read every field. Its title shows the current line range. These fields never open record actions. Returning to the table clears the text scroll position. At shorter heights, the Dashboard reduces its family panes to keep Node text and Needs attention visible. Below 18 terminal rows, it asks you to resize without admitting a record action.
+
 Schedules show their owner as either a Node or an Instance. The unfiltered list includes both. A Node filter includes that Node's own Schedules and its Instances' Schedules. A Project filter includes only Schedules owned by that Project's Instances. Missing owners display an em dash.
 
 Node relationships use IDs. After a Node rename, its Instances, Processes, Schedules, and Firewall rules keep their membership and show the current Node name. Node filters use the current names. If a Node is missing or deleted, related records show an em dash for its name; another Node that reuses the old name does not inherit those records.

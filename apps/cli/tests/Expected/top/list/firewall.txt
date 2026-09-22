@@ -1,8 +1,8 @@
   orbit                                                                                            gateway.test · live  
 ╭──────────────────╮  Firewall                                                                                          
 │  Dashboard       │╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  Nodes         1 ││  Node                  Port             Action        Source                              Status │
-│  Projects      1 ││› beast                 22/tcp           allow         10.44.0.0/16                        active │
+│  Nodes         1 ││  Node                  Port            Action       Source                                Status │
+│  Projects      1 ││› beast                 22/tcp          allow        10.44.0.0/16                          active │
 │  Instances     1 ││                                                                                                  │
 │  Processes     1 ││                                                                                                  │
 │  Schedules     1 ││                                                                                                  │

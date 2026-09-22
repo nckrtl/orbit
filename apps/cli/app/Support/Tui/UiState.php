@@ -67,7 +67,7 @@ final class UiState
      *
      * Table panes also carry the ordered identities and the renderer's actual scroll state.
      *
-     * @var array<string, array{area: Area, header: bool, kind?: string, ids?: list<int|string>, families?: list<string>, table?: TableState}>
+     * @var array<string, array{area: Area, header: bool, kind?: string, ids?: list<int|string>, families?: list<string>, table?: TableState, textLines?: int}>
      */
     public array $drawn = [];
 
@@ -77,7 +77,7 @@ final class UiState
     /**
      * Retain only the renderer's offset; identities and bounds always come from the new frame.
      *
-     * @param  array<string, array{area: Area, header: bool, kind?: string, ids?: list<int|string>, families?: list<string>, table?: TableState}>  $previous
+     * @param  array<string, array{area: Area, header: bool, kind?: string, ids?: list<int|string>, families?: list<string>, table?: TableState, textLines?: int}>  $previous
      */
     public function retainTableOffsets(array $previous): void
     {

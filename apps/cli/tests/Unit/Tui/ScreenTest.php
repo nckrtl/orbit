@@ -68,7 +68,8 @@ describe(Screen::class, function (): void {
         expect($list)->toContain('Owner', 'node-backup', 'node beast', 'charlie-shop/dev', 'shark');
 
         $ui->goTo('dashboard');
-        expect(render_top_screen($ui, $state))->toContain('node beast');
+        expect(render_top_screen($ui, $state))->toContain('Needs 51 columns.');
+        expect(render_top_screen($ui, $state, columns: 122))->toContain('node beast', 'charlie-shop/dev');
 
         $ui->open('schedules', $state->schedules[1]);
         $detail = render_top_screen($ui, $state);
