@@ -11,13 +11,19 @@ use App\Models\Node;
 
 interface AppInstanceTransferSource
 {
-    public function capture(AppInstance $instance): TransferSourceCapture;
+    public function prepareArchives(TransferArchiveAttempt $attempt): TransferArchiveAttempt;
+
+    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture;
 
     public function materialize(
         TransferSourceCapture $capture,
         Node $destination,
         StoragePath $path,
+        TransferArchiveAttempt $attempt,
     ): TransferCheckout;
+
+    /** @return list<'source'|'destination'> */
+    public function cleanupArchives(TransferArchiveAttempt $attempt): array;
 
     public function discardDestination(Node $node, StoragePath $path): void;
 

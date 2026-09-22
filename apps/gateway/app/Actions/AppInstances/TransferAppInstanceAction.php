@@ -28,6 +28,7 @@ use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
+use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -407,6 +408,7 @@ final readonly class TransferAppInstanceAction
     {
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);
         $transfer = AppInstanceTransfer::query()->findOrFail($transferId);
+        $this->cleanupArchiveAttempt($transfer);
         $incomplete = $transfer->recovery_evidence['incomplete'] ?? [];
 
         if ($transfer->cutover_at === null && is_array($incomplete) && in_array('destination-route', $incomplete, true)) {
@@ -435,16 +437,28 @@ final readonly class TransferAppInstanceAction
             ]);
         }
 
-        if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
-            app(VitePortAllocator::class)->assign($instance);
-            app(VitePortAllocator::class)->assign($instance, $destination);
-            $capture = $this->sources->capture($instance);
-            $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
-                'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
-            ]);
-            $this->materializeDestination($capture, $destination, $path, $transfer);
-        } elseif ($transfer->current_step === AppInstanceTransferStep::SourceCaptured) {
-            $this->materializeDestination($this->sources->capture($instance), $destination, $path, $transfer);
+        if (in_array($transfer->current_step, [AppInstanceTransferStep::Reserved, AppInstanceTransferStep::SourceCaptured], true)) {
+            if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
+                app(VitePortAllocator::class)->assign($instance);
+                app(VitePortAllocator::class)->assign($instance, $destination);
+            }
+            $attempt = TransferArchiveAttempt::create(
+                $transfer,
+                $this->accounts->resolve($instance->node),
+                $this->accounts->resolve($destination),
+            );
+            $transfer->update(['archive_attempt' => $attempt->toArray()]);
+            try {
+                $attempt = $this->sources->prepareArchives($attempt);
+                $transfer->update(['archive_attempt' => $attempt->toArray()]);
+                $capture = $this->sources->capture($instance, $attempt);
+                $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
+                    'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
+                ]);
+                $this->materializeDestination($capture, $destination, $path, $transfer, $attempt);
+            } finally {
+                $this->cleanupArchiveAttempt($transfer);
+            }
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::DestinationCheckoutCreated) {
@@ -505,9 +519,35 @@ final readonly class TransferAppInstanceAction
         Node $destination,
         StoragePath $path,
         AppInstanceTransfer $transfer,
+        TransferArchiveAttempt $attempt,
     ): void {
-        $this->sources->materialize($capture, $destination, $path);
+        $this->sources->materialize($capture, $destination, $path, $attempt);
         $this->checkpoint($transfer, AppInstanceTransferStep::DestinationCheckoutCreated);
+    }
+
+    private function cleanupArchiveAttempt(AppInstanceTransfer $transfer): void
+    {
+        $transfer->refresh();
+        if ($transfer->getRawOriginal('archive_attempt') === null) {
+            return;
+        }
+        if (! is_array($transfer->archive_attempt)) {
+            throw $this->conflict(
+                'instance.transfer_archive_cleanup_incomplete',
+                'The recorded transfer archive identity is unavailable. Retain it for recovery.',
+            );
+        }
+        $attempt = TransferArchiveAttempt::fromArray($transfer->archive_attempt, $transfer);
+        $pending = $this->sources->cleanupArchives($attempt);
+        $transfer->update([
+            'archive_attempt' => $pending === [] ? null : $attempt->withCleanupPending($pending)->toArray(),
+        ]);
+        if ($pending !== []) {
+            throw $this->conflict(
+                'instance.transfer_archive_cleanup_incomplete',
+                'Transfer archive cleanup is unconfirmed. Retry the identical request.',
+            );
+        }
     }
 
     private function transferSqlite(AppInstance $instance, Node $destination, AppInstanceTransfer $transfer): void
@@ -1024,6 +1064,12 @@ final readonly class TransferAppInstanceAction
         }
 
         $incomplete = [];
+
+        try {
+            $this->cleanupArchiveAttempt($transfer);
+        } catch (Throwable) {
+            $incomplete[] = 'transfer-archives';
+        }
 
         try {
             $this->runtime->restore($instance);

@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppInstances;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
+use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
@@ -32,20 +33,31 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         private KnownHostsStore $knownHosts,
     ) {}
 
-    public function capture(AppInstance $instance): TransferSourceCapture
+    public function prepareArchives(TransferArchiveAttempt $attempt): TransferArchiveAttempt
+    {
+        foreach (['source', 'destination'] as $side) {
+            $node = Node::query()->findOrFail($attempt->location($side)['node_id']);
+            $receipt = $this->archiveOperation($node, $attempt, $side, 'prepare');
+            $attempt = $attempt->withReceipt($side, $receipt);
+        }
+
+        return $attempt;
+    }
+
+    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture
     {
         $instance->loadMissing('node');
         $layout = AppInstanceSourceLayout::from($instance->source_layout);
-        $result = $this->ssh->execute(
+        $facts = $this->facts($this->archiveOperation(
             $instance->node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value],
-                input: $this->captureScript(),
-            ),
-            step: 'app-instance-transfer-capture',
-            errorCode: 'instance.transfer_failed',
-        );
-        $facts = $this->facts($result->stdout);
+            $attempt,
+            'source',
+            'capture',
+            ['source_path' => $instance->checkout_path, 'layout' => $layout->value],
+        ));
+        if ($facts['archive'] !== $attempt->archivePath('source')) {
+            throw $this->failed();
+        }
 
         return new TransferSourceCapture(
             appInstanceId: $instance->id,
@@ -67,14 +79,23 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         TransferSourceCapture $capture,
         Node $destination,
         StoragePath $path,
+        TransferArchiveAttempt $attempt,
     ): TransferCheckout {
         $source = Node::query()->findOrFail($capture->nodeId);
-        $archive = $this->stageArchive($source, $capture);
+        $archive = null;
 
         try {
-            $this->uploadArchive($destination, $archive, $path, $capture);
+            if ($capture->archiveIdentity !== $attempt->archivePath('source')
+                || $capture->nodeId !== $attempt->source['node_id']
+                || $source->user !== $attempt->source['execution_user']) {
+                throw $this->failed();
+            }
+            $archive = $this->stageArchive($source, $capture);
+            $this->uploadArchive($destination, $archive, $path, $capture, $attempt);
+        } catch (Throwable) {
+            throw $this->failed();
         } finally {
-            if (is_file($archive)) {
+            if (is_string($archive) && is_file($archive)) {
                 unlink($archive);
             }
         }
@@ -87,6 +108,23 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             branch: $capture->branch,
             detached: $capture->detached,
         );
+    }
+
+    public function cleanupArchives(TransferArchiveAttempt $attempt): array
+    {
+        $pending = [];
+        foreach ($attempt->cleanupPending as $side) {
+            try {
+                $node = Node::query()->findOrFail($attempt->location($side)['node_id']);
+                if ($this->archiveOperation($node, $attempt, $side, 'cleanup') !== 'CLEANED') {
+                    $pending[] = $side;
+                }
+            } catch (Throwable) {
+                $pending[] = $side;
+            }
+        }
+
+        return $pending;
     }
 
     public function discardDestination(Node $node, StoragePath $path): void
@@ -157,12 +195,12 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             if (! $download->succeeded() || $download->truncated) {
                 throw $this->failed();
             }
-        } catch (Throwable $exception) {
+        } catch (Throwable) {
             if (is_file($temporary)) {
                 unlink($temporary);
             }
 
-            throw $exception instanceof ResourceOperationException ? $exception : $this->failed();
+            throw $this->failed();
         }
 
         return $temporary;
@@ -173,8 +211,13 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         string $archive,
         StoragePath $path,
         TransferSourceCapture $capture,
+        TransferArchiveAttempt $attempt,
     ): void {
-        $remoteArchive = "/tmp/orbit-transfer-{$capture->appInstanceId}.tar";
+        if ($destination->id !== $attempt->destination['node_id']
+            || $destination->user !== $attempt->destination['execution_user']) {
+            throw $this->failed();
+        }
+        $remoteArchive = $attempt->archivePath('destination');
         $upload = $this->processes->run(new ProcessInvocation(
             $this->scpToRemote($destination, $archive, $remoteArchive),
             maxOutputBytes: 256,
@@ -184,24 +227,63 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             throw $this->failed();
         }
 
-        $this->ssh->execute(
+        $result = $this->archiveOperation(
             $destination,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $remoteArchive,
-                    $path->value,
-                    $capture->head,
-                    $capture->branch ?? '',
-                    $capture->detached ? '1' : '0',
-                ],
-                input: $this->materializeScript(),
-            ),
-            step: 'app-instance-transfer-materialize',
-            errorCode: 'instance.transfer_failed',
+            $attempt,
+            'destination',
+            'materialize',
+            [
+                'destination_path' => $path->value,
+                'head' => $capture->head,
+                'branch' => $capture->branch ?? '',
+                'detached' => $capture->detached,
+            ],
         );
+        if ($result !== 'MATERIALIZED') {
+            throw $this->failed();
+        }
+    }
+
+    /**
+     * @param  'source'|'destination'  $side
+     * @param  array<string, mixed>  $facts
+     */
+    private function archiveOperation(
+        Node $node,
+        TransferArchiveAttempt $attempt,
+        string $side,
+        string $operation,
+        array $facts = [],
+    ): mixed {
+        $placement = $attempt->location($side);
+        if ($node->id !== $placement['node_id'] || $node->user !== $placement['execution_user']) {
+            throw $this->failed();
+        }
+        try {
+            $result = $this->ssh->execute(
+                $node,
+                new RemoteCommand(
+                    arguments: ['python3', '-c', TransferArchiveProgram::script(), $operation],
+                    input: json_encode([
+                        'id' => $attempt->id,
+                        'transfer_id' => $attempt->transferId,
+                        'side' => $side,
+                        'placement' => $placement,
+                        ...$facts,
+                    ], JSON_THROW_ON_ERROR),
+                    maxOutputBytes: 8192,
+                ),
+                step: 'app-instance-transfer-archive-'.$operation,
+                errorCode: 'instance.transfer_failed',
+            );
+            if ($result->truncated || $result->stderr !== '') {
+                throw $this->failed();
+            }
+
+            return json_decode($result->stdout, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            throw $this->failed();
+        }
     }
 
     /** @return non-empty-list<string> */
@@ -251,17 +333,10 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
     }
 
     /** @return array{head: string, branch: string, detached: string, archive: string, common: string, refs: string} */
-    private function facts(string $stdout): array
+    private function facts(mixed $facts): array
     {
-        $facts = [];
-
-        foreach (explode("\n", trim($stdout)) as $line) {
-            if (! str_contains($line, '=')) {
-                continue;
-            }
-
-            [$key, $value] = explode('=', $line, 2);
-            $facts[$key] = $value;
+        if (! is_array($facts) || count($facts) !== 6) {
+            throw $this->failed();
         }
 
         foreach (['head', 'branch', 'detached', 'archive', 'common', 'refs'] as $required) {
@@ -270,68 +345,10 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             }
         }
 
-        return $facts;
-    }
-
-    private function captureScript(): string
-    {
-        return <<<'BASH'
-            source=$1
-            layout=$2
-            archive="/tmp/orbit-transfer-$(basename "$source")-$$.tar"
-            cd -- "$source"
-            head=$(git rev-parse HEAD)
-            branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-            detached=0
-            if [ "$branch" = "HEAD" ]; then
-              detached=1
-              branch=""
-            fi
-            common=""
-            if [ -f .git ]; then
-              common=$(git rev-parse --git-common-dir)
-            fi
-            refs=$(git for-each-ref --format='%(refname:short)' refs/heads)
-            if [ "$layout" = "worktree" ]; then
-              git bundle create "$archive.bundle" HEAD
-              tar --exclude=.git -cf "$archive" .
-              tar -rf "$archive" -C "$(dirname "$archive")" "$(basename "$archive.bundle")"
-              rm -f -- "$archive.bundle"
-            else
-              tar -cf "$archive" .
-            fi
-            printf 'head=%s\nbranch=%s\ndetached=%s\narchive=%s\ncommon=%s\nrefs=%s\n' \
-              "$head" "$branch" "$detached" "$archive" "$common" "$refs"
-            BASH;
-    }
-
-    private function materializeScript(): string
-    {
-        return <<<'BASH'
-            archive=$1
-            destination=$2
-            head=$3
-            branch=$4
-            detached=$5
-            mkdir -p -- "$(dirname "$destination")"
-            mkdir -- "$destination"
-            tar -xf "$archive" -C "$destination"
-            rm -f -- "$archive"
-            cd -- "$destination"
-            if [ ! -d .git ]; then
-              git init --quiet
-              if [ -f ./*.bundle ]; then
-                bundle=$(echo ./*.bundle)
-                git fetch --quiet "$bundle" HEAD
-                rm -f -- "$bundle"
-              fi
-              if [ "$detached" = "1" ] || [ -z "$branch" ]; then
-                git checkout --quiet --detach "$head"
-              else
-                git checkout --quiet -B "$branch" "$head"
-              fi
-            fi
-            BASH;
+        return [
+            'head' => $facts['head'], 'branch' => $facts['branch'], 'detached' => $facts['detached'],
+            'archive' => $facts['archive'], 'common' => $facts['common'], 'refs' => $facts['refs'],
+        ];
     }
 
     private function cleanupScript(): string

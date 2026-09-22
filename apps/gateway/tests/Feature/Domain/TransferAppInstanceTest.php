@@ -164,6 +164,107 @@ beforeEach(function (): void {
     );
 });
 
+it('records archive intent and exact prepared identities before capture and clears only confirmed cleanup', function (): void {
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($this->sources->archiveCalls)->toBe(['prepare', 'cleanup'])
+        ->and($this->sources->preparedArchiveEvidence)->toHaveCount(1)
+        ->and($this->sources->preparedArchiveEvidence[0]['source']['receipt'])->toBeNull()
+        ->and($this->sources->preparedArchiveEvidence[0]['destination']['receipt'])->toBeNull()
+        ->and($this->sources->capturedArchiveEvidence)->toHaveCount(1)
+        ->and($this->sources->capturedArchiveEvidence[0]['source']['receipt'])->toBe([
+            'root' => '1:1', 'workspace' => '1:2', 'archive' => '1:3', 'bundle' => '1:4',
+        ])
+        ->and($this->sources->capturedArchiveEvidence[0]['destination']['receipt'])->toBe([
+            'root' => '2:1', 'workspace' => '2:2', 'archive' => '2:3', 'bundle' => '2:4',
+        ])
+        ->and($result['transfer']->archive_attempt)->toBeNull()
+        ->and($result['transfer']->toArray())->not->toHaveKey('archive_attempt');
+});
+
+it('cleans prepared archives across failed database checkpoints without advancing payload work', function (
+    string $predicate,
+    array $expectedArchiveCalls,
+    array $expectedSourceCalls,
+): void {
+    DB::unprepared("CREATE TRIGGER fail_archive_checkpoint BEFORE UPDATE ON app_instance_transfers WHEN {$predicate} BEGIN SELECT RAISE(FAIL, 'archive checkpoint refused'); END");
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_archive_checkpoint');
+    }
+
+    $transfer = AppInstanceTransfer::query()->sole();
+    expect($this->sources->archiveCalls)->toBe($expectedArchiveCalls)
+        ->and($this->sources->calls)->toBe($expectedSourceCalls)
+        ->and($this->sources->materialized)->toBeEmpty()
+        ->and($transfer->archive_attempt)->toBeNull()
+        ->and($transfer->cutover_at)->toBeNull()
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->route->refresh()->status)->toBe(RouteStatus::Active);
+
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($result['transfer']->archive_attempt)->toBeNull();
+})->with([
+    'intent' => ['NEW.archive_attempt IS NOT NULL', [], []],
+    'prepared identities' => ["json_extract(NEW.archive_attempt, '$.source.receipt') IS NOT NULL", ['prepare', 'cleanup'], []],
+    'source checkpoint' => ["NEW.current_step = 'source-captured'", ['prepare', 'cleanup'], ['capture']],
+]);
+
+it('retains pending archive cleanup and blocks another attempt until the identical retry confirms it', function (): void {
+    $this->sources->archiveCleanupPending = ['source'];
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_archive_cleanup_incomplete'));
+    $transfer = AppInstanceTransfer::query()->sole();
+    $attemptId = $transfer->archive_attempt['id'];
+    expect($transfer->archive_attempt['cleanup_pending'])->toBe(['source'])
+        ->and($transfer->archive_attempt['source']['receipt']['workspace'])->toBe('1:2')
+        ->and($transfer->recovery_evidence['incomplete'])->toContain('transfer-archives')
+        ->and($transfer->cutover_at)->toBeNull()
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->runtime->calls)->not->toContain('pause', 'relocate', 'activate');
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    expect($this->sources->capturedArchiveAttempts)->toHaveCount(1);
+
+    $this->sources->archiveCleanupPending = [];
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($this->sources->capturedArchiveAttempts)->toHaveCount(2)
+        ->and($this->sources->capturedArchiveAttempts[1]->id)->not->toBe($attemptId)
+        ->and($result['transfer']->archive_attempt)->toBeNull()
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed);
+});
+
+it('retains malformed archive evidence without starting another attempt or exposing its contents', function (string $change): void {
+    $this->sources->archiveCleanupPending = ['source'];
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $evidence = $transfer->archive_attempt;
+    $evidence = match ($change) {
+        'json null' => null,
+        'scalar' => 'archive-secret-sentinel',
+        'unknown field' => [...$evidence, 'archive-secret-sentinel' => true],
+        'wrong node' => [...$evidence, 'source' => [...$evidence['source'], 'node_id' => $this->destinationNode->id]],
+        'wrong receipt' => [...$evidence, 'source' => [...$evidence['source'], 'receipt' => ['archive' => 'archive-secret-sentinel']]],
+    };
+    $stored = json_encode($evidence, JSON_THROW_ON_ERROR);
+    DB::table('app_instance_transfers')->where('id', $transfer->id)->update(['archive_attempt' => $stored]);
+    $before = $this->sources->archiveCalls;
+    $this->sources->archiveCleanupPending = [];
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.transfer_archive_cleanup_incomplete')
+                ->and($exception->getMessage())->not->toContain('archive-secret-sentinel');
+        });
+    expect(DB::table('app_instance_transfers')->where('id', $transfer->id)->value('archive_attempt'))->toBe($stored)
+        ->and($this->sources->archiveCalls)->toBe($before)
+        ->and($this->sources->capturedArchiveAttempts)->toHaveCount(1)
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id);
+})->with(['json null', 'scalar', 'unknown field', 'wrong node', 'wrong receipt']);
+
 it('transfers a development AppInstance to another app-dev Node in the same Cluster', function (): void {
     $this->destinationNode->update([
         'cluster_id' => $this->sourceCluster->id,

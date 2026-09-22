@@ -40,6 +40,10 @@ Transfer keeps the Instance ID and Project ownership. The Gateway copies source 
 
 The destination checkout includes branch and commit evidence, tracked changes, untracked files, executable modes, unpublished commits, and detached Git state. A source worktree becomes an independent destination checkout. Transfer leaves the common repository, sibling worktrees, local branches, and unrelated Git administration unchanged.
 
+Transfer archives can contain environment values and unpublished source. The Gateway records each archive attempt before remote work and uses private, uniquely owned temporary workspaces on both Nodes. It removes the exact owned archive payloads after success or failure. Small operation receipts remain so a late command cannot recreate a cleaned attempt. These receipts contain identities and cleanup state, not archive contents or environment values.
+
+An unconfirmed archive cleanup stops the transfer and retains bounded recovery evidence. Retry the identical request to confirm cleanup before another archive attempt. A missing ownership receipt, changed workspace identity, or unexpected artifact prevents deletion; a reserved path alone does not authorize cleanup.
+
 ### Selected SQLite
 
 When the operator selects one SQLite database, the Gateway pauses source execution, captures one consistent snapshot, and installs those bytes at the destination. It never discovers or copies another database or persistent path.
@@ -123,6 +127,7 @@ The Gateway returns these transfer conflicts before or during the operation.
 | `route.domain_conflict` | The destination domain is already owned. |
 | `instance.transfer_retry_conflict` | A different request tried to resume an incomplete transfer. |
 | `instance.transfer_failed` | Transfer failed and the Gateway restored or retained the current authority. |
+| `instance.transfer_archive_cleanup_incomplete` | Temporary archive cleanup is unconfirmed; retry the identical request before another archive attempt. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative and old-placement cleanup still needs the identical retry. |
 | `instance.transfer_source_router_unknown` | The original Router identity is unavailable, so source projection cleanup cannot proceed. |
 | `instance.transfer_cleanup_conflict` | Recorded placement or Route ownership changed, so cleanup stops without finalizing the transfer. |

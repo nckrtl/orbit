@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
  * @property AppInstanceTransferStep|null $failed_step
  * @property string|null $error_code
  * @property array<string, mixed>|null $recovery_evidence
+ * @property array<string, mixed>|null $archive_attempt
  * @property Carbon|null $cutover_at
  * @property Carbon|null $completed_at
  * @property-read AppInstance $appInstance
@@ -70,9 +71,14 @@ final class AppInstanceTransfer extends Model
         'failed_step',
         'error_code',
         'recovery_evidence',
+        'archive_attempt',
         'cutover_at',
         'completed_at',
     ];
+
+    /** @var list<string> */
+    #[\Override]
+    protected $hidden = ['archive_attempt'];
 
     protected static function booted(): void
     {
@@ -110,6 +116,7 @@ final class AppInstanceTransfer extends Model
             'current_step' => AppInstanceTransferStep::class,
             'failed_step' => AppInstanceTransferStep::class,
             'recovery_evidence' => 'array',
+            'archive_attempt' => 'array',
             'cutover_at' => 'immutable_datetime',
             'completed_at' => 'immutable_datetime',
         ];

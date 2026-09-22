@@ -19,6 +19,7 @@ use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
+use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
@@ -84,6 +85,21 @@ final class Orb245SourceLock implements AppDevSourceOperationLock
 final class Orb245TransferSource implements AppInstanceTransferSource
 {
     /** @var list<string> */
+    public array $archiveCalls = [];
+
+    /** @var list<'source'|'destination'> */
+    public array $archiveCleanupPending = [];
+
+    /** @var list<array<string, mixed>|null> */
+    public array $preparedArchiveEvidence = [];
+
+    /** @var list<array<string, mixed>|null> */
+    public array $capturedArchiveEvidence = [];
+
+    /** @var list<TransferArchiveAttempt> */
+    public array $capturedArchiveAttempts = [];
+
+    /** @var list<string> */
     public array $calls = [];
 
     /** @var list<TransferSourceCapture> */
@@ -109,8 +125,27 @@ final class Orb245TransferSource implements AppInstanceTransferSource
 
     public ?string $common = null;
 
-    public function capture(AppInstance $instance): TransferSourceCapture
+    public function prepareArchives(TransferArchiveAttempt $attempt): TransferArchiveAttempt
     {
+        $this->archiveCalls[] = 'prepare';
+        $this->preparedArchiveEvidence[] = AppInstanceTransfer::query()->findOrFail($attempt->transferId)->archive_attempt;
+
+        return $attempt
+            ->withReceipt('source', ['root' => '1:1', 'workspace' => '1:2', 'archive' => '1:3', 'bundle' => '1:4'])
+            ->withReceipt('destination', ['root' => '2:1', 'workspace' => '2:2', 'archive' => '2:3', 'bundle' => '2:4']);
+    }
+
+    public function cleanupArchives(TransferArchiveAttempt $attempt): array
+    {
+        $this->archiveCalls[] = 'cleanup';
+
+        return $this->archiveCleanupPending;
+    }
+
+    public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture
+    {
+        $this->capturedArchiveEvidence[] = AppInstanceTransfer::query()->findOrFail($attempt->transferId)->archive_attempt;
+        $this->capturedArchiveAttempts[] = $attempt;
         $this->calls[] = 'capture';
         $capture = new TransferSourceCapture(
             appInstanceId: $instance->id,
@@ -133,6 +168,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         TransferSourceCapture $capture,
         Node $destination,
         StoragePath $path,
+        TransferArchiveAttempt $attempt,
     ): TransferCheckout {
         $this->calls[] = 'materialize';
 
