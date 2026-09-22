@@ -225,7 +225,9 @@ it('retains pending archive cleanup and blocks another attempt until the identic
         ->and($transfer->recovery_evidence['incomplete'])->toContain('transfer-archives')
         ->and($transfer->cutover_at)->toBeNull()
         ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
-        ->and($this->runtime->calls)->not->toContain('pause', 'relocate', 'activate');
+        ->and($this->runtime->calls)->not->toContain('pause')
+        ->and($this->runtime->calls)->not->toContain('relocate')
+        ->and($this->runtime->calls)->not->toContain('activate');
     expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
     expect($this->sources->capturedArchiveAttempts)->toHaveCount(1);
 

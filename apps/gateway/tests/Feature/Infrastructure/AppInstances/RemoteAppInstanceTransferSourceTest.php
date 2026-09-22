@@ -227,6 +227,56 @@ it('retains unconfirmed cleanup after a lost acknowledgement and confirms an ide
     }
 });
 
+it('unlinks a destination archive while an upload still holds its open descriptor', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $archive = $fixture->attempt->archivePath('destination');
+    $upload = fopen($archive, 'wb');
+
+    try {
+        expect(is_resource($upload))->toBeTrue();
+        fwrite($upload, 'first-archive-secret-sentinel');
+        fflush($upload);
+
+        expect($fixture->source->cleanupArchives($fixture->attempt))->toBe([])
+            ->and(fstat($upload)['nlink'])->toBe(0);
+        fwrite($upload, 'late-archive-secret-sentinel');
+        fflush($upload);
+
+        expect(is_dir(dirname($archive)))->toBeFalse()
+            ->and($fixture->source->cleanupArchives($fixture->attempt))->toBe([]);
+        $root = $fixture->attempt->destination['private_root'];
+        expect(array_values(array_diff(scandir($root), ['.', '..'])))->toBe([
+            $fixture->attempt->id.'.json', $fixture->attempt->id.'.lock',
+        ]);
+    } finally {
+        if (is_resource($upload)) {
+            fclose($upload);
+        }
+        $fixture->close();
+    }
+});
+
+it('refuses a late upload open after native archive cleanup removed its workspace', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $stage = $fixture->directory.'/late-upload.tar';
+    copy($capture->archiveIdentity, $stage);
+
+    try {
+        expect($fixture->source->cleanupArchives($fixture->attempt))->toBe([]);
+        $upload = new NativeProcessRunner()->run(new ProcessInvocation([
+            'scp', '--', $stage, $fixture->attempt->archivePath('destination'),
+        ]));
+
+        expect($upload->succeeded())->toBeFalse()
+            ->and(is_dir(dirname($fixture->attempt->archivePath('destination'))))->toBeFalse()
+            ->and($fixture->source->cleanupArchives($fixture->attempt))->toBe([]);
+        expect(fn () => $fixture->prepare())->toThrow(ResourceOperationException::class);
+    } finally {
+        $fixture->close();
+    }
+});
+
 it('preserves unknown content inside an owned archive workspace until it can be resolved', function (): void {
     $fixture = new TransferArchiveNativeFixture;
     $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
