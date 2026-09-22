@@ -202,4 +202,6 @@ Persistent topology-snapshot construction and this disposable flow call the same
 
 Native sample creation selects one complete CLI command contract before changing resources. Current candidates use `project:list` and `project:create` with type `laravel-app`; an existing sample Project must have that type. Older typed candidates can use their advertised `app:list` and `app:create` commands. Command discovery accepts the descriptions printed by `list --raw`. Missing or partial Project commands refuse before mutation, and a failed selected operation never falls back to another contract. The legacy Instance and Workspace sample path remains separate.
 
+The production sample clone uses the Project's resolved default branch explicitly. It does not inherit the development sample's local `e2e-dev` branch, which need not exist in the remote repository. Missing or invalid branch evidence stops setup before cloning; it does not select `main` or create a remote branch.
+
 Construction failure triggers exact cleanup. Cleanup first validates the owner and operation metadata of every present recipe resource, then stops and deletes VMs in reverse recipe order, deletes the network, and verifies absence. A resource owned by another operation refuses the entire deletion instead of being adopted or removed.

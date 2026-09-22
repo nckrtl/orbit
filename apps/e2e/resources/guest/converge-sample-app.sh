@@ -162,8 +162,17 @@ case ${1-} in
         read -r verified_cluster_id cluster_phase <<<"$cluster_state"
         [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
       fi
+      typed_project_identity() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v)) exit(65); $branch=array_key_exists("default_branch", $v) ? $v["default_branch"] : ($v["main_branch"] ?? null); if(!is_int($v["id"] ?? null) || $v["id"]<1 || !is_string($branch) || $branch==="" || preg_match("/[\\x00-\\x20\\x7f]/", $branch)===1) exit(65); echo $v["id"], " ", $branch;'
+      }
       apps=$("$orbit" "${project_command}:list" --json)
-      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1) exit(65); if($m) { $x=$m[0]; $branch=array_key_exists("default_branch", $x) ? $x["default_branch"] : ($x["main_branch"] ?? null); if(($x["repository_url"] ?? null)!==$argv[2] || ($x["name"] ?? null)!==$argv[3] || ($x["root"] ?? null)!==$argv[4] || ($argv[5]==="project" && ($x["type"] ?? null)!=="laravel-app") || !is_string($branch) || $branch==="" || !is_int($x["id"] ?? null)) exit(65); } echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public "$project_command" <<<"$apps")
+      existing_project=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1) exit(65); if($m) { $x=$m[0]; if(($x["repository_url"] ?? null)!==$argv[2] || ($x["name"] ?? null)!==$argv[3] || ($x["root"] ?? null)!==$argv[4] || ($argv[5]==="project" && ($x["type"] ?? null)!=="laravel-app")) exit(65); echo json_encode($x, JSON_THROW_ON_ERROR); }' laravel-typed https://github.com/laravel/laravel.git Laravel public "$project_command" <<<"$apps")
+      app_id=
+      app_branch=
+      if [[ -n "$existing_project" ]]; then
+        project_identity=$(typed_project_identity <<<"$existing_project")
+        read -r app_id app_branch <<<"$project_identity"
+      fi
       typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
       [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
       typed_instances=$initial_instances
@@ -177,7 +186,8 @@ case ${1-} in
       fi
       if [[ -z "$app_id" ]]; then
         created_app=$("$orbit" "${project_command}:create" laravel-typed "${project_type[@]}" https://github.com/laravel/laravel.git --name=Laravel --root=public --json)
-        app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];' <<<"$created_app")
+        project_identity=$(typed_project_identity <<<"$created_app")
+        read -r app_id app_branch <<<"$project_identity"
       fi
       if [[ "$typed_count" -eq 0 ]]; then
         "$orbit" instance:create "$app_id" "$dev_id" e2e-dev --domain=e2e-dev.orbit --json >/dev/null
@@ -207,7 +217,7 @@ case ${1-} in
           fi
           # These operations are deliberately unguarded. A selected supported
           # operation failure must never enter the older direct-create path.
-          "$orbit" instance:clone "$typed_instance_id" "$prod_id" e2e-prod --preview-name=e2e-prod --json >/dev/null
+          "$orbit" instance:clone "$typed_instance_id" "$prod_id" e2e-prod --branch="$app_branch" --preview-name=e2e-prod --json >/dev/null
           typed_instances=$("$orbit" instance:list --json)
           prod_instance_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-prod")); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' <<<"$typed_instances")
           if [[ "$environment_contract" -eq 1 ]]; then

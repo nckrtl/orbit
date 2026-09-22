@@ -358,7 +358,7 @@ function typed_sample_resource_fixture(): array
             [[ "${PROJECT_CREATE_FAILS:-0}" == 0 ]] || exit 19
             [[ -e "$state/verified" ]] || touch "$state/app-before-cluster"
             touch "$state/app"
-            printf '{"id":1}'
+            [[ -n "${CREATED_APP_RESPONSE:-}" ]] && printf '%s' "$CREATED_APP_RESPONSE" || printf '{"id":1,"default_branch":"main"}'
             ;;
           instance:list)
             prefix=
@@ -394,7 +394,7 @@ function typed_sample_resource_fixture(): array
             printf '{"id":4}'
             ;;
           instance:clone)
-            [[ "$*" == 'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json' ]]
+            [[ $# -eq 7 && "$2" == 4 && "$3" == 3 && "$4" == e2e-prod && "$5" == "--branch=${CLONE_BRANCH:-main}" && "$6" == --preview-name=e2e-prod && "$7" == --json ]]
             [[ "${CLONE_FAILS:-0}" == 0 ]] || exit 19
             touch "$state/production"
             printf '{"id":5}'
@@ -3103,7 +3103,7 @@ describe('convergence guest scripts', function () {
             expect($commands)->toContain(
                 'project:list --json',
                 'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
-                'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
+                'instance:clone 4 3 e2e-prod --branch=main --preview-name=e2e-prod --json',
                 'instance:deploy 5 --json',
                 'env:sync --instance=5 --json',
             );
@@ -3120,6 +3120,68 @@ describe('convergence guest scripts', function () {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
+
+    it('clones the production sample with the Project branch rather than its local development branch', function (string $responseKey, array $branchFields, string $contract): void {
+        $fixture = typed_sample_resource_fixture();
+        $branch = '13.x';
+        $environment = [
+            'PROJECT_COMMAND_SURFACE' => $contract.":list\n".$contract.":create\n",
+            'COMMAND_SURFACE' => "instance:clone\ninstance:deploy\ninstance:deploy-step:create\n",
+            $responseKey => typed_sample_app($branchFields, ['type' => 'laravel-app']),
+            'CLONE_BRANCH' => $branch,
+        ];
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, $environment);
+
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            $commands = file($fixture['root'].'/commands', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)->toContain(
+                'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json',
+                'instance:clone 4 3 e2e-prod --branch=13.x --preview-name=e2e-prod --json',
+                'instance:deploy 5 --json',
+            );
+            expect(file_exists($fixture['root'].'/production'))->toBeTrue();
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'created current Project' => ['CREATED_APP_RESPONSE', ['default_branch' => '13.x'], 'project'],
+        'existing current Project' => ['TYPED_APP_RESPONSE', ['default_branch' => '13.x'], 'project'],
+        'created legacy App' => ['CREATED_APP_RESPONSE', ['main_branch' => '13.x'], 'app'],
+        'existing legacy App' => ['TYPED_APP_RESPONSE', ['main_branch' => '13.x'], 'app'],
+        'created default takes precedence' => ['CREATED_APP_RESPONSE', ['default_branch' => '13.x', 'main_branch' => 'main'], 'project'],
+        'existing default takes precedence' => ['TYPED_APP_RESPONSE', ['default_branch' => '13.x', 'main_branch' => 'main'], 'project'],
+    ]);
+
+    it('refuses malformed created Project branch evidence before Instance creation or clone', function (array $branchFields): void {
+        $fixture = typed_sample_resource_fixture();
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'COMMAND_SURFACE' => "instance:clone\ninstance:deploy\ninstance:deploy-step:create\n",
+                'CREATED_APP_RESPONSE' => typed_sample_app($branchFields),
+            ]);
+
+            expect($process->run())->toBe(65);
+            $commands = file_get_contents($fixture['root'].'/commands');
+            expect($commands)->not->toContain('instance:create ');
+            expect($commands)->not->toContain('instance:clone ');
+            expect($commands)->not->toContain('instance:deploy ');
+            expect(file_exists($fixture['root'].'/instance'))->toBeFalse();
+            expect(file_exists($fixture['root'].'/production'))->toBeFalse();
+            expect(file_exists($fixture['state']))->toBeFalse();
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing' => [[]],
+        'explicit null with legacy fallback' => [['default_branch' => null, 'main_branch' => 'main']],
+        'empty' => [['default_branch' => '']],
+        'wrong type' => [['default_branch' => 13]],
+        'newline' => [['default_branch' => "13.x\nmain"]],
+        'space' => [['default_branch' => '13.x main']],
+    ]);
 
     it('refuses incomplete project capabilities before any resource mutation', function (string $surface): void {
         $fixture = typed_sample_resource_fixture();
@@ -3375,7 +3437,7 @@ describe('convergence guest scripts', function () {
                 ->toBe('release')
                 ->and($commands)
                 ->toContain(
-                    'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
+                    'instance:clone 4 3 e2e-prod --branch=main --preview-name=e2e-prod --json',
                     'env:sync --instance=5 --json',
                     'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
                     'instance:deploy-step:create 5 migrate --command=php artisan migrate --force --no-interaction --json',
@@ -3413,7 +3475,7 @@ describe('convergence guest scripts', function () {
             expect($process->run())->toBe(19);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect($commands)
-                ->toContain('instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json')
+                ->toContain('instance:clone 4 3 e2e-prod --branch=main --preview-name=e2e-prod --json')
                 ->not->toContain(
                     'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
                     'instance:deploy 5 --json',
@@ -3439,7 +3501,7 @@ describe('convergence guest scripts', function () {
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect($commands)
                 ->toContain(
-                    'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --json',
+                    'instance:clone 4 3 e2e-prod --branch=main --preview-name=e2e-prod --json',
                     'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
                 )
                 ->not->toContain(
