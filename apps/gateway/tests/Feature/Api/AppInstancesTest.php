@@ -3325,6 +3325,9 @@ it('runs setup once on create and skips it for an already active instance', func
 });
 
 it('tears down and removes a newly created instance after confirmed setup failure', function (int $teardownExit): void {
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'preserve', 'branch' => 'dev'])->assertCreated();
+    $preservedId = AppInstance::query()->sole()->id;
+
     foreach (['setup', 'teardown'] as $phase) {
         ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
@@ -3333,8 +3336,8 @@ it('tears down and removes a newly created instance after confirmed setup failur
     $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
     expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
-        ->and(AppInstance::query()->count())->toBe(0)
-        ->and(Route::query()->count())->toBe(0);
+        ->and(AppInstance::query()->sole()->id)->toBe($preservedId)
+        ->and(Route::query()->count())->toBe(1);
 })->with([0, 1]);
 
 it('retains the checkout when setup execution cannot be confirmed', function (): void {

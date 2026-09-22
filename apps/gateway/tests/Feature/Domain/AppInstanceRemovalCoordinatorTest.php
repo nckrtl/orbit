@@ -1373,3 +1373,15 @@ final class Orb131CoordinatorProcessRuntimeManager implements ProcessRuntimeMana
         return '';
     }
 }
+
+it('refuses to cascade create rollback into another registered instance', function (): void {
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    expect(fn () => $this->orb181Coordinator->execute($checkout, force: true, runTeardown: false, allowCascade: false))
+        ->toThrow(ResourceOperationException::class, 'Create rollback cannot remove other Instances.')
+        ->and(AppInstance::query()->count())->toBe(3)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
+});

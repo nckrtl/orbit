@@ -188,7 +188,7 @@ final readonly class CreateAppInstanceAction
             }
 
             try {
-                ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, true, false);
+                ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
             } catch (Throwable) {
                 throw new ResourceOperationException(
                     errorCode: 'instance.setup_step_failed',
