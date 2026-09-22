@@ -30,6 +30,10 @@ final readonly class NativeGatewayCaddyConverger
                 errorCode: 'gateway.caddy_config_invalid',
                 arguments: [
                     'sudo',
+                    'runuser',
+                    '-u',
+                    'caddy',
+                    '--',
                     'caddy',
                     'validate',
                     '--config',

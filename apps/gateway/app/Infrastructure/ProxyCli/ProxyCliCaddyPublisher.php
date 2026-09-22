@@ -77,7 +77,7 @@ final readonly class ProxyCliCaddyPublisher
                     rm -rf -- "\$candidate"
                     exit 0
                 fi
-                caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" > "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
                 ln -s -- "\$published/Caddyfile" "\$candidate_link"
@@ -143,7 +143,7 @@ final readonly class ProxyCliCaddyPublisher
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
-                caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" > "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"

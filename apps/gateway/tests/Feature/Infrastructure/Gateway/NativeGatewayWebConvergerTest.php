@@ -59,11 +59,9 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
         );
         $caddyValidationIndex = $commands->search(
             static fn (array $arguments): bool => (
-                $arguments[0] === 'sudo'
-                && $arguments[1] === 'caddy'
-                && $arguments[2] === 'validate'
-                && str_ends_with($arguments[4] ?? '', '/Caddyfile')
-                && str_contains($arguments[4], '/etc/caddy/orbit-versions/')
+                array_slice($arguments, 0, 8) === ['sudo', 'runuser', '-u', 'caddy', '--', 'caddy', 'validate', '--config']
+                && str_ends_with($arguments[8] ?? '', '/Caddyfile')
+                && str_contains($arguments[8], '/etc/caddy/orbit-versions/')
             ),
         );
         $caddyPublishIndex = $commands->search(
@@ -665,9 +663,8 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
 
             if (
                 $this->failure === 'caddy-validation'
-                && $arguments[1] === 'caddy'
-                && $arguments[2] === 'validate'
-                && str_contains($arguments[4] ?? '', '/etc/caddy/orbit-versions/')
+                && array_slice($arguments, 0, 8) === ['sudo', 'runuser', '-u', 'caddy', '--', 'caddy', 'validate', '--config']
+                && str_contains($arguments[8] ?? '', '/etc/caddy/orbit-versions/')
             ) {
                 return new CommandResult(1, '', 'aggregate route conflict', 2, false);
             }

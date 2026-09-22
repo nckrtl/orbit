@@ -136,6 +136,19 @@ final class AppDevCaddyPublishHarness
             data: "#!/usr/bin/env bash\nprintf 'unexpected nested sudo\\n' >&2\nexit 97\n",
         );
         file_put_contents(
+            filename: $this->root.'/bin/runuser',
+            data: <<<'BASH'
+                #!/usr/bin/env bash
+                set -euo pipefail
+                test "$1" = -u
+                test "$2" = caddy
+                test "$3" = --
+                shift 3
+                export HARNESS_CADDY_RUNTIME_USER=caddy
+                exec "$@"
+                BASH,
+        );
+        file_put_contents(
             filename: $this->root.'/bin/install',
             data: <<<'BASH'
                 #!/usr/bin/env bash
@@ -175,6 +188,7 @@ final class AppDevCaddyPublishHarness
             data: <<<'BASH'
                 #!/usr/bin/env bash
                 set -euo pipefail
+                test "${HARNESS_CADDY_RUNTIME_USER:-}" = caddy
                 printf 'validate %s\n' "$*" >> "${HARNESS_VALIDATE_LOG}"
                 config=
 
@@ -222,6 +236,7 @@ final class AppDevCaddyPublishHarness
         file_put_contents(filename: $this->root.'/bin/chown', data: "#!/usr/bin/env bash\nexit 0\n");
 
         chmod($this->root.'/bin/sudo', permissions: 0o755);
+        chmod($this->root.'/bin/runuser', permissions: 0o755);
         chmod($this->root.'/bin/install', permissions: 0o755);
         chmod($this->root.'/bin/dpkg-query', permissions: 0o755);
         chmod($this->root.'/bin/caddy', permissions: 0o755);

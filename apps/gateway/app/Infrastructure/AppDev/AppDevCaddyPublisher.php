@@ -143,7 +143,7 @@ final readonly class AppDevCaddyPublisher
                     exit 0
                 fi
 
-                caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
@@ -256,7 +256,7 @@ final readonly class AppDevCaddyPublisher
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
-                caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"

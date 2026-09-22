@@ -86,7 +86,7 @@ App-dev Caddy publish and each awake-marker write create the hibernation directo
 | `app-instance-{id}.awake` | `root` | `0644` | Lets `caddy` skip wake when the marker exists. |
 | `app-instance-{id}.cold` | `root` | `0644` | Tells the Gateway to restore checkout dependencies before Process start. Caddy does not read this file. |
 
-The publish lock uses `umask 0077`. The Gateway sets each ancestor to `0755` so the `caddy` user can reach the leaf.
+The publish lock uses `umask 0077`. The Gateway sets each ancestor to `0755` so the `caddy` user can reach the leaf. Aggregate configuration validation runs as `caddy`, the service user, because validation can open access logs. Privileged publication still owns configuration files, certificates, locks, and rollback. Validation does not change existing log ownership or permissions. If an existing log is not writable by `caddy`, publication fails before switching the live configuration. An operator must verify and repair that exact log before retrying; Orbit does not adopt or repair arbitrary log paths.
 
 ## Wake
 

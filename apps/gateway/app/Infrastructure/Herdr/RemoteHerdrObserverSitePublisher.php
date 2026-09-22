@@ -405,7 +405,7 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
                 chown -R "\$root_owner:\$caddy_group" "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
-                "\$caddy" validate --config "\$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- "\$caddy" validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mutation_started=1

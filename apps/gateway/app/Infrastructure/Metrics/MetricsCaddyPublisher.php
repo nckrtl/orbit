@@ -102,7 +102,7 @@ final readonly class MetricsCaddyPublisher
                     printf 'orbit-metrics-publication:unchanged\n'
                     exit 0
                 fi
-                caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
                 mv -fT -- "\$candidate" "\$published"
@@ -228,7 +228,7 @@ final readonly class MetricsCaddyPublisher
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
-                caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
+                runuser -u caddy -- caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"

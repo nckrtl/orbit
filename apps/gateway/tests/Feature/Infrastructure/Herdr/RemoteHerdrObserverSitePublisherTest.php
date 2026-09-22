@@ -383,7 +383,17 @@ function herdr_publisher_harness(): array
 
     herdr_publisher_executable($bin.'/caddy', <<<'SH'
         #!/bin/sh
-        exit 0
+        test "${ORBIT_TEST_CADDY_RUNTIME_USER:-}" = caddy
+        SH);
+    herdr_publisher_executable($bin.'/runuser', <<<'SH'
+        #!/bin/sh
+        set -eu
+        test "$1" = -u
+        test "$2" = caddy
+        test "$3" = --
+        shift 3
+        export ORBIT_TEST_CADDY_RUNTIME_USER=caddy
+        exec "$@"
         SH);
     herdr_publisher_executable($bin.'/systemd-analyze', <<<'SH'
         #!/bin/sh
