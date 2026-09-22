@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskJevOutcome;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
@@ -20,6 +21,7 @@ function classifier_observation(
     ?string $reviewerText = null,
     bool $hasPendingSubtasks = true,
     ?string $prUrl = null,
+    array $recentMessages = [],
 ): TaskSessionObservation {
     return new TaskSessionObservation(
         taskId: 42,
@@ -46,6 +48,7 @@ function classifier_observation(
                 hasNewCommitsSinceThreadStart: $prUrl !== null,
                 prUrl: $prUrl,
                 ciSummary: $prUrl === null ? null : 'passing',
+                recentMessages: $recentMessages,
             ),
             new TaskThreadObservation(
                 threadId: 2,
@@ -149,4 +152,37 @@ it('escalates when Choice confidence is below the gate', function (): void {
 
 it('is bound as the task session classifier', function (): void {
     expect(app(TaskSessionClassifier::class))->toBeInstanceOf(LaravelAiTaskSessionClassifier::class);
+});
+
+it('offers only the three ADR 0113 Jev outcomes', function (): void {
+    expect(array_keys(TaskJevOutcome::choiceCriteria()))
+        ->toBe(['completed_successfully', 'changes_requested', 'assistance_required']);
+});
+
+it('requires a passing composer check in the last five messages for completion', function (): void {
+    Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]]);
+
+    $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(recentMessages: [[
+            'id' => 'tool-1', 'kind' => 'activity', 'label' => 'tool',
+            'text' => 'composer check passed (exit code 0)', 'at' => '2026-09-22T10:00:00Z',
+        ]]),
+        TaskThreadRole::Implementer,
+    );
+
+    expect($decision->outcome)->toBe(TaskJevOutcome::CompletedSuccessfully);
+});
+
+it('does not treat an assistant claim as composer check evidence', function (): void {
+    Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]]);
+
+    $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
+        classifier_observation(recentMessages: [[
+            'id' => 'assistant-1', 'kind' => 'message', 'label' => 'assistant',
+            'text' => 'I ran composer check and everything passed.', 'at' => '2026-09-22T10:00:00Z',
+        ]]),
+        TaskThreadRole::Implementer,
+    );
+
+    expect($decision->outcome)->toBe(TaskJevOutcome::AssistanceRequired);
 });

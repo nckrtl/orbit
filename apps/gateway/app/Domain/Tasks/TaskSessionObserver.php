@@ -55,6 +55,7 @@ final readonly class TaskSessionObserver
                 hasNewCommitsSinceThreadStart: $hasNewCommits, prUrl: $group->pr_url, ciSummary: null,
                 available: $observation !== null && $observation->state !== null,
                 error: $observation?->error, inputRequests: $requests,
+                recentMessages: $observation === null ? [] : array_slice($observation->entries, -5),
             );
         }
 
