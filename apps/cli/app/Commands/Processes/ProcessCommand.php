@@ -158,28 +158,34 @@ abstract class ProcessCommand extends GatewayCommand
             .'BEARER[_-]?TOKEN|CREDENTIAL|COOKIE)[A-Z0-9_.-]*';
     }
 
-    protected function renderProcess(ProcessResponse $process, string $message): int
+    protected function renderProcess(ProcessResponse $process, ?string $outcome = null): int
     {
+        $payload = $this->sanitizedProcessPayload($process->toArray());
+
         if ($this->option('json') === true) {
-            $this->writeJson($this->sanitizedProcessPayload($process->toArray()));
+            $this->writeJson($payload);
 
             return self::SUCCESS;
         }
 
+        unset($payload['runtime_config']);
+        /** @var array<string, scalar|null> $payload */
+        $message = "Process [{$payload['name']}] ".($outcome ?? "is {$payload['runtime_status']}").'.';
+
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
-            'ID' => $process->id,
-            'Name' => $process->name,
-            'Target' => "{$process->targetType}:{$process->targetId}",
-            'Runtime' => $process->runtime,
-            'Desired state' => $process->desiredState,
-            'Runtime status' => $process->runtimeStatus,
-            'Lifecycle state' => $process->status,
-            'Failed step' => $process->failedStep,
-            'Error code' => $process->errorCode,
-            'Restart' => $process->restartPolicy,
-            'Keep-alive' => $process->keepAlive ? 'yes' : 'no',
-            'Working directory' => $process->workingDirectory,
-            'Request ID' => $process->requestId,
+            'ID' => $payload['id'],
+            'Name' => $payload['name'],
+            'Target' => "{$payload['target_type']}:{$payload['target_id']}",
+            'Runtime' => $payload['runtime'],
+            'Desired state' => $payload['desired_state'],
+            'Runtime status' => $payload['runtime_status'],
+            'Lifecycle state' => $payload['status'],
+            'Failed step' => $payload['failed_step'],
+            'Error code' => $payload['error_code'],
+            'Restart' => $payload['restart_policy'],
+            'Keep-alive' => $payload['keep_alive'] ? 'yes' : 'no',
+            'Working directory' => $payload['working_directory'],
+            'Request ID' => $payload['request_id'],
         ]));
 
         return self::SUCCESS;

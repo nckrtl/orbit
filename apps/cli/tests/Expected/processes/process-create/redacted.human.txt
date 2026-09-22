@@ -1,0 +1,37 @@
+Creating Process...
+
+┌  Create Process
+│
+├  ● Created Process
+│
+└  Created Process.
+
+
+┌  Process [redis] is running.
+│
+├  ID                  12
+│
+├  Name                redis
+│
+├  Target              instance:7
+│
+├  Runtime             docker
+│
+├  Desired state       running
+│
+├  Runtime status      running
+│
+├  Lifecycle state     active
+│
+├  Failed step         —
+│
+├  Error code          —
+│
+├  Restart             unless-stopped
+│
+├  Keep-alive          yes
+│
+├  Working directory   /srv/password=[redacted]
+│
+└  Request ID          0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

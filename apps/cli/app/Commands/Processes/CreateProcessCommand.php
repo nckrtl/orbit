@@ -229,7 +229,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
             return self::FAILURE;
         }
 
-        return $this->renderProcess($process, "Process [{$process->name}] is {$process->runtimeStatus}.");
+        return $this->renderProcess($process);
     }
 
     /**

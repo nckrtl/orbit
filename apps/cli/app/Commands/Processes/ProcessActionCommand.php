@@ -44,7 +44,7 @@ abstract class ProcessActionCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        return $this->renderProcess($process, "Process [{$process->name}] {$this->pastTense()}.");
+        return $this->renderProcess($process, $this->pastTense());
     }
 
     abstract protected function request(int $processId): GatewayRequest;

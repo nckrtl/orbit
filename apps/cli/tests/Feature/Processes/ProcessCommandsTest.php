@@ -510,6 +510,85 @@ it('redacts secret environment values from JSON lifecycle responses', function (
         ->assertExitCode(0);
 });
 
+describe('safe Process results', function (): void {
+    it('keeps credential-shaped response strings out of titles and detail fields', function (bool $json): void {
+        $secret = process_cli_secret('response-title');
+        MockClient::global([
+            CreateProcessRequest::class => MockResponse::make([
+                'data' => process_cli_payload([
+                    'name' => "password={$secret}",
+                    'runtime_status' => "token={$secret}",
+                    'failed_step' => "secret={$secret}",
+                ]),
+                'meta' => ['request_id' => process_cli_request_id()],
+            ], 201),
+        ]);
+        $tester = new CommandTester(app(Kernel::class)->all()['process:create']);
+        $status = $tester->execute([
+            'name' => 'redis', '--instance' => '7', '--runtime' => 'docker',
+            '--command' => ['redis-server'], '--image' => 'redis:8-alpine', '--json' => $json,
+        ], ['interactive' => false, 'capture_stderr_separately' => true]);
+
+        expect($status)->toBe(0)
+            ->and($tester->getDisplay())->toContain('password=[redacted]', 'token=[redacted]', 'secret=[redacted]')
+            ->not->toContain($secret)
+            ->and($tester->getErrorOutput())->toBe('');
+    })->with(['human' => false, 'JSON' => true]);
+
+    it('uses the same safe working directory in create and lifecycle results', function (
+        string $command,
+        string $request,
+        array $arguments,
+        bool $json,
+        bool $secretPath,
+    ): void {
+        $secret = process_cli_secret('working-directory-result');
+        $path = $secretPath ? "/srv/password={$secret}" : '/srv/worker';
+        $expectedPath = $secretPath ? '/srv/password=[redacted]' : $path;
+        $payload = process_cli_payload(['working_directory' => $path, 'keep_alive' => true]);
+        $mock = MockClient::global([
+            $request => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => process_cli_request_id()],
+            ], $command === 'process:create' ? 201 : 200),
+        ]);
+        $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+        $status = $tester->execute([...$arguments, '--json' => $json], [
+            'interactive' => false,
+            'capture_stderr_separately' => true,
+        ]);
+        $output = $tester->getDisplay();
+
+        expect($status)->toBe(0)
+            ->and($output)->toContain($expectedPath, process_cli_request_id())->not->toContain($secret, "\x1b")
+            ->and($tester->getErrorOutput())->toBe('')
+            ->and($mock->getRecordedResponses())->toHaveCount(1)
+            ->and($mock->getLastRequest())->toBeInstanceOf($request);
+
+        if ($json) {
+            expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+                ...process_cli_sanitized_payload([...$payload, 'working_directory' => $expectedPath]),
+                'request_id' => process_cli_request_id(),
+            ]);
+        } else {
+            expect($output)->toContain('Process [redis]', 'instance:7', 'docker', 'unless-stopped', 'yes');
+
+            if ($command === 'process:create' && $secretPath) {
+                expect_output($output, 'processes/process-create/redacted.human.txt');
+            }
+        }
+    })->with([
+        'create' => ['process:create', CreateProcessRequest::class, [
+            'name' => 'redis', '--instance' => '7', '--runtime' => 'docker',
+            '--command' => ['redis-server'], '--image' => 'redis:8-alpine',
+        ]],
+        'start' => ['process:start', StartProcessRequest::class, ['process' => '12']],
+        'stop' => ['process:stop', StopProcessRequest::class, ['process' => '12']],
+        'restart' => ['process:restart', RestartProcessRequest::class, ['process' => '12']],
+        'destroy' => ['process:destroy', DestroyProcessRequest::class, ['process' => '12', '--yes' => true]],
+    ])->with(['human' => false, 'JSON' => true])->with(['ordinary path' => false, 'credential-shaped path' => true]);
+});
+
 it('redacts credential-shaped values from every process JSON runtime field', function (): void {
     $commandSecret = process_cli_secret('command');
     $inlineCommandSecret = process_cli_secret('inline-command');

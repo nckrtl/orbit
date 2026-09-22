@@ -168,6 +168,8 @@ Every runtime mutation rechecks exact Orbit ownership. Systemd replacement uses 
 
 Process responses identify the owning Instance or Node. Activity records identify that owner and the execution Node. Docker environment values and credential-shaped runtime data are redacted from responses, activity, errors, debug output, and bounded logs. Stored mysql, pgsql, and sqlite credentials live in the [Database connection](/reference/database-connections) registry; that registry does not start or stop a Process.
 
+Human and JSON Process results use the same credential redaction, including working directories. Ordinary paths and request IDs remain visible. The CLI omits environment values from both output modes.
+
 Systemd units use `orbit-process-{id}-{name}.service` and Docker containers use `orbit-process-{id}-{name}`. Collision checks require the exact Orbit process ID marker before replacement or deletion.
 
 ## Inspect and remove owned state
