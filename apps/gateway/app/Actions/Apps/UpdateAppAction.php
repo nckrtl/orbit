@@ -227,6 +227,9 @@ final readonly class UpdateAppAction
         $plan = $this->repositories->inventory($instances);
         $inventory = [
             'instances' => $instances->pluck('id')->all(),
+            'source_owners' => $instances->mapWithKeys(
+                fn (AppInstance $instance): array => [$instance->id => $this->sourceOwner($instance)],
+            )->all(),
             'production' => $this->productionSnapshots($instances),
             'inherited_defaults' => [],
             'explicit_defaults' => [],
@@ -292,75 +295,178 @@ final readonly class UpdateAppAction
     {
         $app = $update->app()->with('appInstances')->firstOrFail();
         $inventory = $update->inventory ?? [];
-        $evidence = $update->evidence ?? [];
+        $this->assertSourceInventory($update);
+
+        $inherited = $this->sourceInstances($app, $update, is_string($update->requested_default_branch)
+            ? ($inventory['inherited_defaults'] ?? []) : []);
+        $checkouts = $this->sourceInstances($app, $update, is_string($update->requested_repository_url)
+            ? ($inventory['repository']['checkout_ids'] ?? []) : []);
+        $worktrees = $this->sourceInstances($app, $update, is_string($update->requested_repository_url)
+            ? ($inventory['repository']['worktree_ids'] ?? []) : []);
+        $this->repositories->assertWorktreesOwned($checkouts, $worktrees);
 
         if (is_string($update->requested_default_branch)) {
-            $evidence['branches'] = $this->prepareDefaultBranches($app, $update, $evidence['branches'] ?? []);
+            $this->prepareDefaultBranches($app, $inherited, $update);
         }
 
         if (is_string($update->requested_repository_url)) {
-            $checkoutIds = $inventory['repository']['checkout_ids'] ?? [];
-            $checkouts = $app->appInstances
-                ->whereIn('id', is_array($checkoutIds) ? $checkoutIds : [])
-                ->values()
-                ->all();
-            $evidence['origins'] = $this->sources->changeOrigins(
+            $origins = $this->sources->changeOrigins(
                 $checkouts,
                 $update->previous_repository_url,
                 $update->requested_repository_url,
-                $evidence['origins'] ?? [],
+                $update->evidence['origins'] ?? [],
+                static function (array $evidence) use ($update): void {
+                    $update->mergeEvidence(['origins' => $evidence]);
+                },
             );
+            $update->mergeEvidence(['origins' => $origins]);
         }
 
         if (is_array($inventory['slug'] ?? null) && is_string($update->requested_slug)) {
-            $evidence['slug'] = $this->projections->prepareSlug($app, $update->requested_slug, $inventory['slug']);
+            $update->mergeEvidence([
+                'slug' => $this->projections->prepareSlug($app, $update->requested_slug, $inventory['slug']),
+            ]);
         }
 
         if (is_array($inventory['root'] ?? null) && is_string($update->requested_root)) {
-            $evidence['root'] = $this->projections->prepareRoot($app, $update->requested_root, $inventory['root']);
+            $update->mergeEvidence([
+                'root' => $this->projections->prepareRoot($app, $update->requested_root, $inventory['root']),
+            ]);
         }
 
-        $update->update([
-            'status' => AppUpdateStatus::Prepared,
-            'evidence' => $evidence,
-        ]);
+        $update->update(['status' => AppUpdateStatus::Prepared]);
     }
 
-    /**
-     * @param  list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>  $evidence
-     * @return list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>
-     */
-    private function prepareDefaultBranches(OrbitApp $app, AppUpdate $update, array $evidence): array
+    /** @param list<AppInstance> $instances */
+    private function prepareDefaultBranches(OrbitApp $app, array $instances, AppUpdate $update): void
     {
         $byId = [];
 
-        foreach ($evidence as $row) {
+        foreach ($update->evidence['branches'] ?? [] as $row) {
             $byId[$row['instance_id']] = $row;
         }
 
-        foreach ($app->appInstances as $instance) {
+        foreach ($instances as $instance) {
             if (! $this->inheritance->inheritsAppDefault($instance)) {
-                continue;
+                $this->refuseSourceOwner();
             }
 
             $existing = $byId[$instance->id] ?? null;
+            $owner = $update->inventory['source_owners'][$instance->id];
+
+            if (is_array($existing)) {
+                $this->ownedSource($app, $existing);
+
+                if ($existing['current_branch'] !== $update->requested_default_branch) {
+                    $this->refuseSourceOwner();
+                }
+            } elseif ($instance->branch !== $owner['branch']) {
+                $this->refuseSourceOwner();
+            }
+
+            if (! is_string($owner['branch']) && ! is_string($update->previous_default_branch)) {
+                $this->refuseSourceOwner();
+            }
 
             if (is_array($existing) && $existing['switched']) {
                 continue;
             }
 
-            $previous = $instance->branch;
+            $byId[$instance->id] ??= [
+                ...$owner,
+                'previous_branch' => $owner['branch'],
+                'current_branch' => $update->requested_default_branch,
+                'switched' => false,
+            ];
+            $byId[$instance->id]['attempted'] = true;
+            $update->mergeEvidence(['branches' => array_values($byId)]);
             $this->sources->switchDefaultBranch($instance, (string) $update->requested_default_branch);
             $instance->update(['branch' => $update->requested_default_branch]);
-            $byId[$instance->id] = [
-                'instance_id' => $instance->id,
-                'previous_branch' => $previous,
-                'current_branch' => $update->requested_default_branch,
-                'switched' => true,
-            ];
+            $byId[$instance->id]['switched'] = true;
+            $update->mergeEvidence(['branches' => array_values($byId)]);
+        }
+    }
+
+    /** @return array{app_id: int, instance_id: int, node_id: int, path: string, source_layout: string, branch: ?string} */
+    private function sourceOwner(AppInstance $instance): array
+    {
+        return [
+            'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
+            'node_id' => $instance->node_id,
+            'path' => rtrim($instance->checkout_path, '/'),
+            'source_layout' => $instance->source_layout,
+            'branch' => $instance->branch,
+        ];
+    }
+
+    private function assertSourceInventory(AppUpdate $update): void
+    {
+        $inventory = $update->inventory;
+
+        if (
+            (! is_string($update->requested_default_branch) && ! is_string($update->requested_repository_url))
+            || is_array($inventory['source_owners'] ?? null)
+        ) {
+            return;
         }
 
-        return array_values($byId);
+        if (
+            $inventory !== null
+            || $update->status === AppUpdateStatus::Preflighted
+            || $update->error_code === 'app.source_owner_changed'
+        ) {
+            $this->refuseSourceOwner();
+        }
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return list<AppInstance>
+     */
+    private function sourceInstances(OrbitApp $app, AppUpdate $update, array $ids): array
+    {
+        $instances = [];
+
+        foreach ($ids as $id) {
+            $owner = $update->inventory['source_owners'][$id] ?? null;
+
+            if (! is_array($owner) || ($owner['instance_id'] ?? null) !== $id) {
+                $this->refuseSourceOwner();
+            }
+
+            $instances[] = $this->ownedSource($app, $owner);
+        }
+
+        return $instances;
+    }
+
+    /** @param array<string, mixed> $owner */
+    private function ownedSource(OrbitApp $app, array $owner): AppInstance
+    {
+        $instance = $app->appInstances->firstWhere('id', $owner['instance_id'] ?? null);
+
+        if (
+            ! $instance instanceof AppInstance
+            || ($owner['app_id'] ?? null) !== $app->id
+            || ($owner['node_id'] ?? null) !== $instance->node_id
+            || ($owner['path'] ?? null) !== rtrim($instance->checkout_path, '/')
+            || ($owner['source_layout'] ?? null) !== $instance->source_layout
+            || $instance->placedOnAppProd()
+        ) {
+            $this->refuseSourceOwner();
+        }
+
+        return $instance;
+    }
+
+    private function refuseSourceOwner(): never
+    {
+        throw new ResourceOperationException(
+            errorCode: 'app.source_owner_changed',
+            message: 'Source update evidence does not identify the selected development source owner.',
+            status: 409,
+        );
     }
 
     private function publish(AppUpdate $update): void
@@ -432,6 +538,22 @@ final readonly class UpdateAppAction
     {
         $app = $update->app()->with('appInstances')->firstOrFail();
         $evidence = $update->evidence ?? [];
+        $this->assertSourceInventory($update);
+        $branches = [];
+
+        foreach ($evidence['branches'] ?? [] as $row) {
+            if (! is_array($row) || (! ($row['switched'] ?? false) && ! ($row['attempted'] ?? false))) {
+                continue;
+            }
+
+            $instance = $this->ownedSource($app, $row);
+
+            if (! $this->inheritance->inheritsAppDefault($instance)) {
+                $this->refuseSourceOwner();
+            }
+
+            $branches[] = [$instance, $row];
+        }
 
         if (is_array($evidence['slug'] ?? null)) {
             $this->projections->rollbackSlug($app, $evidence['slug']);
@@ -445,22 +567,14 @@ final readonly class UpdateAppAction
             $this->sources->restoreOrigins($app, $evidence['origins']);
         }
 
-        foreach ($evidence['branches'] ?? [] as $row) {
-            if (! is_array($row) || ! ($row['switched'] ?? false)) {
-                continue;
-            }
-
-            $instance = $app->appInstances->firstWhere('id', $row['instance_id']);
-
-            if (! $instance instanceof AppInstance) {
-                continue;
-            }
-
+        foreach ($branches as [$instance, $row]) {
             $previous = is_string($row['previous_branch'] ?? null) ? $row['previous_branch'] : $update->previous_default_branch;
 
             if (is_string($previous)) {
                 $this->sources->restoreDefaultBranch($instance, $previous);
-                $instance->update(['branch' => $previous]);
+                $instance->update(['branch' => $row['previous_branch']]);
+            } else {
+                $this->refuseSourceOwner();
             }
         }
 

@@ -105,6 +105,8 @@ When the repository access URL changes, the Gateway updates `origin` once for ea
 
 Checkout identity includes its Node. Equal paths on different Nodes remain separate sources during updates, retries, and recovery. Recovery checks the recorded Project, Instance, Node, and path before changing an origin. Older path-only evidence is usable only when exactly one development checkout owned by the Project matches it. Missing, changed, or ambiguous ownership stops recovery with `app.repository_origin_owner_changed` before any origin changes.
 
+The preflight inventory keeps each selected source's Project, Instance, Node, path, and layout. Before switching a branch or origin, the Gateway saves that owner and the original value in the update's recovery journal. It then records confirmed completion. Recovery restores attempted changes even when a remote success acknowledgment was lost. Failed restoration keeps the update in `rolling_back` for an identical retry. Changed source owners, or older interrupted source inventories without enough ownership evidence, stop with `app.source_owner_changed`; the Gateway does not guess a replacement source.
+
 When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The Instance name, managed path, and Route identity stay unchanged.
 
 When the slug or web root changes, the Gateway reconciles generated Routes, runtime projections, and Laravel canonical URLs before publication. An application HTTP error does not block completion after Orbit-owned writes succeed. [Applications](/domains/applications#reconcile-an-app-update) describes source ownership and Laravel URL ownership during these updates.

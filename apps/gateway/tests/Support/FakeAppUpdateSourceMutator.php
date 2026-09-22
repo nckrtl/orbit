@@ -8,6 +8,7 @@ use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use Closure;
 
 final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
 {
@@ -19,6 +20,9 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
 
     /** @var list<int> */
     public array $switchedInstances = [];
+
+    /** @var list<array{instance_id: int, branch: string}> */
+    public array $restoredBranches = [];
 
     public bool $refuseRepositoryPreflight = false;
 
@@ -40,7 +44,7 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
         }
     }
 
-    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence): array
+    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence, Closure $recordEvidence): array
     {
         if ($this->failOriginChange && $evidence === []) {
             throw new ResourceOperationException(
@@ -63,16 +67,20 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
                 continue;
             }
 
-            $this->originMutations[] = $path;
-            $byId[$checkout->id] = [
+            $byId[$checkout->id] ??= [
                 'app_id' => $checkout->app_id,
                 'instance_id' => $checkout->id,
                 'node_id' => $checkout->node_id,
                 'path' => $path,
                 'previous_url' => $previousUrl,
                 'current_url' => $newUrl,
-                'mutated' => true,
+                'mutated' => false,
             ];
+            $byId[$checkout->id]['attempted'] = true;
+            $recordEvidence(array_values($byId));
+            $this->originMutations[] = $path;
+            $byId[$checkout->id]['mutated'] = true;
+            $recordEvidence(array_values($byId));
         }
 
         return array_values($byId);
@@ -81,7 +89,7 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
     public function restoreOrigins(OrbitApp $app, array $mutations): void
     {
         foreach ($mutations as $mutation) {
-            if (($mutation['mutated'] ?? false) !== true) {
+            if (($mutation['mutated'] ?? false) !== true && ($mutation['attempted'] ?? false) !== true) {
                 continue;
             }
 
@@ -105,5 +113,8 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
         $this->switchedInstances[] = $instance->id;
     }
 
-    public function restoreDefaultBranch(AppInstance $instance, string $previousBranch): void {}
+    public function restoreDefaultBranch(AppInstance $instance, string $previousBranch): void
+    {
+        $this->restoredBranches[] = ['instance_id' => $instance->id, 'branch' => $previousBranch];
+    }
 }

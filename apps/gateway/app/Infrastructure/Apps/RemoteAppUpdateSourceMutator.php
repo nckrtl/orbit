@@ -16,6 +16,7 @@ use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use Closure;
 
 final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMutator
 {
@@ -51,10 +52,16 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         }
     }
 
-    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence): array
+    public function changeOrigins(array $checkouts, string $previousUrl, string $newUrl, array $evidence, Closure $recordEvidence): array
     {
         $checkouts = $this->uniqueCheckouts($checkouts);
         $byId = $this->ownedEvidence($checkouts, $evidence);
+
+        foreach ($byId as $row) {
+            if ($row['previous_url'] !== $previousUrl || $row['current_url'] !== $newUrl) {
+                $this->refuseOwner();
+            }
+        }
 
         foreach ($checkouts as $checkout) {
             $path = rtrim($checkout->checkout_path, '/');
@@ -62,6 +69,18 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
             if (($byId[$checkout->id]['mutated'] ?? false) === true) {
                 continue;
             }
+
+            $byId[$checkout->id] ??= [
+                'app_id' => $checkout->app_id,
+                'instance_id' => $checkout->id,
+                'node_id' => $checkout->node_id,
+                'path' => $path,
+                'previous_url' => $previousUrl,
+                'current_url' => $newUrl,
+                'mutated' => false,
+            ];
+            $byId[$checkout->id]['attempted'] = true;
+            $recordEvidence(array_values($byId));
 
             $this->run(
                 $checkout,
@@ -78,15 +97,8 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                 'app.repository_origin_failed',
             );
 
-            $byId[$checkout->id] = [
-                'app_id' => $checkout->app_id,
-                'instance_id' => $checkout->id,
-                'node_id' => $checkout->node_id,
-                'path' => $path,
-                'previous_url' => $previousUrl,
-                'current_url' => $newUrl,
-                'mutated' => true,
-            ];
+            $byId[$checkout->id]['mutated'] = true;
+            $recordEvidence(array_values($byId));
         }
 
         return array_values($byId);
@@ -99,7 +111,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         $byId = array_column($checkouts, null, 'id');
 
         foreach ($this->ownedEvidence($checkouts, $mutations) as $mutation) {
-            if ($mutation['mutated'] !== true) {
+            if ($mutation['mutated'] !== true && ($mutation['attempted'] ?? false) !== true) {
                 continue;
             }
 
@@ -159,7 +171,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
             <<<'BASH'
                 path=$1
                 branch=$2
-                git -C "$path" checkout -- "$branch"
+                git -C "$path" switch -- "$branch"
                 BASH,
             'app-update-default-branch-restore',
             'app.source_switch_failed',
@@ -207,8 +219,8 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
 
     /**
      * @param  list<AppInstance>  $checkouts
-     * @param  list<array{app_id?: int, instance_id?: int, node_id?: int, path: string, previous_url: string, current_url: string, mutated: bool}>  $evidence
-     * @return array<int, array{app_id: int, instance_id: int, node_id: int, path: string, previous_url: string, current_url: string, mutated: bool}>
+     * @param  list<array{app_id?: int, instance_id?: int, node_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>  $evidence
+     * @return array<int, array{app_id: int, instance_id: int, node_id: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>
      */
     private function ownedEvidence(array $checkouts, array $evidence): array
     {
@@ -241,6 +253,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                 'previous_url' => $row['previous_url'],
                 'current_url' => $row['current_url'],
                 'mutated' => $row['mutated'],
+                ...(array_key_exists('attempted', $row) ? ['attempted' => $row['attempted']] : []),
             ];
 
             if (isset($owned[$checkout->id]) && $owned[$checkout->id] !== $normalized) {

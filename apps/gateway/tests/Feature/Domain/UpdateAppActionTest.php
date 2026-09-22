@@ -6,12 +6,28 @@ use App\Actions\Apps\UpdateAppAction;
 use App\Data\Apps\UpdateAppData;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Apps\AppUpdateStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppUpdate;
+use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Database\QueryException;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\Process\Process;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\Orb101AppUpdateFixture;
 
 beforeEach(function (): void {
@@ -38,7 +54,285 @@ function orb101_update_data(
     );
 }
 
+function orb101_preflighted_source_update(Orb101AppUpdateFixture $fixture, UpdateAppData $data): AppUpdate
+{
+    $instance = $fixture->defaultInstance;
+
+    return AppUpdate::query()->create([
+        'app_id' => $fixture->app->id,
+        'status' => AppUpdateStatus::Preflighted,
+        'fingerprint' => $data->fingerprint(),
+        'requested_repository_url' => $data->repositoryUrl,
+        'requested_default_branch' => $data->defaultBranch,
+        'previous_slug' => $fixture->app->slug,
+        'previous_repository_url' => $fixture->app->repository_url,
+        'previous_default_branch' => $fixture->app->default_branch,
+        'previous_root' => $fixture->app->root,
+        'inventory' => [
+            'source_owners' => [$instance->id => [
+                'app_id' => $instance->app_id,
+                'instance_id' => $instance->id,
+                'node_id' => $instance->node_id,
+                'path' => $instance->checkout_path,
+                'source_layout' => $instance->source_layout,
+                'branch' => $instance->branch,
+            ]],
+            'inherited_defaults' => $data->defaultBranchProvided ? [$instance->id] : [],
+            'repository' => ['checkout_ids' => $data->repositoryUrlProvided ? [$instance->id] : []],
+            'production' => [],
+        ],
+        'evidence' => [],
+    ]);
+}
+
 describe('UpdateAppAction', function (): void {
+    it('returns a real checkout to its original Git branch after later preparation fails', function (bool $matchingFile): void {
+        $directory = trim(new Process(['mktemp', '-d', sys_get_temp_dir().'/orbit-source-rollback-XXXXXX'])
+            ->mustRun()->getOutput());
+
+        try {
+            new Process(['git', 'init', '--initial-branch=main', $directory])->mustRun();
+
+            if ($matchingFile) {
+                file_put_contents($directory.'/main', "A tracked path with the branch name.\n");
+                new Process(['git', '-C', $directory, 'add', 'main'])->mustRun();
+            }
+
+            new Process([
+                'git', '-C', $directory, '-c', 'user.name=Source recovery test',
+                '-c', 'user.email=source-recovery@example.test', 'commit', '--allow-empty', '-m', 'Initial',
+            ])->mustRun();
+            new Process(['git', '-C', $directory, 'branch', 'stable'])->mustRun();
+            new Process(['git', '-C', $directory, 'remote', 'add', 'origin', $directory])->mustRun();
+            $this->fixture->defaultInstance->update(['checkout_path' => $directory]);
+            $this->fixture->projections->failSlugPrepare = true;
+            app()->instance(SshExecutor::class, new class implements SshExecutor
+            {
+                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+                {
+                    return new NativeProcessRunner()->run(new ProcessInvocation(
+                        arguments: $command->arguments,
+                        input: $command->input,
+                        protectedInput: $command->protectedInput,
+                    ));
+                }
+            });
+            app()->instance(AppUpdateSourceMutator::class, app(RemoteAppUpdateSourceMutator::class));
+
+            expect(fn () => app(UpdateAppAction::class)->execute(
+                $this->fixture->app,
+                orb101_update_data(slug: 'shop', defaultBranch: 'stable'),
+            ))->toThrow(ResourceOperationException::class);
+
+            expect(trim(new Process(['git', '-C', $directory, 'branch', '--show-current'])->mustRun()->getOutput()))
+                ->toBe('main');
+            expect($this->fixture->defaultInstance->refresh()->branch)->toBe('main');
+            expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+        } finally {
+            new Filesystem()->deleteDirectory($directory);
+        }
+    })->with(['branch only' => false, 'branch and matching path' => true]);
+
+    it('refuses a resumed source update when its preflighted owner changed', function (string $source, string $change): void {
+        $data = $source === 'branch'
+            ? orb101_update_data(defaultBranch: 'stable')
+            : orb101_update_data(repositoryUrl: 'https://github.com/acme/site.git');
+        $update = orb101_preflighted_source_update($this->fixture, $data);
+        $instance = $this->fixture->defaultInstance;
+        match ($change) {
+            'node' => $instance->update(['node_id' => Node::query()->create([
+                'name' => 'moved', 'status' => LifecycleStatus::Active,
+                'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.81',
+            ])->id]),
+            'path' => $instance->update(['checkout_path' => '/srv/moved']),
+            'project' => $instance->update(['app_id' => OrbitApp::query()->create([
+                'name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://github.com/acme/other.git',
+            ])->id]),
+            'layout' => $instance->update(['source_layout' => AppInstanceSourceLayout::Worktree->value]),
+            'production' => $instance->update(['environment' => 'production']),
+            'deleted' => $instance->delete(),
+        };
+
+        expect(fn () => app(UpdateAppAction::class)->execute($this->fixture->app, $data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('app.source_owner_changed');
+            });
+
+        expect($this->fixture->sources->originMutations)->toBe([]);
+        expect($this->fixture->sources->switchedInstances)->toBe([]);
+        expect($update->refresh()->status)->toBe(AppUpdateStatus::RolledBack);
+        expect($this->fixture->app->refresh()->default_branch)->toBe('main');
+        expect($this->fixture->app->repository_url)->toBe('git@github.com:acme/site.git');
+    })->with(['branch', 'origin'])->with(['node', 'path', 'project', 'layout', 'production', 'deleted']);
+
+    it('retains recovery state for an older interrupted source inventory without exact owners', function (bool $missingInventory): void {
+        $data = orb101_update_data(defaultBranch: 'stable');
+        $update = orb101_preflighted_source_update($this->fixture, $data);
+        $inventory = $update->inventory;
+        unset($inventory['source_owners']);
+        $update->update(['inventory' => $missingInventory ? null : $inventory]);
+
+        expect(fn () => app(UpdateAppAction::class)->execute($this->fixture->app, $data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('app.source_owner_changed');
+            });
+
+        expect($update->refresh()->status)->toBe(AppUpdateStatus::RollingBack);
+        expect($this->fixture->sources->switchedInstances)->toBe([]);
+        expect($this->fixture->sources->restoredBranches)->toBe([]);
+    })->with(['legacy IDs only' => false, 'missing inventory' => true]);
+
+    it('retains attempted branch recovery when the recorded owner no longer owns its path', function (): void {
+        $data = orb101_update_data(defaultBranch: 'stable');
+        $update = orb101_preflighted_source_update($this->fixture, $data);
+        $owner = $update->inventory['source_owners'][$this->fixture->defaultInstance->id];
+        $update->update([
+            'status' => AppUpdateStatus::RollingBack,
+            'evidence' => ['branches' => [[
+                ...$owner, 'previous_branch' => 'main', 'current_branch' => 'stable',
+                'attempted' => true, 'switched' => false,
+            ]]],
+        ]);
+        $this->fixture->defaultInstance->update(['checkout_path' => '/srv/moved']);
+
+        expect(fn () => app(UpdateAppAction::class)->execute($this->fixture->app, $data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('app.source_owner_changed');
+            });
+
+        expect($update->refresh()->status)->toBe(AppUpdateStatus::RollingBack);
+        expect($update->evidence['branches'][0]['path'])->toBe('/srv/orbit/apps/acme/default');
+        expect($this->fixture->sources->restoredBranches)->toBe([]);
+    });
+
+    it('restores completed branch and origin changes when later slug preparation fails', function (): void {
+        $this->fixture->projections->failSlugPrepare = true;
+
+        expect(fn () => app(UpdateAppAction::class)->execute(
+            $this->fixture->app,
+            orb101_update_data(slug: 'shop', repositoryUrl: 'https://github.com/acme/site.git', defaultBranch: 'stable'),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect($this->fixture->defaultInstance->refresh()->branch)->toBe('main');
+        expect($this->fixture->app->refresh()->default_branch)->toBe('main');
+        expect($this->fixture->sources->restoredBranches)->toBe([
+            ['instance_id' => $this->fixture->defaultInstance->id, 'branch' => 'main'],
+        ]);
+        expect($this->fixture->sources->originRestores)->toBe([$this->fixture->defaultInstance->checkout_path]);
+        expect(AppUpdate::query()->sole()->evidence['branches'][0]['previous_branch'])->toBe('main');
+        expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+    });
+
+    it('restores the exact branch owner after a lost remote switch acknowledgment', function (): void {
+        $ssh = new AppDevFakeSshExecutor([
+            new CommandResult(0, '', '', 1, false),
+            new CommandResult(1, '', '', 1, false),
+        ]);
+        app()->instance(SshExecutor::class, $ssh);
+        app()->instance(AppUpdateSourceMutator::class, app(RemoteAppUpdateSourceMutator::class));
+
+        expect(fn () => app(UpdateAppAction::class)->execute(
+            $this->fixture->app,
+            orb101_update_data(defaultBranch: 'stable'),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect(array_column($ssh->connections, 'host'))->toBe(['10.44.0.80', '10.44.0.80', '10.44.0.80']);
+        expect($ssh->commands[2]->arguments)->toBe([
+            'bash', '-seu', '--', $this->fixture->defaultInstance->checkout_path, 'main',
+        ]);
+        expect($ssh->commands[2]->input)->toContain('switch -- "$branch"');
+        expect(AppUpdate::query()->sole()->evidence['branches'][0])->toMatchArray([
+            'attempted' => true, 'switched' => false, 'previous_branch' => 'main',
+        ]);
+        expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+        expect($this->fixture->defaultInstance->refresh()->branch)->toBe('main');
+    });
+
+    it('restores the original nullable stored branch without losing its inherited Git branch', function (): void {
+        $this->fixture->defaultInstance->update(['branch' => null]);
+        $this->fixture->projections->failSlugPrepare = true;
+
+        expect(fn () => app(UpdateAppAction::class)->execute(
+            $this->fixture->app,
+            orb101_update_data(slug: 'shop', defaultBranch: 'stable'),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect($this->fixture->defaultInstance->refresh()->branch)->toBeNull();
+        expect($this->fixture->sources->restoredBranches)->toBe([
+            ['instance_id' => $this->fixture->defaultInstance->id, 'branch' => 'main'],
+        ]);
+        expect(AppUpdate::query()->sole()->evidence['branches'][0]['previous_branch'])->toBeNull();
+    });
+
+    it('restores a switched branch when saving its completion fails', function (string $failure): void {
+        $trigger = match ($failure) {
+            'instance' => <<<'SQL'
+                CREATE TEMP TRIGGER source_completion_failure BEFORE UPDATE ON app_instances
+                WHEN NEW.branch = 'stable'
+                BEGIN SELECT RAISE(ABORT, 'Injected Instance completion failure.'); END
+                SQL,
+            'journal' => <<<'SQL'
+                CREATE TEMP TRIGGER source_completion_failure BEFORE UPDATE ON app_updates
+                WHEN json_extract(NEW.evidence, '$.branches[0].switched') = 1
+                BEGIN SELECT RAISE(ABORT, 'Injected journal completion failure.'); END
+                SQL,
+        };
+        DB::unprepared($trigger);
+
+        try {
+            expect(fn () => app(UpdateAppAction::class)->execute(
+                $this->fixture->app,
+                orb101_update_data(defaultBranch: 'stable'),
+            ))->toThrow(QueryException::class);
+        } finally {
+            DB::unprepared('DROP TRIGGER source_completion_failure');
+        }
+
+        expect($this->fixture->sources->switchedInstances)->toBe([$this->fixture->defaultInstance->id]);
+        expect($this->fixture->sources->restoredBranches)->toBe([
+            ['instance_id' => $this->fixture->defaultInstance->id, 'branch' => 'main'],
+        ]);
+        expect($this->fixture->defaultInstance->refresh()->branch)->toBe('main');
+        expect(AppUpdate::query()->sole()->evidence['branches'][0])->toMatchArray([
+            'previous_branch' => 'main', 'attempted' => true, 'switched' => false,
+        ]);
+        expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+    })->with(['instance', 'journal']);
+
+    it('resumes preflighted source preparation without repeating completed source mutations', function (): void {
+        $data = orb101_update_data(repositoryUrl: 'https://github.com/acme/site.git', defaultBranch: 'stable');
+        app(UpdateAppAction::class)->execute($this->fixture->app, $data);
+        $update = AppUpdate::query()->sole();
+        $update->update(['status' => AppUpdateStatus::Preflighted]);
+        $this->fixture->app->update(['default_branch' => 'main', 'repository_url' => 'git@github.com:acme/site.git']);
+
+        app(UpdateAppAction::class)->execute($this->fixture->app, $data);
+
+        expect($this->fixture->sources->switchedInstances)->toBe([$this->fixture->defaultInstance->id]);
+        expect($this->fixture->sources->originMutations)->toBe([$this->fixture->defaultInstance->checkout_path]);
+        expect($update->refresh()->status)->toBe(AppUpdateStatus::Complete);
+        expect($update->evidence['branches'][0]['previous_branch'])->toBe('main');
+        expect($update->evidence['origins'][0]['previous_url'])->toBe('git@github.com:acme/site.git');
+    });
+
+    it('retains original branch evidence when retrying an unacknowledged switch', function (): void {
+        $data = orb101_update_data(defaultBranch: 'stable');
+        app(UpdateAppAction::class)->execute($this->fixture->app, $data);
+        $update = AppUpdate::query()->sole();
+        $evidence = $update->evidence;
+        $evidence['branches'][0]['switched'] = false;
+        $update->update(['status' => AppUpdateStatus::Preflighted, 'evidence' => $evidence]);
+        $this->fixture->app->update(['default_branch' => 'main']);
+
+        app(UpdateAppAction::class)->execute($this->fixture->app, $data);
+
+        expect($this->fixture->sources->switchedInstances)->toBe([
+            $this->fixture->defaultInstance->id, $this->fixture->defaultInstance->id,
+        ]);
+        expect($update->refresh()->evidence['branches'][0]['previous_branch'])->toBe('main');
+        expect($update->status)->toBe(AppUpdateStatus::Complete);
+    });
+
     it('preserves an explicit default-instance branch selection that matched the old default', function (): void {
         $this->fixture->defaultInstance->update(['branch_override' => 'main']);
 

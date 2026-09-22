@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Apps\AppRepositoryUpdatePlanner;
 use App\Domain\Apps\AppUpdateSourceMutator;
+use App\Domain\Apps\AppUpdateStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
@@ -17,6 +18,8 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppUpdate;
 use App\Models\Node;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\Orb101AppUpdateFixture;
 
@@ -76,6 +79,178 @@ function orb101_origin_evidence(AppInstance $checkout, bool $qualified = true): 
 }
 
 describe('App repository reconciliation', function (): void {
+    it('rechecks the preflighted worktree owner before resuming origin preparation', function (string $change, string $code): void {
+        $worktree = $this->fixture->defaultInstance->replicate(['name']);
+        $worktree->fill([
+            'name' => 'feature',
+            'checkout_path' => '/srv/orbit/apps/acme/feature',
+            'source_layout' => AppInstanceSourceLayout::Worktree->value,
+            'registration_common_repository_path' => $this->fixture->defaultInstance->checkout_path,
+        ]);
+        $worktree->save();
+        $data = orb101_repository_data('https://github.com/acme/site.git');
+        app(UpdateAppAction::class)->execute($this->fixture->app, $data);
+        AppUpdate::query()->sole()->update(['status' => AppUpdateStatus::Preflighted, 'evidence' => []]);
+        $this->fixture->app->update(['repository_url' => 'git@github.com:acme/site.git']);
+        $this->fixture->sources->originMutations = [];
+        $worktree->update([$change => '/srv/no-longer-owned']);
+
+        expect(fn () => app(UpdateAppAction::class)->execute($this->fixture->app, $data))
+            ->toThrow(function (ResourceOperationException $exception) use ($code): void {
+                expect($exception->errorCode)->toBe($code);
+            });
+
+        expect($this->fixture->sources->originMutations)->toBe([]);
+        expect($this->fixture->app->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    })->with([
+        'worktree moved' => ['checkout_path', 'app.source_owner_changed'],
+        'common repository changed' => ['registration_common_repository_path', 'app.repository_unowned_common'],
+    ]);
+
+    it('does not start an origin change when its attempted-owner journal cannot be saved', function (): void {
+        $ssh = new AppDevFakeSshExecutor;
+        app()->instance(SshExecutor::class, $ssh);
+        app()->instance(AppUpdateSourceMutator::class, app(RemoteAppUpdateSourceMutator::class));
+        DB::unprepared(<<<'SQL'
+            CREATE TEMP TRIGGER origin_attempt_failure BEFORE UPDATE ON app_updates
+            WHEN json_extract(NEW.evidence, '$.origins[0].attempted') = 1
+            BEGIN SELECT RAISE(ABORT, 'Injected origin attempt failure.'); END
+            SQL);
+
+        try {
+            expect(fn () => app(UpdateAppAction::class)->execute(
+                $this->fixture->app,
+                orb101_repository_data('https://github.com/acme/site.git'),
+            ))->toThrow(QueryException::class);
+        } finally {
+            DB::unprepared('DROP TRIGGER origin_attempt_failure');
+        }
+
+        expect($ssh->commands)->toHaveCount(1);
+        expect($ssh->commands[0]->input)->toContain('ls-remote')->not->toContain('set-url');
+        expect(AppUpdate::query()->sole()->evidence)->toBe([]);
+        expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+    });
+
+    it('checkpoints each attempted origin before SSH and preserves original values on an unfinished retry', function (): void {
+        $checkout = $this->fixture->defaultInstance;
+        $ssh = new AppDevFakeSshExecutor;
+        app()->instance(SshExecutor::class, $ssh);
+        $row = [...orb101_origin_evidence($checkout), 'mutated' => false, 'attempted' => true];
+        $checkpoints = [];
+
+        $result = app(RemoteAppUpdateSourceMutator::class)->changeOrigins(
+            [$checkout],
+            'git@github.com:acme/site.git',
+            'https://github.com/acme/site.git',
+            [$row],
+            static function (array $evidence) use (&$checkpoints, $ssh): void {
+                $checkpoints[] = ['commands' => count($ssh->commands), 'evidence' => $evidence];
+            },
+        );
+
+        expect($checkpoints)->toBe([
+            ['commands' => 0, 'evidence' => [$row]],
+            ['commands' => 1, 'evidence' => [[...$row, 'mutated' => true]]],
+        ]);
+        expect($result)->toBe([[...$row, 'mutated' => true]]);
+    });
+
+    it('restores an origin when its remote mutation succeeds but its journal completion fails', function (): void {
+        $ssh = new AppDevFakeSshExecutor;
+        app()->instance(SshExecutor::class, $ssh);
+        app()->instance(AppUpdateSourceMutator::class, app(RemoteAppUpdateSourceMutator::class));
+        DB::unprepared(<<<'SQL'
+            CREATE TEMP TRIGGER origin_completion_failure BEFORE UPDATE ON app_updates
+            WHEN json_extract(NEW.evidence, '$.origins[0].mutated') = 1
+            BEGIN SELECT RAISE(ABORT, 'Injected origin completion failure.'); END
+            SQL);
+
+        try {
+            expect(fn () => app(UpdateAppAction::class)->execute(
+                $this->fixture->app,
+                orb101_repository_data('https://github.com/acme/site.git'),
+            ))->toThrow(QueryException::class);
+        } finally {
+            DB::unprepared('DROP TRIGGER origin_completion_failure');
+        }
+
+        expect(array_column($ssh->connections, 'host'))->toBe(['10.44.0.80', '10.44.0.80', '10.44.0.80']);
+        expect($ssh->commands[2]->arguments)->toBe([
+            'bash', '-seu', '--', $this->fixture->defaultInstance->checkout_path, 'git@github.com:acme/site.git',
+        ]);
+        expect(AppUpdate::query()->sole()->evidence['origins'][0])->toMatchArray([
+            'previous_url' => 'git@github.com:acme/site.git', 'attempted' => true, 'mutated' => false,
+        ]);
+        expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+    });
+
+    it('keeps failed restoration recoverable and retries only restoration for an identical request', function (): void {
+        $data = orb101_repository_data('https://github.com/acme/site.git');
+        $ssh = new AppDevFakeSshExecutor([
+            new CommandResult(0, '', '', 1, false),
+            new CommandResult(1, '', '', 1, false),
+            new CommandResult(1, '', '', 1, false),
+        ]);
+        app()->instance(SshExecutor::class, $ssh);
+        app()->instance(AppUpdateSourceMutator::class, app(RemoteAppUpdateSourceMutator::class));
+
+        expect(fn () => app(UpdateAppAction::class)->execute($this->fixture->app, $data))
+            ->toThrow(ResourceOperationException::class);
+
+        $update = AppUpdate::query()->sole();
+        expect($update->status)->toBe(AppUpdateStatus::RollingBack);
+        expect($update->evidence['origins'][0])->toMatchArray([
+            'previous_url' => 'git@github.com:acme/site.git', 'attempted' => true, 'mutated' => false,
+        ]);
+        expect(fn () => app(UpdateAppAction::class)->execute(
+            $this->fixture->app,
+            orb101_repository_data('https://github.com/acme/other.git'),
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('app.update_in_progress');
+        });
+        expect($ssh->commands)->toHaveCount(3);
+
+        app(UpdateAppAction::class)->execute($this->fixture->app, $data);
+
+        expect($ssh->commands)->toHaveCount(4);
+        expect($ssh->commands[3]->arguments)->toBe([
+            'bash', '-seu', '--', $this->fixture->defaultInstance->checkout_path, 'git@github.com:acme/site.git',
+        ]);
+        expect($update->refresh()->status)->toBe(AppUpdateStatus::RolledBack);
+        expect($this->fixture->app->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
+    it('restores both attempted origins when the second remote acknowledgment fails', function (): void {
+        $second = orb101_repository_checkout($this->fixture, 'second');
+        $ssh = new AppDevFakeSshExecutor([
+            new CommandResult(0, '', '', 1, false),
+            new CommandResult(0, '', '', 1, false),
+            new CommandResult(0, '', '', 1, false),
+            new CommandResult(1, '', '', 1, false),
+        ]);
+        app()->instance(SshExecutor::class, $ssh);
+        app()->instance(AppUpdateSourceMutator::class, app(RemoteAppUpdateSourceMutator::class));
+
+        expect(fn () => app(UpdateAppAction::class)->execute(
+            $this->fixture->app,
+            orb101_repository_data('https://github.com/acme/site.git'),
+        ))->toThrow(ResourceOperationException::class);
+
+        expect(array_column($ssh->connections, 'host'))->toBe([
+            '10.44.0.80', '10.44.0.81', '10.44.0.80', '10.44.0.81', '10.44.0.80', '10.44.0.81',
+        ]);
+        expect($ssh->commands[4]->arguments)->toBe([
+            'bash', '-seu', '--', $this->fixture->defaultInstance->checkout_path, 'git@github.com:acme/site.git',
+        ]);
+        expect($ssh->commands[5]->arguments)->toBe([
+            'bash', '-seu', '--', $second->checkout_path, 'git@github.com:acme/site.git',
+        ]);
+        expect(array_column(AppUpdate::query()->sole()->evidence['origins'], 'mutated'))->toBe([true, false]);
+        expect(AppUpdate::query()->sole()->status)->toBe(AppUpdateStatus::RolledBack);
+        expect($this->fixture->app->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
+    });
+
     it('preflights and changes both node-owned checkouts when their paths match', function (): void {
         $secondNode = Node::query()->create([
             'name' => 'second-app-dev',
@@ -120,6 +295,7 @@ describe('App repository reconciliation', function (): void {
             'git@github.com:acme/site.git',
             'https://github.com/acme/site.git',
             $evidence,
+            static function (array $evidence): void {},
         );
 
         expect(array_column($ssh->connections, 'host'))->toBe(['10.44.0.81']);
@@ -168,6 +344,7 @@ describe('App repository reconciliation', function (): void {
             'git@github.com:acme/site.git',
             'https://github.com/acme/site.git',
             [$legacy],
+            static function (array $evidence): void {},
         );
 
         expect($evidence)->toBe([orb101_origin_evidence($first)]);
@@ -189,7 +366,7 @@ describe('App repository reconciliation', function (): void {
 
         expect(fn () => $operation === 'restore'
             ? $mutator->restoreOrigins($this->fixture->app, $legacy)
-            : $mutator->changeOrigins([$first, $second], 'old', 'new', $legacy))
+            : $mutator->changeOrigins([$first, $second], 'old', 'new', $legacy, static function (array $evidence): void {}))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('app.repository_origin_owner_changed');
             });
@@ -256,7 +433,7 @@ describe('App repository reconciliation', function (): void {
         $mutator = app(RemoteAppUpdateSourceMutator::class);
 
         $mutator->preflightRepository([$checkout, $checkout->fresh()], 'old', 'new');
-        $evidence = $mutator->changeOrigins([$checkout, $checkout->fresh()], 'old', 'new', []);
+        $evidence = $mutator->changeOrigins([$checkout, $checkout->fresh()], 'old', 'new', [], static function (array $evidence): void {});
 
         expect(array_column($ssh->connections, 'host'))->toBe(['10.44.0.80', '10.44.0.80']);
         expect($ssh->commands[0]->arguments[3])->toBe($path);
@@ -273,7 +450,7 @@ describe('App repository reconciliation', function (): void {
 
         expect(fn () => $operation === 'preflight'
             ? $mutator->preflightRepository([$checkout], 'old', 'new')
-            : $mutator->changeOrigins([$checkout], 'old', 'new', []))
+            : $mutator->changeOrigins([$checkout], 'old', 'new', [], static function (array $evidence): void {}))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('app.repository_origin_owner_changed');
             });
@@ -289,7 +466,7 @@ describe('App repository reconciliation', function (): void {
         $ssh = new AppDevFakeSshExecutor;
         app()->instance(SshExecutor::class, $ssh);
 
-        expect(fn () => app(RemoteAppUpdateSourceMutator::class)->changeOrigins([$first, $alias], 'old', 'new', []))
+        expect(fn () => app(RemoteAppUpdateSourceMutator::class)->changeOrigins([$first, $alias], 'old', 'new', [], static function (array $evidence): void {}))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('app.repository_origin_owner_changed');
             });
@@ -432,6 +609,7 @@ describe('App repository reconciliation', function (): void {
             'git@github.com:acme/site.git',
             'https://github.com/acme/site.git',
             [],
+            static function (array $evidence): void {},
         );
 
         expect($ssh->commands)->toHaveCount(1);
