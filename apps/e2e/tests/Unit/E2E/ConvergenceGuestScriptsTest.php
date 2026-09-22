@@ -2730,10 +2730,10 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('prepares the stock SQLite database and migrates every sample checkout', function () {
+    it('migrates sample checkouts with their own database configuration', function (string $connection) {
         $fixture = sample_hydration_fixture();
         try {
-            file_put_contents("{$fixture['checkout']}/.env", "APP_KEY=base64:fixture\nDB_CONNECTION=sqlite\n");
+            file_put_contents("{$fixture['checkout']}/.env", "APP_KEY=base64:fixture\nDB_CONNECTION={$connection}\nDB_DATABASE=sample\n");
             file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
             file_put_contents(
                 "{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock",
@@ -2743,11 +2743,12 @@ describe('convergence guest scripts', function () {
                 #!/usr/bin/env bash
                 set -euo pipefail
                 printf '%s\n' "$*" >> "$SAMPLE_PHP_COMMANDS"
-                [[ "$*" == *' migrate '* ]] && [[ -f "$(dirname "$1")/database/database.sqlite" ]]
+                [[ ! -v DB_DATABASE ]] || exit 91
+                [[ "$*" == *' migrate '* ]]
                 exit 0
                 BASH);
             chmod("{$fixture['root']}/bin/php", 0o700);
-            $environment = [...$fixture['environment'], 'SAMPLE_PHP_COMMANDS' => "{$fixture['root']}/php-commands"];
+            $environment = [...$fixture['environment'], 'DB_DATABASE' => '/home/orbit/.orbit/gateway.sqlite', 'SAMPLE_PHP_COMMANDS' => "{$fixture['root']}/php-commands"];
 
             $process = new Process(
                 ['bash', $fixture['script'], 'hydrate', str_repeat('b', 40), 'app-dev'],
@@ -2757,13 +2758,13 @@ describe('convergence guest scripts', function () {
             expect($process->run())
                 ->toBe(0, $process->getErrorOutput())
                 ->and(file_exists("{$fixture['checkout']}/database/database.sqlite"))
-                ->toBeTrue()
+                ->toBe($connection === 'sqlite')
                 ->and(file("{$fixture['root']}/php-commands", FILE_IGNORE_NEW_LINES))
                 ->toBe([$fixture['checkout'].'/artisan migrate --force --no-interaction']);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
-    });
+    })->with(['sqlite', 'mysql']);
 
     it('does not publish a sample hydration marker without installed Composer content', function () {
         $fixture = sample_hydration_fixture();
