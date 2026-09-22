@@ -252,6 +252,99 @@ it('makes preparation idempotent and uses only fixed source-control commands', f
     }
 });
 
+it('resolves the literal selected branch when the repository has a same-name tag', function (string $name, ?string $override, string $branch): void {
+    orb76_run(['git', '--git-dir='.$this->repository, 'tag', $branch, 'refs/heads/main']);
+    $remoteRefs = orb76_run(['git', '--git-dir='.$this->repository, 'show-ref'])->stdout;
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $override);
+    $this->source->prepare($instance, false);
+
+    $resolution = $this->source->resolve($instance);
+
+    expect($resolution->branch)->toBe($branch);
+    expect($resolution->startingCommit)->toBe(trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/main'])->stdout));
+    expect(trim(orb76_run(['git', '-C', $instance->checkout_path, 'symbolic-ref', 'HEAD'])->stdout))->toBe('refs/heads/'.$branch);
+    expect(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref', '--verify', 'refs/tags/'.$branch])->succeeded())->toBeTrue();
+    expect(orb76_run(['git', '--git-dir='.$this->repository, 'show-ref'])->stdout)->toBe($remoteRefs);
+    expect(file_get_contents($instance->checkout_path.'/README.md'))->toBe("main\n");
+})->with([
+    'default branch' => ['default', null, 'main'],
+    'named remote branch' => ['dev', null, 'dev'],
+    'explicit remote branch' => ['preview', 'dev', 'dev'],
+    'implicit fallback branch' => ['feature', null, 'feature'],
+    'explicit task fallback' => ['task-12', 'task-12', 'task-12'],
+]);
+
+it('inspects the same resolved branch after a same-name tag appears without changing source or refs', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
+    $this->source->prepare($instance, false);
+    $resolved = $this->source->resolve($instance);
+    orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'main']);
+    $refs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
+    $head = file_get_contents($instance->checkout_path.'/.git/HEAD');
+
+    $inspected = $this->source->inspectResolved($instance);
+
+    expect($inspected->branch)->toBe('main');
+    expect($inspected->startingCommit)->toBe($resolved->startingCommit);
+    expect(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)->toBe($refs);
+    expect(file_get_contents($instance->checkout_path.'/.git/HEAD'))->toBe($head);
+    expect(file_get_contents($instance->checkout_path.'/README.md'))->toBe("main\n");
+});
+
+it('preserves a literal heads prefix in resolved branch names', function (): void {
+    orb76_run(['git', '--git-dir='.$this->repository, 'branch', 'heads/main', 'refs/heads/main']);
+    orb76_run(['git', '--git-dir='.$this->repository, 'tag', 'heads/main', 'refs/heads/main']);
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default', 'heads/main');
+    $this->source->prepare($instance, false);
+
+    $resolved = $this->source->resolve($instance);
+    $refs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
+    $inspected = $this->source->inspectResolved($instance);
+
+    expect($resolved->branch)->toBe('heads/main');
+    expect($inspected->branch)->toBe('heads/main');
+    expect($inspected->startingCommit)->toBe($resolved->startingCommit);
+    expect(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)->toBe($refs);
+});
+
+it('refuses resolved-source branch drift at the same commit even when its display name matches', function (bool $collision): void {
+    orb76_run(['git', '--git-dir='.$this->repository, 'branch', 'heads/preview', 'refs/heads/main']);
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'preview', 'heads/preview');
+    $this->source->prepare($instance, false);
+    $this->source->resolve($instance);
+    orb76_run(['git', '-C', $instance->checkout_path, 'branch', '-m', 'preview']);
+    if ($collision) {
+        orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'preview']);
+    }
+    $refs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
+
+    expect(fn () => $this->source->inspectResolved($instance))->toThrow(RuntimeConvergenceException::class);
+
+    expect(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)->toBe($refs);
+    expect(file_get_contents($instance->checkout_path.'/README.md'))->toBe("main\n");
+})->with(['plain branch drift' => false, 'ambiguous display name' => true]);
+
+it('refuses detached and non-head resolved source without modifying it', function (string $mutation): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
+    $this->source->prepare($instance, false);
+    $this->source->resolve($instance);
+    if ($mutation === 'detached') {
+        orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '--detach']);
+    } elseif ($mutation === 'tag') {
+        orb76_run(['git', '-C', $instance->checkout_path, 'tag', 'main']);
+        orb76_run(['git', '-C', $instance->checkout_path, 'symbolic-ref', 'HEAD', 'refs/tags/main']);
+        orb76_run(['git', '-C', $instance->checkout_path, 'update-ref', '-d', 'refs/heads/main']);
+    } else {
+        file_put_contents($instance->checkout_path.'/.git/HEAD', "ref: invalid symbolic state\n");
+    }
+    $head = file_get_contents($instance->checkout_path.'/.git/HEAD');
+
+    expect(fn () => $this->source->inspectResolved($instance))->toThrow(RuntimeConvergenceException::class);
+
+    expect(file_get_contents($instance->checkout_path.'/.git/HEAD'))->toBe($head);
+    expect(file_get_contents($instance->checkout_path.'/README.md'))->toBe("main\n");
+})->with(['detached', 'tag', 'malformed']);
+
 it('refuses matching pre-existing source for a fresh reservation and resumes it only after an interruption', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->files->makeDirectory(dirname($instance->checkout_path), 0o755, true);

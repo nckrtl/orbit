@@ -54,6 +54,8 @@ The API and PHP software development kit (SDK) accept optional `branch` input. A
 
 Orbit records the branch-selection intent, selected branch, and starting commit before it provisions the application endpoint.
 
+Source resolution and retry inspection verify the full `refs/heads/` identity, then return the literal branch name. A same-name tag does not change branch selection or retry evidence. Detached `HEAD` and symbolic targets outside `refs/heads/` refuse resolved-source verification.
+
 Source preparation moves through three durable states:
 
 ```text

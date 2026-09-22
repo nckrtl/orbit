@@ -132,7 +132,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
                     git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
-                    test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
+                    test "$(git -C "$checkout" symbolic-ref --quiet HEAD)" = "refs/heads/$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
                     BASH);
@@ -172,7 +172,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    branch=$(git -C "$checkout" symbolic-ref --short HEAD)
+                    ref=$(git -C "$checkout" symbolic-ref --quiet HEAD)
+                    case "$ref" in
+                        refs/heads/?*) branch=${ref#refs/heads/} ;;
+                        *) exit 1 ;;
+                    esac
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
                     BASH,
