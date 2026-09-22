@@ -12,7 +12,7 @@ final readonly class TaskVerificationPolicy
 
     public const string Version = 'task-evidence-v1';
 
-    public const string Profile = 'orbit-composer-v1';
+    public const string Profile = 'orbit-composer-v2';
 
     public function requiredForApp(int $appId): bool
     {

@@ -245,7 +245,9 @@ Both operations require Gateway access and an enabled tasks extension. Verificat
 
 Gateway sends its runner over pinned SSH to the assigned Node. The runner copies tracked and untracked source into an isolated checkout and copies installed dependencies. It leaves the agent's Git index unchanged. Scratch checkouts use Orbit runtime storage because Node `/tmp` filesystems can be too small for installed dependencies. 
 
-It runs `composer validate --strict`, `composer check`, and `composer test:affected` in CLI, Docs, Gateway, E2E, and PHP SDK order. It then reruns each distinct referenced test file with Pest's JUnit output enabled. Only an exact, unambiguous passing test with assertions supplies evidence. JUnit output from the parallel full suite is not used because the inspected Pest version failed to merge one real Gateway report.
+Profile `orbit-composer-v2` runs `composer validate --strict`, `composer check`, and `composer test:affected` in CLI, Docs, Gateway, E2E, and PHP SDK order. Tests run through Pest TIA once per project. Gateway's quality check does not run a second test suite. The runner preserves a private TIA cache for each checkout and project across disposable snapshots. It uses a local snapshot branch so Pest can save its dependency graph. A concurrent check of the same checkout is refused. Missing or invalidated history can still require all tests to run.
+
+The runner then reruns each distinct referenced test file with Pest's JUnit output and `--no-tia`. Only an exact, unambiguous passing test with assertions supplies evidence. JUnit output from the parallel full suite is not used because the inspected Pest version failed to merge one real Gateway report.
 
 Source files, deletions, modes, internal symlink targets, branch, HEAD, installed dependency manifests, PHP version, and the runner profile form the input identity. Gateway also binds the result to the task, attempt, Instance, Node, checkout, criteria, model, and threshold. Changed inputs require a new run. These checks assume trusted installed tools and dependencies; they do not attest all machine state or resist hostile code running as the same OS user.
 

@@ -74,6 +74,39 @@ ET.ElementTree(root).write(sys.argv[sys.argv.index('--log-junit')+1])
         self.assertEqual(9, result['checks'][0]['exit_code'])
         self.assertEqual({}, result['evidence'])
 
+    def test_tia_cache_survives_snapshots_and_source_edits_on_a_writable_branch(self):
+        (self.project / 'check').write_text('''#!/usr/bin/env python3
+import os, pathlib, subprocess
+cache = pathlib.Path(os.environ['ORBIT_TIA_DIRECTORY'])
+cache.mkdir(parents=True, exist_ok=True)
+history = cache / 'observations'
+branch = subprocess.check_output(['git', 'branch', '--show-current']).decode().strip()
+assert branch
+with history.open('a') as output:
+    output.write(pathlib.Path('tests/ScenarioTest.php').read_text() + '\\n')
+print(history.read_text())
+''')
+        first = self.run_checks()
+        (self.project / 'tests/ScenarioTest.php').write_text('<?php // changed behavior')
+        second = self.run_checks()
+        self.assertTrue(first['passed'])
+        self.assertTrue(second['passed'])
+        self.assertNotEqual(first['identity']['digest'], second['identity']['digest'])
+        self.assertNotEqual(first['log_directory'], second['log_directory'])
+        self.assertIn('expected observation', Path(second['checks'][0]['log']).read_text())
+        self.assertIn('changed behavior', Path(second['checks'][0]['log']).read_text())
+        self.assertFalse((Path(first['log_directory']) / 'source').exists())
+
+    def test_concurrent_runner_cannot_use_the_same_cache(self):
+        original = runner.execute
+        def overlapping(*args):
+            with self.assertRaisesRegex(ValueError, 'Another verification'):
+                self.run_checks()
+            return original(*args)
+        with patch.object(runner, 'execute', overlapping):
+            self.assertTrue(self.run_checks()['passed'])
+        self.assertTrue(self.run_checks()['passed'])
+
     def test_shell_edits_untracked_files_modes_and_deletions_change_identity(self):
         for mutation in ('content', 'untracked', 'mode', 'delete'):
             before = self.identity()
@@ -127,13 +160,13 @@ ET.ElementTree(root).write(sys.argv[sys.argv.index('--log-junit')+1])
 
     def test_reverted_workspace_edits_do_not_change_the_tested_snapshot(self):
         original = runner.execute
-        def mutate_then_restore(command, cwd, log, remaining):
+        def mutate_then_restore(command, cwd, log, remaining, tia_directory=None):
             path = self.project / 'tests/ScenarioTest.php'
             content = path.read_bytes()
             path.write_text('<?php // temporary edit')
             self.assertEqual(content, (cwd / 'tests/ScenarioTest.php').read_bytes())
             try:
-                return original(command, cwd, log, remaining)
+                return original(command, cwd, log, remaining, tia_directory)
             finally:
                 path.write_bytes(content)
         runner.execute = mutate_then_restore

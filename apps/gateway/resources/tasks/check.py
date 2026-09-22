@@ -1,5 +1,6 @@
 """Orbit-owned checks for an uncommitted task checkout. No caller-supplied commands."""
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -15,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
-PROFILE = 'orbit-composer-v1'
+PROFILE = 'orbit-composer-v2'
 MAX_SOURCE_BYTES = 12000
 
 
@@ -71,7 +72,7 @@ def identity(root, projects=PROJECTS):
 def snapshot(root, destination, manifest, projects):
     subprocess.run(['git', 'clone', '--shared', '--no-checkout', '--quiet', str(root), str(destination)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['git', '-C', str(destination), 'checkout', '--detach', '--quiet',
+    subprocess.run(['git', '-C', str(destination), 'checkout', '-B', 'orbit-verification', '--quiet',
                     git(root, 'rev-parse', 'HEAD').decode().strip()], check=True)
     for name, entry in manifest.items():
         target = destination / name
@@ -130,11 +131,14 @@ def evidence_from_report(snapshot_root, project, report, references):
     return evidence
 
 
-def execute(command, cwd, log, remaining):
+def execute(command, cwd, log, remaining, tia_directory=None):
     started = time.monotonic()
     with log.open('wb') as output:
+        environment = {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'}
+        if tia_directory is not None:
+            environment['ORBIT_TIA_DIRECTORY'] = str(tia_directory)
         process = subprocess.Popen(command, cwd=cwd, stdout=output, stderr=subprocess.STDOUT,
-                                   env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'}, start_new_session=True)
+                                   env=environment, start_new_session=True)
         def interrupt(signum, frame):
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
@@ -157,6 +161,14 @@ def run(root, references, projects=PROJECTS, commands=COMMANDS, seconds=840):
     started = time.monotonic()
     runtime = Path(os.environ.get('ORBIT_HOME', str(Path.home() / '.orbit'))) / 'task-checks'
     runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cache = runtime / 'tia' / digest([str(root), PROFILE])
+    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock = (cache / 'runner.lock').open('a')
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close()
+        raise ValueError('Another verification is using this checkout.')
     directory = Path(tempfile.mkdtemp(prefix='run-', dir=runtime))
     directory.chmod(0o700)
     tested = identity(root, projects)
@@ -173,7 +185,7 @@ def run(root, references, projects=PROJECTS, commands=COMMANDS, seconds=840):
                 if time.monotonic() - started >= seconds:
                     raise TimeoutError('Task checks exceeded their deadline.')
                 log = directory / (str(len(result['checks'])) + '.log')
-                check = execute(command, candidate / project, log, seconds - (time.monotonic() - started))
+                check = execute(command, candidate / project, log, seconds - (time.monotonic() - started), cache / project)
                 result['checks'].append({'project': project, **check})
                 if check['exit_code'] != 0:
                     return result
@@ -201,6 +213,7 @@ def run(root, references, projects=PROJECTS, commands=COMMANDS, seconds=840):
         result['seconds'] = round(time.monotonic() - started, 3)
         # Logs remain mode-0700 for diagnosis; the disposable source is never a task workspace.
         shutil.rmtree(candidate, ignore_errors=True)
+        lock.close()
 
 
 def main():

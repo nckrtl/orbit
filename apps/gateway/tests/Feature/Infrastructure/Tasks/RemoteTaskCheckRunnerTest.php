@@ -39,7 +39,7 @@ it('sends the owned runner through pinned SSH with a fixed command and timeout',
 });
 
 it('preserves a failed check with bounded execution and structured references', function (): void {
-    $report = ['identity' => ['digest' => str_repeat('a', 64)], 'profile' => 'orbit-composer-v1',
+    $report = ['identity' => ['digest' => str_repeat('a', 64)], 'profile' => 'orbit-composer-v2',
         'passed' => false, 'checks' => [['project' => 'apps/cli', 'command' => ['composer', 'check'], 'exit_code' => 1]],
         'evidence' => [], 'seconds' => 1.0];
     $transport = new AppDevFakeSshExecutor([new CommandResult(0, json_encode($report), '', 1, false)]);
@@ -63,6 +63,6 @@ it('refuses incomplete or invalid runner output', function (string $output, bool
     'malformed' => ['not json', false, 0],
     'transport failure' => ['private transport detail', false, 1],
     'wrong profile' => [json_encode(['identity' => ['digest' => str_repeat('a', 64)], 'profile' => 'another', 'passed' => true, 'checks' => [], 'evidence' => [], 'seconds' => 1]), false, 0],
-    'missing required commands' => [json_encode(['identity' => ['digest' => str_repeat('a', 64)], 'profile' => 'orbit-composer-v1', 'passed' => true, 'checks' => [], 'evidence' => [], 'seconds' => 1]), false, 0],
-    'invalid fingerprint' => [json_encode(['identity' => ['digest' => 'fake'], 'profile' => 'orbit-composer-v1', 'passed' => false, 'checks' => [], 'evidence' => [], 'seconds' => 1]), false, 0],
+    'missing required commands' => [json_encode(['identity' => ['digest' => str_repeat('a', 64)], 'profile' => 'orbit-composer-v2', 'passed' => true, 'checks' => [], 'evidence' => [], 'seconds' => 1]), false, 0],
+    'invalid fingerprint' => [json_encode(['identity' => ['digest' => 'fake'], 'profile' => 'orbit-composer-v2', 'passed' => false, 'checks' => [], 'evidence' => [], 'seconds' => 1]), false, 0],
 ]);
