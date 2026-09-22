@@ -22,6 +22,63 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+it('repairs restrictive public permissions without exposing private files or symlink targets', function (): void {
+    [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
+    $root = sys_get_temp_dir().'/orbit-gateway-public-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory("{$root}/public/assets", 0o700, true);
+    $filesystem->makeDirectory("{$root}/private", 0o700);
+    $filesystem->makeDirectory("{$root}/bin", 0o700);
+    foreach (['public/index.php', 'public/assets/app.css', 'private/secret', '.env'] as $path) {
+        $filesystem->put("{$root}/{$path}", 'fixture');
+        chmod("{$root}/{$path}", 0o600);
+    }
+    symlink("{$root}/private", "{$root}/public/linked-directory");
+    symlink("{$root}/private/secret", "{$root}/public/linked-file");
+    $filesystem->put("{$root}/bin/chown", "#!/bin/sh\nexit 0\n");
+    chmod("{$root}/bin/chown", 0o700);
+
+    try {
+        $converger->converge('gateway.orbit', '10.44.0.1');
+        $publication = Collection::make($processes->calls)->first(
+            static fn (ProcessInvocation $invocation): bool => $invocation->arguments === [
+                'sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway/public',
+            ],
+        );
+        expect($publication)->toBeInstanceOf(ProcessInvocation::class);
+        $process = new Process(['bash', '-seu', '--', "{$root}/public"], env: [
+            'PATH' => "{$root}/bin:".getenv('PATH'),
+        ]);
+        $process->setInput($publication->input);
+
+        foreach ([1, 2] as $attempt) {
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            clearstatcache();
+            foreach (['public', 'public/assets'] as $path) {
+                expect(fileperms("{$root}/{$path}") & 0o777)->toBe(0o750);
+            }
+            foreach (['public/index.php', 'public/assets/app.css'] as $path) {
+                expect(fileperms("{$root}/{$path}") & 0o777)->toBe(0o640);
+            }
+            foreach (['private/secret', '.env'] as $path) {
+                expect(fileperms("{$root}/{$path}") & 0o777)->toBe(0o600);
+            }
+            expect(fileperms("{$root}/private") & 0o777)->toBe(0o700);
+        }
+
+        rename("{$root}/public", "{$root}/saved-public");
+        symlink("{$root}/private", "{$root}/public");
+
+        expect($process->run())->not->toBe(0);
+        clearstatcache();
+        expect(fileperms("{$root}/private") & 0o777)->toBe(0o700);
+        expect(fileperms("{$root}/private/secret") & 0o777)->toBe(0o600);
+    } finally {
+        $filesystem->deleteDirectory($root);
+        $filesystem->deleteDirectory($orbitHome);
+    }
+});
+
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
     [$converger, $processes, $issuer, $orbitHome, $hibernator] = gateway_web_converger();
 
