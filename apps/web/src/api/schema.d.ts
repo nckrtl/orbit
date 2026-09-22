@@ -2507,6 +2507,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/tasks/{task}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** tasks:comment:list */
+        get: operations["tasks-comment-list"];
+        put?: never;
+        /** tasks:comment:create */
+        post: operations["tasks-comment-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/disable": {
         parameters: {
             query?: never;
@@ -3184,6 +3202,21 @@ export interface components {
             tokens?: number | null;
             lines_added?: number | null;
             lines_deleted?: number | null;
+        };
+        TaskComment: {
+            id?: number;
+            task_group_id?: number;
+            task_id?: number;
+            agent_thread_id?: number | null;
+            type?: string;
+            body?: string;
+            author?: string;
+            posted_at?: string;
+            review_attempt?: number | null;
+            reviewer_thread_id?: string | null;
+            driver_turn?: string | null;
+            commit_sha?: string | null;
+            pr_url?: string | null;
         };
         ToolManager: {
             id?: number | null;
@@ -13213,6 +13246,145 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-comment-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskComment"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-comment-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "ready_for_review" | "changes_requested" | "approved" | "assistance_requested" | "resolution";
+                    body: string;
+                    author: string;
+                    agent_thread_id?: number | null;
+                    /** @description Conditionally required. */
+                    review_attempt?: number | null;
+                    /** @description Conditionally required. */
+                    reviewer_thread_id?: string | null;
+                    /** @description Conditionally required. */
+                    driver_turn?: string | null;
+                    commit_sha?: string | null;
+                    /** Format: uri */
+                    pr_url?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskComment"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskComment"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
