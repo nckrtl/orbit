@@ -36,6 +36,50 @@ beforeEach(function (): void {
 });
 
 describe('last-drawn pane authority', function (): void {
+    it('requires an off-screen queued selection to be drawn before opening it', function (string $input, string $direction): void {
+        $this->ui->goTo('processes');
+        $this->ui->focus = 'list';
+        $this->ui->selected['list'] = $direction === 'down' ? 0 : 30;
+        $target = $direction === 'down' ? 31 : 1;
+        $screen = render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+        expect($screen)->not->toContain(sprintf('worker-%02d', $target));
+
+        foreach (range(1, 30) as $_) {
+            $this->interaction->handleKey($direction === 'down' ? KeyCode::Down : KeyCode::Up);
+        }
+        $open = fn () => $input === 'enter'
+            ? $this->interaction->handleKey(KeyCode::Enter)
+            : $this->interaction->handleChar('a');
+        $open();
+        expect($this->ui->page())->toBeNull()->and($this->ui->menu)->toBeNull()->and($this->sent)->toBe([]);
+
+        $screen = render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+        expect($screen)->toContain(sprintf('worker-%02d', $target));
+        $open();
+        expect($input === 'enter' ? $this->ui->page()['row']['id'] : $this->ui->menu['row']['id'])->toBe($target);
+    })->with(['enter', 'actions'])->with(['down', 'up']);
+
+    it('draws each admitted movement before the next queued action', function (string $input): void {
+        $this->ui->goTo('processes');
+        $this->ui->focus = 'list';
+        render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+        foreach (range(1, 30) as $step) {
+            $this->interaction->handleKey(KeyCode::Down);
+            $screen = render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+            expect($screen)->toContain(sprintf('worker-%02d', $step + 1));
+        }
+        if ($input === 'enter') {
+            $this->interaction->handleKey(KeyCode::Enter);
+            expect($this->ui->page()['row']['id'])->toBe(31);
+        } else {
+            $this->interaction->handleChar('a');
+            expect($this->ui->menu['row']['id'])->toBe(31);
+            render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
+            $this->interaction->handleKey(KeyCode::Enter);
+            expect($this->sent)->toBe(['/api/v1/processes/31/restart']);
+        }
+    })->with(['enter', 'actions']);
+
     it('keeps selection through an empty polling frame without allowing an action', function (): void {
         $this->ui->goTo('processes');
         $this->ui->focus = 'list';

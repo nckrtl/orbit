@@ -426,7 +426,14 @@ final readonly class Interaction
         $id = $drawn['ids'][$index] ?? null;
         $kind = $drawn['families'][$index] ?? $drawn['kind'] ?? '';
 
-        if ($id === null || in_array($kind, ['deploysteps', 'tables', 'users'], true)) {
+        if ($id === null || ! isset($drawn['table'], $drawn['area']) || in_array($kind, ['deploysteps', 'tables', 'users'], true)) {
+            return null;
+        }
+
+        $offset = $drawn['table']->offset;
+        $visibleRows = max(0, $drawn['area']->height - 2 - ($drawn['header'] ? 1 : 0));
+
+        if ($index < $offset || $index >= $offset + $visibleRows) {
             return null;
         }
 

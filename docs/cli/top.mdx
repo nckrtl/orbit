@@ -54,7 +54,7 @@ Destructive actions show the complete target and effect and default to **No**. U
 | `a` | Open the actions menu for the focused or selected row. |
 | `q` | Leave `orbit top`. |
 
-A click selects a row; clicking the already-selected row opens it. A right click on a row opens its actions menu at the pointer. The mouse wheel scrolls the pane under the pointer. Keyboard and mouse selection use the rows and scroll position from the last drawn frame, including the Dashboard's Projects, Instances, Processes, and Schedules panes. A record removed since that frame cannot be replaced by a different record at the same position. Borders, headers, and blank rows do not open actions. Resizing the terminal redraws the screen at its new size.
+A click selects a row; clicking the already-selected row opens it. A right click on a row opens its actions menu at the pointer. The mouse wheel scrolls the pane under the pointer. Keyboard and mouse selection use the rows and scroll position from the last drawn frame, including the Dashboard's Projects, Instances, Processes, and Schedules panes. Each input redraws the screen before the next queued input runs. An off-screen row cannot open a page or actions until it is drawn. A record removed since that frame cannot be replaced by a different record at the same position. Borders, headers, and blank rows do not open actions. Resizing the terminal redraws the screen at its new size.
 
 ## Actions
 

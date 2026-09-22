@@ -196,9 +196,10 @@ final class TopCommand extends GatewayCommand
                         ($ui->menu['confirm'] ?? null)?->invalidate();
                         $display = DisplayBuilder::default(PhpTermBackend::new($terminal))->fullscreen()->build();
                         $display->clear();
-
-                        break;
                     }
+
+                    // Publish this input's selection and geometry before admitting the next event.
+                    break;
                 }
 
                 $display->draw($screen->screen($state, $ui, $this->header($profile, $state, $lastPoll, $tick), $this->footer($ui), $display->viewportArea()));
