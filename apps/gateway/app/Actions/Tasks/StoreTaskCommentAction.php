@@ -6,10 +6,13 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\TaskCommentType;
+use App\Models\Activity;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
@@ -26,13 +29,14 @@ final readonly class StoreTaskCommentAction
                 'completion_attempt' => $task->completion_attempt,
                 'posted_at' => Carbon::now(),
             ]);
+            $type = TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
 
-            if ($comment->type === 'assistance_requested') {
+            if ($type === TaskCommentType::AssistanceRequested) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $task->taskGroup()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                activity()->performedOn($task)->withProperties(['comment_id' => $comment->id, 'actor' => $comment->author])->log('assistance requested');
+                $this->log($task, $comment, 'assistance requested');
             }
-            if ($comment->type === 'resolution' && trim($comment->body) !== '') {
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '') {
                 $task->loadMissing('implementerThread', 'taskGroup');
                 if ($task->assistance_requested && $task->resolution_delivered_comment_id !== $comment->id) {
                     try {
@@ -44,14 +48,23 @@ final readonly class StoreTaskCommentAction
                         $task->update(['assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'completion_attempt' => $task->completion_attempt + 1, 'resolution_delivered_comment_id' => $comment->id]);
                         $task->update(['review_reminder_attempt' => null]);
                         $task->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
-                        activity()->performedOn($task)->withProperties(['comment_id' => $comment->id, 'actor' => $comment->author])->log('resolution delivered');
+                        $this->log($task, $comment, 'resolution delivered');
                     } catch (AgentDriverException) {
-                        activity()->performedOn($task)->withProperties(['comment_id' => $comment->id, 'actor' => $comment->author])->log('resolution delivery failed');
+                        $this->log($task, $comment, 'resolution delivery failed');
                     }
                 }
             }
 
             return $comment;
         });
+    }
+
+    private function log(Task $task, TaskComment $comment, string $description): void
+    {
+        Activity::query()->create([
+            'log_name' => 'tasks', 'description' => $description, 'subject_type' => $task::class,
+            'subject_id' => $task->id, 'properties' => ['comment_id' => $comment->id, 'actor' => $comment->author],
+            'request_id' => (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'completed',
+        ]);
     }
 }

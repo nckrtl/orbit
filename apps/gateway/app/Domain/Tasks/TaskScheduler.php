@@ -179,7 +179,8 @@ final readonly class TaskScheduler
             ->whereIn('type', [TaskCommentType::ChangesRequested->value, TaskCommentType::Approved->value])
             ->where('review_attempt', $task->review_attempt)
             ->latest('posted_at')->latest('id')->first();
-        if ($comment?->type === 'changes_requested') {
+        $commentType = $comment === null ? null : TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
+        if ($commentType === TaskCommentType::ChangesRequested) {
             if ($task->review_handled_comment_id === $comment->id) {
                 return true;
             }
@@ -202,7 +203,7 @@ final readonly class TaskScheduler
             return true;
         }
 
-        if ($comment?->type !== 'approved') {
+        if ($commentType !== TaskCommentType::Approved) {
             return $this->remindReviewer($group, $task, $reviewer, false, $observation);
         }
 
