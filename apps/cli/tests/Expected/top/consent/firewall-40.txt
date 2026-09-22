@@ -1,0 +1,24 @@
+  orbit            gateway.test · live  
+  Firewall                              
+╭──────────────────────────────────────╮
+│  Node     Port   Actio Source       S│
+│› producti 22/tcp allow 10.44.0.0/16 a│
+│                                      │
+│╭ Confirm action ────────────────────╮│
+││ Remove firewall rule [production-s ││
+││ sh-access-for-maintenance-from-off ││
+││ ice-network] on Node [production-a ││
+││ pp-server-in-amsterdam] (ID 1)?    ││
+││                                    ││
+││ [ No ]  [ Yes ]                    ││
+││                                    ││
+││ ←→ or y/n choose · Enter accepts · ││
+││  Esc cancels                       ││
+│╰────────────────────────────────────╯│
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+╰──────────────────────────────────────╯
+                                        

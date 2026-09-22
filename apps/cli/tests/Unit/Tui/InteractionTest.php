@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Tui\ActionRunner;
+use App\Support\Tui\Confirmation;
 use App\Support\Tui\Interaction;
 use App\Support\Tui\Screen;
 use App\Support\Tui\UiState;
@@ -237,7 +238,7 @@ describe(Interaction::class, function (): void {
         $interaction->handleMouse(MouseEvent::new(MouseEventKind::Down, MouseButton::Right, $point[0], $point[1], 0));
         $interaction->handleKey(KeyCode::Enter); // "destroy" is the first (and only real) action.
 
-        expect($ui->menu['confirm'])->toBeTrue()
+        expect($ui->menu['confirm'])->toBeInstanceOf(Confirmation::class)
             ->and($ran)->toBeFalse();
 
         $interaction->handleKey(KeyCode::Esc);

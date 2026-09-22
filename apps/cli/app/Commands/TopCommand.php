@@ -269,7 +269,7 @@ final class TopCommand extends GatewayCommand
     private function footer(UiState $ui): string
     {
         $hint = match (true) {
-            $ui->menu !== null && $ui->menu['confirm'] => '  ↑↓ choose · Enter or click confirms · Esc cancels',
+            $ui->menu !== null && $ui->menu['confirm'] !== null => '  ←→ or y/n choose · Enter accepts · Left-click No/Yes · Esc cancels',
             $ui->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
             $ui->form !== null => '  ↑↓ or Tab move between fields · Space toggles a role · Enter confirms a field · Esc cancels',
             $ui->page() !== null && $ui->focus === null => '  ←→ sidebar or page · ↑↓ panes · Enter focuses · Esc or ‹ back · a or right-click actions · q leave',

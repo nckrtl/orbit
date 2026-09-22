@@ -794,6 +794,11 @@ final class Screen
     private function menuPopup(UiState $ui, Area $area): Widget
     {
         $menu = $ui->menu ?? throw new RuntimeException('No menu is open.');
+
+        if ($menu['confirm'] !== null) {
+            return $menu['confirm']->widget($area);
+        }
+
         $width = self::MENU_WIDTH;
         $labels = array_keys($menu['actions']);
         $lines = [];
@@ -804,7 +809,7 @@ final class Screen
 
         $lines[] = Line::fromString(str_repeat(' ', $width - 2));
         $activeAction = $menu['actions'][$labels[$menu['selected']]];
-        $description = $menu['confirm'] ? "Confirm? {$activeAction->description} (y/N)" : $activeAction->description;
+        $description = $activeAction->description;
         $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$description, $width - 2), Style::default()->fg(AnsiColor::DarkGray)));
         $height = count($lines) + 2;
 

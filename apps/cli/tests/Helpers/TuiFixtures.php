@@ -210,10 +210,10 @@ function tui_test_state(
  * Defaults to `tui_test_state()`; pass $state to render against a fixture built with a
  * non-default Deployments, Database users, or Node metrics source.
  */
-function render_top_screen(UiState $ui, ?State $state = null, string $header = 'gateway.test · live  ', string $footer = ''): string
+function render_top_screen(UiState $ui, ?State $state = null, string $header = 'gateway.test · live  ', string $footer = '', int $columns = 120, int $rows = 40): string
 {
     $state ??= tui_test_state();
-    $backend = DummyBackend::fromDimensions(120, 40);
+    $backend = DummyBackend::fromDimensions($columns, $rows);
     $display = DisplayBuilder::default($backend)->fullscreen()->build();
     $display->draw((new Screen)->screen($state, $ui, $header, $footer, $display->viewportArea()));
 

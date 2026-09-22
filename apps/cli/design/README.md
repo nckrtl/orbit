@@ -43,5 +43,8 @@ bin/cli-flow node-add --keep /tmp/node-add-recording
 | --- | --- |
 | `design:node-add` | Prompts for every missing input, host key approval, and the provisioning steps as a progress tree. |
 | `design:instance-show` | One Instance as tabs: Overview detail, Processes list, Schedules list; Tab switches, Enter selects a row. |
+| `design:top-consent` | A default-No TUI confirmation with a complete wrapped Database or Firewall target; keyboard and bounded mouse choices, no Gateway request. |
+
+The `top-consent` sketch takes `--outcome=database` or `--outcome=firewall`. At 80×24, Enter declines the initial No. Left/Right or `y`/`n` selects a choice; Enter accepts it. Escape cancels. A left-click on a visible No/Yes button chooses it; outside clicks and other buttons do nothing. A question that cannot fit refuses approval until the terminal is enlarged. Replay these paths live with the CLI recorder before changing the real `top` interaction.
 
 When a sketch is accepted, its scenario becomes the mock Gateway scenario for the real command, and its transcript becomes the expected output of that command's tests. `design:top` was accepted; the real command is `orbit top` (`apps/cli/app/Commands/TopCommand.php` and `apps/cli/app/Support/Tui/`), documented at [`docs/cli/top.mdx`](../../../docs/cli/top.mdx).

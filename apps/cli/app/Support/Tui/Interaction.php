@@ -43,6 +43,10 @@ final readonly class Interaction
     public function handleChar(string $char): void
     {
         if ($this->ui->menu !== null) {
+            if ($this->ui->menu['confirm'] !== null) {
+                $this->finishConfirmation($this->ui->menu['confirm']->press($char));
+            }
+
             return;
         }
 
@@ -102,12 +106,13 @@ final readonly class Interaction
             return;
         }
 
-        if ($menu['confirm']) {
-            match ($code) {
-                KeyCode::Enter => $this->runAction(),
-                KeyCode::Esc => $this->ui->menu = null,
-                default => null,
-            };
+        if ($menu['confirm'] !== null) {
+            $this->finishConfirmation($menu['confirm']->press(match ($code) {
+                KeyCode::Enter => Key::ENTER, KeyCode::Esc => Key::ESCAPE,
+                KeyCode::Left => Key::LEFT, KeyCode::Right => Key::RIGHT,
+                KeyCode::Up => Key::UP, KeyCode::Down => Key::DOWN, KeyCode::Tab => Key::TAB,
+                default => '',
+            }));
 
             return;
         }
@@ -165,12 +170,12 @@ final readonly class Interaction
         $y = $event->row;
 
         if ($this->ui->menu !== null) {
-            if ($event->kind !== MouseEventKind::Down) {
+            if ($event->kind !== MouseEventKind::Down || $event->button !== MouseButton::Left) {
                 return;
             }
 
-            if ($this->ui->menu['confirm']) {
-                $this->runAction();
+            if ($this->ui->menu['confirm'] !== null) {
+                $this->finishConfirmation($this->ui->menu['confirm']->click($x, $y));
 
                 return;
             }
@@ -570,13 +575,17 @@ final readonly class Interaction
             return;
         }
 
+        if ($kind === 'firewall') {
+            $row['node'] = $this->state->nodeName($row['node_id']);
+        }
+
         $actions = $this->actions->actionsFor($kind, $row);
 
         if ($actions === []) {
             return;
         }
 
-        $this->ui->menu = ['kind' => $kind, 'title' => $this->rowTitleFor($kind, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0, 'confirm' => false, 'at' => $at];
+        $this->ui->menu = ['kind' => $kind, 'title' => $this->rowTitleFor($kind, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0, 'confirm' => null, 'at' => $at];
     }
 
     /** @param array<string, mixed> $row */
@@ -613,12 +622,45 @@ final readonly class Interaction
         }
 
         if ($action->destructive) {
-            $this->ui->menu['confirm'] = true;
+            $this->ui->menu['confirm'] = new Confirmation($action->description);
 
             return;
         }
 
         $this->runAction();
+    }
+
+    private function finishConfirmation(?bool $answer): void
+    {
+        if ($answer === true) {
+            $this->runAction();
+        } elseif ($answer === false) {
+            $this->ui->menu = null;
+        }
+    }
+
+    /** @param array<string, mixed> $row The frozen record whose destructive question was shown. */
+    private function destructiveTargetIsCurrent(string $kind, array $row): bool
+    {
+        $keys = match ($kind) {
+            'databases' => ['slug'],
+            'firewall' => ['node_id', 'name'],
+            default => [],
+        };
+
+        if ($keys === []) {
+            return false;
+        }
+
+        foreach ($this->state->{$kind} as $current) {
+            if ($current['id'] !== $row['id']) {
+                continue;
+            }
+
+            return array_all($keys, static fn (string $key): bool => $current[$key] === $row[$key]);
+        }
+
+        return false;
     }
 
     /** Runs the selected menu action's real request, or confirms a destructive one. */
@@ -632,6 +674,13 @@ final readonly class Interaction
 
         $label = array_keys($menu['actions'])[$menu['selected']];
         $row = $menu['row'];
+        $this->ui->menu = null;
+
+        if ($menu['actions'][$label]->destructive && ! $this->destructiveTargetIsCurrent($menu['kind'], $row)) {
+            $this->ui->message = 'The selected record changed or disappeared. Reopen its actions and confirm the current target.';
+
+            return;
+        }
 
         try {
             $result = $this->actions->run($menu['kind'], $label, $row);
@@ -650,7 +699,6 @@ final readonly class Interaction
             $this->ui->message = $exception->getMessage();
         }
 
-        $this->ui->menu = null;
     }
 
     // ---- node create form -----------------------------------------------------------------------

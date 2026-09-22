@@ -45,7 +45,7 @@ final class UiState
     /** @var array{node: string|null, project: string|null} */
     public array $filters = ['node' => null, 'project' => null];
 
-    /** @var array{kind: string, title: string, row: array<string, mixed>, actions: array<string, Action>, selected: int, confirm: bool, at: array{int, int}|null}|null */
+    /** @var array{kind: string, title: string, row: array<string, mixed>, actions: array<string, Action>, selected: int, confirm: Confirmation|null, at: array{int, int}|null}|null */
     public ?array $menu = null;
 
     public ?NodeFormState $form = null;

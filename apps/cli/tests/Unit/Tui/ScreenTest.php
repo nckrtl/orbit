@@ -183,7 +183,7 @@ describe(Screen::class, function (): void {
             'actions' => (new ActionRunner(fn (): never => throw new RuntimeException('not used')))
                 ->actionsFor('nodes', tui_test_state()->nodes[0]),
             'selected' => 0,
-            'confirm' => false,
+            'confirm' => null,
             'at' => null,
         ];
 

@@ -70,7 +70,7 @@ final readonly class ActionRunner
                 'query' => Action::leaves("orbit database:query {$row['slug']}", 'The query console needs an interactive terminal.'),
             ],
             'firewall' => [
-                'remove' => Action::destructive("Remove firewall rule [{$row['name']}] on node [{$row['node']}]?"),
+                'remove' => Action::destructive("Remove firewall rule [{$row['name']}] on Node [{$row['node']}] (ID {$row['node_id']})?"),
             ],
             default => [],
         };

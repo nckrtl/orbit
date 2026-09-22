@@ -1,0 +1,24 @@
+  orbit                                                    gateway.test · live  
+╭──────────────────╮  Databases                                                 
+│  Dashboard       │╭──────────────────────────────────────────────────────────╮
+│  Nodes         1 ││  Slug        Driver  Node      Host              Database│
+│  Projects      1 ││› production- pgsql   productio 127.0.0.1:5432            │
+│  Instances     1 ││                                                          │
+│  Processes     1 ││                                                          │
+│  Sc╭ Confirm action ────────────────────────────────────────────────────╮    │
+│› Da│ Destroy the Database connection record [production-orders-primary- │    │
+│  Fi│ with-a-long-connection-name]? The physical database is not dropped │    │
+│    │ .                                                                  │    │
+│    │                                                                    │    │
+│    │ [ No ]  [ Yes ]                                                    │    │
+│    │                                                                    │    │
+│    │ ←→ or y/n choose · Enter accepts · Esc cancels                     │    │
+│    ╰────────────────────────────────────────────────────────────────────╯    │
+│                  ││                                                          │
+│                  ││                                                          │
+│                  ││                                                          │
+│                  ││                                                          │
+│                  ││                                                          │
+│                  ││                                                          │
+╰──────────────────╯╰──────────────────────────────────────────────────────────╯
+                                                                                
