@@ -56,6 +56,7 @@ final readonly class TaskSessionObserver
                 available: $observation !== null && $observation->state !== null,
                 error: $observation?->error, inputRequests: $requests,
                 recentMessages: $observation === null ? [] : $this->recentMessages($observation->entries),
+                turnId: $observation?->turnId,
             );
         }
 

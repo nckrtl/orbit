@@ -58,7 +58,7 @@ final readonly class StoreTaskCommentAction
                     if (! $locked->assistance_requested) {
                         return;
                     }
-                    $locked->update(['assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'completion_attempt' => $locked->completion_attempt + 1, 'review_reminder_attempt' => null, 'resolution_delivered_comment_id' => $comment->id]);
+                    $locked->update(['assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
                     $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
                     $this->log($locked, $comment, 'resolution delivered');
                 });

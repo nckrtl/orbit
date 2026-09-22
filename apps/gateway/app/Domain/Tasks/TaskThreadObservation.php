@@ -25,6 +25,7 @@ final readonly class TaskThreadObservation
         public ?string $error = null,
         public array $inputRequests = [],
         public array $recentMessages = [],
+        public ?string $turnId = null,
     ) {}
 
     /** @return array<string, mixed> */

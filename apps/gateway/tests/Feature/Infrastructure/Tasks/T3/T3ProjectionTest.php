@@ -19,6 +19,16 @@ it('normalizes runtime states without collapsing completion or failure into idle
     'unknown' => [[], null],
 ]);
 
+it('keeps the latest turn id on the observation', function (): void {
+    $observation = new T3Projection()->observe(['thread' => [
+        'session' => ['status' => 'done'],
+        'latestTurn' => ['id' => 'turn-9', 'state' => 'completed'],
+    ]]);
+
+    expect($observation->turnId)->toBe('turn-9')
+        ->and($observation->state)->toBe(AgentThreadState::Done);
+});
+
 it('projects structured composer check output and exit status as tool evidence', function (): void {
     $observation = new T3Projection()->observe(['thread' => [
         'session' => ['status' => 'idle'],

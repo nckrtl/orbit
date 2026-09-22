@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, implement a complete PR, a
 
 # Feature delivery
 
-The [contributor guide](/contributor-guide) explains architecture, documentation, implementation, and PR submission. This reference covers review evidence, merge responsibilities, and local verification tools. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records the delivery decision. Task completion gates are defined by [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review).
+The [contributor guide](/contributor-guide) explains architecture, documentation, implementation, and PR submission. This reference covers review evidence, merge responsibilities, and local verification tools. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records the delivery decision. Task completion gates are defined by [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review). [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) proposes judging those gates as separate checks.
 
 ## CI and local verification
 
@@ -25,7 +25,7 @@ The repository maintainer configures branch protection to require `Required chec
 
 ## Orbit task completion evidence
 
-The Gateway task workflow uses typed comments and the AgentThread transcript. An implementer posts `ready_for_review` after a successful `composer check`; Jev inspects the command output in the last five thread entries, including tool output. A completion claim without that output does not pass the gate. Reviewers post `changes_requested` or `approved`, and the Gateway preserves the full comment body and attempt metadata while it relays findings or checks the commit and pull request.
+The Gateway task workflow uses the AgentThread transcript and typed review comments. Jev answers whether `composer check` was invoked, whether it passed, and whether that output is for the current tree. A passing implementer rubric sets the task to `reviewing`. The implementer does not post a `ready_for_review` comment. Reviewers post `changes_requested` or `approved`, and the Gateway preserves the full comment body and attempt metadata while it relays findings or checks the commit and pull request.
 
 Assistance is part of the same task history. An `assistance_requested` comment flags the task and parent group without releasing its capacity. A non-empty `resolution` comment clears the flag and continues the AgentThread idempotently. Delivery failures preserve the blocked state and the resolution for retry. These comments and transcript entries are the evidence; the workflow has no separate validation-evidence API.
 
