@@ -45,11 +45,13 @@ print('setup ran')
                         ['-c', 'user.name=Tests', '-c', 'user.email=test@example.test', 'commit', '-m', 'fixture']):
             subprocess.run(['git', '-C', str(self.root), *command], check=True, capture_output=True)
         self.commit = runner.git(self.root, 'rev-parse', 'HEAD')
+        self.steps = [{'name': 'bootstrap', 'command': 'bin/bootstrap', 'timeout_seconds': 845}]
+        self.lifecycle = (Path(runner.__file__).parent.parent / 'instances/lifecycle.py').read_text()
 
     def run_setup(self, publications=None, **options):
         with patch.dict(os.environ, {'DB_DATABASE': '/live/database', 'APP_KEY': 'private',
                                      'ORBIT_HOME': '/live/runtime', 'ORBIT_TIA_DIRECTORY': '/shared/cache'}):
-            return runner.prepare(self.root, 'task-1', self.commit, publications or {}, **options)
+            return runner.prepare(self.root, 'task-1', self.commit, publications or {}, self.steps, self.lifecycle, **options)
 
     def test_copies_only_publications_and_consumes_bootstrap_success_with_isolated_state(self):
         publications = {'published/apps-cli.json': '{"graph":"main"}'}
@@ -57,7 +59,7 @@ print('setup ran')
         self.assertTrue(result['prepared'])
         state = self.root / '.git/orbit-task-setup'
         self.assertEqual(publications, json.loads((state / 'runtime/observed.json').read_text()))
-        self.assertEqual('setup ran\n', (state / 'bootstrap.log').read_text())
+        self.assertEqual('Running setup step: bootstrap\nsetup ran\n', (state / 'bootstrap.log').read_text())
         self.assertEqual([], list(state.glob('main-cache-*')))
         self.assertEqual(0o600, (state / 'bootstrap.log').stat().st_mode & 0o777)
 
@@ -67,15 +69,16 @@ print('setup ran')
     def test_failure_is_not_accepted_and_retry_uses_same_checkout(self):
         original = self.bootstrap.read_text()
         self.bootstrap.write_text('#!/bin/sh\necho failed\nexit 9\n')
-        with self.assertRaisesRegex(ValueError, 'Bootstrap failed'):
+        with self.assertRaisesRegex(ValueError, 'Setup step failed'):
             self.run_setup()
         self.bootstrap.write_text(original)
         self.assertTrue(self.run_setup()['prepared'])
 
     def test_timeout_releases_lock_and_never_reports_success(self):
         self.bootstrap.write_text('#!/bin/sh\nsleep 10\n')
-        with self.assertRaises(subprocess.TimeoutExpired):
-            self.run_setup(timeout=0.1)
+        self.steps[0]['timeout_seconds'] = 0.1
+        with self.assertRaisesRegex(ValueError, 'Setup step failed'):
+            self.run_setup()
         self.bootstrap.write_text('#!/bin/sh\nexit 0\n')
         self.assertTrue(self.run_setup()['prepared'])
 
@@ -90,8 +93,9 @@ print('setup ran')
     def test_signal_interrupts_the_bootstrap_child(self):
         marker = self.root / '.git/child.pid'
         self.bootstrap.write_text('#!/bin/sh\necho $$ > .git/child.pid\nsleep 10\n')
-        code = 'PUBLICATIONS = ' + repr(base64.b64encode(gzip.compress(b'{}')).decode()) + '\n' + Path(runner.__file__).read_text()
-        process = subprocess.Popen([sys.executable, '-', str(self.root), 'task-1', self.commit],
+        code = json.dumps({'publications': base64.b64encode(gzip.compress(b'{}')).decode(),
+                           'steps': self.steps, 'lifecycle': self.lifecycle})
+        process = subprocess.Popen([sys.executable, '-c', Path(runner.__file__).read_text(), str(self.root), 'task-1', self.commit],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         process.stdin.write(code)
         process.stdin.close()
@@ -112,6 +116,34 @@ print('setup ran')
             if process.poll() is None:
                 process.kill()
                 process.communicate()
+
+    def test_configured_steps_run_in_order_and_stop_at_failure(self):
+        self.steps = [
+            {'name': 'first', 'command': 'printf first > .git/order', 'timeout_seconds': 10},
+            {'name': 'second', 'command': 'printf second >> .git/order; exit 3', 'timeout_seconds': 10},
+            {'name': 'third', 'command': 'touch .git/third', 'timeout_seconds': 10},
+        ]
+        with self.assertRaisesRegex(ValueError, 'Setup step failed'):
+            self.run_setup()
+        self.assertEqual('firstsecond', (self.root / '.git/order').read_text())
+        self.assertFalse((self.root / '.git/third').exists())
+        self.steps[1]['command'] = 'printf second >> .git/order'
+        self.assertTrue(self.run_setup()['prepared'])
+        self.assertTrue((self.root / '.git/third').exists())
+
+    def test_no_setup_and_exhausted_total_budget_never_report_success(self):
+        with self.assertRaisesRegex(ValueError, 'deadline exceeded'):
+            self.run_setup(timeout=0)
+        self.steps = []
+        with self.assertRaisesRegex(ValueError, 'configured setup steps'):
+            self.run_setup()
+
+    def test_output_log_remains_private_when_reused(self):
+        self.run_setup()
+        log = self.root / '.git/orbit-task-setup/bootstrap.log'
+        log.chmod(0o644)
+        self.run_setup()
+        self.assertEqual(0o600, log.stat().st_mode & 0o777)
 
     def test_cache_paths_cannot_escape_or_import_mutable_feature_state(self):
         for path in ('../escape', 'private/graph.json', 'published/unknown.json'):

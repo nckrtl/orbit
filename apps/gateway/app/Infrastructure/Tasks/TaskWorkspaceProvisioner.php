@@ -158,7 +158,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             $this->preparation->prepare($instance);
         } catch (ResourceOperationException $exception) {
             AppInstance::query()->whereKey($instance->id)->update([
-                'failed_step' => 'task-bootstrap', 'error_code' => 'tasks.workspace_setup_failed',
+                'failed_step' => 'task-bootstrap', 'error_code' => $exception->errorCode,
             ]);
 
             throw $exception;

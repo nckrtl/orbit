@@ -167,11 +167,13 @@ function bind_task_workspace_fakes(): object
 
         public bool $fail = false;
 
+        public string $errorCode = 'tasks.workspace_setup_failed';
+
         public function prepare(AppInstance $instance): void
         {
             $this->instances[] = $instance->id;
             if ($this->fail) {
-                throw new ResourceOperationException('tasks.workspace_setup_failed', 'Bootstrap failed.');
+                throw new ResourceOperationException($this->errorCode, 'Bootstrap failed.');
             }
         }
     };
@@ -228,12 +230,13 @@ it('activates a visitable workspace through the development provisioner', functi
     expect($fakes->preparation->instances)->toBe([]);
 });
 
-it('keeps failed Orbit setup on its assigned instance and retries before returning it', function (): void {
+it('keeps failed Orbit setup on its assigned instance and retries before returning it', function (string $errorCode): void {
     $app = provisioner_app('orbit');
     provisioner_node('bootstrap-dev', '10.44.0.119');
     $group = provisioner_group($app);
     $fakes = bind_task_workspace_fakes();
     $fakes->preparation->fail = true;
+    $fakes->preparation->errorCode = $errorCode;
 
     $first = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
@@ -241,7 +244,7 @@ it('keeps failed Orbit setup on its assigned instance and retries before returni
     $instance = $group->fresh('taskable')?->taskable;
     expect($instance)->toBeInstanceOf(AppInstance::class);
     expect($instance->failed_step)->toBe('task-bootstrap');
-    expect($instance->error_code)->toBe('tasks.workspace_setup_failed');
+    expect($instance->error_code)->toBe($errorCode);
     $fakes->preparation->fail = false;
 
     $retried = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['app', 'taskable']), false));
@@ -250,7 +253,7 @@ it('keeps failed Orbit setup on its assigned instance and retries before returni
     expect($fakes->preparation->instances)->toBe([$instance->id, $instance->id]);
     expect($retried?->fresh()?->failed_step)->toBeNull();
     $this->assertDatabaseCount('app_instances', 1);
-});
+})->with(['tasks.workspace_setup_failed', 'tasks.workspace_setup_unconfigured']);
 
 it('starts no agent when bootstrap fails or the group is cancelled during setup', function (bool $cancel, TaskGroupStatus $expected): void {
     $app = provisioner_app('orbit');

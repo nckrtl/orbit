@@ -46,8 +46,8 @@ try:
         ['/usr/bin/bash', '-eu', command_path],
         cwd=checkout,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=sys.stdout if payload.get('capture_output') is True else subprocess.DEVNULL,
+        stderr=sys.stderr if payload.get('capture_output') is True else subprocess.DEVNULL,
         start_new_session=True,
     )
     owner = os.getppid()
