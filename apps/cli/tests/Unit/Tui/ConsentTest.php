@@ -8,6 +8,7 @@ use App\Support\Tui\Confirmation;
 use App\Support\Tui\Interaction;
 use App\Support\Tui\State;
 use App\Support\Tui\UiState;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use PhpTui\Term\Event\MouseEvent;
@@ -46,6 +47,51 @@ beforeEach(function (): void {
 });
 
 describe('TUI destructive consent', function (): void {
+    it('removes only the successfully destroyed identity before the next poll', function (string $kind): void {
+        $row = $this->state->{$kind}[0];
+        $this->state->{$kind}[] = [...$row, 'id' => 2];
+        $this->ui->open($kind, $row);
+        $this->interaction->handleChar('a');
+        $this->interaction->handleKey(KeyCode::Enter);
+        render_top_screen($this->ui, $this->state);
+        $this->interaction->handleChar('y');
+        $this->interaction->handleKey(KeyCode::Enter);
+        expect(array_column($this->state->{$kind}, 'id'))->toBe([2])
+            ->and(render_top_screen($this->ui, $this->state))->toContain('unavailable');
+        $this->interaction->handleChar('a');
+        $this->interaction->handleKey(KeyCode::Enter);
+        expect($this->sent)->toHaveCount(1)->and($this->ui->menu)->toBeNull();
+    })->with(['databases', 'firewall']);
+
+    it('keeps a record after a failed destructive request', function (string $kind): void {
+        $row = $this->state->{$kind}[0];
+        $send = fn (): never => throw new GatewayApiException('Mocked removal failed.');
+        $interaction = new Interaction($this->state, $this->ui, new ActionRunner($send), $send);
+        $this->ui->open($kind, $row);
+        $interaction->handleChar('a');
+        $interaction->handleKey(KeyCode::Enter);
+        render_top_screen($this->ui, $this->state);
+        $interaction->handleChar('y');
+        $interaction->handleKey(KeyCode::Enter);
+        expect($this->state->{$kind})->toBe([$row])
+            ->and($this->ui->message)->toBe('Mocked removal failed.')
+            ->and($this->ui->pageRow($this->state))->toBe($row);
+    })->with(['databases', 'firewall']);
+
+    it('requires fresh consent after a Database owner or Firewall Node label changes', function (string $change): void {
+        $kind = $change === 'owner' ? 'databases' : 'firewall';
+        open_tui_consent($this->state, $this->ui, $this->interaction, $kind);
+        if ($change === 'owner') {
+            $this->state->databases[0]['node_id'] = 2;
+        } else {
+            $this->state->nodes[0]['name'] = 'new-node';
+        }
+        $this->interaction->handleChar('y');
+        $this->interaction->handleKey(KeyCode::Enter);
+        expect($this->sent)->toBe([])->and($this->ui->menu)->toBeNull()
+            ->and($this->ui->message)->toContain('changed or disappeared');
+    })->with(['owner', 'node-label']);
+
     it('invalidates approval and old hitboxes immediately on a resize event', function (): void {
         open_tui_consent($this->state, $this->ui, $this->interaction, 'databases');
         $confirmation = $this->ui->menu['confirm'];

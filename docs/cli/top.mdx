@@ -43,6 +43,8 @@ Schedules show their owner as either a Node or an Instance. The unfiltered list 
 
 Node relationships use IDs. After a Node rename, its Instances, Processes, Schedules, and Firewall rules keep their membership and show the current Node name. Node filters use the current names. If a Node is missing or deleted, related records show an em dash for its name; another Node that reuses the old name does not inherit those records.
 
+Open fleet record pages read the current record by ID, including pages reached again with Back. Events, polling, and local action responses update those pages. If the record disappears, its page says it is unavailable and keeps the Back link; it cannot open related records, load data, or run actions. A different record with the same name does not replace it. A Deployment page keeps the selected deployment snapshot and its recorded log; it does not become a live fleet record.
+
 ## Keys and mouse
 
 Destructive actions show the complete target and effect and default to **No**. Use Left/Right or `y`/`n` to select, then Enter to accept; Escape cancels. Only a left-click on the **Yes** button approves. Outside clicks and other mouse buttons do not approve. If the question does not fit, enlarge the terminal or cancel. If the selected record is deleted or its request selector changes before approval, reopen its actions and confirm the current target.
@@ -63,6 +65,8 @@ A click selects a row; clicking the already-selected row opens it. A right click
 ## Actions
 
 The actions menu (`a` or a right click) lists what a record supports. Process start, stop, and restart; Schedule run and enable; Node doctor; Database connection destroy (with an inline confirmation); and Firewall rule removal (with an inline confirmation) run the same SDK request their matching command sends, and the row updates from the response.
+
+An open menu keeps its original target and action choices. Before using a choice, the screen checks the current record, request selector, owner, and action eligibility. If one changed or the record disappeared, the screen sends no request and asks you to reopen the actions. Action results and recovery messages take the footer's space before key hints. The screen never substitutes another action at the same menu position or carries old consent to a changed target. A successful Database destroy or Firewall removal makes that exact record unavailable immediately; a failed request leaves the record in place.
 
 A few actions have no request to run synchronously inside a screen that must keep rendering, or no request at all yet: Instance deploy and rollback stream for minutes; `node:ssh`, `instance:profile`, and `database:query` need an interactive terminal of their own. Choosing one of these prints the equivalent command in the footer and returns to the screen instead of running anything.
 

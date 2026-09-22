@@ -56,7 +56,7 @@ describe('last-drawn pane authority', function (): void {
         $screen = render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
         expect($screen)->toContain(sprintf('worker-%02d', $target));
         $open();
-        expect($input === 'enter' ? $this->ui->page()['row']['id'] : $this->ui->menu['row']['id'])->toBe($target);
+        expect($input === 'enter' ? $this->ui->page()['id'] : $this->ui->menu['target']['id'])->toBe($target);
     })->with(['enter', 'actions'])->with(['down', 'up']);
 
     it('draws each admitted movement before the next queued action', function (string $input): void {
@@ -70,10 +70,10 @@ describe('last-drawn pane authority', function (): void {
         }
         if ($input === 'enter') {
             $this->interaction->handleKey(KeyCode::Enter);
-            expect($this->ui->page()['row']['id'])->toBe(31);
+            expect($this->ui->page()['id'])->toBe(31);
         } else {
             $this->interaction->handleChar('a');
-            expect($this->ui->menu['row']['id'])->toBe(31);
+            expect($this->ui->menu['target']['id'])->toBe(31);
             render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
             $this->interaction->handleKey(KeyCode::Enter);
             expect($this->sent)->toBe(['/api/v1/processes/31/restart']);
@@ -93,7 +93,7 @@ describe('last-drawn pane authority', function (): void {
         $this->state->processes = $rows;
         render_top_screen($this->ui, $this->state, columns: 100, rows: 15);
         $this->interaction->handleChar('a');
-        expect($this->ui->selected['list'])->toBe(30)->and($this->ui->menu['row']['id'])->toBe(31);
+        expect($this->ui->selected['list'])->toBe(30)->and($this->ui->menu['target']['id'])->toBe(31);
     });
 
     it('retains the renderer offset across keyboard wheel and resized frames', function (): void {
@@ -120,7 +120,7 @@ describe('last-drawn pane authority', function (): void {
         expect($this->ui->selected['list'])->toBe(1)
             ->and($this->ui->drawn['list']['table']->selected)->toBe(1);
         $this->interaction->handleChar('a');
-        expect($this->ui->menu['row']['id'])->toBe(2);
+        expect($this->ui->menu['target']['id'])->toBe(2);
     });
 
     it('keeps mixed attention families distinct when IDs collide', function (): void {
@@ -131,7 +131,7 @@ describe('last-drawn pane authority', function (): void {
         $this->interaction->handleKey(KeyCode::Down);
         $this->interaction->handleChar('a');
         expect($this->ui->menu['kind'])->toBe('processes')
-            ->and($this->ui->menu['row']['id'])->toBe(1);
+            ->and($this->ui->menu['target']['id'])->toBe(1);
     });
 
     it('retains leaf pane movement without opening records or actions', function (string $pane): void {
@@ -174,8 +174,8 @@ describe('last-drawn pane authority', function (): void {
         $this->ui->focus = 'deployments';
         $this->interaction->handleKey(KeyCode::Enter);
         expect($this->ui->page()['kind'])->toBe('deployments')
-            ->and($this->ui->page()['row']['id'])->toBe(12)
-            ->and($this->ui->page()['row']['release'])->toBe('updated');
+            ->and($this->ui->page()['id'])->toBe(12)
+            ->and($this->ui->pageRow($this->state)['release'])->toBe('updated');
     });
 
     it('opens each Dashboard family from the rows it drew', function (string $pane): void {
@@ -184,7 +184,7 @@ describe('last-drawn pane authority', function (): void {
         $this->interaction->handleKey(KeyCode::Enter);
 
         expect($this->ui->page()['kind'] ?? null)->toBe($pane)
-            ->and($this->ui->page()['row']['id'] ?? null)->toBe($this->state->{$pane}[0]['id']);
+            ->and($this->ui->page()['id'] ?? null)->toBe($this->state->{$pane}[0]['id']);
     })->with(['apps', 'instances', 'processes', 'schedules']);
 
     it('uses the renderer offset for the first and last visible row', function (string $edge, string $button): void {
@@ -204,7 +204,7 @@ describe('last-drawn pane authority', function (): void {
         if ($button === 'left' && $this->ui->page() === null) {
             $this->interaction->handleMouse($event);
         }
-        expect($button === 'right' ? $this->ui->menu['row']['id'] : $this->ui->page()['row']['id'])->toBe($index + 1);
+        expect($button === 'right' ? $this->ui->menu['target']['id'] : $this->ui->page()['id'])->toBe($index + 1);
         if ($button === 'right') {
             $this->interaction->handleKey(KeyCode::Enter);
             expect($this->sent)->toBe(['/api/v1/processes/'.($index + 1).'/restart']);
@@ -217,7 +217,7 @@ describe('last-drawn pane authority', function (): void {
         $this->ui->focus = 'list';
         $this->state->processes = array_reverse($this->state->processes);
         $this->interaction->handleChar('a');
-        expect($this->ui->menu['row']['id'])->toBe(1);
+        expect($this->ui->menu['target']['id'])->toBe(1);
         $this->interaction->handleKey(KeyCode::Enter);
         expect($this->sent)->toBe(['/api/v1/processes/1/restart']);
     });

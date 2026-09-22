@@ -277,6 +277,14 @@ final class State
         }
     }
 
+    /** Remove the exact record after its successful destructive action response. */
+    public function removeRow(string $kind, int|string $id): void
+    {
+        if (in_array($kind, ['databases', 'firewall'], true)) {
+            $this->applyTo($kind, 'id', 'deleted', ['id' => $id]);
+        }
+    }
+
     /** @param array<string, mixed> $data */
     private function applyNodeSample(array $data): void
     {

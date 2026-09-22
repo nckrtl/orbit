@@ -39,14 +39,16 @@ final class UiState
     /**
      * Open record pages, last on top; empty means the section's own view.
      *
-     * @var list<array{kind: string, row: array<string, mixed>}>
+     * Fleet pages retain identity only; historical Deployments keep their selected snapshot.
+     *
+     * @var list<array{kind: string, id: int|string, historical?: array<string, mixed>}>
      */
     public array $pages = [];
 
     /** @var array{node: string|null, project: string|null} */
     public array $filters = ['node' => null, 'project' => null];
 
-    /** @var array{kind: string, title: string, row: array<string, mixed>, actions: array<string, Action>, selected: int, confirm: Confirmation|null, at: array{int, int}|null}|null */
+    /** @var array{kind: string, title: string, target: array<string, mixed>, actions: array<string, Action>, selected: int, confirm: Confirmation|null, at: array{int, int}|null}|null */
     public ?array $menu = null;
 
     public ?NodeFormState $form = null;
@@ -88,10 +90,24 @@ final class UiState
         }
     }
 
-    /** @return array{kind: string, row: array<string, mixed>}|null */
+    /** @return array{kind: string, id: int|string, historical?: array<string, mixed>}|null */
     public function page(): ?array
     {
         return $this->pages[count($this->pages) - 1] ?? null;
+    }
+
+    /** @return array<string, mixed>|null */
+    public function pageRow(State $state): ?array
+    {
+        $page = $this->page();
+
+        if ($page === null) {
+            return null;
+        }
+
+        return $page['kind'] === 'deployments'
+            ? $page['historical']
+            : $state->recordById($page['kind'], $page['id']);
     }
 
     public function hasFilters(): bool
@@ -114,7 +130,7 @@ final class UiState
     /** @param array<string, mixed> $row */
     public function open(string $kind, array $row): void
     {
-        $this->pages[] = ['kind' => $kind, 'row' => $row];
+        $this->pages[] = ['kind' => $kind, 'id' => $row['id'], ...($kind === 'deployments' ? ['historical' => $row] : [])];
         $this->focus = null;
         $this->hover = 'nav';
         $this->drawn = [];

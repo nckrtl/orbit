@@ -45,6 +45,9 @@ bin/cli-flow node-add --keep /tmp/node-add-recording
 | `design:instance-show` | One Instance as tabs: Overview detail, Processes list, Schedules list; Tab switches, Enter selects a row. |
 | `design:top-consent` | A default-No TUI confirmation with a complete wrapped Database or Firewall target; keyboard and bounded mouse choices, no Gateway request. |
 | `design:top-columns` | A Dashboard-sized Process table with complete cells, finite columns, and a non-selectable required-width message. |
+| `design:top-record` | An open Process page follows an update or becomes unavailable; an obsolete menu choice is refused without a request. |
+
+The `top-record` sketch takes `--outcome=missing` or `changed`. Press `a` to open the Process's Stop action, then `u` to simulate a deletion or an inactive status update. The page reflects the current state. Enter refuses the old action. For `changed`, reopen with `a` to see Start; Enter reports the selected action without sending a request. For `missing`, actions remain unavailable and Esc returns to the list. Press `q` to leave.
 
 The `top-columns` sketch takes `--outcome=normal`, `long`, or `empty`. At 80×24 the normal Process pane reports `Needs 48 columns.` and Enter or `a` selects nothing. Enlarge to 120 columns to show every field; Enter selects the complete Process name. `long` needs more room for its Unicode name. `empty` reports no Processes without creating a selection. Press `q` to leave. The real Dashboard's read-only Node table also needs a labeled fallback with keyboard/wheel scrolling when its full fields cannot fit on one line.
 

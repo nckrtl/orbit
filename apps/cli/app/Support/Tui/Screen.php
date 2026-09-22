@@ -494,7 +494,7 @@ final class Screen
     {
         $page = $ui->page() ?? throw new RuntimeException('No page is open.');
         $kind = $page['kind'];
-        $row = $page['row'];
+        $row = $ui->pageRow($state);
         $dim = Style::default()->fg(AnsiColor::DarkGray);
 
         $split = Layout::default()->direction(Direction::Vertical)->constraints([Constraint::length(1), Constraint::min(5)])->split($area);
@@ -515,8 +515,17 @@ final class Screen
         $crumbs = ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(
             Span::styled('  ‹ back  ', Style::default()->fg(AnsiColor::Cyan)),
             Span::styled("{$label}: ", $dim),
-            Span::styled($this->rowTitle($kind, $row), Style::default()->addModifier(Modifier::BOLD)),
+            Span::styled($row === null ? 'unavailable' : $this->rowTitle($kind, $row), Style::default()->addModifier(Modifier::BOLD)),
         )));
+
+        if ($row === null) {
+            $ui->focus = null;
+            $ui->hover = 'nav';
+
+            return GridWidget::default()->direction(Direction::Vertical)
+                ->constraints(Constraint::length(1), Constraint::min(5))
+                ->widgets($crumbs, ParagraphWidget::fromString(implode("\n", TerminalText::wrap('This record is no longer available. Press Esc or ‹ back.', max(1, $body->width)))));
+        }
 
         $hasSubPanes = in_array($kind, ['nodes', 'apps', 'instances', 'databases'], true);
         $propertiesWidth = $hasSubPanes ? intdiv($body->width * 40, 100) : $body->width;

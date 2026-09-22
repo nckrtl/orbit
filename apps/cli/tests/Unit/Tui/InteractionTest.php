@@ -41,7 +41,7 @@ describe(Interaction::class, function (): void {
         new Interaction($state, $ui, new ActionRunner($send), $send)->handleKey(KeyCode::Enter);
 
         expect($ui->page()['kind'])->toBe('instances')
-            ->and($ui->page()['row']['id'])->toBe(1);
+            ->and($ui->page()['id'])->toBe(1);
     });
 
     it('opens the record shown by a renamed Node filter', function (string $section): void {
@@ -58,7 +58,7 @@ describe(Interaction::class, function (): void {
         new Interaction($state, $ui, new ActionRunner($send), $send)->handleKey(KeyCode::Enter);
 
         expect($ui->page()['kind'])->toBe($section)
-            ->and($ui->page()['row']['id'])->toBe($state->{$section}[0]['id']);
+            ->and($ui->page()['id'])->toBe($state->{$section}[0]['id']);
     })->with(['instances', 'processes', 'schedules', 'firewall']);
 
     it('follows a Node relationship by ID after its old name is reused', function (string $section): void {
@@ -72,8 +72,8 @@ describe(Interaction::class, function (): void {
         new Interaction($state, $ui, new ActionRunner($send), $send)->handleMouse(MouseEvent::new(MouseEventKind::Down, MouseButton::Left, $link->left(), $link->top(), 0));
 
         expect($ui->page()['kind'])->toBe('nodes')
-            ->and($ui->page()['row']['id'])->toBe(1)
-            ->and($ui->page()['row']['name'])->toBe('shark');
+            ->and($ui->page()['id'])->toBe(1)
+            ->and($ui->pageRow($state)['name'])->toBe('shark');
     })->with(['instances', 'firewall']);
 
     it('opens the Node Schedule displayed by the Node filter', function (): void {
@@ -94,7 +94,7 @@ describe(Interaction::class, function (): void {
 
         new Interaction($state, $ui, new ActionRunner($send), $send)->handleKey(KeyCode::Enter);
 
-        expect($ui->page()['row']['id'])->toBe($state->schedules[1]['id'])
+        expect($ui->page()['id'])->toBe($state->schedules[1]['id'])
             ->and($sent)->toBe(['/api/v1/schedules/'.$state->schedules[1]['id'].'/logs']);
     });
 
@@ -145,7 +145,7 @@ describe(Interaction::class, function (): void {
 
         expect($ui->pages)->toHaveCount(1)
             ->and($ui->pages[0]['kind'])->toBe('nodes')
-            ->and($ui->pages[0]['row']['name'])->toBe('shark');
+            ->and($ui->pageRow($state)['name'])->toBe('shark');
     });
 
     it('opens the actions menu on a right click and runs the chosen action', function (): void {
@@ -216,7 +216,7 @@ describe(Interaction::class, function (): void {
 
         expect($ui->pages)->toHaveCount(1)
             ->and($ui->pages[0]['kind'])->toBe('firewall')
-            ->and($ui->pages[0]['row']['name'])->toBe('ssh');
+            ->and($ui->pageRow($state)['name'])->toBe('ssh');
     });
 
     it('asks to confirm before running a destructive action', function (): void {

@@ -180,7 +180,7 @@ describe(Screen::class, function (): void {
         $ui->menu = [
             'kind' => 'nodes',
             'title' => 'beast',
-            'row' => tui_test_state()->nodes[0],
+            'target' => ['id' => 1],
             'actions' => (new ActionRunner(fn (): never => throw new RuntimeException('not used')))
                 ->actionsFor('nodes', tui_test_state()->nodes[0]),
             'selected' => 0,

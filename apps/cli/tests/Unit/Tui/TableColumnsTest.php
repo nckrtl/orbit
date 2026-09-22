@@ -90,7 +90,7 @@ describe('finite TUI table columns', function (): void {
         $screen = render_top_screen($ui, $state, columns: 120, rows: 40);
         expect($screen)->toContain('horizon', '20%/1.23GB')->and($ui->drawn[$pane])->toHaveKey('table');
         $interaction->handleChar('a');
-        expect($ui->menu['row']['id'])->toBe($state->processes[0]['id']);
+        expect($ui->menu['target']['id'])->toBe($state->processes[0]['id']);
     })->with(['dashboard', 'processes', 'nodes', 'instances']);
 
     it('keeps every labeled Node field reachable by keyboard and wheel without actions', function (int $nodes): void {
@@ -148,7 +148,7 @@ describe('finite TUI table columns', function (): void {
         $state->processes = $rows;
         render_top_screen($ui, $state, columns: 140);
         $interaction->handleChar('a');
-        expect($ui->menu['row']['id'])->toBe(2)->and($ui->menu['row']['name'])->toBe('worker-東京-production');
+        expect($ui->menu['target']['id'])->toBe(2)->and($ui->menu['title'])->toBe('worker-東京-production');
     });
 
     it('refuses an infeasible Dashboard height without actionable geometry', function (): void {

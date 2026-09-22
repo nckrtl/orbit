@@ -1,0 +1,24 @@
+  orbit                                                    gateway.test · live  
+╭──────────────────╮  ‹ back  Process: unavailable                              
+│› Dashboard       │This record is no longer available. Press Esc or ‹ back.    
+│  Nodes         1 │                                                            
+│  Projects      1 │                                                            
+│  Instances     1 │                                                            
+│  Processes     0 │                                                            
+│  Schedules     1 │                                                            
+│  Databases     1 │                                                            
+│  Firewall      1 │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+│                  │                                                            
+╰──────────────────╯                                                            
+                                                                                

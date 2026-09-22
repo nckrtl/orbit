@@ -258,10 +258,16 @@ final class TopCommand extends GatewayCommand
             return $ui->section === 'dashboard' ? [array_column($state->nodes, 'id'), true, [], []] : [[], false, [], []];
         }
 
+        $row = $ui->pageRow($state);
+
+        if ($row === null) {
+            return [[], false, [], []];
+        }
+
         return match ($page['kind']) {
-            'nodes' => [[$page['row']['id']], false, [], []],
-            'instances' => [[], false, [$page['row']['id']], []],
-            'databases' => [[], false, [], [$page['row']['slug']]],
+            'nodes' => [[$row['id']], false, [], []],
+            'instances' => [[], false, [$row['id']], []],
+            'databases' => [[], false, [], [$row['slug']]],
             default => [[], false, [], []],
         };
     }
@@ -280,6 +286,10 @@ final class TopCommand extends GatewayCommand
 
     private function footer(UiState $ui): string
     {
+        if ($ui->message !== '') {
+            return '  '.$ui->message;
+        }
+
         $hint = match (true) {
             $ui->menu !== null && $ui->menu['confirm'] !== null => '  ←→ or y/n choose · Enter accepts · Left-click No/Yes · Esc cancels',
             $ui->menu !== null => '  ↑↓ choose · Enter or click runs · Esc closes',
@@ -290,6 +300,6 @@ final class TopCommand extends GatewayCommand
             default => '  ↑↓ move · Enter or click again opens · a or right-click actions · Esc back to panes · q leave',
         };
 
-        return $hint.($ui->message !== '' ? "  │  {$ui->message}" : '');
+        return $hint;
     }
 }

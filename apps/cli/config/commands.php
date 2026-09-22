@@ -6,6 +6,7 @@ use Design\Flows\InstanceShowFlowCommand;
 use Design\Flows\NodeAddFlowCommand;
 use Design\Flows\TopColumnsFlowCommand;
 use Design\Flows\TopConsentFlowCommand;
+use Design\Flows\TopRecordFlowCommand;
 use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
 use Illuminate\Console\Scheduling\ScheduleRunCommand;
@@ -77,6 +78,7 @@ return [
         env('ORBIT_DESIGN') === '1' && class_exists(InstanceShowFlowCommand::class) ? InstanceShowFlowCommand::class : null,
         env('ORBIT_DESIGN') === '1' && class_exists(TopConsentFlowCommand::class) ? TopConsentFlowCommand::class : null,
         env('ORBIT_DESIGN') === '1' && class_exists(TopColumnsFlowCommand::class) ? TopColumnsFlowCommand::class : null,
+        env('ORBIT_DESIGN') === '1' && class_exists(TopRecordFlowCommand::class) ? TopRecordFlowCommand::class : null,
     ])),
 
     /*

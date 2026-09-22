@@ -197,7 +197,7 @@ final readonly class Interaction
                 return;
             }
 
-            if ($this->hitRow('back', $x, $y) !== null) {
+            if ($this->hitPoint('back', $x, $y)) {
                 $this->ui->form = null;
             } elseif ($this->hitPoint('form:submit', $x, $y)) {
                 $this->ui->form->focusField(count($this->ui->form->prompts));
@@ -229,7 +229,7 @@ final readonly class Interaction
         }
 
         if ($event->button === MouseButton::Left) {
-            if ($this->hitRow('back', $x, $y) !== null) {
+            if ($this->hitPoint('back', $x, $y)) {
                 $this->ui->back();
 
                 return;
@@ -399,7 +399,7 @@ final readonly class Interaction
     /** A node or app link on a page opens that record's page. */
     private function follow(string $link): void
     {
-        $row = $this->ui->page()['row'] ?? [];
+        $row = $this->ui->pageRow($this->state) ?? [];
 
         if ($link === 'link:node') {
             $nodeId = $row['node']['id'] ?? $row['node_id'] ?? null;
@@ -411,7 +411,7 @@ final readonly class Interaction
         }
 
         if ($link === 'link:project') {
-            $app = $this->state->appBySlug($row['app']['slug'] ?? '');
+            $app = isset($row['app']['id']) ? $this->state->recordById('apps', $row['app']['id']) : null;
 
             if ($app !== null) {
                 $this->openRecord('apps', $app);
@@ -431,6 +431,10 @@ final readonly class Interaction
     /** @return array{kind: string, row: array<string, mixed>}|null */
     private function selectedRecord(string $pane): ?array
     {
+        if ($this->ui->page() !== null && $this->ui->pageRow($this->state) === null) {
+            return null;
+        }
+
         $drawn = $this->ui->drawn[$pane] ?? [];
         $index = $this->ui->selected[$pane] ?? 0;
         $id = $drawn['ids'][$index] ?? null;
@@ -467,7 +471,7 @@ final readonly class Interaction
     private function maybeLazyLoad(string $pane, ?string $kind = null, ?array $row = null): void
     {
         $kind ??= $this->ui->page()['kind'] ?? null;
-        $row ??= $this->ui->page()['row'] ?? null;
+        $row ??= $this->ui->pageRow($this->state);
 
         if ($row === null) {
             return;
@@ -551,7 +555,7 @@ final readonly class Interaction
             $row = $record['row'] ?? null;
         } elseif ($page !== null) {
             $kind = $page['kind'];
-            $row = $page['row'];
+            $row = $this->ui->pageRow($this->state);
         } else {
             return;
         }
@@ -570,7 +574,8 @@ final readonly class Interaction
             return;
         }
 
-        $this->ui->menu = ['kind' => $kind, 'title' => $this->rowTitleFor($kind, $row), 'row' => $row, 'actions' => $actions, 'selected' => 0, 'confirm' => null, 'at' => $at];
+        $this->ui->menu = ['kind' => $kind, 'title' => $this->rowTitleFor($kind, $row), 'target' => $this->menuTarget($kind, $row), 'actions' => $actions, 'selected' => 0, 'confirm' => null, 'at' => $at];
+        $this->ui->message = '';
     }
 
     /** @param array<string, mixed> $row */
@@ -593,6 +598,10 @@ final readonly class Interaction
         $menu = $this->ui->menu;
 
         if ($menu === null) {
+            return;
+        }
+
+        if ($this->currentMenuRow() === null) {
             return;
         }
 
@@ -624,28 +633,52 @@ final readonly class Interaction
         }
     }
 
-    /** @param array<string, mixed> $row The frozen record whose destructive question was shown. */
-    private function destructiveTargetIsCurrent(string $kind, array $row): bool
+    /**
+     * Freeze request selectors and owner identities, not a second copy of the fleet record.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function menuTarget(string $kind, array $row): array
     {
-        $keys = match ($kind) {
-            'databases' => ['slug'],
-            'firewall' => ['node_id', 'name'],
+        $selector = match ($kind) {
+            'processes', 'schedules' => ['target_type' => $row['target_type'], 'target_id' => $row['target_id']],
+            'instances' => ['app_id' => $row['app']['id'], 'node_id' => $row['node']['id']],
+            'databases' => ['slug' => $row['slug'], 'node_id' => $row['node_id']],
+            'firewall' => ['node_id' => $row['node_id'], 'name' => $row['name']],
             default => [],
         };
 
-        if ($keys === []) {
-            return false;
+        return ['id' => $row['id'], ...$selector];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function currentMenuRow(): ?array
+    {
+        $menu = $this->ui->menu;
+
+        if ($menu === null) {
+            return null;
         }
 
-        foreach ($this->state->{$kind} as $current) {
-            if ($current['id'] !== $row['id']) {
-                continue;
-            }
+        $row = $this->state->recordById($menu['kind'], $menu['target']['id']);
+        $label = array_keys($menu['actions'])[$menu['selected']] ?? null;
 
-            return array_all($keys, static fn (string $key): bool => $current[$key] === $row[$key]);
+        if ($row !== null && $menu['kind'] === 'firewall') {
+            $row['node'] = $this->state->nodeName($row['node_id']);
         }
 
-        return false;
+        $currentAction = $row === null || $label === null ? null : ($this->actions->actionsFor($menu['kind'], $row)[$label] ?? null);
+
+        if ($row === null || $currentAction === null || ($this->ui->page() !== null && $this->ui->pageRow($this->state) === null)
+            || $this->menuTarget($menu['kind'], $row) !== $menu['target'] || $currentAction != $menu['actions'][$label]) {
+            $this->ui->menu = null;
+            $this->ui->message = 'The record changed or disappeared. Reopen its actions.';
+
+            return null;
+        }
+
+        return $row;
     }
 
     /** Runs the selected menu action's real request, or confirms a destructive one. */
@@ -657,15 +690,14 @@ final readonly class Interaction
             return;
         }
 
-        $label = array_keys($menu['actions'])[$menu['selected']];
-        $row = $menu['row'];
-        $this->ui->menu = null;
+        $row = $this->currentMenuRow();
 
-        if ($menu['actions'][$label]->destructive && ! $this->destructiveTargetIsCurrent($menu['kind'], $row)) {
-            $this->ui->message = 'The selected record changed or disappeared. Reopen its actions and confirm the current target.';
-
+        if ($row === null) {
             return;
         }
+
+        $label = array_keys($menu['actions'])[$menu['selected']];
+        $this->ui->menu = null;
 
         try {
             $result = $this->actions->run($menu['kind'], $label, $row);
@@ -673,12 +705,8 @@ final readonly class Interaction
 
             if ($result['row'] !== null) {
                 $this->state->updateRow($menu['kind'], $result['row']);
-
-                foreach ($this->ui->pages as $index => $page) {
-                    if ($page['kind'] === $menu['kind'] && ($page['row']['id'] ?? null) === ($row['id'] ?? null)) {
-                        $this->ui->pages[$index]['row'] = $result['row'];
-                    }
-                }
+            } elseif ($menu['actions'][$label]->destructive) {
+                $this->state->removeRow($menu['kind'], $row['id']);
             }
         } catch (GatewayApiException $exception) {
             $this->ui->message = $exception->getMessage();
