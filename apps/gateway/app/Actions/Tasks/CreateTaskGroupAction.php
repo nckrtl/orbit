@@ -42,8 +42,8 @@ final readonly class CreateTaskGroupAction
             'brief' => $data->brief,
             'status' => TaskGroupStatus::Queued,
             'notify_coder' => $data->notifyCoder,
-            'implementer_model' => TaskAgentDefaults::ImplementerModel,
-            'reviewer_model' => TaskAgentDefaults::ReviewerModel,
+            'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
+            'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
         ]);
 
         foreach ($data->tasks as $index => $task) {
@@ -59,5 +59,12 @@ final readonly class CreateTaskGroupAction
         $this->scheduler->claimNext();
 
         return $group->refresh()->load(['app', 'tasks', 'taskable']);
+    }
+
+    private function model(string $key, string $default): string
+    {
+        $model = config('orbit.tasks.'.$key);
+
+        return is_string($model) && $model !== '' ? $model : $default;
     }
 }

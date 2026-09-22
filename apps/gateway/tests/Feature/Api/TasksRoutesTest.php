@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -503,6 +504,19 @@ it('returns 409 tasks.not_settling when complete runs before settle', function (
     $this->postJson("/api/v1/task-groups/{$group->id}/complete")
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'tasks.not_settling');
+});
+
+it('stores the configured models on a new group and keeps the defaults when unset', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app();
+    config()->set('orbit.tasks.implementer_model', 'gpt-6-luna');
+    config()->set('orbit.tasks.reviewer_model', '');
+
+    $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Models', 'brief' => 'Configured models'])
+        ->assertCreated();
+
+    $this->assertDatabaseHas('task_groups', ['title' => 'Models', 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
 });
 
 it('stores the configured implementer and reviewer drivers on a new group', function (): void {
