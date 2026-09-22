@@ -27,8 +27,13 @@ use PhpTui\Term\Event\CharKeyEvent;
 use PhpTui\Term\Event\CodedKeyEvent;
 use PhpTui\Term\Event\MouseEvent;
 use PhpTui\Term\Event\TerminalResizedEvent;
+use PhpTui\Term\EventProvider\AggregateEventProvider;
+use PhpTui\Term\EventProvider\SignalEventProvider;
+use PhpTui\Term\EventProvider\SyncTtyEventProvider;
+use PhpTui\Term\InformationProvider\SizeFromSttyProvider;
 use PhpTui\Term\KeyModifiers;
 use PhpTui\Term\Terminal;
+use PhpTui\Tui\Bridge\PhpTerm\PhpTermBackend;
 use PhpTui\Tui\DisplayBuilder;
 
 /**
@@ -128,8 +133,11 @@ final class TopCommand extends GatewayCommand
         $screen = new Screen;
         $interaction = new Interaction($state, $ui, new ActionRunner($send), $send);
 
-        $terminal = Terminal::new();
-        $display = DisplayBuilder::default()->fullscreen()->build();
+        $terminal = Terminal::new(
+            infoProvider: SizeFromSttyProvider::new(),
+            eventProvider: new AggregateEventProvider([SignalEventProvider::registered(), SyncTtyEventProvider::new()]),
+        );
+        $display = DisplayBuilder::default(PhpTermBackend::new($terminal))->fullscreen()->build();
         $terminal->enableRawMode();
         $terminal->execute(Actions::alternateScreenEnable(), Actions::cursorHide(), Actions::enableMouseCapture());
 
@@ -186,7 +194,7 @@ final class TopCommand extends GatewayCommand
 
                     if ($event instanceof TerminalResizedEvent) {
                         ($ui->menu['confirm'] ?? null)?->invalidate();
-                        $display = DisplayBuilder::default()->fullscreen()->build();
+                        $display = DisplayBuilder::default(PhpTermBackend::new($terminal))->fullscreen()->build();
                         $display->clear();
 
                         break;

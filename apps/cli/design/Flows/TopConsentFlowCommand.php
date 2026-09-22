@@ -12,11 +12,16 @@ use PhpTui\Term\Event\CharKeyEvent;
 use PhpTui\Term\Event\CodedKeyEvent;
 use PhpTui\Term\Event\MouseEvent;
 use PhpTui\Term\Event\TerminalResizedEvent;
+use PhpTui\Term\EventProvider\AggregateEventProvider;
+use PhpTui\Term\EventProvider\SignalEventProvider;
+use PhpTui\Term\EventProvider\SyncTtyEventProvider;
+use PhpTui\Term\InformationProvider\SizeFromSttyProvider;
 use PhpTui\Term\KeyCode;
 use PhpTui\Term\KeyModifiers;
 use PhpTui\Term\MouseButton;
 use PhpTui\Term\MouseEventKind;
 use PhpTui\Term\Terminal;
+use PhpTui\Tui\Bridge\PhpTerm\PhpTermBackend;
 use PhpTui\Tui\DisplayBuilder;
 
 /** Dev-only consent sketch. It never creates a connector or sends a request. */
@@ -45,8 +50,11 @@ final class TopConsentFlowCommand extends GatewayCommand
         }
 
         $confirmation = new Confirmation($question);
-        $terminal = Terminal::new();
-        $display = DisplayBuilder::default()->fullscreen()->build();
+        $terminal = Terminal::new(
+            infoProvider: SizeFromSttyProvider::new(),
+            eventProvider: new AggregateEventProvider([SignalEventProvider::registered(), SyncTtyEventProvider::new()]),
+        );
+        $display = DisplayBuilder::default(PhpTermBackend::new($terminal))->fullscreen()->build();
         $answer = null;
         $terminal->enableRawMode();
 
@@ -69,7 +77,8 @@ final class TopConsentFlowCommand extends GatewayCommand
                 } elseif ($event instanceof MouseEvent && $event->kind === MouseEventKind::Down && $event->button === MouseButton::Left) {
                     $answer = $confirmation->click($event->column, $event->row);
                 } elseif ($event instanceof TerminalResizedEvent) {
-                    $display = DisplayBuilder::default()->fullscreen()->build();
+                    $confirmation->invalidate();
+                    $display = DisplayBuilder::default(PhpTermBackend::new($terminal))->fullscreen()->build();
                     $display->clear();
                 }
 
