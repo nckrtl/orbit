@@ -85,12 +85,13 @@ it('resumes relocation from each durable cross-filesystem checkpoint', function 
             $stage = orb105_relocation_scope($fixture).'/stage';
             expect(is_dir($stage))->toBeTrue();
             expect($fixture['instance']->refresh()->registration_relocation_receipt)->not->toBeNull();
+        } elseif ($checkpoint === 'destination-only') {
+            $interrupting = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor('cleanup'));
+            expect(fn () => $interrupting->relocate($fixture['instance'], $facts))
+                ->toThrow(RuntimeConvergenceException::class);
+            $fixture['instance']->refresh();
         } else {
             orb105_copy_tree($fixture['source'], $fixture['destination']);
-
-            if ($checkpoint === 'destination-only') {
-                new Filesystem()->deleteDirectory($fixture['source']);
-            }
         }
 
         $fixture['manager']->relocate($fixture['instance'], $facts);
@@ -1091,13 +1092,16 @@ it('resumes an actual interruption during original cleanup from the verified des
                 expect($exception->errorCode)->toBe('instance.registration_incomplete');
             });
 
-        $partialCount = count(glob($fixture['source'].'/cleanup/*') ?: []);
         $checkpoint = $fixture['instance']->refresh();
+        $claim = orb105_original_claim($fixture);
+        $partialCount = count(glob($claim.'/cleanup/*') ?: []);
         expect(is_dir($fixture['source']))
+            ->toBeFalse()
+            ->and(is_dir($claim))
             ->toBeTrue()
             ->and($partialCount)
             ->toBeLessThan(20_001)
-            ->and(orb105_complete_manifest($fixture['source']))
+            ->and(orb105_complete_manifest($claim))
             ->not
             ->toBe($manifestBefore)
             ->and(orb105_complete_manifest($fixture['destination']))
@@ -1115,6 +1119,8 @@ it('resumes an actual interruption during original cleanup from the verified des
         $fixture['manager']->relocate($checkpoint, $facts);
 
         expect(file_exists($fixture['source']))
+            ->toBeFalse()
+            ->and(file_exists($claim))
             ->toBeFalse()
             ->and(orb105_complete_manifest($fixture['destination']))
             ->toBe($manifestBefore)
@@ -1154,6 +1160,389 @@ it('refuses cleanup when the original path was replaced after destination verifi
             ->toBe("unrelated\n")
             ->and(is_dir($fixture['destination']))
             ->toBeTrue();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('preserves an original pathname replaced between native cleanup validation and deletion', function (bool $symlink): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $hook = 'replace_with_link='.($symlink ? 'True' : 'False')."\n".<<<'PYTHON'
+            import os, sys
+            def substitute_validated_original(frame,event,result):
+                if event == 'call' and frame.f_code.co_name == 'remove_original':
+                    sys.settrace(None)
+                    source=frame.f_locals['member']['source']
+                    os.rename(source,source+'-retained')
+                    target=source+'-foreign' if replace_with_link else source
+                    os.mkdir(target)
+                    with open(target+'/foreign.txt','w') as stream: stream.write('keep foreign replacement\n')
+                    if replace_with_link: os.symlink(target,source)
+                return substitute_validated_original
+            sys.settrace(substitute_validated_original)
+            PYTHON;
+        $racing = orb105_registration_manager(new Orb105NativeHookSshExecutor('cleanup', $hook));
+        $failure = null;
+
+        try {
+            $racing->relocate($fixture['instance'], $facts);
+        } catch (RuntimeConvergenceException $exception) {
+            $failure = $exception;
+        }
+
+        expect(file_exists($fixture['source'].'/foreign.txt'))->toBeTrue();
+        expect(file_get_contents($fixture['source'].'/foreign.txt'))->toBe("keep foreign replacement\n");
+        expect(is_link($fixture['source']))->toBe($symlink);
+        expect($failure)->toBeInstanceOf(RuntimeConvergenceException::class);
+        expect(orb105_complete_manifest($fixture['source'].'-retained'))->toBe($before);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('original_cleanup');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['directory' => false, 'symlink' => true]);
+
+it('resumes original claims and deletion acknowledgments without touching a recreated original', function (string $checkpoint, string $recreated): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $interrupting = orb105_original_checkpoint_manager($checkpoint);
+
+        expect(fn () => $interrupting->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        $claim = orb105_original_claim($fixture);
+        $state = orb105_relocation_state(orb105_relocation_scope($fixture));
+        expect($state['original_phase'])->toBe(match ($checkpoint) {
+            'claim renamed' => 'claiming',
+            'claim saved', 'completion partial write' => 'claimed',
+            'completion saved' => 'deleted',
+        });
+        expect(file_exists($fixture['source']))->toBeFalse();
+        if (in_array($checkpoint, ['claim renamed', 'claim saved'], strict: true)) {
+            expect(orb105_complete_manifest($claim))->toBe($before);
+        } else {
+            expect(file_exists($claim))->toBeFalse();
+        }
+        if ($recreated !== 'absent') {
+            $foreign = $recreated === 'symlink' ? $fixture['source'].'-foreign' : $fixture['source'];
+            mkdir($foreign);
+            file_put_contents($foreign.'/foreign.txt', "keep recreated original\n");
+            if ($recreated === 'symlink') {
+                symlink($foreign, $fixture['source']);
+            }
+            $foreignBefore = orb105_complete_manifest($foreign);
+            $pathBefore = orb105_complete_manifest($fixture['source']);
+        }
+
+        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
+
+        expect(file_exists($claim))->toBeFalse();
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated');
+        expect(orb105_relocation_state(orb105_relocation_scope($fixture))['original_phase'])->toBe('deleted');
+        if ($recreated === 'absent') {
+            expect(file_exists($fixture['source']))->toBeFalse();
+        } else {
+            expect(orb105_complete_manifest($foreign))->toBe($foreignBefore);
+            expect(orb105_complete_manifest($fixture['source']))->toBe($pathBefore);
+        }
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['claim renamed', 'claim saved', 'completion partial write', 'completion saved'])
+    ->with(['absent', 'directory', 'symlink']);
+
+it('rechecks the original claim after native rename and never deletes a substituted entry', function (bool $conflictingRestore): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $hook = 'conflicting_restore='.($conflictingRestore ? 'True' : 'False')."\n".<<<'PYTHON'
+            import os, sys
+            def substitute_claimed_original(frame,event,result):
+                if frame.f_code.co_name == 'rename_exclusive' and str(frame.f_locals.get('destination','')).startswith('.orbit-original-'):
+                    parent=frame.f_locals['source_parent']; source=frame.f_locals['source']
+                    if event == 'call':
+                        os.rename(source,source+'-retained',src_dir_fd=parent,dst_dir_fd=parent)
+                        os.mkdir(source,dir_fd=parent)
+                        directory=os.open(source,os.O_RDONLY | os.O_DIRECTORY,dir_fd=parent)
+                        file=os.open('foreign.txt',os.O_WRONLY | os.O_CREAT | os.O_EXCL,0o600,dir_fd=directory)
+                        os.write(file,b'never delete substituted claim\n'); os.close(file); os.close(directory)
+                    elif event == 'return':
+                        sys.settrace(None)
+                        if conflicting_restore:
+                            os.mkdir(source,dir_fd=parent)
+                            directory=os.open(source,os.O_RDONLY | os.O_DIRECTORY,dir_fd=parent)
+                            file=os.open('recreated.txt',os.O_WRONLY | os.O_CREAT | os.O_EXCL,0o600,dir_fd=directory)
+                            os.write(file,b'never overwrite recreated original\n'); os.close(file); os.close(directory)
+                return substitute_claimed_original
+            sys.settrace(substitute_claimed_original)
+            PYTHON;
+        $racing = orb105_registration_manager(new Orb105NativeHookSshExecutor('cleanup', $hook));
+
+        expect(fn () => $racing->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        $claim = orb105_original_claim($fixture);
+        expect(orb105_complete_manifest($fixture['source'].'-retained'))->toBe($before);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        if ($conflictingRestore) {
+            expect(file_get_contents($claim.'/foreign.txt'))->toBe("never delete substituted claim\n");
+            expect(file_get_contents($fixture['source'].'/recreated.txt'))->toBe("never overwrite recreated original\n");
+        } else {
+            expect(file_exists($claim))->toBeFalse();
+            expect(file_get_contents($fixture['source'].'/foreign.txt'))->toBe("never delete substituted claim\n");
+        }
+        expect(orb105_relocation_state(orb105_relocation_scope($fixture))['original_phase'])->toBe('claiming');
+        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('original_cleanup');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['restored replacement' => false, 'preserved conflicting paths' => true]);
+
+it('keeps original cleanup within the complete included source set across refusal and interruption', function (string $checkpoint): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $linkedSource = $fixture['source_root'].'/feature';
+        $linkedDestination = $fixture['destination_root'].'/managed/acme/feature';
+        orb105_run(['git', '-C', $fixture['source'], 'worktree', 'add', '-b', 'feature', $linkedSource]);
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], true);
+        $linked = AppInstance::query()->create([
+            'app_id' => $fixture['instance']->app_id,
+            'node_id' => $fixture['node']->id,
+            'name' => 'feature',
+            'source_layout' => 'worktree',
+            'checkout_path' => $linkedDestination,
+            'branch' => 'feature',
+            'registration_original_path' => $linkedSource,
+            'registration_request_id' => $fixture['instance']->registration_request_id,
+            'registration_relocation_state' => 'reserved',
+            'registration_authoritative_path' => $linkedSource,
+            'status' => 'reserved',
+        ]);
+        $members = array_map(
+            static fn (RegistrationSourceFacts $fact): array => [
+                'appInstance' => $fact->path === $fixture['source'] ? $fixture['instance'] : $linked,
+                'facts' => $fact,
+            ],
+            $facts,
+        );
+        $before = orb105_complete_manifest($fixture['source']);
+        $linkedBefore = orb105_complete_manifest($linkedSource);
+        $managedBefore = orb105_preserved_manifest($fixture['source']);
+        $linkedManagedBefore = orb105_preserved_manifest($linkedSource);
+        if ($checkpoint === 'foreign claim') {
+            $interrupting = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor);
+            expect(fn () => $interrupting->relocateSet($members))
+                ->toThrow(RuntimeConvergenceException::class);
+            $foreignClaim = orb105_original_claim(['source' => $linkedSource, 'instance' => $linked]);
+            mkdir($foreignClaim);
+            file_put_contents($foreignClaim.'/foreign.txt', "foreign member claim\n");
+            $foreignBefore = orb105_complete_manifest($foreignClaim);
+        } else {
+            $hook = <<<'PYTHON'
+                import os, sys
+                def interrupt_after_member(frame,event,result):
+                    if event == 'return' and frame.f_code.co_name == 'remove_original' and frame.f_locals['member']['layout'] == 'worktree':
+                        os._exit(137)
+                    return interrupt_after_member
+                sys.settrace(interrupt_after_member)
+                PYTHON;
+            $interrupting = orb105_registration_manager(new Orb105NativeHookSshExecutor('cleanup', $hook));
+            expect(fn () => $interrupting->relocateSet($members))
+                ->toThrow(RuntimeConvergenceException::class);
+        }
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(orb105_preserved_manifest($fixture['destination']))->toBe($managedBefore);
+        expect(orb105_preserved_manifest($linkedDestination))->toBe($linkedManagedBefore);
+        foreach ($members as $member) {
+            $member['appInstance']->refresh();
+        }
+        if ($checkpoint === 'foreign claim') {
+            expect(fn () => $fixture['manager']->relocateSet($members))
+                ->toThrow(RuntimeConvergenceException::class);
+            expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+            expect(orb105_complete_manifest($linkedSource))->toBe($linkedBefore);
+            expect(orb105_complete_manifest($foreignClaim))->toBe($foreignBefore);
+            expect(file_exists(orb105_original_claim($fixture)))->toBeFalse();
+        } else {
+            expect(file_exists($linkedSource))->toBeFalse();
+            $fixture['manager']->relocateSet($members);
+            expect(file_exists($fixture['source']))->toBeFalse();
+            expect(file_exists($linkedSource))->toBeFalse();
+            expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated');
+            expect($linked->refresh()->registration_relocation_state)->toBe('relocated');
+        }
+        expect(orb105_preserved_manifest($fixture['destination']))->toBe($managedBefore);
+        expect(orb105_preserved_manifest($linkedDestination))->toBe($linkedManagedBefore);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['foreign claim', 'completed member']);
+
+it('refuses a foreign replacement at an original claim and preserves both trees', function (string $replacement): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $interrupting = orb105_original_checkpoint_manager('claim saved');
+        expect(fn () => $interrupting->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+        $claim = orb105_original_claim($fixture);
+        $retained = $fixture['source'].'-retained';
+        rename($claim, $retained);
+        if ($replacement === 'matching directory') {
+            orb105_copy_tree($retained, $claim);
+        } elseif ($replacement === 'symlink') {
+            symlink($retained, $claim);
+        } else {
+            file_put_contents($claim, "foreign claim\n");
+        }
+        $foreignBefore = orb105_complete_manifest($claim);
+        $scopeBefore = orb105_complete_manifest(orb105_relocation_scope($fixture));
+
+        expect(fn () => $fixture['manager']->relocate($fixture['instance']->refresh(), $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($claim))->toBe($foreignBefore);
+        expect(orb105_complete_manifest($retained))->toBe($before);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        expect(orb105_complete_manifest(orb105_relocation_scope($fixture)))->toBe($scopeBefore);
+        expect(file_exists($fixture['source']))->toBeFalse();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['matching directory', 'symlink', 'file']);
+
+it('refuses a missing claim when the same original inode has returned to its old pathname', function (): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $inode = lstat($fixture['source'])['ino'];
+        $interrupting = orb105_original_checkpoint_manager('claim saved');
+        expect(fn () => $interrupting->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+        $claim = orb105_original_claim($fixture);
+        rename($claim, $fixture['source']);
+
+        expect(fn () => $fixture['manager']->relocate($fixture['instance']->refresh(), $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(lstat($fixture['source'])['ino'])->toBe($inode);
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+
+        rename($fixture['source'], $claim);
+        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
+
+        expect(file_exists($claim))->toBeFalse();
+        expect(file_exists($fixture['source']))->toBeFalse();
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses original-parent drift after cleanup preflight without touching either namespace', function (bool $symlink): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        mkdir($fixture['source_root'].'/nested');
+        rename($fixture['source'], $fixture['source_root'].'/nested/acme');
+        $fixture['source'] = $fixture['source_root'].'/nested/acme';
+        $fixture['instance']->update(['registration_original_path' => $fixture['source'], 'registration_authoritative_path' => $fixture['source']]);
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $inode = lstat($fixture['source'])['ino'];
+        $hook = 'link_parent='.($symlink ? 'True' : 'False')."\n".<<<'PYTHON'
+            import os, shutil, sys
+            def replace_original_parent(frame,event,result):
+                if event == 'call' and frame.f_code.co_name == 'remove_original':
+                    sys.settrace(None)
+                    source=frame.f_locals['member']['source']; parent=os.path.dirname(source)
+                    os.rename(parent,parent+'-retained')
+                    if link_parent: os.symlink(parent+'-retained',parent)
+                    else:
+                        os.mkdir(parent)
+                        shutil.copytree(parent+'-retained/'+os.path.basename(source),source,symlinks=True)
+                return replace_original_parent
+            sys.settrace(replace_original_parent)
+            PYTHON;
+        $racing = orb105_registration_manager(new Orb105NativeHookSshExecutor('cleanup', $hook));
+
+        expect(fn () => $racing->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        $retained = $fixture['source_root'].'/nested-retained/acme';
+        expect(lstat($retained)['ino'])->toBe($inode);
+        expect(orb105_complete_manifest($retained))->toBe($before);
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        expect(glob($fixture['source_root'].'/nested-retained/.orbit-original-*'))->toBe([]);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['replaced parent' => false, 'linked parent' => true]);
+
+it('refuses legacy missing-original cleanup without a durable move or claim receipt', function (): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        orb105_copy_tree($fixture['source'], $fixture['destination']);
+        rename($fixture['source'], $fixture['source'].'-retained');
+
+        expect(fn () => $fixture['manager']->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source'].'-retained'))->toBe($before);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+        expect(file_exists($fixture['source']))->toBeFalse();
+        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('original_cleanup');
+        expect(orb105_relocation_state(orb105_relocation_scope($fixture))['original_phase'])->toBe('unknown');
+
+        expect(fn () => $fixture['manager']->relocate($fixture['instance']->refresh(), $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+        expect(orb105_complete_manifest($fixture['destination']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('keeps a source already at its destination unchanged across lost cleanup acknowledgment', function (): void {
+    $fixture = orb105_relocation_fixture(crossFilesystem: false);
+
+    try {
+        $fixture['destination'] = $fixture['source'];
+        $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $before = orb105_complete_manifest($fixture['source']);
+        $inode = lstat($fixture['source'])['ino'];
+        $interrupting = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor('cleanup'));
+
+        expect(fn () => $interrupting->relocate($fixture['instance'], $facts))
+            ->toThrow(RuntimeConvergenceException::class);
+        $fixture['manager']->relocate($fixture['instance']->refresh(), $facts);
+
+        expect(lstat($fixture['source'])['ino'])->toBe($inode);
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(file_exists(orb105_original_claim($fixture)))->toBeFalse();
+        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated');
+        expect(orb105_relocation_state(orb105_relocation_scope($fixture))['original_phase'])->toBe('same');
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
@@ -1374,6 +1763,39 @@ function orb105_relocation_scope(array $fixture): string
     expect($paths)->toHaveCount(1);
 
     return $paths[0];
+}
+
+/** @param array{source: string, instance: AppInstance} $fixture */
+function orb105_original_claim(array $fixture): string
+{
+    $instance = $fixture['instance']->refresh();
+
+    return dirname($fixture['source']).'/.orbit-original-'.$instance->id.'-'.$instance->registration_relocation_receipt['attempt'];
+}
+
+function orb105_original_checkpoint_manager(string $checkpoint): RemoteRegistrationSourceManager
+{
+    $hook = 'checkpoint='.json_encode($checkpoint, JSON_THROW_ON_ERROR)."\n".<<<'PYTHON'
+        import os, sys
+        native_pwrite=os.pwrite
+        def interrupt_original_checkpoint(descriptor,content,offset):
+            if checkpoint == 'completion partial write' and b'"original_phase":"deleted"' in content:
+                native_pwrite(descriptor,content[:24],offset); os.fsync(descriptor); os._exit(137)
+            return native_pwrite(descriptor,content,offset)
+        os.pwrite=interrupt_original_checkpoint
+        def interrupt_original(frame,event,result):
+            if event == 'return':
+                if checkpoint == 'claim renamed' and frame.f_code.co_name == 'rename_exclusive' and str(frame.f_locals.get('destination','')).startswith('.orbit-original-'):
+                    os._exit(137)
+                if frame.f_code.co_name == 'save':
+                    phase=frame.f_locals['self'].state['original_phase']
+                    if checkpoint == 'claim saved' and phase == 'claimed' or checkpoint == 'completion saved' and phase == 'deleted':
+                        os._exit(137)
+            return interrupt_original
+        sys.settrace(interrupt_original)
+        PYTHON;
+
+    return orb105_registration_manager(new Orb105NativeHookSshExecutor('cleanup', $hook));
 }
 
 /** @return array<string, mixed> */
@@ -1631,34 +2053,19 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
         }
 
         $this->interrupted = true;
-        $process = new SymfonyProcess($command->arguments);
-        $process->start();
-        $deadline = microtime(true) + 30;
+        $relative = substr($this->trigger, strlen($this->source) + 1);
+        $hook = 'trigger_directory='.json_encode(dirname($relative), JSON_THROW_ON_ERROR)."\n"
+            .'trigger_name='.json_encode(basename($relative), JSON_THROW_ON_ERROR)."\n".<<<'PYTHON'
+                import os, sys
+                def interrupt_after_actual_unlink(event,arguments):
+                    if event == 'os.remove' and arguments[1] >= 0:
+                        parent=os.readlink('/proc/self/fd/'+str(arguments[1]))
+                        if parent.endswith('/'+trigger_directory):
+                            try: os.stat(trigger_name,dir_fd=arguments[1],follow_symlinks=False)
+                            except FileNotFoundError: os._exit(137)
+                sys.addaudithook(interrupt_after_actual_unlink)
+                PYTHON;
 
-        while ($process->isRunning() && microtime(true) < $deadline) {
-            if (! file_exists($this->trigger) && is_dir($this->source)) {
-                $process->stop(0, SIGKILL);
-
-                return new CommandResult(
-                    exitCode: $process->getExitCode() ?? 137,
-                    stdout: $process->getOutput(),
-                    stderr: $process->getErrorOutput(),
-                    durationMs: 0,
-                    truncated: false,
-                );
-            }
-        }
-
-        if ($process->isRunning()) {
-            $process->stop(0, SIGKILL);
-        }
-
-        return new CommandResult(
-            exitCode: $process->getExitCode() ?? 1,
-            stdout: $process->getOutput(),
-            stderr: 'Cleanup interruption was not observed.',
-            durationMs: 0,
-            truncated: false,
-        );
+        return new Orb105NativeHookSshExecutor('cleanup', $hook)->execute($connection, $command);
     }
 }

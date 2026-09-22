@@ -331,6 +331,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     'destination' => $member['destination'],
                     'attempt' => (string) Str::uuid(),
                     'parents' => null,
+                    'source_parents' => null,
                     'scope' => null,
                     'journal' => null,
                 ];
@@ -360,7 +361,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         foreach ($payload as $index => $member) {
             $receipt = $receipts[$index];
             $valid = is_array($receipt)
-                && count($receipt) === 9
+                && count($receipt) === 10
                 && ($receipt['version'] ?? null) === 1
                 && ($receipt['id'] ?? null) === $member['id']
                 && ($receipt['request'] ?? null) === $member['request']
@@ -373,7 +374,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 && array_is_list($receipt['parents'])
                 && $receipt['parents'] !== []
                 && count($receipt['parents']) <= 256
-                && array_all($receipt['parents'], fn (mixed $identity): bool => $this->directoryIdentity($identity));
+                && array_all($receipt['parents'], fn (mixed $identity): bool => $this->directoryIdentity($identity))
+                && is_array($receipt['source_parents'] ?? null)
+                && array_is_list($receipt['source_parents'])
+                && $receipt['source_parents'] !== []
+                && count($receipt['source_parents']) <= 256
+                && array_all($receipt['source_parents'], fn (mixed $identity): bool => $this->directoryIdentity($identity));
 
             if (! $valid || $member['receipt']['scope'] !== null && $member['receipt'] !== $receipt) {
                 throw new ResourceOperationException('instance.registration_incomplete', 'Registration returned conflicting relocation ownership.', 502);
@@ -803,6 +809,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 require(path.startswith('/') and os.path.normpath(path) == path)
                 descriptor=os.open('/', os.O_RDONLY | os.O_DIRECTORY)
                 chain=[identity(os.fstat(descriptor))]
+                if path == '/': return descriptor,chain
                 try:
                     for part in path.split('/')[1:]:
                         require(part not in ('', '.', '..'))
@@ -844,14 +851,19 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     self.member=member
                     require(isinstance(member['request'],str) and str(uuid.UUID(member['request'])) == member['request'])
                     self.parent_path=os.path.dirname(member['destination'])
+                    self.source_parent_path=os.path.dirname(member['source'])
+                    self.source_parent,self.source_parents=open_directory(self.source_parent_path)
+                    self.source_name=os.path.basename(member['source'])
+                    require(self.source_name not in ('','.','..'))
                     intent=member['receipt']
                     require(isinstance(intent,dict) and isinstance(intent.get('attempt'),str) and str(uuid.UUID(intent['attempt'])) == intent['attempt'])
-                    initializing=operation == 'initialize' and intent['scope'] is None and intent['parents'] is None and intent['journal'] is None
+                    initializing=operation == 'initialize' and intent['scope'] is None and intent['parents'] is None and intent['source_parents'] is None and intent['journal'] is None
                     self.parent,self.parents=open_directory(self.parent_path,create=initializing)
                     self.destination=os.path.basename(member['destination'])
                     require(metadata(self.parent,self.destination+'.orbit-stage-'+str(member['id'])) is None)
                     token=hashlib.sha256((member['request']+'\0'+member['source']+'\0'+member['destination']+'\0'+intent['attempt']).encode()).hexdigest()[:32]
                     self.name='.orbit-registration-'+str(member['id'])+'-'+token
+                    self.original_claim='.orbit-original-'+str(member['id'])+'-'+intent['attempt']
                     self.path=self.parent_path+'/'+self.name
                     created=False
                     if initializing:
@@ -871,13 +883,13 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     info=os.fstat(self.receipt)
                     require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1)
                     self.journal=identity(info)
-                    binding={'version':1,'request':member['request'],'id':member['id'],'source':member['source'],'destination':member['destination'],'attempt':intent['attempt'],'parents':self.parents,'scope':self.scope,'journal':self.journal}
-                    require(intent == ({**binding,'parents':None,'scope':None,'journal':None} if initializing else binding))
+                    binding={'version':1,'request':member['request'],'id':member['id'],'source':member['source'],'destination':member['destination'],'attempt':intent['attempt'],'parents':self.parents,'source_parents':self.source_parents,'scope':self.scope,'journal':self.journal}
+                    require(intent == ({**binding,'parents':None,'source_parents':None,'scope':None,'journal':None} if initializing else binding))
                     self.binding=binding
                     if created:
                         os.ftruncate(self.receipt,32768)
                         self.revision=0
-                        self.state={**binding,'phase':'new','stage':None,'original':None,'placed':None}
+                        self.state={**binding,'phase':'new','stage':None,'original':None,'placed':None,'original_phase':'unobserved'}
                         self.save()
                     else:
                         require(info.st_size == 32768)
@@ -886,9 +898,10 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         if len(records) == 2: require(abs(records[0]['revision']-records[1]['revision']) == 1)
                         latest=max(records,key=lambda record:record['revision'])
                         self.revision=latest['revision']; self.state=latest['state']
-                        require(set(self.state) == set(binding) | {'phase','stage','original','placed'})
+                        require(set(self.state) == set(binding) | {'phase','stage','original','placed','original_phase'})
                         require(all(self.state[key] == value for key,value in binding.items()))
                         require(self.state['phase'] in ('new','moving','copying','claiming','claimed','cleaned','placing','placed'))
+                        require(self.state['original_phase'] in ('unobserved','unknown','same','present','moved','claiming','claimed','deleted'))
                         for key in ('stage','original','placed'):
                             value=self.state[key]
                             require(value is None or isinstance(value,list) and len(value) == 2 and all(type(part) is int and part >= 0 for part in value))
@@ -909,6 +922,10 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         require(identity(metadata(current,self.name)) == self.scope)
                         require(metadata(current,self.destination+'.orbit-stage-'+str(self.member['id'])) is None)
                         require(identity(metadata(self.directory,'state.journal')) == self.journal)
+                    finally: os.close(current)
+                    current,parents=open_directory(self.source_parent_path)
+                    try:
+                        require(parents == self.source_parents and identity(os.fstat(current)) == identity(os.fstat(self.source_parent)))
                     finally: os.close(current)
                 def read_record(self,slot):
                     frame=os.pread(self.receipt,16384,slot*16384)
@@ -1000,7 +1017,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 scope.check()
                 if source == destination:
                     verify(destination, member)
-                    scope.state.update(phase='placed',placed=list(source_identity(destination))); scope.save()
+                    scope.state.update(phase='placed',placed=list(source_identity(destination)),original_phase='same'); scope.save()
                     return {'id':member['id'],'source_device':None,'source_inode':None}
                 if os.path.lexists(destination):
                     verify(destination, member)
@@ -1008,10 +1025,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     if scope.state['phase'] == 'new':
                         if os.path.lexists(source):
                             verify(source,member)
-                            scope.state['original']=list(source_identity(source))
+                            scope.state.update(original=list(source_identity(source)),original_phase='present')
+                        else: scope.state['original_phase']='unknown'
                     else:
                         expected=scope.state['placed'] or (scope.state['stage'] if scope.state['phase'] == 'placing' else scope.state['original'])
                         require(scope.state['phase'] in ('moving','placing','placed') and destination_identity == expected)
+                        if scope.state['phase'] == 'moving': scope.state['original_phase']='moved'
                     if os.path.lexists(source):
                         verify(source, member)
                         require(list(source_identity(source)) == scope.state['original'])
@@ -1022,7 +1041,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 verify(source,member)
                 original=list(source_identity(source))
                 if scope.state['original'] is None:
-                    scope.state['original']=original; scope.save()
+                    scope.state.update(original=original,original_phase='present'); scope.save()
                 require(scope.state['original'] == original)
                 if scope.state['phase'] in ('claiming','claimed'):
                     scope.discard()
@@ -1043,7 +1062,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                             try: rename_exclusive(scope.parent,scope.destination,source_parent,os.path.basename(source))
                             except OSError: pass
                             raise SystemExit(42)
-                        scope.state.update(phase='placed',placed=original); scope.save()
+                        scope.state.update(phase='placed',placed=original,original_phase='moved'); scope.save()
                     except OSError as error:
                         if error.errno != errno.EXDEV: raise
                         scope.copy(source)
@@ -1067,19 +1086,58 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 scope.check()
                 verify(destination, member)
                 require(scope.state['phase'] == 'placed' and list(source_identity(destination)) == scope.state['placed'])
-                if source != destination and os.path.exists(source):
-                    device,inode=source_identity(source)
-                    if device != member['source_device'] or inode != member['source_inode']: raise SystemExit(42)
+                admit_original(member)
+            def admit_original(member):
+                scope=scopes[member['id']]
+                scope.check()
+                phase=scope.state['original_phase']
+                source=metadata(scope.source_parent,scope.source_name)
+                claimed=metadata(scope.source_parent,scope.original_claim)
+                if phase == 'same':
+                    require(member['source'] == member['destination'] and claimed is None)
+                    return
+                require(member['source'] != member['destination'])
+                original=[member['source_device'],member['source_inode']]
+                require(scope.state['original'] is not None and original == scope.state['original'])
+                if phase in ('moved','deleted'):
+                    require(claimed is None)
+                    return
+                require(phase in ('present','claiming','claimed'))
+                if claimed is not None:
+                    require(phase in ('claiming','claimed') and stat.S_ISDIR(claimed.st_mode) and identity(claimed) == original)
+                elif phase == 'claimed':
+                    require(source is None or identity(source) != original)
+                elif phase != 'claimed':
+                    require(source is not None and stat.S_ISDIR(source.st_mode) and identity(source) == original)
             def remove_original(member):
-                source=member['source']; destination=member['destination']
-                if source == destination or not os.path.exists(source): return
-                for current,dirs,files in os.walk(source, topdown=False, followlinks=False):
-                    for name in files: os.unlink(os.path.join(current,name))
-                    for name in dirs:
-                        path=os.path.join(current,name)
-                        if os.path.islink(path): os.unlink(path)
-                        else: os.rmdir(path)
-                os.rmdir(source)
+                scope=scopes[member['id']]
+                cleanup(member)
+                if scope.state['original_phase'] in ('same','moved','deleted'): return
+                if metadata(scope.source_parent,scope.original_claim) is None:
+                    if scope.state['original_phase'] == 'claimed':
+                        scope.state['original_phase']='deleted'; scope.save()
+                        return
+                    descriptor=os.open(scope.source_name,os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,dir_fd=scope.source_parent)
+                    try: require(identity(os.fstat(descriptor)) == scope.state['original'])
+                    finally: os.close(descriptor)
+                    scope.state['original_phase']='claiming'; scope.save()
+                    rename_exclusive(scope.source_parent,scope.source_name,scope.source_parent,scope.original_claim)
+                    os.fsync(scope.source_parent)
+                    if identity(metadata(scope.source_parent,scope.original_claim)) != scope.state['original']:
+                        try: rename_exclusive(scope.source_parent,scope.original_claim,scope.source_parent,scope.source_name)
+                        except OSError: pass
+                        raise SystemExit(42)
+                descriptor=os.open(scope.original_claim,os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,dir_fd=scope.source_parent)
+                try:
+                    require(identity(os.fstat(descriptor)) == scope.state['original'])
+                    scope.state['original_phase']='claimed'; scope.save()
+                    cleanup(member)
+                    remove_tree(descriptor)
+                    scope.check()
+                    require(identity(metadata(scope.source_parent,scope.original_claim)) == scope.state['original'])
+                    os.rmdir(scope.original_claim,dir_fd=scope.source_parent); os.fsync(scope.source_parent)
+                finally: os.close(descriptor)
+                scope.state['original_phase']='deleted'; scope.save()
             require(operation in ('initialize','prepare','cleanup'))
             require(len({member['id'] for member in members}) == len(members))
             scopes={member['id']:Stage(member) for member in sorted(members,key=lambda member:member['id'])}

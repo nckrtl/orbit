@@ -99,6 +99,8 @@ A replaced parent, conflicting receipt, or unknown stage stops relocation withou
 
 Private receipt directories use mode `0700`; receipt files use mode `0600`. This boundary trusts the Node's execution user to keep its private metadata intact. It does not protect against hostile code running as that same user and forging receipts. Directory creation and opening are separate native operations; Orbit checks observed identities before copying but does not claim an atomic create-and-open operation.
 
+Original cleanup claims the verified source directory by an exclusive rename within its recorded parent, checks the claimed identity again, and saves that claim before deleting any content. Cleanup then uses the claimed directory, not the original pathname. A replaced parent, foreign claim, or recreated original remains untouched. A retry accepts a missing original only when its receipt proves the completed move or owned cleanup claim; legacy unclaimed cleanup evidence requires operator review. The receipt retains completion evidence after deletion so a lost acknowledgment cannot authorize a new original directory.
+
 ## Create a production Instance
 
 The Gateway refuses new production placement on `instance:create` with `instance.candidate_required` before it changes a user, home, source, environment, or Route. The CLI reports that error and directs the caller to `instance:clone`. Clone from an eligible development or production candidate, as [Instance cloning](/reference/appinstance-cloning) describes.
