@@ -559,20 +559,139 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     private function runLaravelReceipt(AppInstance $appInstance, string $operation): void
     {
         $appInstance->loadMissing('node');
-        $this->ssh->execute(
+        $stored = AppInstance::query()->findOrFail($appInstance->id);
+        $receipt = $stored->registration_laravel_receipt;
+
+        if ($operation === 'prepare' && $stored->registration_completed_at !== null) {
+            throw new ResourceOperationException('instance.laravel_rollback_failed', 'Completed registration cannot start a rollback attempt.', 409);
+        }
+
+        if ($operation !== 'prepare' && in_array($receipt['outcome'] ?? null, ['restored', 'discarded'], strict: true)) {
+            if ($operation === 'restore' && $receipt['outcome'] !== 'restored') {
+                throw new ResourceOperationException('instance.laravel_rollback_failed', 'Discarded registration backups cannot be restored.', 409);
+            }
+
+            return;
+        }
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            if ($operation === 'prepare' && ($receipt === null || ($receipt['outcome'] ?? null) === 'restored')) {
+                $receipt = [
+                    'binding' => [
+                        'version' => 1,
+                        'request' => $appInstance->registration_request_id,
+                        'id' => $appInstance->id,
+                        'node' => $appInstance->node_id,
+                        'checkout' => $appInstance->checkout_path,
+                        'attempt' => (string) Str::uuid(),
+                        'parents' => null,
+                        'directories' => null,
+                        'scope' => null,
+                        'journal' => null,
+                        'backup' => null,
+                    ],
+                    'outcome' => 'pending',
+                ];
+                $this->persistLaravelReceipt($appInstance, $receipt);
+            }
+
+            if ($receipt !== null && ($receipt['outcome'] ?? null) === 'pending') {
+                $receipt = $this->executeLaravelReceipt($appInstance, 'initialize', $receipt);
+                $this->persistLaravelReceipt($appInstance, $receipt);
+            }
+
+            $receipt = $this->executeLaravelReceipt($appInstance, $operation, $receipt);
+            if ($receipt !== null) {
+                $this->persistLaravelReceipt($appInstance, $receipt);
+            }
+
+            if ($operation !== 'prepare' || ($receipt['outcome'] ?? null) !== 'restored') {
+                return;
+            }
+        }
+
+        throw new ResourceOperationException('instance.laravel_rollback_failed', 'Registration rollback preparation did not complete.', 409);
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    private function persistLaravelReceipt(AppInstance $appInstance, ?array $receipt): void
+    {
+        $persisted = AppInstance::query()->whereKey($appInstance->id)->update([
+            'registration_laravel_receipt' => json_encode($receipt, JSON_THROW_ON_ERROR),
+        ]);
+
+        if ($persisted !== 1) {
+            throw new ResourceOperationException('instance.laravel_rollback_failed', 'Registration rollback ownership cannot be retained without its Instance.', 409);
+        }
+
+        $appInstance->setAttribute('registration_laravel_receipt', $receipt);
+        $appInstance->syncOriginalAttribute('registration_laravel_receipt');
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $receipt
+     * @return array<string, mixed>|null
+     */
+    private function executeLaravelReceipt(AppInstance $appInstance, string $operation, ?array $receipt): ?array
+    {
+        $result = $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand([
                 'python3',
                 '-c',
                 self::laravelReceiptScript(),
-                $appInstance->checkout_path,
-                (string) $appInstance->id,
                 $operation,
+                json_encode([
+                    'id' => $appInstance->id,
+                    'node' => $appInstance->node_id,
+                    'request' => $appInstance->registration_request_id,
+                    'checkout' => $appInstance->checkout_path,
+                    'receipt' => $receipt,
+                ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             ]),
             step: 'registration-laravel-rollback',
             errorCode: 'instance.laravel_rollback_failed',
             commandTimeout: 30,
         );
+
+        try {
+            $returned = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new ResourceOperationException('instance.laravel_rollback_failed', 'Registration returned invalid rollback ownership.', 502, previous: $exception);
+        }
+
+        if ($receipt === null && $operation === 'discard' && $returned === null) {
+            return null;
+        }
+
+        $binding = is_array($returned) ? ($returned['binding'] ?? null) : null;
+        $expected = $receipt['binding'] ?? null;
+        $outcomes = match ($operation) {
+            'initialize' => ['initialized'],
+            'prepare' => ['ready', 'restored'],
+            'restore' => ['restored'],
+            'discard' => ['discarded'],
+            default => [],
+        };
+        $valid = is_array($returned) && count($returned) === 2
+            && in_array($returned['outcome'] ?? null, $outcomes, strict: true)
+            && is_array($binding) && count($binding) === 11 && is_array($expected)
+            && array_all(['version', 'request', 'id', 'node', 'checkout', 'attempt'], static fn (string $key): bool => ($binding[$key] ?? null) === ($expected[$key] ?? null))
+            && $this->directoryIdentity($binding['scope'] ?? null)
+            && $this->directoryIdentity($binding['journal'] ?? null)
+            && $this->directoryIdentity($binding['backup'] ?? null)
+            && is_array($binding['parents'] ?? null) && array_is_list($binding['parents'])
+            && $binding['parents'] !== [] && count($binding['parents']) <= 256
+            && array_all($binding['parents'], fn (mixed $identity): bool => $this->directoryIdentity($identity))
+            && is_array($binding['directories'] ?? null) && array_is_list($binding['directories'])
+            && count($binding['directories']) === 3 && $this->directoryIdentity($binding['directories'][0])
+            && array_all($binding['directories'], fn (mixed $identity): bool => $identity === null || $this->directoryIdentity($identity));
+
+        if (! $valid || ($expected['scope'] ?? null) !== null && $binding !== $expected) {
+            throw new ResourceOperationException('instance.laravel_rollback_failed', 'Registration returned conflicting rollback ownership.', 502);
+        }
+
+        return $returned;
     }
 
     /** @param array<array-key, mixed> $row */
@@ -1160,57 +1279,290 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     private static function laravelReceiptScript(): string
     {
         return <<<'PYTHON'
-            import json, os, pathlib, shutil, sys
-            root=pathlib.Path(sys.argv[1]); instance=sys.argv[2]; operation=sys.argv[3]
-            receipt=root.parent/('.orbit-registration-url-'+instance)
-            paths=[root/'.env', root/'bootstrap'/'cache'/'config.php']
-            directories=[root, root/'bootstrap', root/'bootstrap'/'cache']
-            def validate_receipt():
-                if receipt.is_symlink() or not receipt.is_dir(): raise SystemExit(42)
-                manifest_path=receipt/'manifest'
-                if manifest_path.is_symlink() or not manifest_path.is_file(): raise SystemExit(42)
-                try: manifest=json.loads(manifest_path.read_text())
-                except (OSError,ValueError,TypeError): raise SystemExit(42)
-                if set(manifest) != {'files','directories'}: raise SystemExit(42)
-                if not isinstance(manifest['files'],list) or len(manifest['files']) != len(paths): raise SystemExit(42)
-                if any(type(value) is not bool for value in manifest['files']): raise SystemExit(42)
-                if not isinstance(manifest['directories'],list) or len(manifest['directories']) != len(directories): raise SystemExit(42)
-                for index,exists in enumerate(manifest['files']):
-                    backup=receipt/str(index)
-                    if exists != (backup.is_file() and not backup.is_symlink()): raise SystemExit(42)
-                return manifest
-            if operation == 'prepare':
-                if receipt.exists() or receipt.is_symlink():
-                    validate_receipt()
-                    raise SystemExit(0)
-                preparing=receipt.with_name(receipt.name+'.preparing')
-                if preparing.is_symlink() or preparing.exists() and not preparing.is_dir(): raise SystemExit(42)
-                if preparing.exists(): shutil.rmtree(preparing)
-                preparing.mkdir(mode=0o700)
-                manifest={'files': [], 'directories': []}
-                for index,path in enumerate(paths):
-                    exists=path.is_file() and not path.is_symlink()
-                    manifest['files'].append(exists)
-                    if exists: shutil.copy2(path, preparing/str(index))
-                for path in directories:
-                    info=path.stat() if path.is_dir() and not path.is_symlink() else None
-                    manifest['directories'].append(None if info is None else [info.st_atime_ns,info.st_mtime_ns])
-                (preparing/'manifest').write_text(json.dumps(manifest)); os.chmod(preparing/'manifest',0o600)
-                os.replace(preparing,receipt)
-                validate_receipt()
-            elif operation == 'restore':
-                manifest=validate_receipt()
-                for index,path in enumerate(paths):
-                    if manifest['files'][index]: path.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(receipt/str(index),path)
-                    elif path.exists() and not path.is_symlink(): path.unlink()
-                for path,times in reversed(list(zip(directories,manifest['directories']))):
-                    if times is not None and path.is_dir() and not path.is_symlink(): os.utime(path,ns=tuple(times))
-                shutil.rmtree(receipt)
-            elif operation == 'discard':
-                if receipt.exists() or receipt.is_symlink():
-                    validate_receipt()
-                    shutil.rmtree(receipt)
-            else: raise SystemExit(42)
+            import ctypes, fcntl, hashlib, json, os, pathlib, shutil, stat, sys, uuid
+            operation=sys.argv[1]; member=json.loads(sys.argv[2]); root=member['checkout']
+            os.umask(0o077)
+            def require(value):
+                if not value: raise SystemExit(42)
+            def identity(info):
+                return None if info is None else [info.st_dev,info.st_ino]
+            def valid_identity(value):
+                return isinstance(value,list) and len(value) == 2 and all(type(part) is int and part >= 0 for part in value)
+            def metadata(parent,name):
+                try: return os.stat(name,dir_fd=parent,follow_symlinks=False)
+                except FileNotFoundError: return None
+            def open_directory(path):
+                require(path.startswith('/') and os.path.normpath(path) == path)
+                descriptor=os.open('/',os.O_RDONLY | os.O_DIRECTORY); chain=[identity(os.fstat(descriptor))]
+                if path == '/': return descriptor,chain
+                try:
+                    for part in path.split('/')[1:]:
+                        require(part not in ('','.','..'))
+                        observed=metadata(descriptor,part)
+                        child=os.open(part,os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,dir_fd=descriptor)
+                        require(identity(os.fstat(child)) == identity(observed))
+                        os.close(descriptor); descriptor=child; chain.append(identity(os.fstat(descriptor)))
+                    return descriptor,chain
+                except BaseException:
+                    os.close(descriptor); raise
+            def open_child(parent,name,expected=None):
+                observed=metadata(parent,name)
+                require(observed is not None and stat.S_ISDIR(observed.st_mode))
+                if expected is not None: require(identity(observed) == expected)
+                descriptor=os.open(name,os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,dir_fd=parent)
+                require(identity(os.fstat(descriptor)) == identity(observed))
+                return descriptor
+            def private(info,mode):
+                require(info is not None and info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == mode)
+                require(stat.S_ISDIR(info.st_mode) if mode == 0o700 else stat.S_ISREG(info.st_mode) and info.st_nlink == 1)
+            def rename_exclusive(parent,source,destination):
+                libc=ctypes.CDLL(None,use_errno=True)
+                if libc.renameat2(parent,os.fsencode(source),parent,os.fsencode(destination),1) != 0:
+                    error=ctypes.get_errno(); raise OSError(error,os.strerror(error))
+            def digest(descriptor):
+                result=hashlib.sha256(); os.lseek(descriptor,0,os.SEEK_SET)
+                while True:
+                    chunk=os.read(descriptor,1048576)
+                    if not chunk: return result.hexdigest()
+                    result.update(chunk)
+            require(root.startswith('/') and os.path.normpath(root) == root and root != '/')
+            parent,parents=open_directory(os.path.dirname(root))
+            legacy='.orbit-registration-url-'+str(member['id'])
+            require(metadata(parent,legacy) is None and metadata(parent,legacy+'.preparing') is None)
+            if member['receipt'] is None:
+                require(operation == 'discard'); print('null'); raise SystemExit(0)
+            class LaravelReceipt:
+                def __init__(self):
+                    receipt=member['receipt']; intent=receipt['binding']
+                    require(set(receipt) == {'binding','outcome'})
+                    require(isinstance(member['request'],str) and str(uuid.UUID(member['request'])) == member['request'])
+                    require(str(uuid.UUID(intent['attempt'])) == intent['attempt'])
+                    self.name=legacy+'-'+intent['attempt']; self.parent=parent
+                    self.root=open_child(parent,os.path.basename(root))
+                    self.directories=[self.root]
+                    for part in ('bootstrap','cache'):
+                        previous=self.directories[-1]
+                        self.directories.append(None if previous is None or metadata(previous,part) is None else open_child(previous,part))
+                    directory_ids=[None if fd is None else identity(os.fstat(fd)) for fd in self.directories]
+                    initializing=operation == 'initialize' and receipt['outcome'] == 'pending'
+                    created=False
+                    if initializing:
+                        try: os.mkdir(self.name,0o700,dir_fd=parent); os.fsync(parent); created=True
+                        except FileExistsError: pass
+                    self.directory=open_child(parent,self.name); private(os.fstat(self.directory),0o700)
+                    fcntl.flock(self.directory,fcntl.LOCK_EX)
+                    flags=os.O_RDWR | os.O_NOFOLLOW
+                    if created: flags |= os.O_CREAT | os.O_EXCL
+                    self.journal=os.open('state.journal',flags,0o600,dir_fd=self.directory)
+                    private(os.fstat(self.journal),0o600)
+                    if created:
+                        os.mkdir('backup',0o700,dir_fd=self.directory); os.fsync(self.directory)
+                    backup_info=metadata(self.directory,'backup') or metadata(self.directory,'deleting')
+                    backup_identity=identity(backup_info) if initializing else intent['backup']
+                    self.binding={'version':1,'request':member['request'],'id':member['id'],'node':member['node'],'checkout':root,'attempt':intent['attempt'],'parents':parents,'directories':directory_ids,'scope':identity(os.fstat(self.directory)),'journal':identity(os.fstat(self.journal)),'backup':backup_identity}
+                    pending={**self.binding,**{key:None for key in ('parents','directories','scope','journal','backup')}}
+                    require(intent == (pending if initializing else self.binding))
+                    if created:
+                        self.revision=0
+                        self.state={'binding':self.binding,'phase':'new','action':None,'files':None,'times':[None if fd is None else [os.fstat(fd).st_atime_ns,os.fstat(fd).st_mtime_ns] for fd in self.directories]}
+                        os.ftruncate(self.journal,32768); self.save()
+                    else:
+                        require(os.fstat(self.journal).st_size == 32768)
+                        records=[record for record in (self.read_record(0),self.read_record(1)) if record is not None]
+                        require(records)
+                        if len(records) == 2: require(abs(records[0]['revision']-records[1]['revision']) == 1)
+                        latest=max(records,key=lambda record:record['revision']); self.revision=latest['revision']; self.state=latest['state']
+                        require(set(self.state) == {'binding','phase','action','files','times'} and self.state['binding'] == self.binding)
+                        require(self.state['phase'] in ('new','preparing','ready','restoring','restored_files','claiming','claimed','restored','discarded'))
+                        require(self.state['action'] in (None,'restore','discard'))
+                        require(isinstance(self.state['times'],list) and len(self.state['times']) == 3)
+                        for index,times in enumerate(self.state['times']):
+                            require(times is None or isinstance(times,list) and len(times) == 2 and all(type(value) is int for value in times))
+                            require((times is None) == (self.binding['directories'][index] is None))
+                        if self.state['phase'] == 'new': require(self.state['files'] is None)
+                        else:
+                            require(isinstance(self.state['files'],list) and len(self.state['files']) == 2)
+                            for value in self.state['files']:
+                                if value is None: continue
+                                require(isinstance(value,dict) and set(value) == {'source','backup','ready'} and type(value['ready']) is bool)
+                                require(value['backup'] is None or valid_identity(value['backup']))
+                                source=value['source']; require(isinstance(source,dict) and set(source) == {'identity','mode','times','size','digest'})
+                                require(valid_identity(source['identity']) and type(source['mode']) is int and 0 <= source['mode'] <= 0o7777)
+                                require(type(source['size']) is int and source['size'] >= 0)
+                                require(isinstance(source['times'],list) and len(source['times']) == 2 and all(type(part) is int for part in source['times']))
+                                require(isinstance(source['digest'],str) and len(source['digest']) == 64 and all(part in '0123456789abcdef' for part in source['digest']))
+                                if self.state['phase'] != 'preparing': require(value['ready'] and value['backup'] is not None)
+                        if self.state['phase'] in ('new','preparing','ready'): require(self.state['action'] is None)
+                        elif self.state['phase'] in ('restoring','restored_files','restored'): require(self.state['action'] == 'restore')
+                        elif self.state['phase'] == 'discarded': require(self.state['action'] == 'discard')
+                        else: require(self.state['action'] in ('restore','discard'))
+                        if initializing: require(self.state['phase'] == 'new')
+                    self.check()
+                def check(self):
+                    current,chain=open_directory(os.path.dirname(root))
+                    try:
+                        require(chain == self.binding['parents'])
+                        require(identity(metadata(current,self.name)) == self.binding['scope'])
+                        require(identity(metadata(current,os.path.basename(root))) == self.binding['directories'][0])
+                        require(metadata(current,legacy) is None and metadata(current,legacy+'.preparing') is None)
+                    finally: os.close(current)
+                    private(os.fstat(self.directory),0o700)
+                    require(identity(metadata(self.directory,'state.journal')) == self.binding['journal'])
+                    private(metadata(self.directory,'state.journal'),0o600)
+                    require(set(os.listdir(self.directory)).issubset({'state.journal','backup','deleting'}))
+                    backup=metadata(self.directory,'backup'); deleting=metadata(self.directory,'deleting')
+                    require(backup is None or deleting is None)
+                    for info in (backup,deleting):
+                        if info is not None:
+                            private(info,0o700); require(identity(info) == self.binding['backup'])
+                    if self.state['phase'] in ('restored','discarded'): require(backup is None and deleting is None)
+                    elif self.state['phase'] == 'claimed': require(backup is None)
+                    elif self.state['phase'] == 'claiming': require(backup is not None or deleting is not None)
+                    else: require(backup is not None and deleting is None)
+                def read_record(self,slot):
+                    frame=os.pread(self.journal,16384,slot*16384); length=int.from_bytes(frame[:4],'big')
+                    if len(frame) != 16384 or not 0 < length <= 16348: return None
+                    data=frame[36:36+length]
+                    if hashlib.sha256(data).digest() != frame[4:36]: return None
+                    try: record=json.loads(data)
+                    except (ValueError,UnicodeError): return None
+                    if not isinstance(record,dict) or set(record) != {'revision','state'}: return None
+                    if type(record['revision']) is not int or not 0 < record['revision'] < 2**63 or not isinstance(record['state'],dict): return None
+                    return record
+                def save(self):
+                    self.check(); revision=self.revision+1; require(revision < 2**63)
+                    data=json.dumps({'revision':revision,'state':self.state},separators=(',',':')).encode(); require(len(data) <= 16348)
+                    frame=(len(data).to_bytes(4,'big')+hashlib.sha256(data).digest()+data).ljust(16384,b'\0'); written=0
+                    while written < len(frame):
+                        count=os.pwrite(self.journal,frame[written:],(revision%2)*16384+written); require(count > 0); written+=count
+                    os.fsync(self.journal); self.check(); os.fsync(self.directory); self.revision=revision
+                def source_file(self,index):
+                    parent=self.directories[0 if index == 0 else 2]; name='.env' if index == 0 else 'config.php'
+                    info=None if parent is None else metadata(parent,name)
+                    if info is None: return None,None
+                    require(stat.S_ISREG(info.st_mode))
+                    descriptor=os.open(name,os.O_RDONLY | os.O_NOFOLLOW,dir_fd=parent)
+                    require(identity(os.fstat(descriptor)) == identity(info))
+                    result={'identity':identity(info),'mode':stat.S_IMODE(info.st_mode),'times':[info.st_atime_ns,info.st_mtime_ns],'size':info.st_size,'digest':digest(descriptor)}
+                    after=os.fstat(descriptor)
+                    require((after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns) == (info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns))
+                    return descriptor,result
+                def backup(self,partial=False):
+                    self.check(); name='deleting' if metadata(self.directory,'deleting') is not None else 'backup'
+                    if metadata(self.directory,name) is None:
+                        require(partial and self.state['phase'] == 'claimed'); return None
+                    descriptor=open_child(self.directory,name,self.binding['backup'])
+                    files=self.state['files']; require(isinstance(files,list) and len(files) == 2)
+                    expected={str(index) for index,value in enumerate(files) if value is not None and value['backup'] is not None}
+                    actual=set(os.listdir(descriptor)); require(actual.issubset(expected) if partial else actual == expected)
+                    for index,value in enumerate(files):
+                        if value is None: continue
+                        require(set(value) == {'source','backup','ready'} and type(value['ready']) is bool)
+                        info=metadata(descriptor,str(index))
+                        if info is None:
+                            require(partial or value['backup'] is None); continue
+                        private(info,0o600); require(identity(info) == value['backup'])
+                        file=os.open(str(index),os.O_RDONLY | os.O_NOFOLLOW,dir_fd=descriptor)
+                        try:
+                            require(identity(os.fstat(file)) == value['backup'])
+                            if value['ready']: require(os.fstat(file).st_size == value['source']['size'] and digest(file) == value['source']['digest'])
+                        finally: os.close(file)
+                    return descriptor
+                def prepare(self):
+                    if self.state['action'] == 'restore':
+                        self.restore(); return
+                    require(self.state['action'] is None and self.state['phase'] in ('new','preparing','ready'))
+                    if self.state['phase'] == 'new':
+                        files=[]
+                        for index in range(2):
+                            descriptor,source=self.source_file(index)
+                            if descriptor is not None: os.close(descriptor)
+                            files.append(None if source is None else {'source':source,'backup':None,'ready':False})
+                        self.state.update(phase='preparing',files=files); self.save()
+                    backup=self.backup()
+                    try:
+                        for index,value in enumerate(self.state['files']):
+                            if value is None or value['ready']: continue
+                            source,current=self.source_file(index)
+                            require(current is not None and all(current[key] == value['source'][key] for key in ('identity','mode','size','digest')) and current['times'][1] == value['source']['times'][1])
+                            try:
+                                if value['backup'] is None:
+                                    output=os.open(str(index),os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,0o600,dir_fd=backup)
+                                    value['backup']=identity(os.fstat(output)); os.fsync(backup); self.save()
+                                else: output=os.open(str(index),os.O_WRONLY | os.O_NOFOLLOW,dir_fd=backup)
+                                try:
+                                    require(identity(os.fstat(output)) == value['backup']); os.ftruncate(output,0); os.lseek(source,0,os.SEEK_SET)
+                                    while True:
+                                        chunk=os.read(source,1048576)
+                                        if not chunk: break
+                                        written=0
+                                        while written < len(chunk):
+                                            count=os.write(output,chunk[written:]); require(count > 0); written+=count
+                                    os.fsync(output)
+                                finally: os.close(output)
+                                value['ready']=True; self.save()
+                            finally: os.close(source)
+                        self.state['phase']='ready'; self.save()
+                    finally: os.close(backup)
+                    checked=self.backup(); os.close(checked)
+                def restore(self):
+                    if self.state['phase'] == 'restored': return
+                    require(self.state['action'] in (None,'restore'))
+                    require(self.state['phase'] in ('ready','restoring','restored_files','claiming','claimed'))
+                    if self.state['phase'] in ('ready','restoring'):
+                        backup=self.backup()
+                        try:
+                            self.state.update(phase='restoring',action='restore'); self.save()
+                            paths=[pathlib.Path(root)/'.env',pathlib.Path(root)/'bootstrap'/'cache'/'config.php']
+                            for index,path in enumerate(paths):
+                                value=self.state['files'][index]
+                                if value is not None:
+                                    path.parent.mkdir(parents=True,exist_ok=True)
+                                    shutil.copyfile('/proc/self/fd/'+str(backup)+'/'+str(index),path)
+                                    os.chmod(path,value['source']['mode']); os.utime(path,ns=tuple(value['source']['times']))
+                                elif path.exists() and not path.is_symlink(): path.unlink()
+                            directories=[pathlib.Path(root),pathlib.Path(root)/'bootstrap',pathlib.Path(root)/'bootstrap'/'cache']
+                            for path,times in reversed(list(zip(directories,self.state['times']))):
+                                if times is not None and path.is_dir() and not path.is_symlink(): os.utime(path,ns=tuple(times))
+                            self.state['phase']='restored_files'; self.save()
+                        finally: os.close(backup)
+                    self.cleanup('restore')
+                def cleanup(self,action):
+                    terminal='restored' if action == 'restore' else 'discarded'
+                    if self.state['phase'] == terminal: return
+                    require(self.state['action'] in (None,action))
+                    require(self.state['phase'] in (('restored_files','claiming','claimed') if action == 'restore' else ('ready','claiming','claimed')))
+                    backup=self.backup(partial=self.state['phase'] == 'claimed')
+                    if backup is None:
+                        self.state['phase']=terminal; self.save(); return
+                    try:
+                        self.state['action']=action
+                        if self.state['phase'] != 'claimed':
+                            self.state['phase']='claiming'; self.save()
+                            if metadata(self.directory,'deleting') is None:
+                                rename_exclusive(self.directory,'backup','deleting'); os.fsync(self.directory)
+                                if identity(metadata(self.directory,'deleting')) != self.binding['backup']:
+                                    try: rename_exclusive(self.directory,'deleting','backup')
+                                    except OSError: pass
+                                    raise SystemExit(42)
+                            self.state['phase']='claimed'; self.save()
+                        checked=self.backup(partial=True); os.close(checked)
+                        for name in ('0','1'):
+                            info=metadata(backup,name)
+                            if info is not None:
+                                require(identity(info) == self.state['files'][int(name)]['backup']); os.unlink(name,dir_fd=backup); os.fsync(backup)
+                        self.check(); require(identity(metadata(self.directory,'deleting')) == self.binding['backup'])
+                        os.rmdir('deleting',dir_fd=self.directory); os.fsync(self.directory)
+                    finally: os.close(backup)
+                    self.state['phase']=terminal; self.save()
+            require(operation in ('initialize','prepare','restore','discard'))
+            receipt=LaravelReceipt()
+            if operation == 'prepare': receipt.prepare()
+            elif operation == 'restore': receipt.restore()
+            elif operation == 'discard': receipt.cleanup('discard')
+            outcome='initialized' if operation == 'initialize' else receipt.state['phase']
+            require(outcome in ('initialized','ready','restored','discarded'))
+            print(json.dumps({'binding':receipt.binding,'outcome':outcome},separators=(',',':')))
             PYTHON;
     }
 }

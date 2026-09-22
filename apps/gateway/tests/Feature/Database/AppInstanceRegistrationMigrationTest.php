@@ -10,6 +10,23 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
+it('retains Laravel rollback ownership through migration and refuses a destructive down migration', function (): void {
+    $instance = orb105_registration_migration_instance('relocated');
+    $migration = require base_path('database/migrations/2026_09_22_124534_add_registration_laravel_receipt_to_app_instances.php');
+    $migration->down();
+    expect(Schema::hasColumn('app_instances', 'registration_laravel_receipt'))->toBeFalse();
+    $migration->up();
+    expect($instance->refresh()->registration_laravel_receipt)->toBeNull();
+    $receipt = ['binding' => ['attempt' => (string) Str::uuid()], 'outcome' => 'discarded'];
+    $instance->update(['registration_laravel_receipt' => $receipt]);
+
+    expect(fn () => $migration->down())
+        ->toThrow(RuntimeException::class, 'Cannot discard retained registration Laravel rollback receipts.');
+
+    expect($instance->refresh()->registration_laravel_receipt)->toBe($receipt);
+    expect(Schema::hasColumn('app_instances', 'registration_laravel_receipt'))->toBeTrue();
+});
+
 it('preserves durable relocation ownership even after registration completes', function (): void {
     $instance = orb105_registration_migration_instance('relocated');
     $receipt = ['version' => 1, 'source' => '/work/acme', 'destination' => $instance->checkout_path, 'scope' => [41, 42]];

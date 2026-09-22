@@ -1598,6 +1598,492 @@ it('refuses an incomplete Laravel rollback receipt without replacing it', functi
     }
 });
 
+it('preserves foreign Laravel rollback artifacts without adopting or deleting them', function (string $artifact, string $operation): void {
+    $fixture = orb105_relocation_fixture();
+
+    try {
+        $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+        $receipt = dirname($fixture['source']).'/.orbit-registration-url-'.$fixture['instance']->id;
+        $foreign = $receipt.($artifact === 'preparing' ? '.preparing' : '');
+        mkdir($foreign);
+        file_put_contents($foreign.'/foreign.txt', "keep foreign rollback artifact\n");
+        if ($artifact === 'committed') {
+            file_put_contents($foreign.'/manifest', json_encode([
+                'files' => [false, false],
+                'directories' => [null, null, null],
+            ], JSON_THROW_ON_ERROR));
+        }
+        $before = orb105_complete_manifest($foreign);
+        $failure = null;
+
+        try {
+            if ($operation === 'prepare') {
+                $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+            } else {
+                $fixture['manager']->discardLaravelRollback($fixture['instance']);
+            }
+        } catch (RuntimeConvergenceException $exception) {
+            $failure = $exception;
+        }
+
+        expect(file_exists($foreign.'/foreign.txt'))->toBeTrue();
+        expect(orb105_complete_manifest($foreign))->toBe($before);
+        expect($failure)->toBeInstanceOf(RuntimeConvergenceException::class);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with([
+    'foreign preparation' => ['preparing', 'prepare'],
+    'shape-valid foreign receipt' => ['committed', 'prepare'],
+    'shape-valid foreign cleanup' => ['committed', 'discard'],
+]);
+
+it('copies Laravel backups only after the Gateway durably binds their private owner', function (string $failure): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $before = orb105_complete_manifest($fixture['source']);
+        if ($failure === 'database checkpoint') {
+            DB::unprepared("CREATE TRIGGER orb105_laravel_write_failure BEFORE UPDATE OF registration_laravel_receipt ON app_instances WHEN json_extract(NEW.registration_laravel_receipt, '$.binding.scope') IS NOT NULL BEGIN SELECT RAISE(ABORT, 'receipt persistence stopped'); END");
+            $manager = $fixture['manager'];
+        } else {
+            $manager = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor('initialize'));
+        }
+
+        try {
+            expect(fn () => $manager->prepareLaravelRollback($fixture['instance']))
+                ->toThrow($failure === 'database checkpoint' ? QueryException::class : RuntimeConvergenceException::class);
+        } finally {
+            if ($failure === 'database checkpoint') {
+                DB::unprepared('DROP TRIGGER orb105_laravel_write_failure');
+            }
+        }
+
+        $scope = orb105_laravel_scope($fixture);
+        $scopeInode = lstat($scope)['ino'];
+        expect(scandir($scope.'/backup'))->toBe(['.', '..']);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['binding']['scope'])->toBeNull();
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+
+        expect(lstat($scope)['ino'])->toBe($scopeInode);
+        expect(file_get_contents($scope.'/backup/0'))->toBe("APP_URL=https://before.test\nSECRET=private-fixture-value\n");
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['database checkpoint', 'lost initialization acknowledgment']);
+
+it('resumes owned Laravel preparation checkpoints with private secret files', function (string $checkpoint): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $before = orb105_complete_manifest($fixture['source']);
+        $manager = orb105_laravel_checkpoint_manager('prepare', $checkpoint);
+
+        expect(fn () => $manager->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        $scope = orb105_laravel_scope($fixture);
+        expect(fileperms($scope) & 0o777)->toBe(0o700);
+        expect(fileperms($scope.'/backup') & 0o777)->toBe(0o700);
+        expect(fileperms($scope.'/state.journal') & 0o777)->toBe(0o600);
+        expect(file_get_contents($scope.'/state.journal'))->not->toContain('private-fixture-value');
+        expect(json_encode($fixture['instance']->refresh()->registration_laravel_receipt))->not->toContain('private-fixture-value');
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+
+        expect(file_get_contents($scope.'/backup/0'))->toBe(file_get_contents($fixture['source'].'/.env'));
+        expect(file_get_contents($scope.'/backup/1'))->toBe(file_get_contents($fixture['source'].'/bootstrap/cache/config.php'));
+        expect(fileperms($scope.'/backup/0') & 0o777)->toBe(0o600);
+        expect(fileperms($scope.'/backup/1') & 0o777)->toBe(0o600);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['file bound', 'partial backup', 'ready saved']);
+
+it('resumes claimed Laravel backup cleanup without creating a new attempt', function (string $operation, string $checkpoint): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $before = orb105_complete_manifest($fixture['source']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $scope = orb105_laravel_scope($fixture);
+        $binding = $fixture['instance']->registration_laravel_receipt['binding'];
+        if ($operation === 'restore') {
+            file_put_contents($fixture['source'].'/.env', "APP_URL=https://changed.test\n");
+            file_put_contents($fixture['source'].'/bootstrap/cache/config.php', "<?php return [];\n");
+        }
+        $manager = orb105_laravel_checkpoint_manager($operation, $checkpoint);
+        $method = $operation === 'restore' ? 'restoreLaravelConfiguration' : 'discardLaravelRollback';
+
+        expect(fn () => $manager->{$method}($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+        $fixture['manager']->{$method}($fixture['instance']);
+        $fixture['manager']->{$method}($fixture['instance']);
+
+        expect(scandir($scope))->toBe(['.', '..', 'state.journal']);
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['binding'])->toBe($binding);
+        expect($fixture['instance']->registration_laravel_receipt['outcome'])->toBe($operation === 'restore' ? 'restored' : 'discarded');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['restore', 'discard'])->with(['claim renamed', 'claim saved', 'partial deletion', 'completion partial write', 'completion saved']);
+
+it('refuses changed Laravel receipt identities or foreign members before deleting backups', function (string $replacement): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $scope = orb105_laravel_scope($fixture);
+        $target = match ($replacement) {
+            'scope' => $scope,
+            'journal' => $scope.'/state.journal',
+            'backup directory', 'backup symlink', 'foreign member' => $scope.'/backup',
+            'backup file', 'backup file symlink', 'backup hard link' => $scope.'/backup/0',
+            'checkout' => $fixture['source'],
+        };
+        if ($replacement === 'foreign member') {
+            file_put_contents($target.'/foreign.txt', "never delete foreign receipt member\n");
+        } else {
+            $retained = dirname($fixture['source']).'/laravel-retained';
+            rename($target, $retained);
+            if (str_contains($replacement, 'symlink')) {
+                symlink($retained, $target);
+            } elseif ($replacement === 'backup hard link') {
+                link($retained, $target);
+            } elseif (is_dir($retained)) {
+                orb105_copy_tree($retained, $target);
+            } else {
+                copy($retained, $target);
+                chmod($target, fileperms($retained) & 0o777);
+            }
+            $retainedBefore = orb105_complete_manifest($retained);
+        }
+        $foreignBefore = orb105_complete_manifest($target);
+        $sourceBefore = orb105_complete_manifest($fixture['source']);
+
+        expect(fn () => $fixture['manager']->discardLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($target))->toBe($foreignBefore);
+        expect(orb105_complete_manifest($fixture['source']))->toBe($sourceBefore);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+        if ($replacement !== 'foreign member') {
+            expect(orb105_complete_manifest($retained))->toBe($retainedBefore);
+        } else {
+            expect(file_get_contents($target.'/foreign.txt'))->toBe("never delete foreign receipt member\n");
+        }
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['scope', 'journal', 'backup directory', 'backup symlink', 'backup file', 'backup file symlink', 'backup hard link', 'foreign member', 'checkout']);
+
+it('starts another Laravel attempt only after restoration and never recreates a discarded attempt', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $first = orb105_laravel_scope($fixture);
+        $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $second = orb105_laravel_scope($fixture);
+        expect($second)->not->toBe($first);
+        expect(scandir($first))->toBe(['.', '..', 'state.journal']);
+        $fixture['manager']->discardLaravelRollback($fixture['instance']);
+
+        expect(fn () => $fixture['manager']->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+        expect(scandir($second))->toBe(['.', '..', 'state.journal']);
+        $fixture['instance']->update(['registration_completed_at' => now()]);
+        expect(fn () => $fixture['manager']->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(ResourceOperationException::class);
+        $fixture['manager']->discardLaravelRollback($fixture['instance']);
+        expect(scandir($second))->toBe(['.', '..', 'state.journal']);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('rechecks the claimed Laravel backup directory and preserves a substituted directory', function (bool $conflictingRestore): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $scope = orb105_laravel_scope($fixture);
+        $before = orb105_complete_manifest($scope.'/backup');
+        $retained = dirname($fixture['source']).'/retained-backup';
+        $hook = 'conflicting_restore='.($conflictingRestore ? 'True' : 'False')."\n"
+            .'retained='.json_encode($retained, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n".<<<'PYTHON'
+                import os, sys
+                def substitute_backup(frame,event,result):
+                    if frame.f_code.co_name == 'rename_exclusive' and frame.f_locals.get('source') == 'backup':
+                        parent=frame.f_locals['parent']
+                        if event == 'call':
+                            os.rename('backup',retained,src_dir_fd=parent)
+                            os.mkdir('backup',0o700,dir_fd=parent)
+                            directory=os.open('backup',os.O_RDONLY | os.O_DIRECTORY,dir_fd=parent)
+                            file=os.open('foreign.txt',os.O_WRONLY | os.O_CREAT | os.O_EXCL,0o600,dir_fd=directory)
+                            os.write(file,b'foreign backup claim\n'); os.close(file); os.close(directory)
+                        elif event == 'return':
+                            sys.settrace(None)
+                            if conflicting_restore: os.mkdir('backup',0o700,dir_fd=parent)
+                    return substitute_backup
+                sys.settrace(substitute_backup)
+                PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('discard', $hook));
+
+        expect(fn () => $manager->discardLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($retained))->toBe($before);
+        expect(file_get_contents($scope.($conflictingRestore ? '/deleting' : '/backup').'/foreign.txt'))->toBe("foreign backup claim\n");
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+        if ($conflictingRestore) {
+            expect(scandir($scope.'/backup'))->toBe(['.', '..']);
+        }
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['restored foreign claim' => false, 'conflicting restoration' => true]);
+
+it('retains exact Laravel attempt evidence when the preparation or cleanup database acknowledgment fails', function (string $outcome): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        if ($outcome === 'discarded') {
+            $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        }
+        $method = $outcome === 'ready' ? 'prepareLaravelRollback' : 'discardLaravelRollback';
+        DB::unprepared("CREATE TRIGGER orb105_laravel_ack_failure BEFORE UPDATE OF registration_laravel_receipt ON app_instances WHEN json_extract(NEW.registration_laravel_receipt, '$.outcome') = '{$outcome}' BEGIN SELECT RAISE(ABORT, 'acknowledgment persistence stopped'); END");
+
+        try {
+            expect(fn () => $fixture['manager']->{$method}($fixture['instance']))->toThrow(QueryException::class);
+        } finally {
+            DB::unprepared('DROP TRIGGER orb105_laravel_ack_failure');
+        }
+
+        $binding = $fixture['instance']->refresh()->registration_laravel_receipt['binding'];
+        $scope = orb105_laravel_scope($fixture);
+        expect(orb105_relocation_state($scope)['phase'])->toBe($outcome);
+        $fixture['manager']->{$method}($fixture['instance']);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['binding'])->toBe($binding);
+        expect($fixture['instance']->registration_laravel_receipt['outcome'])->toBe($outcome);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['ready', 'discarded']);
+
+it('refuses a Laravel owner whose checkout parent is replaced even when its private scope is transplanted', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        mkdir($fixture['source_root'].'/nested');
+        rename($fixture['source'], $fixture['source_root'].'/nested/acme');
+        $fixture['source'] = $fixture['source_root'].'/nested/acme';
+        $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        $scope = orb105_laravel_scope($fixture);
+        rename($fixture['source_root'].'/nested', $fixture['source_root'].'/nested-retained');
+        mkdir($fixture['source_root'].'/nested');
+        rename($fixture['source_root'].'/nested-retained/'.basename($scope), $scope);
+        rename($fixture['source_root'].'/nested-retained/acme', $fixture['source']);
+        $before = orb105_complete_manifest($fixture['source_root']);
+
+        expect(fn () => $fixture['manager']->discardLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($fixture['source_root']))->toBe($before);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('rejects conflicting Laravel initialization evidence before copying configuration bytes', function (string $corruption): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $manager = orb105_registration_manager(new Orb105InitializeCallbackSshExecutor(
+            static function (CommandResult $result) use ($corruption): CommandResult {
+                $receipt = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+                match ($corruption) {
+                    'request' => $receipt['binding']['request'] = (string) Str::uuid(),
+                    'extra field' => $receipt['binding']['extra'] = true,
+                    'directory identity' => $receipt['binding']['directories'][0] = ['foreign', 1],
+                    'outcome' => $receipt['outcome'] = 'ready',
+                };
+
+                return new CommandResult(0, json_encode($receipt, JSON_THROW_ON_ERROR), '', 0, false);
+            },
+        ));
+
+        expect(fn () => $manager->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(ResourceOperationException::class);
+
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('pending');
+        expect(scandir(orb105_laravel_scope($fixture).'/backup'))->toBe(['.', '..']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt['outcome'])->toBe('ready');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['request', 'extra field', 'directory identity', 'outcome']);
+
+it('keeps late native preparation commands from recreating completed Laravel backup payloads', function (string $operation): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $executor = new Orb105RecordingSshExecutor;
+        $manager = orb105_registration_manager($executor);
+        $manager->prepareLaravelRollback($fixture['instance']);
+        $prepare = array_values(array_filter($executor->commands, static fn (RemoteCommand $command): bool => ($command->arguments[3] ?? null) === 'prepare'))[0];
+        expect(json_encode($prepare->arguments))->not->toContain('private-fixture-value');
+        $method = $operation === 'restore' ? 'restoreLaravelConfiguration' : 'discardLaravelRollback';
+        $manager->{$method}($fixture['instance']);
+        $scope = orb105_laravel_scope($fixture);
+        $before = orb105_complete_manifest($scope);
+
+        $late = orb105_run($prepare->arguments);
+
+        expect($late->succeeded())->toBe($operation === 'restore');
+        expect($late->stdout)->not->toContain('private-fixture-value');
+        expect(orb105_complete_manifest($scope))->toBe($before);
+        expect(scandir($scope))->toBe(['.', '..', 'state.journal']);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with(['restore', 'discard']);
+
+it('restores recorded Laravel file absence and retains unrelated checkout files', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        unlink($fixture['source'].'/.env');
+        unlink($fixture['source'].'/bootstrap/cache/config.php');
+        $before = orb105_complete_manifest($fixture['source']);
+        $fixture['manager']->prepareLaravelRollback($fixture['instance']);
+        file_put_contents($fixture['source'].'/.env', "APP_URL=https://created.test\n");
+        file_put_contents($fixture['source'].'/bootstrap/cache/config.php', "<?php return [];\n");
+
+        $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
+
+        expect(orb105_complete_manifest($fixture['source']))->toBe($before);
+        expect(scandir(orb105_laravel_scope($fixture)))->toBe(['.', '..', 'state.journal']);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('retains an interrupted Laravel backup allocation whose inode was never durably recorded', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $hook = <<<'PYTHON'
+            import os
+            native_open=os.open
+            def interrupt_unrecorded_backup(path,flags,mode=0o777,*,dir_fd=None):
+                descriptor=native_open(path,flags,mode,dir_fd=dir_fd)
+                if str(path) == '0' and flags & os.O_CREAT:
+                    os.fsync(dir_fd); os._exit(137)
+                return descriptor
+            os.open=interrupt_unrecorded_backup
+            PYTHON;
+        $manager = orb105_registration_manager(new Orb105NativeHookSshExecutor('prepare', $hook));
+        expect(fn () => $manager->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+        $scope = orb105_laravel_scope($fixture);
+        $before = orb105_complete_manifest($scope);
+        expect(file_get_contents($scope.'/backup/0'))->toBe('');
+        expect(orb105_relocation_state($scope)['files'][0]['backup'])->toBeNull();
+
+        expect(fn () => $fixture['manager']->prepareLaravelRollback($fixture['instance']))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(orb105_complete_manifest($scope))->toBe($before);
+        expect(file_get_contents($fixture['source'].'/.env'))->toContain('private-fixture-value');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('leaves a completed legacy registration without rollback artifacts unchanged on cleanup retry', function (): void {
+    $fixture = orb105_laravel_fixture();
+
+    try {
+        $fixture['instance']->update(['registration_completed_at' => now()]);
+        $before = orb105_complete_manifest($fixture['source_root']);
+
+        $fixture['manager']->discardLaravelRollback($fixture['instance']);
+        $fixture['manager']->discardLaravelRollback($fixture['instance']);
+
+        expect(orb105_complete_manifest($fixture['source_root']))->toBe($before);
+        expect($fixture['instance']->refresh()->registration_laravel_receipt)->toBeNull();
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+/** @return array<string, mixed> */
+function orb105_laravel_fixture(): array
+{
+    $fixture = orb105_relocation_fixture();
+    new Filesystem()->ensureDirectoryExists($fixture['source'].'/bootstrap/cache');
+    file_put_contents($fixture['source'].'/.env', "APP_URL=https://before.test\nSECRET=private-fixture-value\n");
+    file_put_contents($fixture['source'].'/bootstrap/cache/config.php', "<?php return ['url' => 'before'];\n");
+    chmod($fixture['source'].'/.env', 0o644);
+    chmod($fixture['source'].'/bootstrap/cache/config.php', 0o640);
+    $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+
+    return $fixture;
+}
+
+/** @param array<string, mixed> $fixture */
+function orb105_laravel_scope(array $fixture): string
+{
+    $instance = $fixture['instance']->refresh();
+
+    return dirname($fixture['source']).'/.orbit-registration-url-'.$instance->id.'-'.$instance->registration_laravel_receipt['binding']['attempt'];
+}
+
+function orb105_laravel_checkpoint_manager(string $operation, string $checkpoint): RemoteRegistrationSourceManager
+{
+    $hook = 'checkpoint='.json_encode($checkpoint, JSON_THROW_ON_ERROR)."\n".<<<'PYTHON'
+        import os, sys
+        os.umask(0)
+        native_write=os.write; native_pwrite=os.pwrite; native_unlink=os.unlink
+        def interrupt_backup(descriptor,content):
+            if checkpoint == 'partial backup' and 'backup/0' in os.readlink('/proc/self/fd/'+str(descriptor)):
+                native_write(descriptor,content[:5]); os.fsync(descriptor); os._exit(137)
+            return native_write(descriptor,content)
+        def interrupt_terminal(descriptor,content,offset):
+            if checkpoint == 'completion partial write' and (b'"phase":"restored"' in content or b'"phase":"discarded"' in content):
+                native_pwrite(descriptor,content[:24],offset); os.fsync(descriptor); os._exit(137)
+            return native_pwrite(descriptor,content,offset)
+        def interrupt_deletion(path,*,dir_fd=None):
+            native_unlink(path,dir_fd=dir_fd)
+            if checkpoint == 'partial deletion' and dir_fd is not None and str(path) == '0': os._exit(137)
+        os.write=interrupt_backup; os.pwrite=interrupt_terminal; os.unlink=interrupt_deletion
+        def interrupt_checkpoint(frame,event,result):
+            if event == 'return':
+                if checkpoint == 'claim renamed' and frame.f_code.co_name == 'rename_exclusive': os._exit(137)
+                if frame.f_code.co_name == 'save':
+                    state=frame.f_locals['self'].state; phase=state['phase']
+                    if checkpoint == 'file bound' and phase == 'preparing' and state['files'][0]['backup'] is not None: os._exit(137)
+                    if checkpoint == 'ready saved' and phase == 'ready': os._exit(137)
+                    if checkpoint == 'claim saved' and phase == 'claimed': os._exit(137)
+                    if checkpoint == 'completion saved' and phase in ('restored','discarded'): os._exit(137)
+            return interrupt_checkpoint
+        sys.settrace(interrupt_checkpoint)
+        PYTHON;
+
+    return orb105_registration_manager(new Orb105NativeHookSshExecutor($operation, $hook));
+}
+
 /**
  * @return array{
  *     manager: RemoteRegistrationSourceManager,
@@ -1895,6 +2381,19 @@ final readonly class Orb105LocalSshExecutor implements SshExecutor
             input: $command->input,
             protectedInput: $command->protectedInput,
         ));
+    }
+}
+
+final class Orb105RecordingSshExecutor implements SshExecutor
+{
+    /** @var list<RemoteCommand> */
+    public array $commands = [];
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $this->commands[] = $command;
+
+        return new Orb105LocalSshExecutor()->execute($connection, $command);
     }
 }
 

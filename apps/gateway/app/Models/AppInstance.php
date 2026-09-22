@@ -66,6 +66,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
  * @property array<string, mixed>|null $registration_relocation_receipt
+ * @property array<string, mixed>|null $registration_laravel_receipt
  * @property array<string, mixed>|null $registration_migration_recovery
  * @property Carbon|null $registration_completed_at
  * @property string|null $starting_commit
@@ -153,6 +154,7 @@ final class AppInstance extends Model
         'registration_source_device',
         'registration_source_inode',
         'registration_relocation_receipt',
+        'registration_laravel_receipt',
         'registration_migration_recovery',
         'registration_completed_at',
         'starting_commit',
@@ -396,6 +398,7 @@ final class AppInstance extends Model
             'registration_source_device' => 'integer',
             'registration_source_inode' => 'integer',
             'registration_relocation_receipt' => 'array',
+            'registration_laravel_receipt' => 'array',
             'registration_migration_recovery' => 'array',
             'registration_completed_at' => 'immutable_datetime',
             'runtime_definitions_captured_at' => 'immutable_datetime',

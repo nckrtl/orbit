@@ -125,6 +125,10 @@ An Instance can require manual migration when its stored name follows the earlie
 
 Registration verifies the recorded source, moves it to the managed `default` placement, and updates its identity and runtime while it preserves the Route domain. Before it publishes the new record, Orbit stores the original Instance state and Route intent as durable recovery evidence. An identical retry resumes the same migration even after process interruption. A failed migration keeps the old record, path, runtime, Route, and original Laravel URL configuration authoritative. Database rollback refuses to discard registration or source-cleanup evidence while the related operation is incomplete.
 
+Laravel rollback backups belong to one recorded registration attempt, Instance, Node, and checkout. Orbit records the private receipt's directory and file identities before copying configuration bytes. Backup files stay mode `0600` inside mode `0700` directories, even when the source files are less restrictive. Unknown legacy receipts, extra files, or changed ownership stop the operation without deleting the conflicting paths. Interrupted creation without a durably recorded identity retains the artifact for operator review.
+
+When Orbit completes restoration or confirms publication, it exclusively claims the exact backup directory and removes only its recorded files. Bounded completion metadata remains after restore or discard so a lost acknowledgment cannot recreate a completed attempt; a new provisioning attempt after a confirmed restore gets a new receipt. This private metadata boundary trusts the Node execution user, as relocation receipts do.
+
 An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing Instance, source, and Route.
 
 ## Provision the application endpoint
