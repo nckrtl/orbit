@@ -208,7 +208,23 @@ case ${1-} in
         if [[ "$production_count" -eq 0 && -z "$previous_production" ]]; then
           development_checkout=$(php -r '$v=json_decode($argv[1], true, 16, JSON_THROW_ON_ERROR); echo $v["checkout_path"];' "$typed_state")
           if [[ "$environment_contract" -eq 1 && -f "$development_checkout/.env" ]]; then
-            "$orbit" env:import --instance="$typed_instance_id" --json >/dev/null
+            for import_attempt in 1 2; do
+              if import_response=$("$orbit" env:import --instance="$typed_instance_id" --json); then
+                break
+              fi
+              import_code=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["error"]["code"] ?? "unknown";' <<<"$import_response")
+              case "$import_code" in
+                env.import_conflict) break ;;
+                instance.source_profile_missing)
+                  [[ "$import_attempt" -eq 1 ]] || exit 65
+                  recovery_args=(instance:create "$app_id" "$dev_id" e2e-dev --domain=e2e-dev.orbit --recover-source-profile)
+                  recovery_branch=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach($v["instances"] as $x) if(($x["id"] ?? null)===(int)$argv[1]) { $b=$x["branch_override"] ?? null; if($b!==null && !is_string($b)) exit(65); echo $b ?? ""; }' "$typed_instance_id" <<<"$typed_instances")
+                  [[ -z "$recovery_branch" ]] || recovery_args+=(--branch="$recovery_branch")
+                  "$orbit" "${recovery_args[@]}" --json >/dev/null
+                  ;;
+                *) echo 'sample environment import failed before production clone' >&2; exit 65 ;;
+              esac
+            done
           fi
           # These operations are deliberately unguarded. A selected supported
           # operation failure must never enter the older direct-create path.
@@ -620,7 +636,13 @@ PHP
         [[ "$(run_as_runtime git -C "$checkout" rev-parse HEAD)" =~ ^[0-9a-f]{40}$ ]]
       elif [[ $# -eq 4 && "$3" == app-dev ]]; then
         starting_commit=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach($v["instances"] as $x) if($x["name"]==="e2e-dev") echo $x["starting_commit"];' <<<"$typed_instances")
-        run_as_runtime git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD || { echo 'hydrate: development source predates its registered starting commit; repair source explicitly' >&2; exit 65; }
+        if ! run_as_runtime git -C "$checkout" cat-file -e "$starting_commit^{commit}"; then
+          run_as_runtime git -C "$checkout" fetch --quiet origin "$starting_commit"
+        fi
+        if ! run_as_runtime git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD; then
+          run_as_runtime git -C "$checkout" merge-base --is-ancestor HEAD "$starting_commit" || { echo 'hydrate: development source diverges from its registered starting commit' >&2; exit 65; }
+          run_as_runtime git -C "$checkout" merge --ff-only "$starting_commit"
+        fi
       else
         if ! run_as_runtime git -C "$checkout" cat-file -e "$2^{commit}"; then
           run_as_runtime git -C "$checkout" fetch --quiet origin "$2"

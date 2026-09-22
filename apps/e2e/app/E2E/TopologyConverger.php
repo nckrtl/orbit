@@ -166,6 +166,15 @@ final readonly class TopologyConverger
         $this->awaitInstanceApiReadiness($instances[$appDevNode]);
         $steps['await.instance-api-readiness'] = true;
 
+        if (in_array('router', $target->recipe->node($gatewayNode)->roles, true)) {
+            $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
+                'shared-cluster', $gatewayNode, $appDevNode, $appProdNode,
+            ]);
+            $steps['converge.shared-cluster'] = true;
+            $this->run($instances[$gatewayNode], 'converge-gateway.sh', ['private-dns', $appDevNode, $appProdNode]);
+            $steps['refresh.private-dns'] = true;
+        }
+
         if ($typedCheckoutPath !== null) {
             if ($productionPlacement === null) {
                 $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
@@ -210,14 +219,8 @@ final readonly class TopologyConverger
 
         $steps['hydrate.sample-apps'] = true;
         if (in_array('router', $target->recipe->node($gatewayNode)->roles, true)) {
-            $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
-                'shared-cluster', $gatewayNode, $appDevNode, $appProdNode,
-            ]);
-            $steps['converge.shared-cluster'] = true;
             $this->run($instances[$appDevNode], 'converge-sample-fixtures.sh', ['converge']);
             $steps['converge.sample-fixtures'] = true;
-            $this->run($instances[$gatewayNode], 'converge-gateway.sh', ['private-dns', $appDevNode, $appProdNode]);
-            $steps['refresh.private-dns'] = true;
             // Deployment can move current; persist its new placement for readiness.
             $this->run($instances[$appDevNode], 'converge-sample-app.sh', $sampleArguments);
         }

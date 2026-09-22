@@ -379,7 +379,11 @@ function typed_sample_resource_fixture(): array
             ;;
           instance:create)
             [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
-            [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
+            if [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --recover-source-profile --json' ]]; then
+              touch "$state/source-recovered"
+            else
+              [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
+            fi
             touch "$state/instance"
             touch "$state/route"
             printf '{"id":4}'
@@ -401,7 +405,14 @@ function typed_sample_resource_fixture(): array
             touch "$state/deployed"
             printf '{"id":5,"status":"active"}'
             ;;
-          env:import|env:sync) printf '{"status":"completed"}' ;;
+          env:import)
+            if [[ -n "${IMPORT_ERROR:-}" && ! -e "$state/source-recovered" ]]; then
+              printf '{"error":{"code":"%s"}}' "$IMPORT_ERROR"
+              exit 19
+            fi
+            printf '{"status":"completed"}'
+            ;;
+          env:sync) printf '{"status":"completed"}' ;;
           route:list)
             if [[ -e "$state/route" && -n "${FINAL_ROUTE_LIST_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_ROUTE_LIST_RESPONSE"
@@ -2800,9 +2811,38 @@ describe('convergence guest scripts', function () {
         'wrong head' => ['SAMPLE_HEAD_SHA', str_repeat('c', 40)],
     ]);
 
-    it('hydrates only an authoritative typed checkout path', function (): void {
+    it('hydrates the registered development history without losing local changes', function (string $history, bool $succeeds): void {
         $fixture = sample_hydration_fixture();
         try {
+            unlink("{$fixture['root']}/bin/git");
+            $git = static function (array $arguments) use ($fixture): string {
+                return trim(new Process(['git', '-C', $fixture['checkout'], ...$arguments])->mustRun()->getOutput());
+            };
+            $git(['init', '--quiet']);
+            $git(['config', 'user.email', 'fixture@example.invalid']);
+            $git(['config', 'user.name', 'Fixture']);
+            $git(['remote', 'add', 'origin', 'https://github.com/laravel/laravel.git']);
+            file_put_contents("{$fixture['checkout']}/source.txt", "old\n");
+            file_put_contents("{$fixture['checkout']}/local.txt", "original\n");
+            $git(['add', 'source.txt', 'local.txt']);
+            $git(['commit', '--quiet', '-m', 'old source']);
+            $old = $git(['rev-parse', 'HEAD']);
+            file_put_contents("{$fixture['checkout']}/source.txt", "registered\n");
+            $git(['commit', '--quiet', '-am', 'registered source']);
+            $registered = $git(['rev-parse', 'HEAD']);
+            if ($history !== 'descendant') {
+                $git(['reset', '--hard', '--quiet', $old]);
+            }
+            if (in_array($history, ['descendant', 'diverged'], true)) {
+                file_put_contents("{$fixture['checkout']}/extra.txt", "extra\n");
+                $git(['add', 'extra.txt']);
+                $git(['commit', '--quiet', '-m', 'local commit']);
+            }
+            $before = $git(['rev-parse', 'HEAD']);
+            file_put_contents("{$fixture['checkout']}/local.txt", "preserved local changes\n");
+            if ($history === 'conflict') {
+                file_put_contents("{$fixture['checkout']}/source.txt", "conflicting local changes\n");
+            }
             file_put_contents($fixture['state'], json_encode([
                 'shape' => 'instances',
                 'app_id' => 1,
@@ -2817,7 +2857,7 @@ describe('convergence guest scripts', function () {
                 [[ "$*" == 'instance:list --json' ]]
                 state=$(dirname "$0")
                 printf '%s\n' "$*" >>"$state/orbit-commands"
-                printf '{"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})"
+                printf '{"instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$SAMPLE_STARTING_SHA"
                 BASH);
             chmod("{$fixture['root']}/orbit", 0o700);
             file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
@@ -2833,20 +2873,26 @@ describe('convergence guest scripts', function () {
                 str_repeat('b', 40),
                 'app-dev',
                 $fixture['checkout'],
-            ], env: $fixture['environment']);
+            ], env: [...$fixture['environment'], 'SAMPLE_STARTING_SHA' => $registered]);
 
-            expect($process->run())->toBe(0, $process->getErrorOutput());
+            expect($process->run() === 0)->toBe($succeeds, $process->getErrorOutput());
+            expect($git(['rev-parse', 'HEAD']))->toBe($history === 'older' ? $registered : $before)
+                ->and(file_get_contents("{$fixture['checkout']}/local.txt"))->toBe("preserved local changes\n");
+            if ($history === 'conflict') {
+                expect(file_get_contents("{$fixture['checkout']}/source.txt"))->toBe("conflicting local changes\n");
+            }
             expect(file("{$fixture['root']}/orbit-commands", FILE_IGNORE_NEW_LINES))->toBe([
                 'instance:list --json',
             ]);
-            expect(array_values(array_filter(
-                file("{$fixture['root']}/git-commands", FILE_IGNORE_NEW_LINES) ?: [],
-                fn (string $command): bool => str_contains($command, ' reset --hard --quiet '),
-            )))->toBe([]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
-    });
+    })->with([
+        'older checkout fast-forwards' => ['older', true],
+        'descendant checkout stays intact' => ['descendant', true],
+        'divergent checkout is refused' => ['diverged', false],
+        'conflicting local edit is preserved' => ['conflict', false],
+    ]);
 
     it('does not create duplicate sample resources on a second run', function () {
         $root = temporaryPath('orbit-task7-resources-', 6);
@@ -3334,6 +3380,34 @@ describe('convergence guest scripts', function () {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     });
+
+    it('recovers missing development source metadata before the first production clone', function (string $error, bool $recovers, bool $succeeds): void {
+        $fixture = typed_sample_resource_fixture();
+        mkdir("{$fixture['root']}/laravel-typed/e2e-dev", 0700, true);
+        file_put_contents("{$fixture['root']}/laravel-typed/e2e-dev/.env", "APP_NAME=fixture\n");
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'COMMAND_SURFACE' => "instance:clone\ninstance:deploy\ninstance:deploy-step:create\nenv:import\nenv:update\nenv:sync\n",
+                'IMPORT_ERROR' => $error,
+            ]);
+            expect($process->run() === 0)->toBe($succeeds, $process->getErrorOutput());
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES);
+            $recovery = array_search('instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --recover-source-profile --json', $commands, true);
+            $clone = array_search('instance:clone 4 3 e2e-prod --preview-name=e2e-prod --branch=main --json', $commands, true);
+            expect($recovery !== false)->toBe($recovers)
+                ->and($clone !== false)->toBe($succeeds);
+            if ($recovers) {
+                expect($recovery)->toBeLessThan($clone)
+                    ->and(array_values(array_filter($commands, static fn (string $command): bool => $command === 'env:import --instance=4 --json')))->toHaveCount(2);
+            }
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing profile' => ['instance.source_profile_missing', true, true],
+        'stored environment is preserved' => ['env.import_conflict', false, true],
+        'unrelated failure refuses clone' => ['instance.node_unreachable', false, false],
+    ]);
 
     it('does not enter the direct path after a selected clone fails', function (): void {
         $fixture = typed_sample_resource_fixture();
