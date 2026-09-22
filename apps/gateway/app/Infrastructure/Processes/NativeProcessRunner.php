@@ -78,8 +78,11 @@ final readonly class NativeProcessRunner implements ProcessRunner
             try {
                 do {
                     $running = $process->isRunning();
+                    // Each getter polls both pipes, so clear its stream before the next read.
                     $consume(ProcessOutputStream::Stdout, $process->getIncrementalOutput());
+                    $process->clearOutput();
                     $consume(ProcessOutputStream::Stderr, $process->getIncrementalErrorOutput());
+                    $process->clearErrorOutput();
                     $this->emitPendingOutput($pendingOutput, $invocation->output);
 
                     if ($running && ($invocation->cancelled) !== null && ($invocation->cancelled)()) {

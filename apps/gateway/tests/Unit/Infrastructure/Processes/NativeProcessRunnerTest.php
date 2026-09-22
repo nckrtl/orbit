@@ -24,6 +24,14 @@ if ($runningVerification) {
 
 final class ProcessOutputControlledProcess extends SymfonyProcess
 {
+    public string $retainedStdout = '';
+
+    public string $retainedStderr = '';
+
+    private int $stdoutOffset = 0;
+
+    private int $stderrOffset = 0;
+
     private int $iteration = 0;
 
     private bool $started = false;
@@ -31,10 +39,12 @@ final class ProcessOutputControlledProcess extends SymfonyProcess
     /**
      * @param  non-empty-list<string>  $stdoutReads
      * @param  non-empty-list<string>  $stderrReads
+     * @param  list<string>  $stdoutOnStderrReads
      */
     public function __construct(
         private readonly array $stdoutReads,
         private readonly array $stderrReads,
+        private readonly array $stdoutOnStderrReads = [],
     ) {
         parent::__construct(['true']);
     }
@@ -54,16 +64,41 @@ final class ProcessOutputControlledProcess extends SymfonyProcess
     #[Override]
     public function getIncrementalOutput(): string
     {
-        return $this->stdoutReads[$this->iteration];
+        $this->retainedStdout .= $this->stdoutReads[$this->iteration];
+        $output = substr($this->retainedStdout, $this->stdoutOffset);
+        $this->stdoutOffset = strlen($this->retainedStdout);
+
+        return $output;
     }
 
     #[Override]
     public function getIncrementalErrorOutput(): string
     {
-        $output = $this->stderrReads[$this->iteration];
+        $this->retainedStdout .= $this->stdoutOnStderrReads[$this->iteration] ?? '';
+        $this->retainedStderr .= $this->stderrReads[$this->iteration];
+        $output = substr($this->retainedStderr, $this->stderrOffset);
+        $this->stderrOffset = strlen($this->retainedStderr);
         $this->iteration++;
 
         return $output;
+    }
+
+    #[Override]
+    public function clearOutput(): static
+    {
+        $this->retainedStdout = '';
+        $this->stdoutOffset = 0;
+
+        return $this;
+    }
+
+    #[Override]
+    public function clearErrorOutput(): static
+    {
+        $this->retainedStderr = '';
+        $this->stderrOffset = 0;
+
+        return $this;
     }
 
     #[Override]
@@ -188,6 +223,105 @@ it('splits controlled process reads without losing order or stream attribution',
         ->toBe($observation->expectedStderr)
         ->and($observation->result->truncated)
         ->toBeFalse();
+});
+
+it('preserves unread stdout collected while reading stderr and clears only consumed bytes', function (): void {
+    $process = new ProcessOutputControlledProcess(
+        stdoutReads: ['stdout-before|', 'stdout-final|'],
+        stderrReads: ['stderr-before|', 'stderr-final|'],
+        stdoutOnStderrReads: ['stdout-during-stderr|'],
+    );
+    $events = [];
+    $retainedBetweenPolls = [];
+    $runner = new NativeProcessRunner(
+        processFactory: static fn (array $arguments): SymfonyProcess => $process,
+    );
+
+    $result = $runner->run(new ProcessInvocation(
+        arguments: ['controlled-process'],
+        timeout: 5.0,
+        output: static function (ProcessOutput $output) use (&$events): void {
+            $events[] = $output;
+        },
+        cancelled: static function () use ($process, &$retainedBetweenPolls): bool {
+            $retainedBetweenPolls[] = [$process->retainedStdout, $process->retainedStderr];
+
+            return false;
+        },
+    ));
+
+    ProcessOutputContract::assertMatches(
+        $events,
+        stdout: 'stdout-before|stdout-during-stderr|stdout-final|',
+        stderr: 'stderr-before|stderr-final|',
+    );
+
+    expect($result->succeeded())
+        ->toBeTrue()
+        ->and($result->stdout)
+        ->toBe('stdout-before|stdout-during-stderr|stdout-final|')
+        ->and($result->stderr)
+        ->toBe('stderr-before|stderr-final|')
+        ->and($result->truncated)
+        ->toBeFalse()
+        ->and($retainedBetweenPolls)
+        ->toBe([['stdout-during-stderr|', '']])
+        ->and($process->retainedStdout)
+        ->toBe('')
+        ->and($process->retainedStderr)
+        ->toBe('');
+});
+
+it('streams multi-megabyte output with bounded tails and no retained Symfony history', function (): void {
+    $process = null;
+    $events = [];
+    $expectedStdout = '';
+    $expectedStderr = '';
+
+    foreach (range(0, 383) as $index) {
+        $expectedStdout .= sprintf('stdout-%03d|', $index).str_repeat('A', 8_192);
+        $expectedStderr .= sprintf('stderr-%03d|', $index).str_repeat('B', 8_192);
+    }
+
+    $runner = new NativeProcessRunner(
+        processFactory: static function (array $arguments) use (&$process): SymfonyProcess {
+            return $process = new SymfonyProcess($arguments);
+        },
+    );
+
+    $result = $runner->run(new ProcessInvocation(
+        arguments: [
+            PHP_BINARY,
+            '-r',
+            <<<'PHP'
+for ($index = 0; $index < 384; $index++) {
+    fwrite(STDOUT, sprintf('stdout-%03d|', $index).str_repeat('A', 8192));
+    fwrite(STDERR, sprintf('stderr-%03d|', $index).str_repeat('B', 8192));
+}
+PHP,
+        ],
+        timeout: 15.0,
+        output: static function (ProcessOutput $output) use (&$events): void {
+            $events[] = $output;
+        },
+    ));
+
+    ProcessOutputContract::assertMatches($events, $expectedStdout, $expectedStderr);
+
+    expect($result->succeeded())
+        ->toBeTrue()
+        ->and($result->stdout)
+        ->toBe(substr($expectedStdout, -65_536))
+        ->and($result->stderr)
+        ->toBe(substr($expectedStderr, -65_536))
+        ->and($result->truncated)
+        ->toBeTrue()
+        ->and($process)
+        ->toBeInstanceOf(SymfonyProcess::class)
+        ->and(strlen($process->getOutput()))
+        ->toBe(0)
+        ->and(strlen($process->getErrorOutput()))
+        ->toBe(0);
 });
 
 it('rejects corrupted controlled process output events', function (string $corruption, string $message): void {
@@ -317,7 +451,9 @@ it('retains a completed command result when final output requests cancellation',
             'start',
             'is-running:false',
             'stdout:completed',
+            'stdout:cleared',
             'stderr:empty',
+            'stderr:cleared',
             'output:completed',
             'exit-code:0',
         ])
@@ -546,6 +682,22 @@ final class NativeProcessRunnerCompletedProcess extends SymfonyProcess
         $this->calls[] = 'stderr:empty';
 
         return '';
+    }
+
+    #[Override]
+    public function clearOutput(): static
+    {
+        $this->calls[] = 'stdout:cleared';
+
+        return $this;
+    }
+
+    #[Override]
+    public function clearErrorOutput(): static
+    {
+        $this->calls[] = 'stderr:cleared';
+
+        return $this;
     }
 
     #[Override]
