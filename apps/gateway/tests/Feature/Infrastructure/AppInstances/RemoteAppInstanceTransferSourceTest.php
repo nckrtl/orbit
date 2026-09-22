@@ -13,8 +13,10 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppInstances\RemoteAppInstanceTransferSource;
+use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -390,6 +392,342 @@ it('refuses source admission when a linked common directory is nested or aliased
     }
 })->with(['nested common directory' => false, 'symlinked common directory' => true]);
 
+it('materializes a complete independent Git snapshot without overwriting staged and working versions', function (bool $detached, bool $split): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $common = $fixture->instance->checkout_path;
+    foreach (['staged-only', 'unstaged-only', 'both', 'delete-me', 'rename-me', 'exec-file'] as $name) {
+        file_put_contents($common.'/'.$name, 'base-'.$name);
+    }
+    $fixture->git(['add', '.'], $common);
+    $fixture->git(['-c', 'user.name=Snapshot Fixture', '-c', 'user.email=snapshot@example.test', 'commit', '--quiet', '-m', 'snapshot base'], $common);
+    $fixture->git(['switch', '--quiet', '-c', 'unpublished'], $common);
+    file_put_contents($common.'/unpublished-only', 'unpublished branch bytes');
+    $fixture->git(['add', 'unpublished-only'], $common);
+    $fixture->git(['-c', 'user.name=Snapshot Fixture', '-c', 'user.email=snapshot@example.test', 'commit', '--quiet', '-m', 'unpublished branch'], $common);
+    $fixture->git(['switch', '--quiet', 'main'], $common);
+    $fixture->git(['-c', 'user.name=Snapshot Fixture', '-c', 'user.email=snapshot@example.test', 'tag', '-a', 'snapshot-tag', '-m', 'annotated tag'], $common);
+    $fixture->git(['config', 'remote.origin.url', 'https://example.test/snapshot-origin.git'], $common);
+    $fixture->git(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], $common);
+    $fixture->git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], $common);
+    $fixture->git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], $common);
+    $worktree = $fixture->directory.'/snapshot-source';
+    $sibling = $fixture->directory.'/snapshot-sibling';
+    $fixture->git(['worktree', 'add', '--quiet', '-b', 'preview', $worktree], $common);
+    $fixture->git(['worktree', 'add', '--quiet', '-b', 'sibling', $sibling], $common);
+    file_put_contents($sibling.'/untracked', 'sibling-sentinel');
+    if ($detached) {
+        $fixture->git(['switch', '--quiet', '--detach'], $worktree);
+    }
+    foreach (['staged-only', 'both'] as $name) {
+        file_put_contents($worktree.'/'.$name, 'staged-'.$name);
+        $fixture->git(['add', '--', $name], $worktree);
+    }
+    file_put_contents($worktree.'/unstaged-only', 'working-unstaged-only');
+    file_put_contents($worktree.'/both', 'working-both');
+    $fixture->git(['rm', '--quiet', '--', 'delete-me'], $worktree);
+    $fixture->git(['mv', '--', 'rename-me', 'renamed'], $worktree);
+    chmod($worktree.'/exec-file', 0755);
+    $fixture->git(['add', 'exec-file'], $worktree);
+    file_put_contents($worktree."/odd name\nø.txt", 'unusual-untracked-bytes');
+    if ($split) {
+        $fixture->git(['update-index', '--split-index'], $worktree);
+    }
+    $fixture->instance->update(['checkout_path' => $worktree, 'source_layout' => 'worktree']);
+    $head = $fixture->git(['rev-parse', 'HEAD'], $worktree);
+    $branch = $fixture->git(['rev-parse', '--abbrev-ref', 'HEAD'], $worktree);
+    $refs = $fixture->git(['for-each-ref', '--format=%(refname) %(objectname)'], $worktree);
+    $index = $fixture->git(['rev-parse', '--path-format=absolute', '--git-path', 'index'], $worktree);
+    $indexBytes = file_get_contents($index);
+    $status = $fixture->git(['status', '--porcelain=v2', '-z', '--untracked-files=all'], $worktree);
+    $shared = $fixture->fileHashes($common.'/.git');
+    $siblingFiles = $fixture->fileHashes($sibling);
+
+    try {
+        $fixture->materialize();
+        $destination = $fixture->destinationPath;
+        expect(is_dir($destination.'/.git'))->toBeTrue()
+            ->and(file_get_contents($destination.'/.git/index'))->toBe($indexBytes)
+            ->and($fixture->git(['rev-parse', 'HEAD'], $destination))->toBe($head)
+            ->and($fixture->git(['rev-parse', '--abbrev-ref', 'HEAD'], $destination))->toBe($branch)
+            ->and($fixture->git(['for-each-ref', '--format=%(refname) %(objectname)'], $destination))->toBe($refs)
+            ->and($fixture->git(['symbolic-ref', 'refs/remotes/origin/HEAD'], $destination))->toBe('refs/remotes/origin/main')
+            ->and($fixture->git(['status', '--porcelain=v2', '-z', '--untracked-files=all'], $destination))->toBe($status)
+            ->and($fixture->git(['config', '--get', 'remote.origin.url'], $destination))->toBe('https://example.test/snapshot-origin.git')
+            ->and($fixture->git(['show', ':both'], $destination))->toBe('staged-both')
+            ->and($fixture->git(['show', 'unpublished:unpublished-only'], $destination))->toBe('unpublished branch bytes')
+            ->and($fixture->git(['cat-file', '-t', 'refs/tags/snapshot-tag'], $destination))->toBe('tag')
+            ->and(file_get_contents($destination.'/both'))->toBe('working-both')
+            ->and(file_get_contents($destination.'/unstaged-only'))->toBe('working-unstaged-only')
+            ->and(file_get_contents($destination."/odd name\nø.txt"))->toBe('unusual-untracked-bytes')
+            ->and(fileperms($destination.'/exec-file') & 0111)->toBe(0111)
+            ->and($fixture->fileHashes($common.'/.git'))->toBe($shared)
+            ->and($fixture->fileHashes($sibling))->toBe($siblingFiles);
+        $fixture->instance->app->forceFill([
+            'slug' => 'shop', 'repository_url' => 'https://example.test/snapshot-origin.git',
+            'repository_identity' => GitRepositoryIdentity::derive('https://example.test/snapshot-origin.git'),
+        ])->save();
+        $fixture->instance->update([
+            'app_id' => $fixture->instance->app_id, 'node_id' => $fixture->destination->id,
+            'name' => 'web', 'environment' => 'development', 'checkout_path' => $destination,
+            'source_layout' => 'checkout', 'branch' => $detached ? null : 'preview', 'starting_commit' => $head,
+        ]);
+        $destinationInstance = $fixture->instance->refresh();
+        $inventory = app()->make(RemoteDevelopmentAppInstanceSourceRemoval::class, ['ssh' => $fixture->executor])
+            ->inspect($destinationInstance, force: true, inspectContent: false);
+        expect($inventory->layout)->toBe('checkout')
+            ->and($inventory->checkoutPath)->toBe($destination)
+            ->and($inventory->origin)->toBe('https://example.test/snapshot-origin.git')
+            ->and($inventory->linkedWorktreePaths)->toBe([$destination]);
+    } finally {
+        $fixture->close();
+    }
+})->with([
+    'attached' => [false, false], 'detached' => [true, false],
+    'attached split index' => [false, true], 'detached split index' => [true, true],
+]);
+
+it('preserves the full attached branch identity when a tag has the same name', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $checkout = $fixture->instance->checkout_path;
+    $fixture->git(['tag', 'main'], $checkout);
+    $head = $fixture->git(['rev-parse', 'HEAD'], $checkout);
+    $sourceFiles = $fixture->fileHashes($checkout.'/.git');
+
+    try {
+        $destination = $fixture->materialize();
+        expect($destination->branch)->toBe('main')
+            ->and($fixture->git(['symbolic-ref', 'HEAD'], $fixture->destinationPath))->toBe('refs/heads/main')
+            ->and($fixture->git(['rev-parse', 'refs/heads/main'], $fixture->destinationPath))->toBe($head)
+            ->and($fixture->git(['rev-parse', 'refs/tags/main'], $fixture->destinationPath))->toBe($head)
+            ->and($fixture->fileHashes($checkout.'/.git'))->toBe($sourceFiles);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('flattens effective worktree configuration and removes source-specific dependencies', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $common = $fixture->instance->checkout_path;
+    $worktree = $fixture->directory.'/configured-source';
+    $fixture->git(['worktree', 'add', '--quiet', '-b', 'configured', $worktree], $common);
+    $include = $fixture->directory.'/repository.config';
+    file_put_contents($include, "[remote \"origin\"]\n url = https://example.test/configured.git\n[user]\n name = shared-user\n");
+    $fixture->git(['config', 'include.path', $include], $common);
+    $fixture->git(['config', 'extensions.worktreeConfig', '2'], $common);
+    $fixture->git(['config', '--worktree', 'user.name', 'worktree-user'], $worktree);
+    $configurationValue = "config-secret-sentinel\nquote\"\t\\end";
+    $fixture->git(['config', '--worktree', 'remote.quoted.name.url', $configurationValue], $worktree);
+    $fixture->ssh->programReplacements = [
+        'environment = {**os.environ, "GIT_OPTIONAL_LOCKS"' => 'TransferGitSnapshot.require(all("config-secret-sentinel" not in argument for argument in arguments))'."\n        environment = {**os.environ, \"GIT_OPTIONAL_LOCKS\"",
+    ];
+    $fixture->git(['config', '--worktree', 'core.worktree', $worktree], $worktree);
+    $fixture->git(['config', '--worktree', 'core.hooksPath', $common.'/.git/hooks'], $worktree);
+    $excludes = $fixture->directory.'/source-excludes';
+    file_put_contents($excludes, "ignored-local\n");
+    $fixture->git(['config', '--worktree', 'core.excludesFile', $excludes], $worktree);
+    $attributes = $fixture->directory.'/source-attributes';
+    file_put_contents($attributes, "app.php snapshot=portable precedence=global\n");
+    $fixture->git(['config', '--worktree', 'core.attributesFile', $attributes], $worktree);
+    file_put_contents($worktree.'/.gitattributes', "app.php precedence=working\n");
+    file_put_contents($worktree.'/ignored-local', 'ignored bytes survive');
+    $fixture->instance->update(['checkout_path' => $worktree, 'source_layout' => 'worktree']);
+    $status = $fixture->git(['status', '--porcelain=v2', '-z', '--untracked-files=all'], $worktree);
+    $before = $fixture->fileHashes($common.'/.git');
+
+    try {
+        $fixture->materialize();
+        expect($fixture->git(['config', '--get', 'remote.origin.url'], $fixture->destinationPath))->toBe('https://example.test/configured.git')
+            ->and($fixture->git(['config', '--get', 'user.name'], $fixture->destinationPath))->toBe('worktree-user')
+            ->and($fixture->git(['config', '--get', 'remote.quoted.name.url'], $fixture->destinationPath))->toBe($configurationValue)
+            ->and($fixture->git(['check-attr', 'snapshot', '--', 'app.php'], $fixture->destinationPath))->toBe('app.php: snapshot: portable')
+            ->and($fixture->git(['check-attr', 'precedence', '--', 'app.php'], $fixture->destinationPath))->toBe('app.php: precedence: working')
+            ->and($fixture->git(['status', '--porcelain=v2', '-z', '--untracked-files=all'], $fixture->destinationPath))->toBe($status)
+            ->and(file_get_contents($fixture->destinationPath.'/ignored-local'))->toBe('ignored bytes survive')
+            ->and(fileperms($fixture->destinationPath.'/.git/config') & 0777)->toBe(0600)
+            ->and(file_get_contents($fixture->destinationPath.'/.git/config'))->not->toContain($common)
+            ->and(file_get_contents($fixture->destinationPath.'/.git/config'))->not->toContain($worktree)
+            ->and(file_get_contents($fixture->destinationPath.'/.git/config'))->not->toContain($attributes)
+            ->and(file_get_contents($fixture->destinationPath.'/.git/config'))->not->toContain($excludes)
+            ->and(file_get_contents($fixture->destinationPath.'/.git/config'))->not->toContain($include)
+            ->and($fixture->fileHashes($common.'/.git'))->toBe($before);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('uses the final worktree configuration setting without duplicating shared values', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $checkout = $fixture->instance->checkout_path;
+    $fixture->git(['config', '--add', 'extensions.worktreeConfig', 'true'], $checkout);
+    $fixture->git(['config', '--add', 'extensions.worktreeConfig', 'false'], $checkout);
+    $fixture->git(['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'], $checkout);
+
+    try {
+        $fixture->materialize();
+        expect($fixture->git(['config', '--get-all', 'remote.origin.fetch'], $fixture->destinationPath))->toBe('+refs/heads/*:refs/remotes/origin/*');
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses a mixed Git snapshot and retries with the newly stable source state', function (string $drift): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $mutation = $drift === 'refs'
+        ? 'cls.git(checkout, ["update-ref", "refs/heads/late", snapshot["head"]])'
+        : 'identity = cls.git(checkout, ["hash-object", "-w", "--stdin"], input=b"raced staged value").decode().strip(); cls.git(checkout, ["update-index", "--cacheinfo", "100644", identity, "app.php"])';
+    $fixture->ssh->programReplacements = [
+        'cls.require(cls.read(checkout) == snapshot)' => $mutation."\n        cls.require(cls.read(checkout) == snapshot)",
+    ];
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(file_get_contents($fixture->instance->checkout_path.'/app.php'))->toBe('tracked source')
+            ->and(is_file($fixture->attempt->archivePath('source')))->toBeFalse()
+            ->and(is_file($fixture->attempt->archivePath('destination')))->toBeFalse();
+        $fixture->ssh->programReplacements = [];
+        $accounts = app(ManagedUserAccountResolver::class);
+        $fixture->attempt = TransferArchiveAttempt::create($fixture->transfer, $accounts->resolve($fixture->instance->node), $accounts->resolve($fixture->destination));
+        $fixture->prepare();
+        $fixture->materialize();
+        if ($drift === 'refs') {
+            expect($fixture->git(['rev-parse', 'refs/heads/late'], $fixture->destinationPath))->toBe($fixture->git(['rev-parse', 'HEAD'], $fixture->instance->checkout_path));
+        } else {
+            expect($fixture->git(['show', ':app.php'], $fixture->destinationPath))->toBe('raced staged value')
+                ->and(file_get_contents($fixture->destinationPath.'/app.php'))->toBe('tracked source');
+        }
+    } finally {
+        $fixture->close();
+    }
+})->with(['refs', 'index']);
+
+it('materializes self-contained Git objects from alternate and shallow repositories', function (bool $shallow): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $common = $fixture->instance->checkout_path;
+    file_put_contents($common.'/next', 'latest history');
+    $fixture->git(['add', 'next'], $common);
+    $fixture->git(['-c', 'user.name=Snapshot Fixture', '-c', 'user.email=snapshot@example.test', 'commit', '--quiet', '-m', 'next history'], $common);
+    $checkout = $fixture->directory.'/object-source';
+    $fixture->git(['clone', '--quiet', ...($shallow ? ['--depth=1', 'file://'.$common] : ['--shared', $common]), $checkout], $common);
+    file_put_contents($checkout.'/next', 'staged object');
+    $fixture->git(['add', 'next'], $checkout);
+    file_put_contents($checkout.'/next', 'working object');
+    $fixture->instance->update(['checkout_path' => $checkout]);
+    $sourceFiles = $fixture->fileHashes($checkout.'/.git');
+    $commonFiles = $fixture->fileHashes($common.'/.git');
+
+    try {
+        $fixture->materialize();
+        expect($fixture->git(['show', ':next'], $fixture->destinationPath))->toBe('staged object')
+            ->and(file_get_contents($fixture->destinationPath.'/next'))->toBe('working object')
+            ->and(is_file($fixture->destinationPath.'/.git/objects/info/alternates'))->toBeFalse()
+            ->and($fixture->git(['rev-parse', '--is-shallow-repository'], $fixture->destinationPath))->toBe($shallow ? 'true' : 'false')
+            ->and($fixture->fileHashes($checkout.'/.git'))->toBe($sourceFiles)
+            ->and($fixture->fileHashes($common.'/.git'))->toBe($commonFiles);
+        $fixture->git(['fsck', '--full', '--no-reflogs'], $fixture->destinationPath);
+    } finally {
+        $fixture->close();
+    }
+})->with(['alternates' => false, 'shallow' => true]);
+
+it('preserves a sparse index and its checkout rules without expanding working files', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $checkout = $fixture->instance->checkout_path;
+    foreach (['kept', 'omitted'] as $directory) {
+        mkdir($checkout.'/'.$directory);
+        file_put_contents($checkout.'/'.$directory.'/file', $directory.' bytes');
+    }
+    $fixture->git(['add', 'kept', 'omitted'], $checkout);
+    $fixture->git(['-c', 'user.name=Snapshot Fixture', '-c', 'user.email=snapshot@example.test', 'commit', '--quiet', '-m', 'sparse history'], $checkout);
+    $fixture->git(['sparse-checkout', 'set', '--cone', '--sparse-index', 'kept'], $checkout);
+    $index = file_get_contents($checkout.'/.git/index');
+    $rules = file_get_contents($checkout.'/.git/info/sparse-checkout');
+    $status = $fixture->git(['status', '--porcelain=v2', '-z'], $checkout);
+    $sourceFiles = $fixture->fileHashes($checkout.'/.git');
+
+    try {
+        $fixture->materialize();
+        expect(file_get_contents($fixture->destinationPath.'/.git/index'))->toBe($index)
+            ->and(file_get_contents($fixture->destinationPath.'/.git/info/sparse-checkout'))->toBe($rules)
+            ->and($fixture->git(['status', '--porcelain=v2', '-z'], $fixture->destinationPath))->toBe($status)
+            ->and(file_get_contents($fixture->destinationPath.'/kept/file'))->toBe('kept bytes')
+            ->and(is_dir($fixture->destinationPath.'/omitted'))->toBeFalse()
+            ->and($fixture->git(['show', 'HEAD:omitted/file'], $fixture->destinationPath))->toBe('omitted bytes')
+            ->and($fixture->fileHashes($checkout.'/.git'))->toBe($sourceFiles);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses submodule gitlinks before creating a destination or changing source files', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $checkout = $fixture->instance->checkout_path;
+    $head = $fixture->git(['rev-parse', 'HEAD'], $checkout);
+    $fixture->git(['update-index', '--add', '--cacheinfo', '160000', $head, 'child'], $checkout);
+    $sourceFiles = $fixture->fileHashes($checkout);
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and($fixture->fileHashes($checkout))->toBe($sourceFiles)
+            ->and(is_file($fixture->attempt->archivePath('source')))->toBeFalse()
+            ->and(is_file($fixture->attempt->archivePath('destination')))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('rejects malformed snapshot metadata before writing destination contents', function (string $fault): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->programReplacements = match ($fault) {
+        'wrong attempt' => ['data = json.dumps(manifest, separators=(",", ":")).encode()' => "manifest[\"attempt\"] = \"foreign-attempt\"\n        data = json.dumps(manifest, separators=(\",\", \":\")).encode()"],
+        'unknown field' => ['data = json.dumps(manifest, separators=(",", ":")).encode()' => "manifest[\"unknown\"] = True\n        data = json.dumps(manifest, separators=(\",\", \":\")).encode()"],
+        'unsafe path' => ['metadata = tarfile.TarInfo(cls.manifest_name)' => implode("\n", [
+            'unsafe = tarfile.TarInfo("../foreign")',
+            '            unsafe.size = 4',
+            '            bundle.addfile(unsafe, io.BytesIO(b"evil"))',
+            '            metadata = tarfile.TarInfo(cls.manifest_name)',
+        ])],
+        'aliased git path' => ['metadata = tarfile.TarInfo(cls.manifest_name)' => implode("\n", [
+            'unsafe = tarfile.TarInfo("././.git/config")',
+            '            unsafe.size = 4',
+            '            bundle.addfile(unsafe, io.BytesIO(b"evil"))',
+            '            metadata = tarfile.TarInfo(cls.manifest_name)',
+        ])],
+    };
+    mkdir(dirname($fixture->destinationPath), 0755, recursive: true);
+    file_put_contents(dirname($fixture->destinationPath).'/foreign', 'foreign-sentinel');
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        expect(array_values(array_diff(scandir($fixture->destinationPath), ['.', '..'])))->toBe([])
+            ->and(file_get_contents(dirname($fixture->destinationPath).'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_file($fixture->instance->checkout_path.'/.env'))->toBeTrue();
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(is_dir($fixture->destinationPath))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+})->with(['wrong attempt', 'unknown field', 'unsafe path', 'aliased git path']);
+
+it('rejects a snapshot whose staged objects disagree with its captured index', function (string $fault): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->programReplacements = [
+        'data = json.dumps(manifest, separators=(",", ":")).encode()' => ($fault === 'object mismatch'
+            ? 'manifest["index_objects"] = ["1" * 40]'
+            : 'manifest["files"]["index"] = base64.b64encode(b"invalid-index").decode()')."\n        data = json.dumps(manifest, separators=(\",\", \":\")).encode()",
+    ];
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        expect(is_file($fixture->instance->checkout_path.'/app.php'))->toBeTrue();
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(is_dir($fixture->destinationPath))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+})->with(['object mismatch', 'invalid index']);
+
 it('preserves a foreign destination when capture failed before destination materialization', function (): void {
     $fixture = new TransferArchiveNativeFixture;
     mkdir($fixture->destinationPath, 0755, recursive: true);
@@ -521,11 +859,17 @@ it('restores a foreign stage swapped after its receipt and before atomic destina
 
 it('removes its partially extracted destination after materialization fails', function (): void {
     $fixture = new TransferArchiveNativeFixture;
-    $fixture->transport->failure = 'partial extraction';
+    $fixture->ssh->programReplacements = [
+        'run_checked(["tar", "-xf", "/proc/self/fd/" + str(archive), "-C", destination], pass_fds=(archive, checkout), stdout=subprocess.DEVNULL)' => implode("\n", [
+            'run_checked(["tar", "-xf", "/proc/self/fd/" + str(archive), "-C", destination, "./app.php"], pass_fds=(archive, checkout), stdout=subprocess.DEVNULL)',
+            '            raise OSError("partial extraction interrupted")',
+        ]),
+    ];
 
     try {
         expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
-        expect(count(scandir($fixture->destinationPath)))->toBeGreaterThan(2);
+        expect(file_get_contents($fixture->destinationPath.'/app.php'))->toBe('tracked source')
+            ->and(is_file($fixture->destinationPath.'/.env'))->toBeFalse();
         $fixture->source->discardDestination($fixture->destinationAttempt);
 
         expect(is_dir($fixture->destinationPath))->toBeFalse()
@@ -1317,6 +1661,8 @@ final class TransferArchiveNativeFixture
 
     public readonly TransferArchiveNativeTransport $transport;
 
+    public readonly AppDevSshExecutor $executor;
+
     public readonly RemoteAppInstanceTransferSource $source;
 
     public readonly AppInstanceTransfer $transfer;
@@ -1415,8 +1761,9 @@ final class TransferArchiveNativeFixture
         });
         $this->ssh = new TransferArchiveNativeSsh;
         $this->transport = new TransferArchiveNativeTransport;
+        $this->executor = new AppDevSshExecutor($this->ssh, $keys, $knownHosts);
         $this->source = app()->make(RemoteAppInstanceTransferSource::class, [
-            'ssh' => new AppDevSshExecutor($this->ssh, $keys, $knownHosts),
+            'ssh' => $this->executor,
             'processes' => $this->transport,
             'keys' => $keys,
             'knownHosts' => $knownHosts,
@@ -1500,12 +1847,24 @@ final class TransferArchiveNativeFixture
     /** @param non-empty-list<string> $arguments */
     public function git(array $arguments, string $path): string
     {
-        $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', '-C', $path, ...$arguments]));
+        $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', '-C', $path, ...$arguments], environment: ['GIT_OPTIONAL_LOCKS' => '0']));
         if (! $result->succeeded()) {
             throw new RuntimeException('The native archive Git fixture failed.');
         }
 
         return trim($result->stdout);
+    }
+
+    /** @return array<string, string|false> */
+    public function fileHashes(string $directory): array
+    {
+        $snapshot = [];
+        foreach (File::allFiles($directory) as $file) {
+            $snapshot[$file->getRelativePathname()] = hash_file('sha256', $file->getPathname());
+        }
+        ksort($snapshot);
+
+        return $snapshot;
     }
 
     public function close(): void
@@ -1590,11 +1949,6 @@ final class TransferArchiveNativeTransport implements ProcessRunner
         }
         if ($this->failure === $direction.' typed exception') {
             throw new ResourceOperationException('transport.secret', 'archive-secret-sentinel', 500);
-        }
-        if ($direction === 'upload' && $this->failure === 'partial extraction') {
-            file_put_contents($localTarget, substr(file_get_contents($source), 0, 1536).str_repeat('x', 512));
-
-            return new CommandResult(0, '', '', 1, false);
         }
         if ($this->failure === $direction || $direction === 'upload' && in_array($this->failure, ['truncated upload', 'extraction'], true)) {
             file_put_contents($localTarget, 'partial-archive-secret-sentinel');

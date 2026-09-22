@@ -55,11 +55,11 @@ Orbit can create, register, and remove an AppInstance but cannot move its manage
 - A generated domain can change to the destination Cluster namespace, while an explicit domain remains stable.
 - Dirty source content and unpublished commits increase transfer size and make destination verification more expensive.
 - A failure after cutover can leave old placement cleanup pending while the destination remains authoritative.
-- The Gateway owns transfer and exposes no HTTP route, CLI command, or PHP SDK method for it.
+- The Gateway owns transfer and exposes its AppInstance transfer HTTP endpoint. The current surface is documented in the [transfer reference](/reference/appinstance-transfer).
 
 ## Affects
 
 - Components: apps/gateway
 - ADRs: extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules), [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit), [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes), and [ADR 0065](/decisions/0065-replace-routes-when-domains-change)
 - Detail: [Applications](/domains/applications)
-- Verify: `composer docs-lint`; CommandSurfaceTest omits instance:transfer; Gateway routes omit an AppInstance transfer endpoint
+- Verify: `composer docs-lint`; Gateway transfer API, Domain, and native source-transfer tests

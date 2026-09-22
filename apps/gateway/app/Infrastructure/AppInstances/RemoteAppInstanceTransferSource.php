@@ -82,7 +82,6 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             branch: $facts['branch'] === '' ? null : $facts['branch'],
             detached: $facts['detached'] === '1',
             archiveIdentity: $facts['archive'],
-            refs: $facts['refs'] === '' ? [] : explode(' ', $facts['refs']),
         );
     }
 
@@ -266,8 +265,8 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
                 $node,
                 new RemoteCommand(
                     arguments: ['python3', '-c', match ($operation) {
-                        'capture' => TransferSourceProgram::definitions()."\n",
-                        'materialize' => TransferDestinationProgram::definitions()."\n",
+                        'capture' => TransferSourceProgram::definitions()."\n".TransferGitSnapshotProgram::definitions()."\n",
+                        'materialize' => TransferDestinationProgram::definitions()."\n".TransferGitSnapshotProgram::definitions()."\n",
                         default => '',
                     }.TransferArchiveProgram::script(), $operation],
                     input: json_encode([
@@ -401,14 +400,14 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         return "{$user}@{$formattedHost}:{$path}";
     }
 
-    /** @return array{head: string, branch: string, detached: string, archive: string, common: string, refs: string} */
+    /** @return array{head: string, branch: string, detached: string, archive: string, common: string} */
     private function facts(mixed $facts): array
     {
-        if (! is_array($facts) || count($facts) !== 6) {
+        if (! is_array($facts) || count($facts) !== 5) {
             throw $this->failed();
         }
 
-        foreach (['head', 'branch', 'detached', 'archive', 'common', 'refs'] as $required) {
+        foreach (['head', 'branch', 'detached', 'archive', 'common'] as $required) {
             if (! is_string($facts[$required] ?? null)) {
                 throw $this->failed();
             }
@@ -416,7 +415,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
 
         return [
             'head' => $facts['head'], 'branch' => $facts['branch'], 'detached' => $facts['detached'],
-            'archive' => $facts['archive'], 'common' => $facts['common'], 'refs' => $facts['refs'],
+            'archive' => $facts['archive'], 'common' => $facts['common'],
         ];
     }
 

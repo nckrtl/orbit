@@ -191,7 +191,6 @@ final class Orb245TransferSource implements AppInstanceTransferSource
             branch: null,
             detached: true,
             archiveIdentity: '/tmp/orbit-transfer.tar',
-            refs: ['main', 'unpublished'],
         );
         $this->captures[] = $capture;
 

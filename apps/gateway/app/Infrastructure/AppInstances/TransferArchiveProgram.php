@@ -256,9 +256,6 @@ final class TransferArchiveProgram
             def run_checked(arguments, **options):
                 return subprocess.run(arguments, check=True, stderr=subprocess.DEVNULL, **options)
 
-            def git_output(source, arguments, checkout):
-                return run_checked(["git", *arguments], cwd=source, pass_fds=(checkout,), stdout=subprocess.PIPE).stdout.decode().strip()
-
             def open_artifact(workspace, key, flags):
                 descriptor = os.open(artifact_names[key], flags | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=workspace)
                 try:
@@ -279,35 +276,24 @@ final class TransferArchiveProgram
 
             def capture_owned(workspace, checkout, receipt):
                 source = "/proc/self/fd/" + str(checkout)
-                head = git_output(source, ["rev-parse", "HEAD"], checkout)
-                branch = git_output(source, ["rev-parse", "--abbrev-ref", "HEAD"], checkout)
-                detached = branch == "HEAD"
+                snapshot = TransferGitSnapshot.read(checkout)
                 common = receipt["common_path"] or ""
-                refs = git_output(source, ["for-each-ref", "--format=%(refname:short)", "refs/heads"], checkout)
                 archive = open_artifact(workspace, "archive", os.O_RDWR)
                 try:
                     os.ftruncate(archive, 0)
-                    if request["layout"] == "worktree":
-                        bundle = open_artifact(workspace, "bundle", os.O_RDWR)
-                        try:
-                            os.ftruncate(bundle, 0)
-                            run_checked(["git", "bundle", "create", "-", "HEAD"], cwd=source, pass_fds=(checkout,), stdout=bundle)
-                        finally:
-                            os.close(bundle)
-                        run_checked(["tar", "--exclude=.git", "-cf", "-", "."], cwd=source, pass_fds=(checkout,), stdout=archive)
-                        run_checked([
-                            "tar", "-rf", "/proc/self/fd/" + str(archive),
-                            "-C", "/proc/self/fd/" + str(workspace), bundle_name,
-                        ], pass_fds=(archive, workspace), stdout=subprocess.DEVNULL)
-                    else:
-                        run_checked(["tar", "-cf", "-", "."], cwd=source, pass_fds=(checkout,), stdout=archive)
+                    run_checked(["tar", "--exclude=./.git", "-cf", "-", "."], cwd=source, pass_fds=(checkout,), stdout=archive)
+                    bundle = open_artifact(workspace, "bundle", os.O_RDWR)
+                    try:
+                        TransferGitSnapshot.append(checkout, archive, bundle, snapshot, request["transfer_id"], attempt)
+                    finally:
+                        os.close(bundle)
                     os.fsync(archive)
                 finally:
                     os.close(archive)
                 return {
-                    "head": head, "branch": "" if detached else branch, "detached": "1" if detached else "0",
+                    "head": snapshot["head"], "branch": snapshot["branch"] or "", "detached": "1" if snapshot["branch"] is None else "0",
                     "archive": root_path + "/" + workspace_name + "/archive.tar",
-                    "common": common, "refs": " ".join(refs.splitlines()),
+                    "common": common,
                 }
 
             def materialize(workspace):
@@ -316,20 +302,11 @@ final class TransferArchiveProgram
                     destination = "/proc/self/fd/" + str(checkout)
                     archive = open_artifact(workspace, "archive", os.O_RDONLY)
                     try:
+                        snapshot = TransferGitSnapshot.inspect(archive, request)
                         run_checked(["tar", "-xf", "/proc/self/fd/" + str(archive), "-C", destination], pass_fds=(archive, checkout), stdout=subprocess.DEVNULL)
                     finally:
                         os.close(archive)
-                    if not os.path.isdir(destination + "/.git"):
-                        run_checked(["git", "init", "--quiet"], cwd=destination, pass_fds=(checkout,), stdout=subprocess.DEVNULL)
-                        bundles = [name for name in os.listdir(destination) if name.endswith(".bundle") and os.path.isfile(destination + "/" + name)]
-                        if len(bundles) == 1:
-                            run_checked(["git", "fetch", "--quiet", "./" + bundles[0], "HEAD"], cwd=destination, pass_fds=(checkout,), stdout=subprocess.DEVNULL)
-                            os.unlink(destination + "/" + bundles[0])
-                        if request["detached"] or not request["branch"]:
-                            arguments = ["git", "checkout", "--quiet", "--detach", request["head"]]
-                        else:
-                            arguments = ["git", "checkout", "--quiet", "-B", request["branch"], request["head"]]
-                        run_checked(arguments, cwd=destination, pass_fds=(checkout,), stdout=subprocess.DEVNULL)
+                    TransferGitSnapshot.restore(checkout, snapshot)
                     owner.confirm_current()
                 return "MATERIALIZED"
 

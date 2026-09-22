@@ -1403,7 +1403,6 @@ it('captures source as an independent destination checkout without mutating sour
 
     expect($this->sources->captures[0]->detached)->toBeTrue()
         ->and($this->sources->captures[0]->head)->toBe(str_repeat('a', 40))
-        ->and($this->sources->captures[0]->refs)->toBe(['main', 'unpublished'])
         ->and($this->sources->mutatedSource)->toBeFalse()
         ->and($this->sources->materialized[0]->layout)->toBe(AppInstanceSourceLayout::Checkout)
         ->and($this->sources->materialized[0]->path)->toBe('/srv/orbit/apps/shop/web');

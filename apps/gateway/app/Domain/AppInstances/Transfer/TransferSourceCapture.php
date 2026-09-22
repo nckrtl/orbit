@@ -8,9 +8,6 @@ use App\Domain\AppInstances\AppInstanceSourceLayout;
 
 final readonly class TransferSourceCapture
 {
-    /**
-     * @param  list<string>  $refs
-     */
     public function __construct(
         public int $appInstanceId,
         public int $nodeId,
@@ -21,6 +18,5 @@ final readonly class TransferSourceCapture
         public ?string $branch,
         public bool $detached,
         public string $archiveIdentity,
-        public array $refs,
     ) {}
 }
