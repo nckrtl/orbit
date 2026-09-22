@@ -84,8 +84,17 @@ final readonly class TaskScheduler
                 try {
                     $this->actor->execute($group, $observation, $decision);
                     $this->advance($group, $task, $decision);
+                    if ($task->communication_failures > 0) {
+                        $task->update(['communication_failures' => 0]);
+                    }
                 } catch (AgentDriverException $exception) {
                     $decision = TaskSessionDecision::escalate($exception->getMessage());
+                    $task->increment('communication_failures');
+                    $task->refresh();
+                    if ($task->communication_failures >= 5) {
+                        $task->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
+                        $group->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
+                    }
                     $this->actor->execute($group, $observation, $decision);
                 }
 

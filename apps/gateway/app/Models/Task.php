@@ -21,6 +21,10 @@ use Illuminate\Support\Carbon;
  * @property int $review_attempt
  * @property int|null $review_handled_comment_id
  * @property int|null $review_reminder_attempt
+ * @property bool $assistance_requested
+ * @property string|null $assistance_reason
+ * @property int $communication_failures
+ * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
  * @property TaskStatus $status
@@ -64,6 +68,7 @@ final class Task extends Model
         'review_attempt',
         'review_handled_comment_id',
         'review_reminder_attempt',
+        'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */
@@ -103,6 +108,9 @@ final class Task extends Model
             'review_attempt' => 'integer',
             'review_handled_comment_id' => 'integer',
             'review_reminder_attempt' => 'integer',
+            'assistance_requested' => 'boolean',
+            'communication_failures' => 'integer',
+            'resolution_delivered_comment_id' => 'integer',
         ];
     }
 }
