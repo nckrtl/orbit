@@ -16,5 +16,6 @@ final readonly class RegisterAppInstanceData
         public ?string $instanceName,
         public ?string $root,
         public ?string $domain,
+        public bool $runSetup = false,
     ) {}
 }

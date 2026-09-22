@@ -29,6 +29,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -61,13 +63,14 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         private RouteStateResolver $routeState,
         private ?CascadeAppInstanceSchedulesAction $schedules = null,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?ProjectLifecycleRunner $lifecycle = null,
     ) {}
 
-    public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    public function execute(AppInstance $appInstance, bool $force, bool $runTeardown = true): AppInstanceRemoval
     {
         $instanceId = $appInstance->id;
         $instanceName = $appInstance->name;
-        $removal = $this->performRemoval($appInstance, $force);
+        $removal = $this->performRemoval($appInstance, $force, $runTeardown);
         $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
 
         if (AppInstance::query()->whereKey($instanceId)->exists()) {
@@ -87,12 +90,12 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $removal;
     }
 
-    private function performRemoval(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    private function performRemoval(AppInstance $appInstance, bool $force, bool $runTeardown): AppInstanceRemoval
     {
         if ($appInstance->placedOnAppProd()) {
             return $this->environmentOperations->run(
                 [$appInstance->id],
-                fn (): AppInstanceRemoval => $this->executeOwned($appInstance, $force),
+                fn (): AppInstanceRemoval => $this->executeOwned($appInstance, $force, false),
             );
         }
 
@@ -102,7 +105,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             $ownerIds,
             fn (): AppInstanceRemoval => $this->sourceLock->synchronized(
                 $appInstance->node_id,
-                function () use ($appInstance, $force, $ownerIds): AppInstanceRemoval {
+                function () use ($appInstance, $force, $ownerIds, $runTeardown): AppInstanceRemoval {
                     $currentOwnerIds = $this->removalEnvironmentOwnerIds($appInstance->refresh(), $force);
 
                     if ($currentOwnerIds !== $ownerIds) {
@@ -113,13 +116,13 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                         );
                     }
 
-                    return $this->executeOwned($appInstance, $force);
+                    return $this->executeOwned($appInstance, $force, $runTeardown);
                 },
             ),
         );
     }
 
-    private function executeOwned(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    private function executeOwned(AppInstance $appInstance, bool $force, bool $runTeardown): AppInstanceRemoval
     {
         $snapshot = $appInstance->refresh()->load($this->removalRelations());
 
@@ -127,7 +130,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             return $this->resume($snapshot, $force);
         }
 
-        return $this->advance($this->accept($snapshot, $force));
+        return $this->advance($this->accept($snapshot, $force, $runTeardown));
     }
 
     /** @return list<int> */
@@ -198,7 +201,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $this->advance($removal->refresh());
     }
 
-    private function accept(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    private function accept(AppInstance $appInstance, bool $force, bool $runTeardown): AppInstanceRemoval
     {
         $this->assertSupported($appInstance);
 
@@ -208,15 +211,20 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         return $this->sourceLock->synchronized(
             $appInstance->node_id,
-            fn (): AppInstanceRemoval => $this->acceptLocked($appInstance, $force),
+            fn (): AppInstanceRemoval => $this->acceptLocked($appInstance, $force, $runTeardown),
         );
     }
 
-    private function acceptLocked(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    private function acceptLocked(AppInstance $appInstance, bool $force, bool $runTeardown): AppInstanceRemoval
     {
         $snapshot = $appInstance->refresh()->load($this->removalRelations());
         $this->assertSupported($snapshot);
         [$members, $inventories] = $this->deletionSet($snapshot, $force);
+
+        if ($runTeardown) {
+            ($this->lifecycle ?? app(ProjectLifecycleRunner::class))->run($snapshot, LifecyclePhase::Teardown);
+        }
+
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
         /** @var AppInstanceRemoval $operation */

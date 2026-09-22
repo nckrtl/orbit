@@ -25,6 +25,8 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectTypeClassifier;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
@@ -56,6 +58,7 @@ final readonly class RegisterAppInstanceAction
         private DevelopmentAppInstanceProvisioner $provisioner,
         private DevelopmentAppInstanceConfigurator $configuration,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?ProjectLifecycleRunner $lifecycle = null,
     ) {}
 
     /** @return array{app: OrbitApp, primary: AppInstance, instances: list<AppInstance>, created: bool} */
@@ -69,6 +72,10 @@ final readonly class RegisterAppInstanceAction
                 $result['primary']->id,
                 AppInstanceData::fromModel($result['primary'])->toArray(),
             );
+        }
+
+        if ($data->runSetup && ! $result['primary']->placedOnAppProd()) {
+            ($this->lifecycle ?? app(ProjectLifecycleRunner::class))->run($result['primary'], LifecyclePhase::Setup);
         }
 
         return $result;

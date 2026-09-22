@@ -8,6 +8,7 @@ use App\Actions\AppInstances\CreateAppInstanceAction;
 use App\Actions\AppInstances\ListAppInstancesAction;
 use App\Actions\AppInstances\RegisterAppInstanceAction;
 use App\Actions\AppInstances\RemoveAppInstanceAction;
+use App\Actions\AppInstances\RunInstanceSetupAction;
 use App\Actions\AppInstances\ShowAppInstanceAction;
 use App\Actions\AppInstances\UpdateAppInstanceAction;
 use App\Data\AppInstances\AppInstanceData;
@@ -96,6 +97,15 @@ final class AppInstancesController extends Controller
     ): JsonResponse {
         return response()->json([
             'data' => AppInstanceData::fromModel($action->execute($instance, $request->branch()))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    public function setup(Request $request, AppInstance $instance, RunInstanceSetupAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => AppInstanceData::fromModel($action->execute($instance))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

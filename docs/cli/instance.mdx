@@ -1,11 +1,11 @@
 ---
 title: "instance"
-description: "Create, register, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
+description: "Create, register, set up, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
 ---
 
 An Instance is one placement of a Project on one Node. An Instance on an app-dev Node owns a checkout or worktree. An Instance on an app-prod Node owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Laravel mode comes from the Instance `APP_ENV` value, not from the Node role. Active `laravel-app` Instances have exactly one Route. `monorepo` and `laravel-package` Instances get no Route by default.
 
-The [Applications guide](/domains/applications) walks through creation and registration. The [production release layout](/reference/deployments), [Instance cloning](/reference/appinstance-cloning), [Instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) references own the contracts behind the commands on this page.
+The [Applications guide](/domains/applications) walks through creation and registration. The [production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/appinstance-cloning), [Instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) references own the contracts behind the commands on this page.
 
 ## Commands
 
@@ -15,8 +15,17 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 
 | Command | Result |
 | --- | --- |
-| [`instance:create`](#orbit-instancecreate) | Create a development Instance on an app-dev Node. |
+| [`instance:create`](#orbit-instancecreate) | Create a development Instance on an app-dev Node and run its Project setup steps. |
 | [`instance:register`](#orbit-instanceregister) | Adopt the current Git checkout or worktree as a managed Instance. |
+| [`instance:setup`](#orbit-instancesetup) | Run the Project setup steps for one development Instance. |
+| [`instance:setup-step:create`](#orbit-instancesetup-stepcreate) | Record one named setup step on a Project. |
+| [`instance:setup-step:list`](#orbit-instancesetup-steplist) | List a Project's setup steps. |
+| [`instance:setup-step:update`](#orbit-instancesetup-stepupdate) | Change one named setup step. |
+| [`instance:setup-step:destroy`](#orbit-instancesetup-stepdestroy) | Remove one named setup step. |
+| [`instance:teardown-step:create`](#orbit-instanceteardown-stepcreate) | Record one named teardown step on a Project. |
+| [`instance:teardown-step:list`](#orbit-instanceteardown-steplist) | List a Project's teardown steps. |
+| [`instance:teardown-step:update`](#orbit-instanceteardown-stepupdate) | Change one named teardown step. |
+| [`instance:teardown-step:destroy`](#orbit-instanceteardown-stepdestroy) | Remove one named teardown step. |
 | [`instance:list`](#orbit-instancelist) | List Instances. |
 | [`instance:show`](#orbit-instanceshow) | Show one Instance with its Route, source, and deploy steps. |
 | [`instance:transfer`](#orbit-instancetransfer) | Move a development Instance to another Node. |
@@ -90,8 +99,10 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 The Gateway records each provisioning boundary, so an identical retry resumes an incomplete creation. A retry that adds, removes, or changes `--branch` returns `instance.placement_conflict`. A missing remote branch that differs from the instance name returns `instance.branch_resolution_failed`. When `--branch` matches the instance name and the remote branch is missing, Orbit creates that branch from `default_branch`.
 
 <Note>
-Active means Orbit prepared the source, selected any PHP runtime, aligned a Laravel `APP_URL`, and published the Route. It does not mean the application is healthy; missing dependencies or an application key can still return HTTP 500.
+Active means Orbit prepared the source, selected any PHP runtime, aligned a Laravel `APP_URL`, published the Route, and ran the Project setup steps. An empty setup list counts as success. The application can still fail for a reason outside those steps.
 </Note>
+
+A setup command that exits non-zero or times out removes the new Instance after the teardown list runs. The checkout from that attempt is deleted. [Instance setup and teardown](/reference/instance-setup) owns the failure codes and the retry boundary.
 
 ## orbit instance:register
 
@@ -113,6 +124,7 @@ orbit instance:register [options]
 | `--root=PATH` | `public` for an unambiguous Laravel checkout | Confirmed Project root, or a root override for an existing Project. |
 | `--domain=HOST` | generated | Explicit Route domain for the primary source. |
 | `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
+| `--setup` | off | Run the Project setup steps after adoption. A failed step leaves the Instance and the checkout in place. |
 
 The CLI refuses a directory outside a Git checkout and refuses a credential-bearing origin before it sends a request. The Gateway resolves the Project by canonical repository identity, verifies the source on the caller Node, moves it into managed placement, and provisions the same Route and runtime that `instance:create` provisions.
 
@@ -148,7 +160,7 @@ orbit instance:show <instance> [--json]
 
 ## orbit instance:destroy
 
-Remove an Instance. The Gateway clears its Route target, removes every owned Process and Schedule, and deletes the record.
+Remove an Instance. For a development Instance, the Gateway runs the Project teardown steps after source preflight accepts the checkout. A teardown command that exits non-zero stops removal and leaves the Instance in place. The Gateway then clears its Route target, removes every owned Process and Schedule, and deletes the record. Production removal does not run teardown steps.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
@@ -173,8 +185,110 @@ orbit instance:destroy 12 --force
 ```
 
 <Warning>
-Production removal retains `releases/`, `.env`, an existing `database.sqlite`, and local PHP-FPM tuning for recovery. Development removal deletes the checkout. Repeating the same command resumes an interrupted removal from its first unfinished step.
+Production removal retains `releases/`, `.env`, an existing `database.sqlite`, and local PHP-FPM tuning for recovery. Development removal deletes the checkout after the teardown steps succeed. Repeating the same command resumes an interrupted removal from its first unfinished step. A failed teardown step is not an unfinished removal step: the Instance stays, and the next `instance:destroy` runs the teardown list again.
 </Warning>
+
+## orbit instance:setup
+
+Run the Project setup steps for one development Instance. The command runs every step from the start of the list. A failed step leaves the Instance in place.
+
+```bash
+orbit instance:setup <instance> [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Numeric Instance ID. |
+
+```bash
+orbit instance:setup 12
+```
+
+## orbit instance:setup-step:create
+
+Record one named setup step on a Project. The step is a command string. Orbit stores the row and does not write a file into a checkout.
+
+```bash
+orbit instance:setup-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | Step name, unique within the Project setup list. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | required | Numeric Project ID. |
+| `--command=COMMAND` | required | Shell command Orbit runs from the instance directory. |
+| `--timeout=SECONDS` | 600 | Timeout from 1 through 900 seconds. |
+| `--before=NAME` | none | Insert before this step. Exclusive with `--after`. |
+| `--after=NAME` | none | Insert after this step. Exclusive with `--before`. |
+
+```bash
+orbit instance:setup-step:create install-php --project=4 --command='composer install --no-interaction'
+```
+
+[Instance setup and teardown](/reference/instance-setup) owns the field limits, order, and execution contract. List, update, and destroy use the same Project selector and step name.
+
+## orbit instance:setup-step:list
+
+List a Project's setup steps in order.
+
+```bash
+orbit instance:setup-step:list --project=<id> [--json]
+```
+
+## orbit instance:setup-step:update
+
+Change the command, timeout, or position of one setup step.
+
+```bash
+orbit instance:setup-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+```
+
+## orbit instance:setup-step:destroy
+
+Remove one setup step. Interactive confirmation defaults to No. JSON and noninteractive calls require `--yes`.
+
+```bash
+orbit instance:setup-step:destroy <name> --project=<id> [--yes] [--json]
+```
+
+## orbit instance:teardown-step:create
+
+Record one named teardown step on a Project. The arguments match `instance:setup-step:create`.
+
+```bash
+orbit instance:teardown-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+```
+
+```bash
+orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f database/database.sqlite'
+```
+
+## orbit instance:teardown-step:list
+
+List a Project's teardown steps in order.
+
+```bash
+orbit instance:teardown-step:list --project=<id> [--json]
+```
+
+## orbit instance:teardown-step:update
+
+Change the command, timeout, or position of one teardown step.
+
+```bash
+orbit instance:teardown-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+```
+
+## orbit instance:teardown-step:destroy
+
+Remove one teardown step. Interactive confirmation defaults to No. JSON and noninteractive calls require `--yes`.
+
+```bash
+orbit instance:teardown-step:destroy <name> --project=<id> [--yes] [--json]
+```
 
 ## orbit instance:clone
 

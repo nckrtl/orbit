@@ -22,6 +22,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -49,6 +51,8 @@ final readonly class CreateAppInstanceAction
         private ProductionAppInstanceProvisioner $productionProvisioner,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
+        private ?ProjectLifecycleRunner $lifecycle = null,
+        private ?RemoveAppInstanceAction $remover = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -73,6 +77,7 @@ final readonly class CreateAppInstanceAction
             ->where('app_id', $app->id)
             ->where('name', $data->name)
             ->first();
+        $wasActive = $existing instanceof AppInstance && $existing->status === AppInstanceState::Active;
 
         if ($existing instanceof AppInstance) {
             $this->assertDefaultIdentityAvailable($existing, $app);
@@ -129,7 +134,42 @@ final readonly class CreateAppInstanceAction
             },
         );
 
+        if (! $wasActive && ! $result->placedOnAppProd()) {
+            $this->finishSetup($result);
+        }
+
         return $this->announceCreated(['appInstance' => $result, 'created' => $created]);
+    }
+
+    private function finishSetup(AppInstance $instance): void
+    {
+        $runner = $this->lifecycle ?? app(ProjectLifecycleRunner::class);
+
+        try {
+            $runner->run($instance, LifecyclePhase::Setup);
+        } catch (ResourceOperationException $setupFailure) {
+            $details = $setupFailure->details;
+
+            try {
+                $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown);
+            } catch (ResourceOperationException $teardownFailure) {
+                $step = $teardownFailure->details['step'] ?? null;
+
+                if (is_string($step) && $step !== '') {
+                    $details['teardown_step'] = $step;
+                }
+            }
+
+            ($this->remover ?? app(RemoveAppInstanceAction::class))->execute($instance->fresh() ?? $instance, true, false);
+
+            throw new ResourceOperationException(
+                errorCode: 'instance.setup_step_failed',
+                message: 'Setup step failed.',
+                status: 422,
+                previous: $setupFailure,
+                details: $details,
+            );
+        }
     }
 
     /**
