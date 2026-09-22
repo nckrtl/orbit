@@ -117,57 +117,65 @@ async function handleOneShot(req: IncomingMessage, res: ServerResponse): Promise
             : JSON.stringify(body.description ?? {});
 
     const dispatcher = commanderDispatcher(base);
-    const mcpResponse = await undiciFetch(`${base}/mcp`, {
-        method: "POST",
-        dispatcher,
-        headers: {
-            Accept: "application/json, text/event-stream",
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call",
-            params: {
-                name: "create-task",
-                arguments: {
-                    project_id: projectId,
-                    title,
-                    description,
-                    acceptance_criteria: "",
-                    kind: "one-shot",
-                    creation_key: creationKey,
-                },
-            },
-        }),
-    });
-
-    const text = await mcpResponse.text();
-    if (!mcpResponse.ok) {
-        respond(res, mcpResponse.status, {
-            error: `Commander MCP returned HTTP ${mcpResponse.status}.`,
-        });
-        return;
-    }
-
-    let payload: unknown = null;
     try {
-        payload = JSON.parse(text);
-    } catch {
-        const dataLine = text
-            .split("\n")
-            .map((line) => line.trim())
-            .find((line) => line.startsWith("data:"));
+        const mcpResponse = await undiciFetch(`${base}/mcp`, {
+            method: "POST",
+            dispatcher,
+            headers: {
+                Accept: "application/json, text/event-stream",
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                jsonrpc: "2.0",
+                id: 1,
+                method: "tools/call",
+                params: {
+                    name: "create-task",
+                    arguments: {
+                        project_id: projectId,
+                        title,
+                        description,
+                        acceptance_criteria: "",
+                        kind: "one-shot",
+                        creation_key: creationKey,
+                    },
+                },
+            }),
+        });
+
+        const text = await mcpResponse.text();
+        if (!mcpResponse.ok) {
+            respond(res, mcpResponse.status, {
+                error: `Commander MCP returned HTTP ${mcpResponse.status}.`,
+            });
+            return;
+        }
+
+        let payload: unknown = null;
         try {
-            payload = dataLine ? JSON.parse(dataLine.slice(5).trim()) : null;
+            payload = JSON.parse(text);
         } catch {
-            // A malformed event has the same failed outcome as malformed JSON.
+            const dataLine = text
+                .split("\n")
+                .map((line) => line.trim())
+                .find((line) => line.startsWith("data:"));
+            try {
+                payload = dataLine ? JSON.parse(dataLine.slice(5).trim()) : null;
+            } catch {
+                // A malformed event has the same failed outcome as malformed JSON.
+            }
+        }
+
+        const outcome = taskOutcome(payload);
+        respond(res, "error" in outcome ? 502 : 200, outcome);
+    } finally {
+        try {
+            await dispatcher?.close();
+        } catch {
+            // Cleanup must not replace the request's outcome or expose diagnostics.
         }
     }
-
-    const outcome = taskOutcome(payload);
-    respond(res, "error" in outcome ? 502 : 200, outcome);
 }
 
 function record(value: unknown): Record<string, unknown> | null {

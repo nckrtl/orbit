@@ -5,13 +5,16 @@ import { commanderOneShot } from "./commander-oneshot";
 
 const mocks = vi.hoisted(() => ({
     fetch: vi.fn(),
+    close: vi.fn<() => Promise<void>>(),
+    readFileSync: vi.fn(() => Buffer.from("test-only-ca")),
     Agent: vi.fn(
         class {
-            close = vi.fn(async () => undefined);
+            close = mocks.close;
         },
     ),
 }));
 vi.mock("undici", () => ({ fetch: mocks.fetch, Agent: mocks.Agent }));
+vi.mock("node:fs", () => ({ readFileSync: mocks.readFileSync }));
 
 const requestBody = {
     project_id: "orbit",
@@ -23,10 +26,92 @@ const requestBody = {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.close.mockReset().mockResolvedValue(undefined);
     vi.stubEnv("COMMANDER_MCP_TOKEN", "test-only-secret");
     vi.stubEnv("COMMANDER_URL", "https://commander.example");
     vi.stubEnv("COMMANDER_CA_PATH", "");
     vi.stubEnv("COMMANDER_TLS_INSECURE", "0");
+});
+
+describe("Commander request-owned dispatcher", () => {
+    it.each(["success", "http", "parse", "fetch", "read"])(
+        "closes exactly once after %s",
+        async (outcome) => {
+            vi.stubEnv("COMMANDER_URL", "https://commander.test");
+            const sequence: string[] = [];
+            mocks.close.mockImplementation(async () => {
+                sequence.push("close");
+            });
+            mocks.fetch.mockImplementation(async () => {
+                sequence.push("fetch");
+                if (outcome === "fetch") throw new Error("test-only-secret");
+                return {
+                    ok: outcome !== "http",
+                    status: outcome === "http" ? 503 : 200,
+                    text: async () => {
+                        sequence.push("read");
+                        if (outcome === "read") throw new Error("test-only-secret");
+                        return outcome === "parse"
+                            ? "invalid JSON"
+                            : JSON.stringify({
+                                  result: { structuredContent: { task: { id: 42 } } },
+                              });
+                    },
+                };
+            });
+
+            const response = await request();
+
+            expect(response.status).toBe(
+                { success: 200, http: 503, parse: 502, fetch: 500, read: 500 }[outcome],
+            );
+            expect(mocks.Agent).toHaveBeenCalledExactlyOnceWith({
+                connect: { rejectUnauthorized: false },
+            });
+            expect(mocks.close).toHaveBeenCalledOnce();
+            expect(sequence).toEqual(
+                outcome === "fetch" ? ["fetch", "close"] : ["fetch", "read", "close"],
+            );
+        },
+    );
+
+    it("keeps configured CA ownership and closes its dispatcher", async () => {
+        vi.stubEnv("COMMANDER_CA_PATH", "/synthetic/test-only-ca.pem");
+        upstream({ result: { structuredContent: { task: { id: 42 } } } });
+
+        expect(await request()).toMatchObject({ status: 200 });
+
+        expect(mocks.readFileSync).toHaveBeenCalledExactlyOnceWith("/synthetic/test-only-ca.pem");
+        expect(mocks.Agent).toHaveBeenCalledExactlyOnceWith({
+            connect: { ca: Buffer.from("test-only-ca") },
+        });
+        expect(mocks.close).toHaveBeenCalledOnce();
+    });
+
+    it("does not allocate or close the default trusted-host dispatcher", async () => {
+        upstream({ result: { structuredContent: { task: { id: 42 } } } });
+        expect(await request()).toMatchObject({ status: 200 });
+        expect(mocks.fetch.mock.calls[0]![1].dispatcher).toBeUndefined();
+        expect(mocks.Agent).not.toHaveBeenCalled();
+        expect(mocks.close).not.toHaveBeenCalled();
+    });
+
+    it.each([true, false])(
+        "does not mask the request outcome when close rejects (success=%s)",
+        async (success) => {
+            vi.stubEnv("COMMANDER_TLS_INSECURE", "1");
+            mocks.close.mockRejectedValue(new Error("test-only-secret"));
+            if (success) upstream({ result: { structuredContent: { task: { id: 42 } } } });
+            else mocks.fetch.mockRejectedValue(new Error("test-only-secret"));
+
+            expect(await request()).toEqual(
+                success
+                    ? { status: 200, body: { task: { id: 42 } } }
+                    : { status: 500, body: { error: "Commander one-shot request failed." } },
+            );
+            expect(mocks.close).toHaveBeenCalledOnce();
+        },
+    );
 });
 
 afterEach(() => vi.unstubAllEnvs());
