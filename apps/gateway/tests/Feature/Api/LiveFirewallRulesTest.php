@@ -70,15 +70,28 @@ describe('firewall:live:list', function (): void {
             ->toMatchArray(['name' => 'orbit:gateway-https', 'match' => 'missing']);
     });
 
-    it('returns no live or missing rows when UFW cannot be read', function (): void {
-        live_firewall_ssh(throws: true);
+    it('returns only bounded backend status and empty rows when UFW is unavailable', function (
+        string $stdout,
+        bool $throws,
+        int $exitCode,
+        bool $truncated,
+        string $backend,
+    ): void {
+        live_firewall_ssh($stdout, $throws, $exitCode, $truncated);
 
         $this->getJson($this->url)->assertOk()->assertJsonPath('data', [
-            'backend_status' => 'unreachable',
+            'backend_status' => $backend,
             'live' => [],
             'missing' => [],
         ]);
-    });
+    })->with([
+        'transport exception' => ['', true, 0, false, 'unreachable'],
+        'nonzero exit' => ['secret-output', false, 1, false, 'unreachable'],
+        'truncated active output' => ["Status: active\nsecret-output", false, 0, true, 'unreachable'],
+        'malformed output' => ['secret-output', false, 0, false, 'unreachable'],
+        'inactive backend' => ["Status: inactive\nsecret-output", false, 0, false, 'inactive'],
+        'absent backend' => ["Status: absent\nsecret-output", false, 0, false, 'absent'],
+    ]);
 
     it('offers no route that changes a live rule', function (): void {
         $routes = collect(app('router')->getRoutes()->getRoutes())
@@ -89,16 +102,18 @@ describe('firewall:live:list', function (): void {
     });
 });
 
-function live_firewall_ssh(string $stdout = '', bool $throws = false): void
+function live_firewall_ssh(string $stdout = '', bool $throws = false, int $exitCode = 0, bool $truncated = false): void
 {
     $nodeId = test()->node->id;
     $stdout = str_replace('NODE', (string) $nodeId, $stdout);
 
-    app()->instance(SshExecutor::class, new class($stdout, $throws) implements SshExecutor
+    app()->instance(SshExecutor::class, new class($stdout, $throws, $exitCode, $truncated) implements SshExecutor
     {
         public function __construct(
             private string $stdout,
             private bool $throws,
+            private int $exitCode,
+            private bool $truncated,
         ) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -107,7 +122,7 @@ function live_firewall_ssh(string $stdout = '', bool $throws = false): void
                 throw new RuntimeException('node unreachable');
             }
 
-            return new CommandResult(0, $this->stdout, '', 1, false);
+            return new CommandResult($this->exitCode, $this->stdout, 'secret-stderr', 1, $this->truncated);
         }
     });
 }

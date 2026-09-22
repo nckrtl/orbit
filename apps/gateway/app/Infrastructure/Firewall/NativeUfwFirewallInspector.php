@@ -10,20 +10,12 @@ use App\Domain\Firewall\FirewallInspectionBatchData;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
-use App\Infrastructure\Processes\CommandDeadline;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Domain\Firewall\LiveFirewallBackendStatus;
 
 final readonly class NativeUfwFirewallInspector implements FirewallInspector
 {
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
-        private CommandDeadline $deadline = new CommandDeadline,
+        private NativeLiveUfwReader $live,
         private UfwStatusParser $parser = new UfwStatusParser,
     ) {}
 
@@ -37,40 +29,19 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
             }
         }
 
-        $host = $node->wireguard_ip;
-        if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
-            throw new DoctorInspectionException;
-        }
-        try {
-            $r = $this->ssh->execute(
-                new SshConnection(
-                    $host,
-                    $node->user,
-                    22,
-                    $this->keys->privateKeyPath(),
-                    $this->knownHosts->path(),
-                    commandTimeout: $this->deadline->cap(30.0),
-                ),
-                new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
-            );
-        } catch (\Throwable) {
-            throw new DoctorInspectionException;
-        }
-        if (! $r->succeeded() || $r->truncated) {
-            throw new DoctorInspectionException;
-        }
-        if (preg_match('/\AStatus:\s+inactive\s*$/mi', $r->stdout) === 1) {
-            return $this->uniformResult(FirewallBackendStatus::Inactive, $targets);
-        }
-        if (preg_match('/\AStatus:\s+absent\s*$/mi', $r->stdout) === 1) {
-            return $this->uniformResult(FirewallBackendStatus::Absent, $targets);
-        }
-        if (preg_match('/\AStatus:\s+active\s*$/mi', $r->stdout) !== 1) {
-            throw new DoctorInspectionException;
+        $status = $this->live->read($node);
+        $backend = match ($status['backend']) {
+            LiveFirewallBackendStatus::Active => FirewallBackendStatus::Active,
+            LiveFirewallBackendStatus::Inactive => FirewallBackendStatus::Inactive,
+            LiveFirewallBackendStatus::Absent => FirewallBackendStatus::Absent,
+            LiveFirewallBackendStatus::Unreachable => throw new DoctorInspectionException,
+        };
+        if ($backend !== FirewallBackendStatus::Active) {
+            return $this->uniformResult($backend, $targets);
         }
         try {
             $ownerships = $this->parser->ownerships(
-                $r->stdout,
+                $status['stdout'],
                 array_map(
                     static fn (FirewallInspectionTarget $target): UfwRuleShape => new UfwRuleShape(
                         $target->shape->comment,

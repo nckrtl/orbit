@@ -8,7 +8,9 @@ use App\Domain\Firewall\FirewallInspectionShape;
 use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
+use App\Infrastructure\Firewall\NativeLiveUfwReader;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -22,6 +24,37 @@ use App\Models\Node;
 it('defines the firewall inspection contract', function (): void {
     expect(interface_exists(FirewallInspector::class))->toBeTrue();
 });
+
+it('resolves the shared read-only observer and request deadline through the container', function (): void {
+    $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, false));
+    $deadline = new CommandDeadline(static fn (): float => 10.0);
+    $deadline->start(7.5);
+    app()->instance(SshExecutor::class, $ssh);
+    app()->instance(SshKeyProvider::class, new InspectorFakeKeys);
+    app()->instance(KnownHostsStore::class, new InspectorFakeHosts);
+    app()->instance(CommandDeadline::class, $deadline);
+
+    app(FirewallInspector::class)->inspect([inspector_target()]);
+
+    expect($ssh->connections)->toEqual([
+        new SshConnection('10.44.0.3', 'nckrtl', 22, '/key', '/known', commandTimeout: 7.5),
+    ])->and($ssh->arguments)->toBe([['sudo', 'ufw', 'status', 'numbered']]);
+});
+
+it('refuses ineligible nodes before observation without exposing diagnostics', function (string $platform, ?string $address): void {
+    $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, false));
+    $target = inspector_target();
+    $target->node->platform = $platform;
+    $target->node->wireguard_ip = $address;
+
+    expect(fn () => inspector($ssh)->inspect([$target]))->toThrow(function (DoctorInspectionException $exception): void {
+        expect($exception->getMessage())->toBe('')->and($exception->getPrevious())->toBeNull();
+    })->and($ssh->arguments)->toBeEmpty();
+})->with([
+    'unsupported platform' => ['darwin', '10.44.0.3'],
+    'missing WireGuard address' => ['linux', null],
+    'empty WireGuard address' => ['linux', ''],
+]);
 
 it('inspects an exact active rule with the fixed read-only command', function (): void {
     $ssh = new InspectorFakeSsh(
@@ -130,6 +163,23 @@ it('performs fresh observations for separate inspections and nodes', function ()
         ->toBe(['10.44.0.3', '10.44.0.4']);
 });
 
+it('keeps distinct classification results in target order', function (): void {
+    $ssh = new InspectorFakeSsh(new CommandResult(
+        0,
+        "Status: active\n[ 1] 10.44.0.3 9100/tcp on orbit ALLOW IN 10.44.0.2 # orbit:metrics-node-exporter\n",
+        '',
+        1,
+        false,
+    ));
+    $inspector = inspector($ssh);
+
+    expect($inspector->inspect([inspector_target(), inspector_metrics_target()])->rules)
+        ->toBe([FirewallRuleInspectionStatus::Missing, FirewallRuleInspectionStatus::Exact])
+        ->and($inspector->inspect([inspector_metrics_target(), inspector_target()])->rules)
+        ->toBe([FirewallRuleInspectionStatus::Exact, FirewallRuleInspectionStatus::Missing])
+        ->and($ssh->arguments)->toHaveCount(2);
+});
+
 it('rejects targets from different nodes before observing UFW', function (): void {
     $ssh = new InspectorFakeSsh(new CommandResult(0, "Status: active\n", '', 1, false));
 
@@ -183,8 +233,8 @@ it('maps missing, drift, and inactive observations', function (
     FirewallRuleInspectionStatus $status,
 ): void {
     $result = inspector(new InspectorFakeSsh(new CommandResult(0, $output, '', 1, false)))
-        ->inspect([inspector_target()]);
-    expect($result->backend)->toBe($backend)->and($result->rules)->toBe([$status]);
+        ->inspect([inspector_target(), inspector_metrics_target()]);
+    expect($result->backend)->toBe($backend)->and($result->rules)->toBe([$status, FirewallRuleInspectionStatus::Missing]);
 })->with([
     ["Status: active\n\nTo Action From\n", FirewallBackendStatus::Active, FirewallRuleInspectionStatus::Missing],
     [
@@ -193,6 +243,7 @@ it('maps missing, drift, and inactive observations', function (
         FirewallRuleInspectionStatus::Drift,
     ],
     ["Status: inactive\n", FirewallBackendStatus::Inactive, FirewallRuleInspectionStatus::Missing],
+    ["Status: absent\n", FirewallBackendStatus::Absent, FirewallRuleInspectionStatus::Missing],
 ]);
 
 it('fails closed for command errors and transport timeouts without redaction leaks', function (): void {
@@ -257,7 +308,7 @@ function inspector_metrics_target(int $nodeId = 7, string $wireguardIp = '10.44.
 
 function inspector(InspectorFakeSsh $ssh): NativeUfwFirewallInspector
 {
-    return new NativeUfwFirewallInspector($ssh, new InspectorFakeKeys, new InspectorFakeHosts);
+    return new NativeUfwFirewallInspector(new NativeLiveUfwReader($ssh, new InspectorFakeKeys, new InspectorFakeHosts));
 }
 
 final class InspectorFakeSsh implements SshExecutor
