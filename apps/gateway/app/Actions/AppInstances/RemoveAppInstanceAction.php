@@ -230,7 +230,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
             foreach ($ranTeardown ? $members : [] as $member) {
                 $this->assertMemberPathAvailable($member);
-                $after = $this->inspect($member, true);
+                $after = $this->inspect($member, $force);
                 $before = $inventories[$member->id];
 
                 foreach (['layout', 'repositoryIdentity', 'checkoutPath', 'root', 'branch', 'startingCommit', 'commonRepositoryPath', 'sourceIdentity', 'linkedWorktreePaths'] as $field) {

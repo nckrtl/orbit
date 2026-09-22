@@ -78,19 +78,20 @@ beforeEach(function (): void {
     );
 });
 
-it('captures teardown file changes after normal source preflight', function (): void {
+it('refuses newly dirty teardown before acceptance and requires an explicit force retry', function (): void {
     $instance = orb181_coordinator_instance();
     ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
         expect($this->orb181Inspector->calls)->not->toBeEmpty();
-        $this->orb181Inspector->contentVersions[$instance->id] = 1;
         $this->orb181Inspector->normalUnsafeIds[] = $instance->id;
 
         return 0;
     });
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-    $removal = $this->orb181Coordinator->execute($instance, false);
-    expect($removal->status->value)->toBe('completed')->and($transport->inputs)->toHaveCount(1);
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
+    $removal = $this->orb181Coordinator->execute($instance, true);
+    expect($removal->status->value)->toBe('completed')->and($transport->inputs)->toHaveCount(2);
 });
 
 it('refuses source identity changes made by teardown', function (): void {
@@ -977,9 +978,6 @@ function orb182_coordinator_member(AppInstance $checkout, string $name): AppInst
 
 final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRemoval
 {
-    /** @var array<int, int> */
-    public array $contentVersions = [];
-
     /** @var list<string> */
     public array $calls = [];
 
@@ -1038,10 +1036,6 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
             'source_identity' => "test:{$appInstance->id}",
             'linked_worktree_paths' => $paths,
         ];
-
-        if (isset($this->contentVersions[$appInstance->id])) {
-            $payload['content_version'] = $this->contentVersions[$appInstance->id];
-        }
 
         return new AppInstanceSourceInventory(
             appInstanceId: $appInstance->id,

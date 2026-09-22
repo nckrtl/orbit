@@ -69,7 +69,9 @@ orbit instance:setup <instance>
 
 ## Run teardown
 
-`instance:destroy` of a development Instance confirms removal and preflights the source under the [removal rules](/reference/appinstance-removal). After preflight accepts the source, Orbit runs the teardown list from the instance directory. After teardown, Orbit checks the same source ownership again and captures a fresh removal snapshot before deleting the Route, source, and Instance record. Teardown may remove application files, but must preserve the checkout, its Git identity, and its registered worktree set. Each member of a forced checkout removal runs its own teardown list.
+`instance:destroy` of a development Instance confirms removal and preflights the source under the [removal rules](/reference/appinstance-removal). After preflight accepts the source, Orbit runs the teardown list from the instance directory. After teardown, Orbit checks the same source ownership again and captures a fresh removal snapshot before deleting the Route, source, and Instance record. 
+
+Teardown may remove ignored application files, but must preserve the checkout, its Git identity, and its registered worktree set. If teardown changes tracked files, normal removal refuses before acceptance; inspect the change and retry with `--force` to discard it. Each member of a forced checkout removal runs its own teardown list.
 
 The first teardown command that exits non-zero or times out stops removal. The Route, source, and Instance record stay. The command exits non-zero with `instance.teardown_step_failed` and the step name. Fix the command, or destroy that step, then run `instance:destroy` again.
 

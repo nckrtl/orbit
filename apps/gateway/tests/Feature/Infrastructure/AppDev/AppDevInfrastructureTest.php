@@ -1861,13 +1861,14 @@ function run_app_dev_direct_caddy_removal(bool $failActivation): array
         data: "#!/bin/bash\nargs=(); skip=0; for arg in \"\$@\"; do if [ \"\$skip\" = 1 ]; then skip=0; continue; fi; case \"\$arg\" in -o|-g) skip=1;; *) args+=(\"\$arg\");; esac; done; exec /usr/bin/install \"\${args[@]}\"\n",
     );
     file_put_contents(filename: $bin.'/chown', data: "#!/bin/bash\nexit 0\n");
+    file_put_contents(filename: $bin.'/runuser', data: '#!/bin/bash'."\n".'test "$1" = -u && test "$2" = caddy && test "$3" = -- || exit 97'."\n".'shift 3; exec "$@"'."\n");
     file_put_contents(filename: $bin.'/caddy', data: "#!/bin/bash\nexit 0\n");
     file_put_contents(
         filename: $bin.'/systemctl',
         data: "#!/bin/bash\nprintf '%s\\n' \"\$*\" >> \"\$HARNESS_SERVICE_LOG\"\nif [ \"\$HARNESS_FAIL_ACTIVATION\" = 1 ] && [ ! -e \"\$HARNESS_FAILED\" ]; then touch \"\$HARNESS_FAILED\"; exit 1; fi\nexit 0\n",
     );
 
-    foreach (['install', 'chown', 'caddy', 'systemctl'] as $shim) {
+    foreach (['install', 'chown', 'caddy', 'systemctl', 'runuser'] as $shim) {
         chmod(filename: $bin.'/'.$shim, permissions: 0o755);
     }
 
