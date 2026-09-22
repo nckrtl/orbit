@@ -64,6 +64,8 @@ Route preparation records the replacement Route, target, source replacement link
 
 A failure before cutover restores the source Route, environment, processes, and schedules as authoritative. The Gateway removes successfully reversible destination state and retains bounded recovery evidence when that cleanup is incomplete. Only the identical request can resume.
 
+Route rollback deletes only the recorded pending replacement whose Project, placement, target, and replacement links still match the transfer. It clears the source replacement link, candidate records, and transfer preparation together in one database transaction. Changed or ambiguous Routes stay untouched, and the transfer retains its checkpoint and Route identity. An identical retry must resolve that cleanup before it can start another preparation. A missing candidate is already cleaned up only when the source and remaining ownership evidence are consistent.
+
 Once cutover makes the destination authoritative, retry proceeds only forward. The Gateway never restarts source execution, completes Route publication and runtime activation, and resumes exact old-placement cleanup without copying source again.
 
 For a pending transfer to the same destination, the CLI asks to retry the transfer and names its original source Node, including after cutover. The Gateway still checks that the request matches the pending transfer.

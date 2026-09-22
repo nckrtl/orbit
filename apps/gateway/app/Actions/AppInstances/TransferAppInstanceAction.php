@@ -407,6 +407,18 @@ final readonly class TransferAppInstanceAction
     {
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);
         $transfer = AppInstanceTransfer::query()->findOrFail($transferId);
+        $incomplete = $transfer->recovery_evidence['incomplete'] ?? [];
+
+        if ($transfer->cutover_at === null && is_array($incomplete) && in_array('destination-route', $incomplete, true)) {
+            $this->rollbackRoutePreparation(
+                $transfer,
+                $transfer->failed_step ?? $transfer->current_step,
+                $transfer->error_code ?? 'instance.transfer_failed',
+                array_values(array_filter($incomplete, static fn (mixed $item): bool => is_string($item) && $item !== 'destination-route')),
+            );
+            $transfer->refresh();
+        }
+
         $destination = Node::query()->findOrFail($transfer->destination_node_id);
         $path = StoragePath::parse($transfer->destination_path);
 
@@ -902,13 +914,7 @@ final readonly class TransferAppInstanceAction
         $failedStep = $transfer->current_step;
 
         if ($transfer->cutover_at === null) {
-            $this->restoreBeforeCutover($transfer);
-            $transfer->update([
-                'status' => AppInstanceTransferStatus::Failed,
-                'current_step' => AppInstanceTransferStep::Reserved,
-                'failed_step' => $failedStep,
-                'error_code' => $errorCode,
-            ]);
+            $this->restoreBeforeCutover($transfer, $failedStep, $errorCode);
 
             return;
         }
@@ -920,8 +926,11 @@ final readonly class TransferAppInstanceAction
         ]);
     }
 
-    private function restoreBeforeCutover(AppInstanceTransfer $transfer): void
-    {
+    private function restoreBeforeCutover(
+        AppInstanceTransfer $transfer,
+        AppInstanceTransferStep $failedStep,
+        string $errorCode,
+    ): void {
         $instance = AppInstance::query()->with('node')->find($transfer->app_instance_id);
 
         if (! $instance instanceof AppInstance) {
@@ -947,33 +956,142 @@ final readonly class TransferAppInstanceAction
             }
         }
 
-        if (
-            $transfer->destination_route_id !== null
-            && $transfer->destination_route_id !== $transfer->source_route_id
-        ) {
-            $replacement = Route::query()->find($transfer->destination_route_id);
-
-            if ($replacement instanceof Route && $replacement->status !== RouteStatus::Active) {
-                try {
-                    $replacement->targets()->delete();
-                    $replacement->delete();
-                    Route::query()->whereKey($transfer->source_route_id)->update(['replaced_by_route_id' => null]);
-                    $transfer->update(['destination_route_id' => null]);
-                } catch (Throwable) {
-                    $incomplete[] = 'destination-route';
-                }
-            }
+        try {
+            $this->rollbackRoutePreparation($transfer, $failedStep, $errorCode, $incomplete);
+        } catch (Throwable) {
+            $incomplete[] = 'destination-route';
+            AppInstanceTransfer::query()
+                ->whereKey($transfer->id)
+                ->whereNull('cutover_at')
+                ->whereNull('completed_at')
+                ->update([
+                    'status' => AppInstanceTransferStatus::Failed,
+                    'failed_step' => $failedStep,
+                    'error_code' => $errorCode,
+                    'recovery_evidence' => [
+                        'incomplete' => $incomplete,
+                        'destination_path' => $transfer->destination_path,
+                        'source_path' => $transfer->source_path,
+                    ],
+                ]);
         }
+    }
 
-        if ($incomplete !== []) {
-            $transfer->update([
-                'recovery_evidence' => [
+    /** @param list<string> $incomplete */
+    private function rollbackRoutePreparation(
+        AppInstanceTransfer $transfer,
+        AppInstanceTransferStep $failedStep,
+        string $errorCode,
+        array $incomplete,
+    ): void {
+        DB::transaction(function () use ($transfer, $failedStep, $errorCode, $incomplete): void {
+            $instance = AppInstance::query()->lockForUpdate()->findOrFail($transfer->app_instance_id);
+            $lockedTransfer = AppInstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
+            $source = Route::query()->lockForUpdate()->find($lockedTransfer->source_route_id);
+            $sourceTargets = $source?->targets()->lockForUpdate()->get();
+            $sourceNode = Node::query()->lockForUpdate()->findOrFail($lockedTransfer->source_node_id);
+            $sourcePlacement = $this->routeState->forNode($sourceNode);
+
+            if (
+                $lockedTransfer->app_instance_id !== $instance->id
+                || $lockedTransfer->source_node_id !== $instance->node_id
+                || $lockedTransfer->source_path !== $instance->checkout_path
+                || $lockedTransfer->current_step !== $transfer->current_step
+                || $lockedTransfer->cutover_at !== null
+                || $lockedTransfer->completed_at !== null
+                || $instance->status !== AppInstanceState::Active
+                || ! $source instanceof Route
+                || ! $source->isApp()
+                || $source->app_id !== $instance->app_id
+                || $source->status !== RouteStatus::Active
+                || $source->node_id !== $sourcePlacement->nodeId
+                || $source->cluster_id !== $sourcePlacement->clusterId
+                || ($source->provenance === RouteProvenance::Generated && $source->generation_basis_node_id !== $sourceNode->id)
+                || $source->replaces_route_id !== null
+                || $source->replacement_step !== null
+                || $source->failed_step !== null
+                || $source->error_code !== null
+                || $source->target_set_step !== null
+                || $source->target_set_intent !== null
+                || $sourceTargets?->count() !== 1
+                || $sourceTargets->sole()->app_instance_id !== $instance->id
+                || $sourceTargets->sole()->position !== 0
+            ) {
+                throw $this->conflict('instance.transfer_cleanup_conflict', 'The source Route owner changed before transfer rollback.');
+            }
+
+            $candidateId = $lockedTransfer->destination_route_id;
+            $candidate = $candidateId === null || $candidateId === $source->id
+                ? null
+                : Route::query()->lockForUpdate()->find($candidateId);
+            $related = Route::query()
+                ->whereKeyNot($source->id)
+                ->where(function ($query) use ($source, $candidateId): void {
+                    $query->where('replaces_route_id', $source->id);
+                    if ($candidateId !== null && $candidateId !== $source->id) {
+                        $query->orWhere('replaces_route_id', $candidateId)->orWhere('replaced_by_route_id', $candidateId);
+                    }
+                })
+                ->lockForUpdate()
+                ->get();
+
+            if ($candidate instanceof Route) {
+                $destination = Node::query()->lockForUpdate()->findOrFail($lockedTransfer->destination_node_id);
+                $placement = $this->routeState->forNode($destination);
+                $targets = $candidate->targets()->lockForUpdate()->get();
+
+                if (
+                    ! $candidate->isApp()
+                    || $candidate->app_id !== $instance->app_id
+                    || $candidate->domain !== $lockedTransfer->destination_domain
+                    || $candidate->node_id !== $placement->nodeId
+                    || $candidate->cluster_id !== $placement->clusterId
+                    || $candidate->generation_basis_node_id !== $destination->id
+                    || $candidate->provenance !== RouteProvenance::Generated
+                    || $source->provenance !== RouteProvenance::Generated
+                    || $candidate->publication !== $source->publication
+                    || $candidate->status !== RouteStatus::Pending
+                    || $candidate->replaces_route_id !== $source->id
+                    || $candidate->replaced_by_route_id !== null
+                    || $candidate->replacement_step !== RouteReplacementStep::Reserved
+                    || $candidate->failed_step !== null
+                    || $candidate->error_code !== null
+                    || $candidate->target_set_step !== null
+                    || $candidate->target_set_intent !== null
+                    || $source->replaced_by_route_id !== $candidate->id
+                    || $related->modelKeys() !== [$candidate->id]
+                    || $targets->count() !== 1
+                    || $targets->sole()->app_instance_id !== $instance->id
+                    || $targets->sole()->position !== 0
+                ) {
+                    throw $this->conflict('instance.transfer_cleanup_conflict', 'The recorded transfer Route preparation changed before rollback.');
+                }
+
+                $candidate->targets()->delete();
+                $source->update(['replaced_by_route_id' => null]);
+                $candidate->delete();
+            } elseif (
+                $source->replaced_by_route_id !== null
+                || $related->isNotEmpty()
+                || ($candidateId === $source->id && $source->domain !== $lockedTransfer->destination_domain)
+                || ($candidateId !== null && $candidateId !== $source->id && Route::query()->where('domain', $lockedTransfer->destination_domain)->exists())
+            ) {
+                throw $this->conflict('instance.transfer_cleanup_conflict', 'The remaining transfer Route evidence is inconsistent.');
+            }
+
+            $lockedTransfer->update([
+                'destination_route_id' => null,
+                'status' => AppInstanceTransferStatus::Failed,
+                'current_step' => AppInstanceTransferStep::Reserved,
+                'failed_step' => $failedStep,
+                'error_code' => $errorCode,
+                'recovery_evidence' => $incomplete === [] ? null : [
                     'incomplete' => $incomplete,
-                    'destination_path' => $transfer->destination_path,
-                    'source_path' => $transfer->source_path,
+                    'destination_path' => $lockedTransfer->destination_path,
+                    'source_path' => $lockedTransfer->source_path,
                 ],
             ]);
-        }
+        });
     }
 
     private function conflict(string $errorCode, string $message): ResourceOperationException

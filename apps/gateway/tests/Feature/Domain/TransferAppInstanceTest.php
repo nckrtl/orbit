@@ -16,6 +16,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentValidator;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -380,6 +381,236 @@ it('refuses changed same-domain recovery evidence before transfer cutover', func
     expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id);
     expect($this->projection->calls)->toBe([]);
     $this->assertModelExists($candidate);
+});
+
+it('preserves changed Route owners and rollback evidence through identical retries', function (Closure $change): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RuntimeRelocated);
+    $candidate = Route::query()->findOrFail($transfer->destination_route_id);
+    $change($this, $transfer, $candidate);
+    $routes = Route::query()->orderBy('id')->get()->toArray();
+    $targets = DB::table('route_targets')->orderBy('id')->get()->toArray();
+    $candidateId = $transfer->refresh()->destination_route_id;
+
+    $this->environmentLock->beforeRun = static fn () => throw new ResourceOperationException('instance.transfer_failed', 'Interrupted before cutover.', 409);
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $this->environmentLock->beforeRun = null;
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+
+    expect(Route::query()->orderBy('id')->get()->toArray())->toBe($routes);
+    expect(DB::table('route_targets')->orderBy('id')->get()->toArray())->toEqual($targets);
+    expect($transfer->refresh()->destination_route_id)->toBe($candidateId);
+    expect($transfer->current_step)->toBe(AppInstanceTransferStep::RuntimeRelocated);
+    expect($transfer->status)->toBe(AppInstanceTransferStatus::Failed);
+    expect($transfer->cutover_at)->toBeNull();
+    expect($transfer->recovery_evidence['incomplete'])->toContain('destination-route');
+    expect($this->sources->calls)->toBe([]);
+    expect($this->projection->calls)->toBe([]);
+    expect($this->runtime->calls)->not->toContain('relocate', 'activate');
+})->with([
+    'foreign Project candidate identity' => [function (object $test, AppInstanceTransfer $transfer): void {
+        $foreign = OrbitApp::query()->create(['name' => 'Foreign', 'slug' => 'foreign', 'repository_url' => 'https://example.test/foreign.git', 'default_branch' => 'main', 'root' => 'public']);
+        $route = Route::query()->create(['app_id' => $foreign->id, 'cluster_id' => $test->destinationCluster->id, 'domain' => 'foreign.other.orbit', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]);
+        $transfer->update(['destination_route_id' => $route->id]);
+    }],
+    'generation basis Node' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['generation_basis_node_id' => $test->sourceNode->id]);
+    }],
+    'placement Cluster' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['cluster_id' => $test->sourceCluster->id]);
+    }],
+    'target owner' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $other = orb245_instance($test->orbitApp, $test->sourceNode, 'sibling', 'checkout');
+        $candidate->targets()->update(['app_instance_id' => $other->id]);
+    }],
+    'target order' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->targets()->update(['position' => 1]);
+    }],
+    'replacement progress' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['replacement_step' => RouteReplacementStep::WorkloadCertificate]);
+    }],
+    'candidate source link' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['replaces_route_id' => null]);
+    }],
+    'source candidate link' => [function (object $test): void {
+        $test->route->update(['replaced_by_route_id' => null]);
+    }],
+    'source owns another candidate' => [function (object $test): void {
+        $other = Route::query()->create(['app_id' => $test->orbitApp->id, 'cluster_id' => $test->sourceCluster->id, 'domain' => 'other.dev.orbit', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]);
+        $test->route->update(['replaced_by_route_id' => $other->id]);
+    }],
+    'candidate became active' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['status' => RouteStatus::Active]);
+    }],
+    'candidate became failed' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['status' => RouteStatus::Failed, 'failed_step' => 'workload-certificate', 'error_code' => 'route.failed']);
+    }],
+    'candidate acquired target-set work' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        $candidate->update(['target_set_step' => 'reserved', 'target_set_intent' => ['pending' => true]]);
+    }],
+    'another replacement claims the candidate' => [function (object $test, AppInstanceTransfer $transfer, Route $candidate): void {
+        Route::query()->create(['app_id' => $test->orbitApp->id, 'cluster_id' => $test->sourceCluster->id, 'domain' => 'successor.dev.orbit', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private, 'replaces_route_id' => $candidate->id, 'replacement_step' => RouteReplacementStep::Reserved]);
+    }],
+]);
+
+it('preserves a pending transfer Route changed by the public Route update endpoint', function (): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RuntimeRelocated);
+    $this->markAsGateway($this->sourceNode);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->sourceNode->wireguard_ip]);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this->patchJson("/api/v1/routes/{$transfer->destination_route_id}", ['publication' => 'public'])
+        ->assertOk()
+        ->assertJsonPath('data.publication', 'public');
+    $candidate = Route::query()->with('targets')->findOrFail($transfer->destination_route_id);
+    $before = $candidate->toArray();
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+
+    expect($candidate->refresh()->load('targets')->toArray())->toBe($before);
+    expect($transfer->refresh()->current_step)->toBe(AppInstanceTransferStep::RuntimeRelocated);
+    expect($transfer->recovery_evidence['incomplete'])->toContain('destination-route');
+    expect($this->route->refresh()->replaced_by_route_id)->toBe($candidate->id);
+    expect($this->projection->calls)->toBe([]);
+});
+
+it('rolls back owned Route preparation atomically and retries from a fresh preparation', function (bool $sameDomain): void {
+    if ($sameDomain) {
+        $this->destinationNode->update(['cluster_id' => $this->sourceCluster->id, 'tld' => null]);
+    }
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RoutePrepared);
+    $this->environmentLock->beforeRun = static fn () => throw new ResourceOperationException('instance.transfer_failed', 'Interrupted before cutover.', 409);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+
+    expect($transfer->refresh()->current_step)->toBe(AppInstanceTransferStep::Reserved);
+    expect($transfer->destination_route_id)->toBeNull();
+    expect($transfer->failed_step)->toBe(AppInstanceTransferStep::RoutePrepared);
+    expect($transfer->recovery_evidence)->toBeNull();
+    expect($this->route->refresh()->replaced_by_route_id)->toBeNull();
+    $this->assertModelExists($this->route);
+    $this->assertDatabaseCount('routes', 1);
+    $this->assertDatabaseCount('route_targets', 1);
+    $this->environmentLock->beforeRun = null;
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+    expect($result['transfer']->id)->toBe($transfer->id);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed);
+    expect($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+})->with(['same domain' => true, 'changed domain' => false]);
+
+it('retains all Route rollback writes and journal identity when a database cleanup boundary fails', function (string $trigger): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RoutePrepared);
+    $candidateId = $transfer->destination_route_id;
+    $routes = Route::query()->orderBy('id')->get()->toArray();
+    $targets = DB::table('route_targets')->orderBy('id')->get()->toArray();
+    $this->environmentLock->beforeRun = static fn () => throw new ResourceOperationException('instance.transfer_failed', 'Interrupted before cutover.', 409);
+    DB::unprepared($trigger);
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER transfer_rollback_failure');
+    }
+
+    expect(Route::query()->orderBy('id')->get()->toArray())->toBe($routes);
+    expect(DB::table('route_targets')->orderBy('id')->get()->toArray())->toEqual($targets);
+    expect($transfer->refresh()->destination_route_id)->toBe($candidateId);
+    expect($transfer->current_step)->toBe(AppInstanceTransferStep::RoutePrepared);
+    expect($transfer->failed_step)->toBe(AppInstanceTransferStep::RoutePrepared);
+    expect($transfer->recovery_evidence['incomplete'])->toContain('destination-route');
+    expect($transfer->cutover_at)->toBeNull();
+    $this->environmentLock->beforeRun = null;
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+    expect($result['transfer']->id)->toBe($transfer->id);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed);
+    expect($result['appInstance']->authoritativeRoute()->id)->not->toBe($candidateId);
+    expect($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+})->with([
+    'after target deletion' => <<<'SQL'
+        CREATE TEMP TRIGGER transfer_rollback_failure AFTER DELETE ON route_targets
+        BEGIN SELECT RAISE(FAIL, 'injected rollback target failure'); END
+        SQL,
+    'after candidate deletion' => <<<'SQL'
+        CREATE TEMP TRIGGER transfer_rollback_failure AFTER DELETE ON routes
+        BEGIN SELECT RAISE(FAIL, 'injected rollback Route failure'); END
+        SQL,
+    'after source pointer clearing' => <<<'SQL'
+        CREATE TEMP TRIGGER transfer_rollback_failure AFTER UPDATE OF replaced_by_route_id ON routes
+        WHEN OLD.replaced_by_route_id IS NOT NULL AND NEW.replaced_by_route_id IS NULL
+        BEGIN SELECT RAISE(FAIL, 'injected rollback link failure'); END
+        SQL,
+    'after journal reset' => <<<'SQL'
+        CREATE TEMP TRIGGER transfer_rollback_failure AFTER UPDATE ON app_instance_transfers
+        WHEN OLD.destination_route_id IS NOT NULL AND NEW.destination_route_id IS NULL
+        BEGIN SELECT RAISE(FAIL, 'injected rollback journal failure'); END
+        SQL,
+]);
+
+it('accepts an already absent candidate only with consistent remaining Route ownership', function (): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RuntimeRelocated);
+    Route::query()->findOrFail($transfer->destination_route_id)->delete();
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+
+    expect($transfer->refresh()->current_step)->toBe(AppInstanceTransferStep::Reserved);
+    expect($transfer->destination_route_id)->toBeNull();
+    expect($transfer->recovery_evidence)->toBeNull();
+    expect($this->route->refresh()->replaced_by_route_id)->toBeNull();
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed);
+});
+
+it('retains missing candidate evidence when another Route claims its domain', function (): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RuntimeRelocated);
+    $missingId = $transfer->destination_route_id;
+    Route::query()->findOrFail($missingId)->delete();
+    $other = Route::query()->create(['app_id' => $this->orbitApp->id, 'cluster_id' => $this->destinationCluster->id, 'domain' => $transfer->destination_domain, 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private]);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+
+    $this->assertModelExists($other);
+    expect($transfer->refresh()->destination_route_id)->toBe($missingId);
+    expect($transfer->current_step)->toBe(AppInstanceTransferStep::RuntimeRelocated);
+    expect($transfer->recovery_evidence['incomplete'])->toContain('destination-route');
+    expect($this->route->refresh()->replaced_by_route_id)->toBeNull();
+});
+
+it('finishes unresolved Route rollback before recopying after its owner is repaired', function (): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RuntimeRelocated);
+    $candidate = Route::query()->findOrFail($transfer->destination_route_id);
+    $candidate->targets()->update(['position' => 1]);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    expect($transfer->refresh()->current_step)->toBe(AppInstanceTransferStep::RuntimeRelocated);
+    expect($this->sources->calls)->toBe([]);
+    $candidate->targets()->update(['position' => 0]);
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+    expect($result['transfer']->id)->toBe($transfer->id);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed);
+    expect($result['transfer']->recovery_evidence)->toBeNull();
+    expect($result['appInstance']->authoritativeRoute()->id)->not->toBe($candidate->id);
+    expect($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+});
+
+it('preserves candidate evidence when the source Route disappears before rollback', function (): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::RuntimeRelocated);
+    $candidate = Route::query()->findOrFail($transfer->destination_route_id);
+    $this->environmentLock->beforeRun = function (): void {
+        $this->instance->update(['status' => AppInstanceState::Reserved]);
+        $this->route->delete();
+        throw new ResourceOperationException('instance.transfer_failed', 'Interrupted before cutover.', 409);
+    };
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+
+    $this->assertModelExists($candidate);
+    expect($candidate->refresh()->targets()->count())->toBe(1);
+    expect($transfer->refresh()->destination_route_id)->toBe($candidate->id);
+    expect($transfer->current_step)->toBe(AppInstanceTransferStep::RuntimeRelocated);
+    expect($transfer->recovery_evidence['incomplete'])->toContain('destination-route');
 });
 
 it('keeps an explicit Route identity while moving its scope', function (): void {
