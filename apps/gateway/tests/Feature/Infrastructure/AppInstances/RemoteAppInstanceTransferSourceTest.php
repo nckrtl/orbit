@@ -233,6 +233,14 @@ it('resumes source cleanup after claim deletion and metadata interruptions', fun
     $fixture = new TransferArchiveNativeFixture;
     $fixture->capture();
     $fixture->transfer->update(['cutover_at' => now()]);
+    $journal = $fixture->sourceAttempt->privateRoot.'/'.$fixture->sourceAttempt->id.'.json';
+    $before = stat($journal);
+    $exitCode = null;
+    $fixture->ssh->after = function (SshConnection $connection, RemoteCommand $command, CommandResult $result) use (&$exitCode): CommandResult {
+        $exitCode = $result->exitCode;
+
+        return $result;
+    };
     $fixture->ssh->programReplacements = match ($window) {
         'after claim' => ['moved = self.metadata(scope, self.claim_name)' => 'raise OSError("claim interrupted")'],
         'during deletion' => ['os.unlink(name, dir_fd=directory)' => "os.unlink(name, dir_fd=directory)\n                raise OSError(\"deletion interrupted\")"],
@@ -247,10 +255,18 @@ it('resumes source cleanup after claim deletion and metadata interruptions', fun
 
     try {
         expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeFalse();
+        if ($window === 'torn journal') {
+            expect($exitCode)->toBe(137)
+                ->and(is_dir($fixture->instance->checkout_path))->toBeFalse();
+        }
         $fixture->ssh->programReplacements = [];
         expect($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
             ->and($fixture->source->cleanupSource($fixture->transfer)->sourcePlacementRemoved)->toBeTrue()
             ->and(is_dir($fixture->instance->checkout_path))->toBeFalse();
+        clearstatcache(true, $journal);
+        $after = stat($journal);
+        expect($after['ino'])->toBe($before['ino'])
+            ->and($after['size'])->toBe(32768);
     } finally {
         $fixture->close();
     }
