@@ -83,6 +83,10 @@ Each row holds `app_instance_id`, `release`, `branch`, `commit`, `started_at`, `
 | `GET /api/v1/instances/{instance}/deployments` | Returns recorded deployments for that Instance, newest first, without `events`. |
 | `GET /api/v1/deployments/{deployment}` | Returns one recorded deployment with `events`. |
 
+Use `instance:deployment:list INSTANCE` to list that history and `instance:deployment:show DEPLOYMENT` to read one run. Human history displays each output event as a labeled, quoted string with terminal controls escaped, like live deployment output. It preserves event order and shows a marker when saved output was truncated.
+
+History commands return one JSON object with `--json`. Recorded output keeps its decoded `value` field, including valid Unicode and line breaks. The CLI substitutes the Unicode replacement character for invalid UTF-8 bytes so the result remains valid JSON. This display conversion does not change stored bytes or the live stream's `data_base64` field.
+
 ## Use the PHP SDK
 
 The PHP software development kit (SDK) exposes typed create, list, update, and destroy operations for deploy steps on these same routes. It also exposes an Instance update for the branch, deploy, rollback, retained-release list, and deployment-history list and show. Deploy-step, branch, and retained-release operations keep the ordinary JSON request, envelope, error, and response transport. A step create omits `timeout_seconds` when the caller does not supply it. A deployment sends an empty JSON object. A rollback sends only `release`. List and show reads remain bodyless.

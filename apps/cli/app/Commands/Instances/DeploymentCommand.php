@@ -6,6 +6,7 @@ namespace App\Commands\Instances;
 
 use App\Commands\GatewayCommand;
 use App\Support\Console\Animation;
+use App\Support\Console\DeploymentOutput;
 use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
@@ -339,7 +340,7 @@ abstract class DeploymentCommand extends GatewayCommand
         while ($iterator->valid() && $iterator->current() instanceof DeploymentOutputEvent) {
             $event = $iterator->current();
             $this->requestId = $event->requestId;
-            $this->writeStreamedMessage("{$event->stream}: ".$this->terminalValue($event->data));
+            $this->writeStreamedMessage("{$event->stream}: ".DeploymentOutput::encode($event->data));
             $iterator->next();
         }
     }
@@ -378,14 +379,6 @@ abstract class DeploymentCommand extends GatewayCommand
         }
 
         $this->writeHumanMessage('Request ID: '.$event->requestId);
-    }
-
-    protected function terminalValue(string $value): string
-    {
-        return json_encode(
-            $value,
-            JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES,
-        );
     }
 
     private function renderPhaseJson(DeploymentPhaseEvent $event): void

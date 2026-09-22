@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use App\Support\Console\DeploymentOutput;
 use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
 use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentEvent;
 use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentResponse;
@@ -48,7 +49,7 @@ final class ShowDeploymentCommand extends GatewayCommand
         }
 
         if ($this->option('json') === true) {
-            $this->writeJson($deployment->toArray());
+            ConsoleWriter::write($this->output, DeploymentOutput::encode($deployment->toArray())."\n");
 
             return self::SUCCESS;
         }
@@ -93,26 +94,24 @@ final class ShowDeploymentCommand extends GatewayCommand
     /** @param list<AppInstanceDeploymentEvent> $events */
     private function writeLog(array $events): void
     {
-        $lines = [];
+        $hasOutput = false;
 
         foreach ($events as $event) {
             if ($event->type === 'output' && $event->value !== null) {
-                $lines[] = "{$event->stream}: {$event->value}";
+                $this->writeHumanMessage("{$event->stream}: ".DeploymentOutput::encode($event->value));
+                $hasOutput = true;
 
                 continue;
             }
 
             if ($event->type === 'output_truncated') {
-                $lines[] = '[output truncated]';
+                $this->writeHumanMessage('[output truncated]');
+                $hasOutput = true;
             }
         }
 
-        if ($lines === []) {
+        if (! $hasOutput) {
             $this->writeHumanMessage('No recorded log output.');
-
-            return;
         }
-
-        ConsoleWriter::write($this->output, implode('', $lines));
     }
 }

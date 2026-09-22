@@ -247,6 +247,36 @@ describe('deployment streams', function (): void {
         expect($mock->getRecordedResponses())->toHaveCount(1);
     });
 
+    it('keeps rollback bytes escaped for humans and base64 encoded in the machine stream', function (bool $json): void {
+        $events = [
+            deployment_cli_phase(1, 'rollback'),
+            deployment_cli_output(2, 'stderr', "first\x1b]0;title\x07\0\r\n\xff"),
+            deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
+        ];
+        $mock = MockClient::global([
+            RollbackAppInstanceRequest::class => deployment_cli_stream_response($events),
+        ]);
+
+        expect(Artisan::call('instance:rollback', [
+            'instance' => '17', '--release' => 'release-a', '--json' => $json, '--no-interaction' => true,
+        ]))->toBe(0);
+        $output = Artisan::output();
+        expect($mock->getRecordedResponses())->toHaveCount(1);
+
+        foreach (["\x1b", "\x07", "\0", "\r", "\xff"] as $forbidden) {
+            expect($output)->not->toContain($forbidden);
+        }
+
+        if ($json) {
+            expect(array_map(
+                static fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+                explode("\n", trim($output)),
+            ))->toBe($events);
+        } else {
+            expect($output)->toContain('stderr: "first\\u001b]0;title\\u0007\\u0000\\r\\n\\ufffd"', 'Rollback succeeded.');
+        }
+    })->with(['human' => false, 'JSON' => true]);
+
     it('marks the current row failed for a rollback activation failure (F2a)', function (): void {
         // rollback's only admitted row is 'rollback' ('Select release'); activation has no
         // row of its own, so the reached row must take the failure instead of looking merely
