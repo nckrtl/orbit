@@ -149,6 +149,33 @@ describe('consumed task verification', function (): void {
         $this->assertDatabaseHas('tasks', ['id' => $task->id, 'status' => 'reviewing', 'review_verification_id' => $run->id]);
     });
 
+    it('refuses verification reads and writes while the extension is disabled', function (): void {
+        $task = verification_task();
+        $runner = verification_runner();
+        $input = verification_input();
+        app(TaskExtensionState::class)->disable();
+
+        $this->getJson(verification_url($task, 'verification'))->assertConflict()->assertJsonPath('error.code', 'tasks.disabled');
+        $this->postJson(verification_url($task), ['run_key' => $input->runKey, 'evidence' => $input->references])->assertConflict();
+
+        expect($runner->calls)->toBe(0);
+    });
+
+    it('does not accept a result that arrives after its reservation expires', function (): void {
+        $task = verification_task();
+        verification_runner();
+        Classification::fake([function (): array {
+            test()->travel(901)->seconds();
+
+            return ['proof' => new BooleanAnswer(0.98)];
+        }])->preventStrayClassifications();
+
+        $run = app(VerifyTaskAction::class)->execute($task, verification_input());
+
+        expect($run->status)->toBe('interrupted');
+        expect(app(TaskVerificationGate::class)->accepted($task))->toBeNull();
+    });
+
     it('does not pass an uncertain or negative required Noul', function (float $probability): void {
         $task = verification_task();
         verification_runner();

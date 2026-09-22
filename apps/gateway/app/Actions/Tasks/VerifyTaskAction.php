@@ -108,6 +108,7 @@ final readonly class VerifyTaskAction
             }
             $currentTask = $task->fresh();
             $valid = $currentTask instanceof Task && $currentTask->status === TaskStatus::Running
+                && $run->expires_at->isFuture()
                 && $this->gate->matches($currentTask, $run) && $this->gate->latest($currentTask)?->id === $run->id;
             TaskVerification::query()->whereKey($run->id)->where('status', 'running')->update([
                 'status' => $valid ? 'complete' : 'interrupted', 'finished_at' => now(),

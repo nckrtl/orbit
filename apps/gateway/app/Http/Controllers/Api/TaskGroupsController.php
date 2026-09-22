@@ -9,6 +9,7 @@ use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
+use App\Actions\Tasks\RequireTasksExtensionAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\VerifyTaskAction;
@@ -65,8 +66,9 @@ final class TaskGroupsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function verification(Request $request, TaskGroup $group, Task $task, TaskVerificationGate $gate): JsonResponse
+    public function verification(Request $request, TaskGroup $group, Task $task, TaskVerificationGate $gate, RequireTasksExtensionAction $extension): JsonResponse
     {
+        $extension->execute();
         abort_unless($task->task_group_id === $group->id, 404);
         $run = $gate->latest($task);
 
