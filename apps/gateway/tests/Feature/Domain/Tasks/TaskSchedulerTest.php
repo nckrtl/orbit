@@ -174,13 +174,12 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
 
     $scheduler = app(TaskScheduler::class);
 
-    expect($scheduler->claimNext()?->id)->toBe($first->id)
-        ->and($first->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
-        ->and($scheduler->claimNext()?->id)->toBe($second->id)
-        ->and($scheduler->claimNext()?->id)->toBe($third->id)
-        ->and($scheduler->claimNext()?->id)->toBe($fourth->id)
-        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
-        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(4);
+    expect($scheduler->claimNext())->toBeNull()
+        ->and($first->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and($second->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and($third->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(0);
 });
 
 it('does not count completed groups toward the App ceiling', function (): void {
@@ -193,8 +192,8 @@ it('does not count completed groups toward the App ceiling', function (): void {
     ]);
     $queued = queued_group($app, 'Next');
 
-    expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($queued->id)
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
 });
 
 it('claims another group when three reserved groups already occupy the App', function (): void {
@@ -209,8 +208,8 @@ it('claims another group when three reserved groups already occupy the App', fun
     }
     $queued = queued_group($app, 'Overflow');
 
-    expect(app(TaskScheduler::class)->claimNext()?->id)->toBe($queued->id)
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Reserved);
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
 });
 
 it('applies the Node ceiling only after an App instance is assigned', function (): void {
@@ -453,10 +452,10 @@ it('leaves a provisioned group reserved when the Node is already at the ceiling'
 
     $claimed = app(TaskScheduler::class)->claimNext();
 
-    expect($claimed?->id)->toBe($queued->id)
-        ->and($claimed?->status)->toBe(TaskGroupStatus::Reserved)
-        ->and($claimed?->taskable_id)->toBe($instance->id)
-        ->and($claimed?->reviewer_agent_thread_id)->toBeNull();
+    expect($claimed)->toBeNull()
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and($queued->fresh()?->taskable_id)->toBe($instance->id)
+        ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 
 it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {

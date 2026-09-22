@@ -304,7 +304,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertCreated()
         ->assertJsonPath('data.title', 'Absorb Commander')
         ->assertJsonPath('data.app', 'commander-demo')
-        ->assertJsonPath('data.status', 'reserved')
+        ->assertJsonPath('data.status', 'queued')
         ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.reviewer_model', 'claude-opus-5')
@@ -338,7 +338,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.status', 'pending');
 
     expect(Task::query()->where('task_group_id', $id)->count())->toBe(3)
-        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Reserved);
+        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Queued);
 });
 
 it('creates a fourth group when the App already has three active groups', function (): void {
@@ -351,7 +351,7 @@ it('creates a fourth group when the App already has three active groups', functi
             'app_id' => $app->id,
             'title' => $title,
             'brief' => "{$title} brief",
-        ])->assertCreated()->assertJsonPath('data.status', 'reserved');
+        ])->assertCreated()->assertJsonPath('data.status', 'queued');
     }
 
     $this->postJson('/api/v1/task-groups', [
@@ -360,7 +360,7 @@ it('creates a fourth group when the App already has three active groups', functi
         'brief' => 'No per-Project ceiling holds this group.',
     ])
         ->assertCreated()
-        ->assertJsonPath('data.status', 'reserved')
+        ->assertJsonPath('data.status', 'queued')
         ->assertJsonPath('data.title', 'Four');
 });
 

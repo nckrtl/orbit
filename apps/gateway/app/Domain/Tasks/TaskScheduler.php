@@ -365,7 +365,9 @@ final readonly class TaskScheduler
         ));
 
         if (! $instance instanceof AppInstance) {
-            return $reserved->fresh(['tasks', 'app', 'taskable']) ?? $reserved;
+            $reserved->update(['status' => TaskGroupStatus::Queued]);
+
+            return null;
         }
 
         $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
@@ -378,6 +380,7 @@ final readonly class TaskScheduler
             $group->load('taskable');
 
             if (! $this->ceilings->canActivate($group)) {
+                $group->status = TaskGroupStatus::Queued;
                 $group->save();
 
                 return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
@@ -390,9 +393,11 @@ final readonly class TaskScheduler
             return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
         });
 
-        if ($started->status === TaskGroupStatus::Running) {
-            $this->spawnOpeningAgents($started);
+        if ($started->status !== TaskGroupStatus::Running) {
+            return null;
         }
+
+        $this->spawnOpeningAgents($started);
 
         return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
     }
