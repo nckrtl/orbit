@@ -734,6 +734,7 @@ it('preserves source authority and stored configuration when environment observa
     'malformed result' => [new CommandResult(0, '%environment-secret-sentinel%', '', 1, false), 'env.import_preflight_failed'],
     'unexpected diagnostics' => [new CommandResult(0, base64_encode('SOURCE_ONLY=environment-secret-sentinel'), 'environment-secret-sentinel', 1, false), 'env.import_preflight_failed'],
     'malformed dotenv' => [new CommandResult(0, base64_encode("SOURCE_ONLY environment-secret-sentinel\n"), '', 1, false), 'env.import_invalid'],
+    'unterminated dotenv' => [new CommandResult(0, base64_encode("BEFORE=valid\nSOURCE_ONLY=\"environment-secret-sentinel\n"), '', 1, false), 'env.import_invalid'],
 ]);
 
 it('accepts a positively observed empty environment file without losing stored keys', function (): void {

@@ -245,6 +245,26 @@ it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): v
         ]);
 });
 
+it('rejects unfinished dotenv input without storing its valid prefix or exposing values', function (): void {
+    $this->instance->environmentValues()->create(['env_key' => 'EXISTING', 'env_value' => 'retained']);
+    $this->instance->environmentValues()->create(['env_key' => 'OMITTED', 'env_value' => 'also-retained']);
+    $storedBefore = DB::table('app_instance_environment_values')
+        ->where('app_instance_id', $this->instance->id)->orderBy('env_key')->pluck('env_value', 'env_key')->all();
+    $this->access->contents = "EXISTING=environment-secret-sentinel\nNEW=environment-secret-sentinel\nUNFINISHED=\"environment-secret-sentinel\n";
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson("/api/v1/instances/{$this->instance->id}/environment/import", ['replace' => true]);
+
+    $response->assertUnprocessable()->assertJsonPath('error.code', 'env.import_invalid');
+    expect(DB::table('app_instance_environment_values')
+        ->where('app_instance_id', $this->instance->id)->orderBy('env_key')->pluck('env_value', 'env_key')->all())
+        ->toBe($storedBefore);
+    expect($response->getContent())->not->toContain('environment-secret-sentinel')
+        ->and(json_encode(Activity::query()->sole()->toArray(), JSON_THROW_ON_ERROR))->not->toContain('environment-secret-sentinel')
+        ->and(Activity::query()->sole()->status)->toBe('failed');
+});
+
 it('returns redacted configuration details for invalid keys and unsupported placeholders', function (
     string $key,
     string $value,

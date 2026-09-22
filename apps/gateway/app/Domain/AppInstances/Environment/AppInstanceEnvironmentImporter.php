@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\Shared\ResourceOperationException;
-use Dotenv\Dotenv;
 use Dotenv\Exception\InvalidFileException;
+use Dotenv\Loader\Loader;
 use Dotenv\Parser\Parser;
+use Dotenv\Repository\Adapter\ArrayAdapter;
+use Dotenv\Repository\RepositoryBuilder;
 use Throwable;
 
 final readonly class AppInstanceEnvironmentImporter
@@ -22,7 +24,24 @@ final readonly class AppInstanceEnvironmentImporter
         }
 
         try {
-            $entries = new Parser()->parse($contents);
+            $parser = new Parser;
+            $entries = $parser->parse($contents);
+            $probedEntries = $parser->parse($contents."\n__ORBIT_IMPORT_COMPLETE__=1\n");
+
+            // The parser drops unfinished multiline buffers. A quote-free probe must add
+            // one entry; checking the count also prevents an earlier key from spoofing it.
+            if (count($probedEntries) !== count($entries) + 1) {
+                $this->fail();
+            }
+
+            $probe = $probedEntries[count($entries)];
+
+            if ($probe->getName() !== '__ORBIT_IMPORT_COMPLETE__'
+                || ! $probe->getValue()->isDefined()
+                || $probe->getValue()->get()->getChars() !== '1') {
+                $this->fail();
+            }
+
             $seen = [];
 
             foreach ($entries as $entry) {
@@ -52,7 +71,10 @@ final readonly class AppInstanceEnvironmentImporter
                 $seen[$name] = true;
             }
 
-            $parsed = Dotenv::parse($contents);
+            $repository = RepositoryBuilder::createWithNoAdapters()
+                ->addAdapter(ArrayAdapter::class)
+                ->make();
+            $parsed = new Loader()->load($repository, $entries);
         } catch (InvalidFileException) {
             $this->fail();
         } catch (ResourceOperationException $exception) {
