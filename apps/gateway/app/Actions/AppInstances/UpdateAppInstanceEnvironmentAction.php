@@ -35,6 +35,7 @@ final readonly class UpdateAppInstanceEnvironmentAction
 
             if (
                 $context->laravel
+                && $context->routeDomain !== null
                 && $key === 'APP_URL'
                 && $value !== 'https://{{app_instance.domain}}'
             ) {

@@ -16,6 +16,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -185,6 +186,45 @@ it('refuses a stale update after the supported removal boundary enters removing'
         ->and(AppInstanceEnvironmentValue::query()->pluck('env_key')->all())
         ->toBe(['EXISTING']);
 });
+
+it('revalidates optional Route absence presence and lifecycle before storing values', function (string $change): void {
+    [$instance, $route] = orb207_concurrency_fixture();
+    $instance->app->update(['type' => ProjectType::LaravelPackage]);
+    if ($change === 'appears') {
+        $route->targets()->delete();
+        $route->delete();
+    }
+    $context = app(AppInstanceEnvironmentContextResolver::class)->resolve($instance->fresh(), false);
+
+    if (in_array($change, ['disappears', 'replaced'], true)) {
+        $route->targets()->delete();
+        $route->delete();
+    }
+    if (in_array($change, ['appears', 'replaced'], true)) {
+        $replacement = Route::query()->create([
+            'app_id' => $instance->app_id,
+            'node_id' => $instance->node_id,
+            'domain' => 'optional-new.example.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $replacement->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $replacement->update(['status' => RouteStatus::Active]);
+    }
+    if ($change === 'invalid') {
+        $route->update(['replacement_step' => RouteReplacementStep::Reserved]);
+    }
+    if ($change === 'placement') {
+        $instance->update(['checkout_path' => '/srv/relocated']);
+    }
+
+    expect(fn () => app(AppInstanceEnvironmentStore::class)->update($context, 'NEW', 'must-not-attach'))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('env.owner_changed');
+        });
+    $this->assertDatabaseCount('app_instance_environment_values', 0);
+})->with(['appears', 'disappears', 'replaced', 'invalid', 'placement']);
 
 it('refuses a stale import across the recorded Route domain transition without a partial change', function (): void {
     [$instance, $route] = orb207_concurrency_fixture();

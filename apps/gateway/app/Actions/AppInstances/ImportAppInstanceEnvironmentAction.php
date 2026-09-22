@@ -34,7 +34,7 @@ final readonly class ImportAppInstanceEnvironmentAction
             $this->preflight->assertEnvironmentReadable($context);
             $values = $this->importer->parse($this->reader->read($context));
 
-            if ($context->laravel) {
+            if ($context->laravel && $context->routeDomain !== null) {
                 $values['APP_URL'] = 'https://{{app_instance.domain}}';
             }
 

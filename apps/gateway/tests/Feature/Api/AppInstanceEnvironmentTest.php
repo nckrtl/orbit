@@ -9,6 +9,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -26,6 +27,7 @@ use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use Dotenv\Dotenv;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
@@ -117,6 +119,100 @@ it('imports by exact Route domain and applies conflict and replacement semantics
         ->assertJsonPath('data.changed', false);
 
     expect(Activity::query()->latest('id')->value('command'))->toBe('env:import');
+});
+
+it('updates imports and synchronizes route-less Project values by numeric Instance ID', function (ProjectType $type, string $environment): void {
+    environment_api_remove_optional_route($this->instance, $this->route, $type);
+    $this->instance->update([
+        'source_is_laravel' => true,
+        'environment' => $environment,
+        'production_home' => $environment === 'production' ? $this->instance->checkout_path : null,
+        'production_user' => $environment === 'production' ? 'orbit-package' : null,
+    ]);
+    $base = "/api/v1/instances/{$this->instance->id}/environment";
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
+    $this->access->contents = "APP_KEY=literal-secret\nAPP_URL=https://literal.test\n";
+
+    $this->putJson($base.'/MODE', ['value' => '{{app_instance.environment}}'])->assertOk();
+    $this->call('POST', $base.'/import', server: ['CONTENT_TYPE' => 'application/json'], content: '{}')->assertOk();
+    expect($this->instance->environmentValues()->where('env_key', 'APP_URL')->sole()->env_value)->toBe('https://literal.test');
+    $this->putJson($base.'/APP_URL', ['value' => 'https://updated.test'])->assertOk();
+    $this->call('POST', $base.'/sync', server: ['CONTENT_TYPE' => 'application/json'], content: '{}')->assertOk();
+
+    expect(Dotenv::parse($this->access->writes[0]))->toBe([
+        'APP_KEY' => 'literal-secret',
+        'APP_URL' => 'https://updated.test',
+        'MODE' => $environment,
+    ]);
+    expect($this->instance->routes()->count())->toBe(0);
+    expect(DB::table('app_instance_environment_values')->where('env_key', 'APP_KEY')->value('env_value'))
+        ->not->toContain('literal-secret');
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo])->with(['development', 'production']);
+
+it('retains unavailable route-less references and refuses synchronization before remote write', function (string $reference): void {
+    environment_api_remove_optional_route($this->instance, $this->route, ProjectType::LaravelPackage);
+    $value = 'private-sentinel-'.$reference;
+    $this->instance->environmentValues()->create(['env_key' => 'REFERENCE', 'env_value' => $value]);
+
+    $response = $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertConflict()->assertJsonPath('error.code', 'env.reference_unavailable');
+
+    expect($response->getContent())->not->toContain('private-sentinel');
+    expect($this->access->writes)->toBe([]);
+    expect($this->instance->environmentValues()->sole()->env_value)->toBe($value);
+})->with(['{{app_instance.domain}}', '{{app_instance.unknown}}']);
+
+it('keeps an optional explicit Route domain available to environment rendering', function (ProjectType $type): void {
+    $this->instance->app->update(['type' => $type]);
+    $this->instance->environmentValues()->create(['env_key' => 'ORIGIN', 'env_value' => 'https://{{app_instance.domain}}']);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk();
+
+    expect($this->access->writes)->toBe(["ORIGIN=\"https://{$this->route->domain}\"\n"]);
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo]);
+
+it('still refuses a web-serving Instance without its required Route', function (): void {
+    $instance = AppInstance::query()->create([
+        'app_id' => $this->instance->app_id,
+        'node_id' => $this->instance->node_id,
+        'name' => 'missing-route',
+        'environment' => 'development',
+        'checkout_path' => '/srv/orbit/missing-route',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$instance->id}/environment/FLAG", ['value' => 'must-not-store'])
+        ->assertConflict()->assertJsonPath('error.code', 'env.owner_unavailable');
+
+    $this->assertDatabaseCount('app_instance_environment_values', 0);
+});
+
+it('still refuses multiple optional Routes during a domain transition', function (): void {
+    $this->instance->app->update(['type' => ProjectType::Monorepo]);
+    $candidate = Route::query()->create([
+        'app_id' => $this->instance->app_id,
+        'node_id' => $this->instance->node_id,
+        'domain' => 'replacement.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $this->route->id,
+        'replacement_step' => RouteReplacementStep::Reserved,
+    ]);
+    $candidate->targets()->create(['app_instance_id' => $this->instance->id, 'position' => 0]);
+    $this->route->update(['replaced_by_route_id' => $candidate->id]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->putJson("/api/v1/instances/{$this->instance->id}/environment/FLAG", ['value' => 'must-not-store'])
+        ->assertConflict()->assertJsonPath('error.code', 'env.owner_unavailable');
+
+    $this->assertDatabaseCount('app_instance_environment_values', 0);
 });
 
 it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): void {
@@ -566,6 +662,13 @@ it('reports an unconfirmed synchronization without values or an unchanged claim'
 
     expect($response->getContent())->not->toContain($sentinel);
 });
+
+function environment_api_remove_optional_route(AppInstance $instance, Route $route, ProjectType $type): void
+{
+    $instance->app->update(['type' => $type]);
+    $route->targets()->delete();
+    $route->delete();
+}
 
 function request_id_from_test_response(): string
 {

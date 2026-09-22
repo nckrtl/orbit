@@ -85,7 +85,16 @@ it('refuses an unavailable stored reference without returning rendered values', 
     }
 });
 
-function rendering_environment_context(string $domain, string $environment): AppInstanceEnvironmentContext
+it('renders literals and the environment reference without Route evidence', function (): void {
+    $contents = new AppInstanceEnvironmentRenderer()->render(
+        rendering_environment_context(null, 'development'),
+        ['MODE' => '{{app_instance.environment}}', 'LITERAL' => 'space $ and "quotes"'],
+    );
+
+    expect(Dotenv::parse($contents))->toBe(['LITERAL' => 'space $ and "quotes"', 'MODE' => 'development']);
+});
+
+function rendering_environment_context(?string $domain, string $environment): AppInstanceEnvironmentContext
 {
     return new AppInstanceEnvironmentContext(
         appInstanceId: 1,
@@ -95,7 +104,7 @@ function rendering_environment_context(string $domain, string $environment): App
         path: '/srv/orbit/example',
         executionUser: 'orbit',
         laravel: true,
-        routeId: 1,
+        routeId: $domain === null ? null : 1,
         routeDomain: $domain,
         nodeStatus: 'active',
         node: new Node,

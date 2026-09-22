@@ -56,19 +56,20 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routes = $routeQuery->get();
 
-        if ($routes->count() !== 1) {
+        if ($routes->count() > 1 || ($routes->isEmpty() && $instance->requiresRoute())) {
             $this->conflict();
         }
 
-        $route = $routes->sole();
+        $route = $routes->first();
 
         if (
-            ! $route->isAuthoritative()
-            || $route->replaced_by_route_id !== null
-            || $route->replaces_route_id !== null
-            || $route->failed_step !== null
-            || $route->error_code !== null
-            || ($route->replacement_step !== null && ! new PublicRouteEligibility()->publicEdgeIsLive($route))
+            $route instanceof Route
+            && (! $route->isAuthoritative()
+                || $route->replaced_by_route_id !== null
+                || $route->replaces_route_id !== null
+                || $route->failed_step !== null
+                || $route->error_code !== null
+                || ($route->replacement_step !== null && ! new PublicRouteEligibility()->publicEdgeIsLive($route)))
         ) {
             $this->conflict();
         }
@@ -83,8 +84,8 @@ final readonly class AppInstanceEnvironmentContextResolver
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
-            routeId: $route->id,
-            routeDomain: $route->domain,
+            routeId: $route?->id,
+            routeDomain: $route?->domain,
             nodeStatus: $node->status->value,
             node: $node,
         );
@@ -131,18 +132,19 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routes = $routeQuery->get();
 
-        if ($routes->count() !== 1) {
+        if ($routes->count() > 1 || ($routes->isEmpty() && $instance->requiresRoute())) {
             $this->conflict();
         }
 
-        $route = $routes->sole();
+        $route = $routes->first();
 
         if (
-            $route->status !== RouteStatus::Pending
-            || $route->domain !== $instance->clone_preview_domain
-            || $route->replaced_by_route_id !== null
-            || $route->replaces_route_id !== null
-            || $route->replacement_step !== null
+            $route instanceof Route
+            && ($route->status !== RouteStatus::Pending
+                || $route->domain !== $instance->clone_preview_domain
+                || $route->replaced_by_route_id !== null
+                || $route->replaces_route_id !== null
+                || $route->replacement_step !== null)
         ) {
             $this->conflict();
         }
@@ -157,8 +159,8 @@ final readonly class AppInstanceEnvironmentContextResolver
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
-            routeId: $route->id,
-            routeDomain: $route->domain,
+            routeId: $route?->id,
+            routeDomain: $route?->domain,
             nodeStatus: $node->status->value,
             node: $node,
         );

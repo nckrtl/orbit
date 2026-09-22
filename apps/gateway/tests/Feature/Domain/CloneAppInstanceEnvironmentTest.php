@@ -13,6 +13,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentValidator;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -24,6 +25,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Route;
+use Dotenv\Dotenv;
 use Illuminate\Support\Facades\DB;
 
 it('copies independent encrypted values and resolves placeholders through the exact pending clone Route', function (): void {
@@ -104,6 +106,90 @@ it('supports a clone with no stored environment rows', function (): void {
         ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\n")
         ->and($preflight->requiredCapacityBytes)
         ->toBeGreaterThan(AppInstanceEnvironmentValidator::MaximumFileBytes);
+});
+
+it('copies route-less Project configuration with independent encryption and forced production values', function (ProjectType $type, bool $stored): void {
+    [$source, $target] = clone_environment_routeless_fixture($type);
+    if ($stored) {
+        $source->environmentValues()->createMany([
+            ['env_key' => 'APP_ENV', 'env_value' => 'local'],
+            ['env_key' => 'APP_DEBUG', 'env_value' => 'true'],
+            ['env_key' => 'APP_KEY', 'env_value' => 'literal-secret'],
+            ['env_key' => 'APP_URL', 'env_value' => 'https://literal.test'],
+            ['env_key' => 'MODE', 'env_value' => '{{app_instance.environment}}'],
+        ]);
+    }
+    [, , $writer] = bind_clone_environment_fakes();
+
+    $result = app(CloneAppInstanceEnvironmentAction::class)->execute($source, $target);
+
+    $expected = ['APP_DEBUG' => 'false', 'APP_ENV' => 'production'];
+    if ($stored) {
+        $expected += ['APP_KEY' => 'literal-secret', 'APP_URL' => 'https://literal.test', 'MODE' => '{{app_instance.environment}}'];
+        $sourceCipher = DB::table('app_instance_environment_values')->where('app_instance_id', $source->id)->where('env_key', 'APP_KEY')->value('env_value');
+        $targetCipher = DB::table('app_instance_environment_values')->where('app_instance_id', $target->id)->where('env_key', 'APP_KEY')->value('env_value');
+        expect($targetCipher)->not->toBe($sourceCipher)->not->toContain('literal-secret');
+        expect($source->environmentValues()->where('env_key', 'APP_ENV')->sole()->env_value)->toBe('local');
+    }
+    expect($result->keyCount)->toBe(count($expected));
+    expect($target->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all())->toBe($expected);
+    expect(Dotenv::parse($writer->contents))->toBe($stored ? [...$expected, 'MODE' => 'production'] : $expected);
+    expect($writer->context?->routeId)->toBeNull();
+    expect($writer->context?->routeDomain)->toBeNull();
+    expect(Route::query()->count())->toBe(0);
+})->with([ProjectType::LaravelPackage, ProjectType::Monorepo])->with(['no source rows' => false, 'stored values' => true]);
+
+it('retains a copied unavailable domain reference without writing a route-less clone environment', function (): void {
+    [$source, $target] = clone_environment_routeless_fixture(ProjectType::LaravelPackage);
+    $source->environmentValues()->create(['env_key' => 'ORIGIN', 'env_value' => 'https://{{app_instance.domain}}']);
+    [, , $writer] = bind_clone_environment_fakes();
+
+    expect(fn () => app(CloneAppInstanceEnvironmentAction::class)->execute($source, $target))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('env.reference_unavailable');
+        });
+
+    expect($writer->contents)->toBeNull();
+    expect($target->environmentValues()->where('env_key', 'ORIGIN')->sole()->env_value)->toBe('https://{{app_instance.domain}}');
+});
+
+it('refuses an optional Route attached after the pending clone environment snapshot', function (): void {
+    [$source, $target] = clone_environment_routeless_fixture(ProjectType::Monorepo);
+    $source->environmentValues()->create(['env_key' => 'SECRET', 'env_value' => 'must-not-copy']);
+    $contexts = app(AppInstanceEnvironmentContextResolver::class);
+    $sourceContext = $contexts->resolve($source, true);
+    $targetContext = $contexts->resolveForClone($target, true);
+    $route = Route::query()->create([
+        'app_id' => $target->app_id,
+        'node_id' => $target->node_id,
+        'domain' => 'unexpected.prod.orbit',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+
+    expect(fn () => app(AppInstanceEnvironmentStore::class)->copyForClone($sourceContext, $targetContext))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('env.owner_changed');
+        });
+
+    $this->assertDatabaseMissing('app_instance_environment_values', ['app_instance_id' => $target->id]);
+});
+
+it('still refuses a pending web-serving clone without its preview Route', function (): void {
+    [$source, $target, $route] = clone_environment_fixture();
+    $route->targets()->delete();
+    $route->delete();
+    [, , $writer] = bind_clone_environment_fakes();
+
+    expect(fn () => app(CloneAppInstanceEnvironmentAction::class)->execute($source, $target))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('env.owner_unavailable');
+        });
+
+    expect($writer->contents)->toBeNull();
+    $this->assertDatabaseCount('app_instance_environment_values', 0);
 });
 
 it('preserves target environment edits on retry', function (): void {
@@ -200,6 +286,20 @@ it('refuses copying when the target clone candidate no longer owns the operation
 
     expect(AppInstanceEnvironmentValue::query()->where('app_instance_id', $target->id)->count())->toBe(0);
 });
+
+/** @return array{AppInstance, AppInstance} */
+function clone_environment_routeless_fixture(ProjectType $type): array
+{
+    [$source, $target] = clone_environment_fixture();
+    $source->app->update(['type' => $type]);
+    foreach (Route::query()->get() as $route) {
+        $route->targets()->delete();
+        $route->delete();
+    }
+    $target->update(['clone_preview_name' => null, 'clone_preview_domain' => null]);
+
+    return [$source->fresh(), $target->fresh()];
+}
 
 /** @return array{AppInstance, AppInstance, Route} */
 function clone_environment_fixture(string $suffix = 'primary'): array

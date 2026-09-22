@@ -18,7 +18,7 @@ final readonly class AppInstanceEnvironmentRenderer
         #[\SensitiveParameter]
         array $values,
     ): string {
-        if ($context->routeDomain === '' || ! in_array($context->environment, ['development', 'production'], true)) {
+        if (! in_array($context->environment, ['development', 'production'], true)) {
             $this->referenceUnavailable();
         }
 
@@ -26,9 +26,13 @@ final readonly class AppInstanceEnvironmentRenderer
         $rendered = '';
 
         foreach ($values as $key => $value) {
+            if (str_contains($value, self::DomainPlaceholder) && ($context->routeDomain === null || $context->routeDomain === '')) {
+                $this->referenceUnavailable();
+            }
+
             $resolved = str_replace(
                 [self::DomainPlaceholder, self::EnvironmentPlaceholder],
-                [$context->routeDomain, $context->environment],
+                [$context->routeDomain ?? '', $context->environment],
                 $value,
             );
 

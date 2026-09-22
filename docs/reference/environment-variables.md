@@ -15,6 +15,8 @@ The Gateway accepts an active Instance only after its recorded placement is comp
 
 A finished public Route can retain `replacement_step=ingress-firewall` (or a later cleanup step) without blocking environment operations. Earlier activation steps, failed activation, and pending Route replacements still return HTTP 409 `env.owner_unavailable`.
 
+Package and monorepo Instances can import, update, and synchronize environment values without a Route. Select them by numeric Instance ID. An attached Route remains part of the checked placement; an ambiguous or transitioning Route still blocks the operation. Instances that serve HTTP still require one authoritative Route.
+
 ## Use the PHP SDK
 
 The PHP software development kit (SDK) provides typed import, update, and synchronization requests. Each request accepts a positive numeric Instance ID or an exact Route domain and encodes the selector as one path segment. The update request also encodes its environment key as one path segment. The SDK forwards these inputs without looking up the Instance or resolving placeholders.
@@ -68,7 +70,7 @@ For development, the Gateway reads `.env` from the recorded checkout. For produc
 
 The importer accepts blank lines, comments, quoted values, escaped values, multiline quoted values, and variable expansion from keys in the same file. It does not read variables from the Gateway process environment. Duplicate keys, unresolved expansion, invalid dotenv syntax, or a file larger than 1 MiB reject the complete import. Orbit stores parsed keys and values, without comments or original formatting.
 
-For an Instance recorded as Laravel, import replaces an encountered `APP_URL` with `https://{{app_instance.domain}}` or adds it when absent. It keeps `APP_KEY` and every other imported literal unchanged. Other application types receive no Laravel-specific key.
+For an Instance recorded as Laravel with a Route, import replaces an encountered `APP_URL` with `https://{{app_instance.domain}}` or adds it when absent. It keeps `APP_KEY` and every other imported literal unchanged. Without a Route, import preserves a supplied literal `APP_URL` and adds no domain reference. Other application types receive no Laravel-specific key.
 
 ## Update one stored value
 
@@ -81,7 +83,7 @@ Content-Type: application/json
 {"value":"example"}
 ```
 
-The body contains exactly one string `value`. Empty text, `false`, and `0` are distinct string values when sent as `""`, `"false"`, and `"0"`. An identical stored value succeeds with `changed: false`. For Laravel, an `APP_URL` update accepts only `https://{{app_instance.domain}}`.
+The body contains exactly one string `value`. Empty text, `false`, and `0` are distinct string values when sent as `""`, `"false"`, and `"0"`. An identical stored value succeeds with `changed: false`. For Laravel with a Route, an `APP_URL` update accepts only `https://{{app_instance.domain}}`. A route-less Instance can store a literal `APP_URL`.
 
 ## Validate stored configuration
 
@@ -110,7 +112,7 @@ Content-Type: application/json
 
 The request body must be an empty JSON object. Synchronization accepts the same positive Instance ID or exact Route domain selectors as import and update. It requires an active, complete Instance owner, an active owning Node, and access from the active peer to that Node.
 
-The Gateway takes one consistent snapshot of the Instance owner, authoritative Route, and complete stored configuration. It resolves `{{app_instance.domain}}` from that Route and `{{app_instance.environment}}` to the recorded `development` or `production` value. A missing Route, a Route transition, or an unavailable reference stops synchronization before replacement. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
+The Gateway takes one consistent snapshot of the Instance owner, its Route when present, and complete stored configuration. It resolves `{{app_instance.domain}}` from that Route and `{{app_instance.environment}}` to the recorded `development` or `production` value. A route-less package or monorepo can render literals and the environment reference. A domain reference without a Route returns `env.reference_unavailable` before replacement; the stored value stays unchanged. A missing required Route, a Route transition, or another unavailable reference also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
 For development, synchronization selects `.env` in the recorded checkout. For production, it selects `.env` in the recorded application-user home and runs as that user even when the account has a disabled login shell. Every prepared production release links its local `.env` to this home file. A Project or Instance web root such as `public` does not change this location. Callers cannot override the Node, runtime user, directory, or filename. The [production release-layout reference](/reference/deployments) describes the complete home boundary.
 
