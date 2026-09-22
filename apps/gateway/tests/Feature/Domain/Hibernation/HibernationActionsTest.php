@@ -394,6 +394,110 @@ it('wakes a soft AppInstance without restoring checkout dependencies', function 
         ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
 });
 
+it('leaves a runtime awake when its wake finishes before sweep admission', function (): void {
+    $this->freezeTime();
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    $key = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->activity[$key] = now()->subSeconds(604_801)->getTimestamp();
+    $wake = app(ActivateAppInstanceRuntimeAction::class);
+    $admissions = new HibernationAdmissionLock(function () use ($wake, $key): void {
+        $wake->execute($this->instance);
+        $this->markers->activity[$key] = now()->getTimestamp();
+    });
+    app()->instance(ProcessAdmissionLock::class, $admissions);
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result)->halted->toBe(0)->pruned->toBe(0);
+    expect($this->runtime->started)->toBe([$process->id]);
+    expect($this->runtime->stopped)->toBe([]);
+    expect($this->checkouts->pruned)->toBe([]);
+    expect($this->markers->awake)->toBe([$key]);
+    expect($admissions->runs)->toBe([[$this->instance->id]]);
+});
+
+it('keeps dependencies needed by a keep-alive Process admitted before the sweep', function (): void {
+    $this->freezeTime();
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    $key = RuntimeHibernation::key((int) $this->instance->id);
+    $this->markers->activity[$key] = now()->subSeconds(604_801)->getTimestamp();
+    app()->instance(ProcessAdmissionLock::class, new HibernationAdmissionLock(function (): void {
+        hibernation_action_process($this->instance, 'worker', DesiredProcessState::Running, keepAlive: true);
+    }));
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result)->halted->toBe(1)->pruned->toBe(0);
+    expect($this->runtime->stopped)->toBe([$process->id]);
+    expect($this->checkouts->pruned)->toBe([]);
+    expect($this->markers->cold)->toBe([]);
+});
+
+it('skips an Instance whose placement or eligibility changes before sweep admission', function (string $change): void {
+    $this->freezeTime();
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    app()->instance(ProcessAdmissionLock::class, new HibernationAdmissionLock(function () use ($change): void {
+        match ($change) {
+            'deleted' => $this->instance->delete(),
+            'checkout' => $this->instance->update(['checkout_path' => '/srv/relocated']),
+            'environment' => $this->instance->update(['environment' => 'production']),
+            'inactive' => $this->instance->update(['status' => 'reserved']),
+            'migration-required' => $this->instance->update(['migration_required' => true]),
+            'provisioning' => $this->instance->update(['provisioning_step' => 'prepare']),
+            'node-inactive' => $this->node->update(['status' => LifecycleStatus::Failed]),
+            'role-inactive' => $this->node->roles()->update(['status' => LifecycleStatus::Failed]),
+            'relocated' => $this->instance->update(['node_id' => Node::query()->create([
+                'name' => 'relocated',
+                'status' => LifecycleStatus::Active,
+                'platform' => 'linux',
+                'public_ssh_host' => '192.0.2.21',
+                'user' => 'orbit',
+                'wireguard_ip' => '10.44.0.4',
+            ])->id]),
+        };
+    }));
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result)->halted->toBe(0)->pruned->toBe(0);
+    expect($this->runtime->stopped)->toBe([]);
+    expect($this->checkouts->pruned)->toBe([]);
+    expect($this->markers->asleep)->toBe([]);
+    expect($this->markers->cold)->toBe([]);
+})->with(['deleted', 'checkout', 'environment', 'inactive', 'migration-required', 'provisioning', 'node-inactive', 'role-inactive', 'relocated']);
+
+it('observes and prunes under the same Instance admission owner', function (): void {
+    $this->freezeTime();
+    $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_age_process($process);
+    $admissions = new HibernationAdmissionLock;
+    app()->instance(ProcessAdmissionLock::class, $admissions);
+    $this->markers->beforeObservation = static function () use ($admissions): void {
+        expect($admissions->held)->toBeTrue();
+    };
+    $state = $this->checkouts->state;
+    $checkouts = Mockery::mock(AppInstanceCheckoutInspector::class);
+    $checkouts->shouldReceive('inspect')->once()->andReturnUsing(static function () use ($admissions, $state): RuntimeDependencyState {
+        expect($admissions->held)->toBeTrue();
+
+        return $state;
+    });
+    $checkouts->shouldReceive('prune')->once()->andReturnUsing(static function () use ($admissions): void {
+        expect($admissions->held)->toBeTrue();
+    });
+    app()->instance(AppInstanceCheckoutInspector::class, $checkouts);
+
+    $result = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+
+    expect($result)->halted->toBe(1)->pruned->toBe(1);
+    expect($admissions->runs)->toBe([[$this->instance->id]]);
+    expect($admissions->held)->toBeFalse();
+    expect($this->markers->cold)->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
+});
+
 it('restores cold checkout dependencies before it starts Processes', function (): void {
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     $this->markers->cold[] = RuntimeHibernation::key((int) $this->instance->id);
@@ -476,6 +580,8 @@ final class HibernationRecordingPhpFpmManager implements AppDevPhpFpmManager
 
 final class HibernationFakeMarkerStore implements HibernationMarkerStore
 {
+    public ?Closure $beforeObservation = null;
+
     /** @var list<string> */
     public array $awake = [];
 
@@ -512,16 +618,47 @@ final class HibernationFakeMarkerStore implements HibernationMarkerStore
 
     public function lastActivityUnix(Node $node, string $key): ?int
     {
+        $this->beforeObservation?->__invoke();
+
         return $this->activity[$key] ?? null;
     }
 
     public function isAwake(Node $node, string $key): bool
     {
+        $this->beforeObservation?->__invoke();
+
         return in_array($key, $this->awake, true) && ! in_array($key, $this->asleep, true);
     }
 
     public function isCold(Node $node, string $key): bool
     {
+        $this->beforeObservation?->__invoke();
+
         return in_array($key, $this->cold, true);
+    }
+}
+
+final class HibernationAdmissionLock implements ProcessAdmissionLock
+{
+    public bool $held = false;
+
+    /** @var list<list<int>> */
+    public array $runs = [];
+
+    public function __construct(private ?Closure $beforeAdmission = null) {}
+
+    public function run(array $appInstanceIds, Closure $operation): mixed
+    {
+        $this->runs[] = $appInstanceIds;
+        $before = $this->beforeAdmission;
+        $this->beforeAdmission = null;
+        $before?->__invoke();
+        $this->held = true;
+
+        try {
+            return $operation();
+        } finally {
+            $this->held = false;
+        }
     }
 }

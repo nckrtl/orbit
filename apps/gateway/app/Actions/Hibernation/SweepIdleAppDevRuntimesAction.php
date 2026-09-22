@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Hibernation;
 
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\HibernationMarkerStore;
@@ -43,42 +44,65 @@ final readonly class SweepIdleAppDevRuntimesAction
                     ->where('role', RoleName::AppDev)
                     ->where('status', LifecycleStatus::Active);
             })
-            ->with(['node', 'processes'])
             ->orderBy('id')
-            ->get();
+            ->get(['id', 'node_id', 'checkout_path']);
 
         foreach ($instances as $instance) {
-            if (! $this->policy->appliesToInstance($instance)) {
-                continue;
-            }
-
-            $running = $this->desiredRunning($instance);
-
-            if ($running === []) {
-                continue;
-            }
-
-            $key = RuntimeHibernation::key((int) $instance->id);
-            $httpActivity = $this->markers->lastActivityUnix($instance->node, $key);
-
-            if ($this->isIdle($httpActivity, $now, $this->idleSeconds)) {
-                $this->admissions->run([(int) $instance->id], function () use ($instance, $running, $key): void {
-                    foreach ($running as $process) {
-                        $this->runtime->stop($process);
-                    }
-
-                    $this->markers->markAsleep($instance->node, $key);
-                });
-
-                $halted++;
-            }
-
-            if ($this->prune($instance, $key, $now, $httpActivity)) {
-                $pruned++;
-            }
+            $result = $this->admissions->run(
+                [(int) $instance->id],
+                fn (): RuntimeHibernationSweepResult => $this->sweepOwned($instance, $now),
+            );
+            $halted += $result->halted;
+            $pruned += $result->pruned;
         }
 
         return new RuntimeHibernationSweepResult($halted, $pruned);
+    }
+
+    private function sweepOwned(AppInstance $candidate, Carbon $now): RuntimeHibernationSweepResult
+    {
+        $instance = AppInstance::query()
+            ->whereKey($candidate->id)
+            ->where('node_id', $candidate->node_id)
+            ->where('checkout_path', $candidate->checkout_path)
+            ->with(['node.roles', 'processes'])
+            ->first();
+
+        if (
+            ! $instance instanceof AppInstance
+            || $instance->environment !== 'development'
+            || $instance->status !== AppInstanceState::Active
+            || $instance->migration_required
+            || $instance->provisioning_step !== 'active'
+            || $instance->node->status !== LifecycleStatus::Active
+            || ! $this->policy->appliesToInstance($instance)
+        ) {
+            return new RuntimeHibernationSweepResult(0, 0);
+        }
+
+        $running = $this->desiredRunning($instance);
+
+        if ($running === []) {
+            return new RuntimeHibernationSweepResult(0, 0);
+        }
+
+        $key = RuntimeHibernation::key((int) $instance->id);
+        $httpActivity = $this->markers->lastActivityUnix($instance->node, $key);
+        $halted = 0;
+
+        if ($this->isIdle($httpActivity, $now, $this->idleSeconds)) {
+            foreach ($running as $process) {
+                $this->runtime->stop($process);
+            }
+
+            $this->markers->markAsleep($instance->node, $key);
+            $halted = 1;
+        }
+
+        return new RuntimeHibernationSweepResult(
+            $halted,
+            $this->prune($instance, $key, $now, $httpActivity) ? 1 : 0,
+        );
     }
 
     private function prune(AppInstance $instance, string $key, Carbon $now, ?int $httpActivity): bool
@@ -109,10 +133,8 @@ final readonly class SweepIdleAppDevRuntimesAction
             return false;
         }
 
-        $this->admissions->run([(int) $instance->id], function () use ($instance, $key, $state): void {
-            $this->checkouts->prune($instance, $state);
-            $this->markers->markCold($instance->node, $key);
-        });
+        $this->checkouts->prune($instance, $state);
+        $this->markers->markCold($instance->node, $key);
 
         return true;
     }
