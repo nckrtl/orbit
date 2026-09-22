@@ -241,6 +241,8 @@ The JSON body contains `event` (`task_group.settled`), `task_group_id`, `title`,
 
 An `escalate_coder` Choice posts the same HMAC headers with `event` `task_group.escalated`. That body adds `reason`, `confidence`, `thread_id`, and the structured observation. The scheduler does not post Coder webhooks for drains, continues, relays, or noops.
 
+An `assistance_requested` comment or unresolved workflow omission posts `event` `task_group.assistance_requested` with the task-group id, title, and reason. The task and group remain flagged until a non-empty resolution is delivered.
+
 ## Complete and cleanup
 
 After Coder review and PR merge, an authorized Gateway caller runs `tasks:complete` (`POST /api/v1/task-groups/{group}/complete`, MCP tool `tasks-complete`). That marks the group `completed` and removes the shared Instance through the existing Instance remover, including any visitable Routes.

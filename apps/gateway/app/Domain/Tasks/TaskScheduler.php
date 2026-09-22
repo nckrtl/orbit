@@ -106,6 +106,12 @@ final readonly class TaskScheduler
                 }
 
                 if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+                    if (! $observation->available) {
+                        $this->actor->execute($group, $observation, $decision);
+                        $decisions[] = $decision;
+
+                        continue;
+                    }
                     $this->requestAssistance($task, $group, $decision->reason, $observation);
                     $decisions[] = $decision;
 

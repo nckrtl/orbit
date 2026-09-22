@@ -204,17 +204,18 @@ it('alerts once after a continuous observation outage and rearms after recovery'
     $this->travel(1)->seconds();
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::EscalateCoder);
     $this->travel(10)->minutes();
-    expect($scheduler->tick())->toBe([])
-        ->and($notifier->alerts)->toBe(0);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop)
+        ->and($notifier->alerts)->toBe(1);
 
     $driver->observation = new AgentObservation(AgentThreadState::Working);
     $scheduler->tick();
-    expect($group->fresh()->agent_unavailable_since)->not->toBeNull();
+    expect($group->fresh()->agent_unavailable_since)->toBeNull()
+        ->and($group->fresh()->agent_unavailable_notified_at)->toBeNull();
     $driver->observation = null;
-    expect($scheduler->tick())->toBe([]);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);
     $this->travel(120)->seconds();
-    expect($scheduler->tick())->toBe([])
-        ->and($notifier->alerts)->toBe(0);
+    expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+        ->and($notifier->alerts)->toBe(2);
 });
 
 it('keeps unknown activity separate from failed transport', function (): void {
