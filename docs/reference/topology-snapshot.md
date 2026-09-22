@@ -9,6 +9,8 @@ This page is for the operator who maintains Orbit's one persistent topology snap
 
 ## Identity
 
+The registered layout places all three Nodes in one Cluster, with Router and WebSocket on Gateway, database and Metrics on app-dev, and Ingress on app-prod. See the [registered profile](/reference/incus-topologies#registered-profile-and-issue-extension). A recipe change does not update the saved generation until an explicit snapshot operation runs.
+
 A topology snapshot is a coordinated set of three Incus snapshots in one promoted generation. It never includes an issue's temporary `app-prod-2` Node. The primary checkout owns it, keeps its VMs stopped, and records the generation under `<primary>/.e2e/topology-snapshot/`: `promoted.json`, `generations/<id>.json`, `promotions/<id>.json` for lineage, `corrupt.json` after a failed rollback, and the recovery journal.
 
 | Resource | Name |
@@ -80,7 +82,7 @@ Convergence prepares the sample resources and every product projection before ve
 
 Every convergence runs, in order, `converge-sample-app.sh reproject` on `app-dev`, `metrics-publication`, a wait until `instance:list --json` answers on `app-dev`, `hydrate` on the sample checkouts, and `prepare-node.sh permissions` on every role. Reproject runs `node:role:add --converge` for every app role. On the legacy `instances` envelope it then runs `instance:php` for every Instance, development last.
 
-On the typed `app_instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample Project, target, scope, domain, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-Instance Route association rule from [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) to every active Instance.
+On the typed `instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample Project, target, scope, domain, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-Instance Route association rule from [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) to every active Instance.
 
 The rendered pools, Caddy fragments, firewall rules, and DNS records then match the checkout. When `create-resources` returns no typed checkout path, `internal-tls` on `app-prod` runs before reproject and places the `local_certs` global block as `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version behind `/etc/caddy/Caddyfile`; the product publisher carries unmanaged fragments forward, so Doctor reports no Caddy drift.
 

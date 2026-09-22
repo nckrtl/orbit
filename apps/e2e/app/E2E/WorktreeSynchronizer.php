@@ -10,7 +10,6 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
@@ -25,6 +24,7 @@ final readonly class WorktreeSynchronizer
         'converge-app-prod-internal-tls.sh',
         'converge-gateway.sh',
         'converge-sample-app.sh',
+        'converge-sample-fixtures.sh',
         'hydrate-orbit.sh',
         'observe-php.sh',
         'prepare-node.sh',
@@ -60,16 +60,14 @@ final readonly class WorktreeSynchronizer
 
     /**
      * Record the host identity of a worktree that is mounted into every checkout
-     * role. No file is transferred: the guests read the mounted tree directly and
-     * only need the exact SHA and effective tree hash the host computed.
+     * role. The guests read application source from the mount. Refresh their
+     * installed helper scripts before recording the source identity.
      */
     public function syncWorkingTree(TopologyTarget $target, string $worktree): SourceState
     {
         $repository = new GitRepository($worktree);
         $this->validateWorktree($repository, $target);
-        if (count($target->recipe->nodes) > count(TopologyProfile::ROLES)) {
-            $this->syncWorkingTreeGuestScripts($target, $repository);
-        }
+        $this->syncWorkingTreeGuestScripts($target, $repository);
         ['source' => $source, 'effectiveTreeHash' => $treeHash] = $this->mountedSourceState($repository, $worktree);
         $marker = json_encode([
             'sha' => $source->hostSha,

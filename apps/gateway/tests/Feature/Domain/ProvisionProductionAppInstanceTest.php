@@ -155,9 +155,10 @@ it('refuses an incomplete production record without resuming retired creation', 
         ->toBeFalse();
 });
 
-it('recovers a missing source profile on a completed production AppInstance without reprovisioning', function (): void {
+it('recovers a missing source profile on a completed production AppInstance without reprovisioning', function (string $release): void {
     $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
     $instance->update([
+        'checkout_path' => $instance->production_home.'/releases/'.$release,
         'source_is_laravel' => null,
         'selected_php_version' => null,
         'production_php_service' => null,
@@ -184,7 +185,17 @@ it('recovers a missing source profile on a completed production AppInstance with
         ->toBe('8.5')
         ->and($this->source->calls)
         ->toBe(['profile']);
-});
+})->with(['initial', '20260914225127-ed9461ca37e47538']);
+
+it('refuses production recovery outside the recorded home release boundary', function (string $path): void {
+    $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
+    $instance->update(['checkout_path' => $instance->production_home.$path]);
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.placement_conflict');
+        });
+    expect($this->source->calls)->toBeEmpty();
+})->with(['/releases/../foreign', '/releases/two/nested', '/releases/.hidden', '/other/release']);
 
 function provision_production_active_instance(OrbitApp $app, Node $node, string $name): AppInstance
 {

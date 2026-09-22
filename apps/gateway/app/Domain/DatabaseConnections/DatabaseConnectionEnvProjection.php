@@ -163,7 +163,12 @@ final readonly class DatabaseConnectionEnvProjection
             && $connection->node_id !== null
             && $instance->node_id === $connection->node_id
         ) {
-            return ['127.0.0.1', $published->publishedPort];
+            return [
+                in_array($published->bindAddress, [null, '0.0.0.0', '::', '[::]'], true)
+                    ? '127.0.0.1'
+                    : $published->bindAddress,
+                $published->publishedPort,
+            ];
         }
 
         return [$host, $port];

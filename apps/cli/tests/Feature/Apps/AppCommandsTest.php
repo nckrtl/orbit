@@ -257,7 +257,7 @@ describe('project:list', function (): void {
             ]),
         ]);
         $expected = json_encode([
-            'apps' => [app_payload()],
+            'projects' => [app_payload()],
             'request_id' => app_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -640,7 +640,7 @@ it('renders an explicit empty list and preserves the empty machine collection', 
 
     if ($json) {
         expect(json_decode($output, true, flags: JSON_THROW_ON_ERROR))->toBe([
-            'apps' => [], 'request_id' => app_request_id(),
+            'projects' => [], 'request_id' => app_request_id(),
         ]);
     } else {
         expect($output)->toContain('No Projects found.', app_request_id())->not->toContain('Operation failed.');

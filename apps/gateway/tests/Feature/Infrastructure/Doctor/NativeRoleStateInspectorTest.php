@@ -94,6 +94,7 @@ it('inspects each role with exact package service and firewall requirements', fu
         ['wg-quick@orbit', 'dnsmasq'],
         ['orbit:vpn-ssh'],
     ],
+    'WebSocket uses the shared WireGuard baseline' => [RoleName::WebSocket, ['caddy', 'composer', 'git', 'openssl', 'php-curl', 'php-xml'], ['caddy', 'orbit-websocket'], []],
     'Router' => [
         RoleName::Router,
         ['caddy', 'openssl'],

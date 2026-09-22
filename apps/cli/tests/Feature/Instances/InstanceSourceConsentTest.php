@@ -54,7 +54,7 @@ function instance_source_consent_case(string $family): array
             'prompt' => 'Transfer source [/work/source] to Orbit ownership, allowing relocation and later removal?',
             'reads' => 0, 'option' => '--yes', 'code' => 'input.confirmation_required',
             'registration_facts' => ['path' => '/work/source', 'repositoryUrl' => 'git@github.com:acme/source.git', 'slug' => 'source', 'defaultBranch' => 'main', 'branch' => 'main', 'root' => 'public', 'layout' => 'checkout', 'commit' => str_repeat('a', 40)],
-            'replies' => [instance_source_reply(RegisterAppInstanceRequest::class, ['app' => ['id' => 3, 'slug' => 'source'], 'app_instance' => $instance, 'app_instances' => [$instance], 'status' => 'completed', 'source_count' => 1, 'completed_count' => 1])],
+            'replies' => [instance_source_reply(RegisterAppInstanceRequest::class, ['app' => ['id' => 3, 'slug' => 'source'], 'app_instance' => $instance, 'instances' => [$instance], 'status' => 'completed', 'source_count' => 1, 'completed_count' => 1])],
             'mutation' => RegisterAppInstanceRequest::class, 'body' => ['source_path' => '/work/source'],
         ],
     };
