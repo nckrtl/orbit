@@ -442,7 +442,7 @@ final readonly class UpdateAppAction
         }
 
         if (is_array($evidence['origins'] ?? null)) {
-            $this->sources->restoreOrigins($evidence['origins']);
+            $this->sources->restoreOrigins($app, $evidence['origins']);
         }
 
         foreach ($evidence['branches'] ?? [] as $row) {

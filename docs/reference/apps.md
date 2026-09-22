@@ -103,6 +103,8 @@ The Gateway treats the supplied fields as one operation. It inventories affected
 
 When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another Project (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Production Git source, deployment branch, starting commit, and release layout do not change. Project updates never start a deployment.
 
+Checkout identity includes its Node. Equal paths on different Nodes remain separate sources during updates, retries, and recovery. Recovery checks the recorded Project, Instance, Node, and path before changing an origin. Older path-only evidence is usable only when exactly one development checkout owned by the Project matches it. Missing, changed, or ambiguous ownership stops recovery with `app.repository_origin_owner_changed` before any origin changes.
+
 When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The Instance name, managed path, and Route identity stay unchanged.
 
 When the slug or web root changes, the Gateway reconciles generated Routes, runtime projections, and Laravel canonical URLs before publication. An application HTTP error does not block completion after Orbit-owned writes succeed. [Applications](/domains/applications#reconcile-an-app-update) describes source ownership and Laravel URL ownership during these updates.

@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 
 final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
@@ -49,21 +50,24 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
             );
         }
 
-        $byPath = [];
+        $byId = [];
 
         foreach ($evidence as $row) {
-            $byPath[$row['path']] = $row;
+            $byId[$row['instance_id']] = $row;
         }
 
         foreach ($checkouts as $checkout) {
             $path = rtrim($checkout->checkout_path, '/');
 
-            if (($byPath[$path]['mutated'] ?? false) === true) {
+            if (($byId[$checkout->id]['mutated'] ?? false) === true) {
                 continue;
             }
 
             $this->originMutations[] = $path;
-            $byPath[$path] = [
+            $byId[$checkout->id] = [
+                'app_id' => $checkout->app_id,
+                'instance_id' => $checkout->id,
+                'node_id' => $checkout->node_id,
                 'path' => $path,
                 'previous_url' => $previousUrl,
                 'current_url' => $newUrl,
@@ -71,10 +75,10 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
             ];
         }
 
-        return array_values($byPath);
+        return array_values($byId);
     }
 
-    public function restoreOrigins(array $mutations): void
+    public function restoreOrigins(OrbitApp $app, array $mutations): void
     {
         foreach ($mutations as $mutation) {
             if (($mutation['mutated'] ?? false) !== true) {

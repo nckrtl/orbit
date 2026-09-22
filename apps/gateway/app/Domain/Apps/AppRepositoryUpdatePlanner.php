@@ -71,21 +71,6 @@ final readonly class AppRepositoryUpdatePlanner
 
     /**
      * @param  list<AppInstance>  $checkouts
-     * @return list<string>
-     */
-    public function uniqueCheckoutPaths(array $checkouts): array
-    {
-        $paths = [];
-
-        foreach ($checkouts as $checkout) {
-            $paths[rtrim($checkout->checkout_path, '/')] = true;
-        }
-
-        return array_keys($paths);
-    }
-
-    /**
-     * @param  list<AppInstance>  $checkouts
      */
     public function ownedCheckout(array $checkouts, AppInstance $worktree): ?AppInstance
     {
