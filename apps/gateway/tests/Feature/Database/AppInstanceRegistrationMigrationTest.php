@@ -10,6 +10,31 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
+it('preserves durable relocation ownership even after registration completes', function (): void {
+    $instance = orb105_registration_migration_instance('relocated');
+    $receipt = ['version' => 1, 'source' => '/work/acme', 'destination' => $instance->checkout_path, 'scope' => [41, 42]];
+    $instance->update(['registration_relocation_receipt' => $receipt]);
+    $migration = require base_path('database/migrations/2026_09_22_115705_add_registration_relocation_receipt_to_app_instances.php');
+
+    expect(fn () => $migration->down())
+        ->toThrow(RuntimeException::class, 'Cannot discard retained registration relocation ownership receipts.');
+
+    expect($instance->refresh()->registration_relocation_receipt)->toBe($receipt);
+    expect(Schema::hasColumn('app_instances', 'registration_relocation_receipt'))->toBeTrue();
+});
+
+it('adds nullable relocation ownership without adopting legacy evidence and safely rolls back an empty column', function (): void {
+    $instance = orb105_registration_migration_instance('reserved');
+    $migration = require base_path('database/migrations/2026_09_22_115705_add_registration_relocation_receipt_to_app_instances.php');
+
+    $migration->down();
+    expect(Schema::hasColumn('app_instances', 'registration_relocation_receipt'))->toBeFalse();
+    $migration->up();
+
+    expect($instance->refresh()->registration_relocation_receipt)->toBeNull();
+    expect($instance->registration_relocation_state)->toBe('reserved');
+});
+
 it('refuses to discard base registration evidence while an operation is incomplete', function (): void {
     $instance = orb105_registration_migration_instance('reserved');
     $cleanup = orb105_cleanup_identity_migration();
