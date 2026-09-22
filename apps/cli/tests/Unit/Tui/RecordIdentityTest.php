@@ -8,6 +8,7 @@ use App\Support\Tui\ActionRunner;
 use App\Support\Tui\Interaction;
 use App\Support\Tui\UiState;
 use Orbit\Sdk\Responses\DatabaseConnections\DatabaseTablesResponse;
+use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
@@ -264,5 +265,91 @@ describe('canonical menu dispatch', function (): void {
         $this->interaction->handleKey(KeyCode::Down);
         $this->interaction->handleKey(KeyCode::Enter);
         expect($this->ui->message)->toBe('orbit node:ssh new-node');
+    });
+});
+
+describe('contextual footer messages', function (): void {
+    it('keeps refusal guidance through redraws and restores hints after Back', function (string $input): void {
+        $this->ui->open('processes', $this->state->processes[0]);
+        $this->interaction->handleChar('a');
+        $this->interaction->handleKey(KeyCode::Down);
+        $this->state->processes[0]['runtime_status'] = 'inactive';
+        $this->interaction->handleKey(KeyCode::Enter);
+        $footer = new ReflectionMethod(TopCommand::class, 'footer');
+        $message = 'The record changed or disappeared. Reopen its actions.';
+
+        expect($footer->invoke(new TopCommand, $this->ui))->toBe('  '.$message);
+        render_top_screen($this->ui, $this->state);
+        expect($this->ui->message)->toBe($message);
+
+        if ($input === 'keyboard') {
+            $this->interaction->handleKey(KeyCode::Esc);
+        } else {
+            $area = $this->ui->drawn['back']['area'];
+            $this->interaction->handleMouse(MouseEvent::new(MouseEventKind::Down, MouseButton::Left, $area->left() + 3, $area->top(), 0));
+        }
+
+        expect($this->ui->message)->toBe('')
+            ->and($footer->invoke(new TopCommand, $this->ui))->toContain('↑↓ sections', '1-8 jump')
+            ->and($this->sent)->toBe([]);
+    })->with(['keyboard', 'mouse']);
+
+    it('clears a result when changing sections', function (): void {
+        $this->ui->open('processes', $this->state->processes[0]);
+        $this->interaction->handleChar('a');
+        $this->interaction->handleKey(KeyCode::Enter);
+        expect($this->ui->message)->toBe('Process [horizon] restarted.');
+
+        $this->interaction->handleChar('2');
+
+        expect($this->ui->message)->toBe('')
+            ->and(new ReflectionMethod(TopCommand::class, 'footer')->invoke(new TopCommand, $this->ui))->toContain('c or + create');
+    });
+
+    it('clears a previous result when opening another record', function (): void {
+        $this->ui->goTo('nodes');
+        render_top_screen($this->ui, $this->state);
+        $this->ui->focus = 'list';
+        $this->ui->message = 'A previous action finished.';
+
+        $this->interaction->handleKey(KeyCode::Enter);
+
+        expect($this->ui->page()['kind'])->toBe('nodes')
+            ->and($this->ui->message)->toBe('')
+            ->and(new ReflectionMethod(TopCommand::class, 'footer')->invoke(new TopCommand, $this->ui))->toContain('Esc or ‹ back');
+    });
+
+    it('restores form hints when opening the create form', function (string $input): void {
+        $this->ui->goTo('nodes');
+        render_top_screen($this->ui, $this->state);
+        $this->ui->message = 'A previous action finished.';
+
+        if ($input === 'keyboard') {
+            $this->interaction->handleChar('c');
+        } else {
+            $area = $this->ui->drawn['create']['area'];
+            $this->interaction->handleMouse(MouseEvent::new(MouseEventKind::Down, MouseButton::Left, $area->left() + 1, $area->top(), 0));
+        }
+
+        expect($this->ui->form)->not->toBeNull()
+            ->and($this->ui->message)->toBe('')
+            ->and(new ReflectionMethod(TopCommand::class, 'footer')->invoke(new TopCommand, $this->ui))->toContain('Tab move between fields', 'Esc cancels');
+    })->with(['keyboard', 'mouse']);
+
+    it('keeps the new creation result when opening the created Node', function (): void {
+        $send = fn (): NodeResponse => new NodeResponse(id: 2, name: 'new-node', status: 'active', publicSshHost: 'new-node.example.test', publicSshPort: 22, user: 'root', wireguardIp: null, roles: ['app-dev'], requestId: 'r');
+        $interaction = new Interaction($this->state, $this->ui, new ActionRunner($send), $send);
+        $this->ui->goTo('nodes');
+        $interaction->handleChar('c');
+        foreach (str_split('new-node') as $char) {
+            $interaction->handleChar($char);
+        }
+        $this->ui->form->focusField(count($this->ui->form->prompts));
+
+        $interaction->handleKey(KeyCode::Enter);
+
+        expect($this->ui->page())->toBe(['kind' => 'nodes', 'id' => 2])
+            ->and($this->ui->message)->toBe('Node [new-node] is active.')
+            ->and(new ReflectionMethod(TopCommand::class, 'footer')->invoke(new TopCommand, $this->ui))->toBe('  Node [new-node] is active.');
     });
 });

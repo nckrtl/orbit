@@ -718,6 +718,7 @@ final readonly class Interaction
 
     private function openForm(): void
     {
+        $this->ui->message = '';
         $this->ui->form = new NodeFormState;
         $this->ui->focus = null;
     }
@@ -806,8 +807,8 @@ final readonly class Interaction
             $this->state->nodes[] = State::nodeRow($node);
             $this->ui->form = null;
             $this->ui->creatingNode = false;
-            $this->ui->message = "Node [{$node->name}] is {$node->status}.";
             $this->openRecord('nodes', State::nodeRow($node));
+            $this->ui->message = "Node [{$node->name}] is {$node->status}.";
         } catch (GatewayApiException $exception) {
             $this->ui->creatingNode = false;
             $form->error = $exception->getMessage();

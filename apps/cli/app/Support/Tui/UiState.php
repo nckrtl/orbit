@@ -61,7 +61,7 @@ final class UiState
      */
     public bool $creatingNode = false;
 
-    /** The last footer message: an action's outcome, or the command a "leaves the TUI" action printed. */
+    /** The current result or recovery message, cleared when navigation or a new interaction starts. */
     public string $message = '';
 
     /**
@@ -117,6 +117,7 @@ final class UiState
 
     public function goTo(string $section): void
     {
+        $this->message = '';
         $this->section = $section;
         $this->pages = [];
         $this->form = null;
@@ -130,6 +131,7 @@ final class UiState
     /** @param array<string, mixed> $row */
     public function open(string $kind, array $row): void
     {
+        $this->message = '';
         $this->pages[] = ['kind' => $kind, 'id' => $row['id'], ...($kind === 'deployments' ? ['historical' => $row] : [])];
         $this->focus = null;
         $this->hover = 'nav';
@@ -139,6 +141,7 @@ final class UiState
 
     public function back(): void
     {
+        $this->message = '';
         if ($this->form !== null) {
             $this->form = null;
 
