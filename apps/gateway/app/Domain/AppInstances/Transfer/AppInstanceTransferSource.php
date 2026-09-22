@@ -15,17 +15,20 @@ interface AppInstanceTransferSource
 
     public function capture(AppInstance $instance, TransferArchiveAttempt $attempt): TransferSourceCapture;
 
+    public function prepareDestination(TransferDestinationAttempt $attempt): TransferDestinationAttempt;
+
     public function materialize(
         TransferSourceCapture $capture,
         Node $destination,
         StoragePath $path,
         TransferArchiveAttempt $attempt,
+        TransferDestinationAttempt $destinationAttempt,
     ): TransferCheckout;
 
     /** @return list<'source'|'destination'> */
     public function cleanupArchives(TransferArchiveAttempt $attempt): array;
 
-    public function discardDestination(Node $node, StoragePath $path): void;
+    public function discardDestination(TransferDestinationAttempt $attempt): void;
 
     public function cleanupSource(AppInstanceTransfer $transfer): TransferCleanupResult;
 }

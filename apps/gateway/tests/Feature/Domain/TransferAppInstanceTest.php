@@ -15,8 +15,10 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentValidator;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
+use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -181,6 +183,165 @@ it('records archive intent and exact prepared identities before capture and clea
         ->and($result['transfer']->archive_attempt)->toBeNull()
         ->and($result['transfer']->toArray())->not->toHaveKey('archive_attempt');
 });
+
+it('records destination acquisition before remote creation and exact ownership before materialization', function (): void {
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($this->sources->preparedDestinationEvidence)->toHaveCount(1)
+        ->and($this->sources->preparedDestinationEvidence[0]['phase'])->toBe('acquiring')
+        ->and($this->sources->preparedDestinationEvidence[0]['receipt'])->toBeNull()
+        ->and($this->sources->materializedDestinationEvidence)->toHaveCount(1)
+        ->and($this->sources->materializedDestinationEvidence[0]['phase'])->toBe('owned')
+        ->and($this->sources->materializedDestinationEvidence[0]['receipt'])->toBe([
+            'root' => '3:1', 'parent' => '3:2', 'scope' => '3:3', 'checkout' => '3:4',
+        ])
+        ->and($result['transfer']->destination_attempt)->toBeNull()
+        ->and($result['transfer']->toArray())->not->toHaveKey('destination_attempt')
+        ->and($this->sources->discardedDestinationAttempts)->toBeEmpty();
+});
+
+it('performs no remote transfer work when destination intent cannot be reserved', function (): void {
+    DB::unprepared("CREATE TRIGGER fail_destination_intent BEFORE INSERT ON app_instance_transfers WHEN NEW.destination_attempt IS NOT NULL BEGIN SELECT RAISE(FAIL, 'destination reservation refused'); END");
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_destination_intent');
+    }
+
+    $this->assertDatabaseCount('app_instance_transfers', 0);
+    expect($this->sources->archiveCalls)->toBeEmpty()
+        ->and($this->sources->calls)->toBeEmpty()
+        ->and($this->sources->preparedDestinationEvidence)->toBeEmpty()
+        ->and($this->runtime->calls)->toBeEmpty()
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id);
+});
+
+it('retains exact destination cleanup authority across failed database checkpoints', function (
+    string $predicate,
+    string $discardPhase,
+    int $prepared,
+    int $materialized,
+): void {
+    DB::unprepared("CREATE TRIGGER fail_destination_checkpoint BEFORE UPDATE ON app_instance_transfers WHEN {$predicate} BEGIN SELECT RAISE(FAIL, 'destination checkpoint refused'); END");
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(QueryException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_destination_checkpoint');
+    }
+
+    $transfer = AppInstanceTransfer::query()->sole();
+    expect($this->sources->preparedDestinationEvidence)->toHaveCount($prepared)
+        ->and($this->sources->materializedDestinationEvidence)->toHaveCount($materialized)
+        ->and($this->sources->discardedDestinationAttempts)->toHaveCount(1)
+        ->and($this->sources->discardedDestinationAttempts[0]->phase)->toBe($discardPhase)
+        ->and($transfer->destination_attempt['phase'])->toBe('cleaned')
+        ->and($transfer->cutover_at)->toBeNull()
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->runtime->calls)->not->toContain('pause')
+        ->and($this->runtime->calls)->not->toContain('relocate')
+        ->and($this->route->refresh()->status)->toBe(RouteStatus::Active);
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($result['transfer']->destination_attempt)->toBeNull();
+})->with([
+    'acquisition intent' => ["json_extract(NEW.destination_attempt, '$.phase') = 'acquiring'", 'reserved', 0, 0],
+    'owned receipt' => ["json_extract(NEW.destination_attempt, '$.phase') = 'owned'", 'acquiring', 1, 0],
+    'materialized checkpoint' => ["NEW.current_step = 'destination-checkout-created'", 'owned', 1, 1],
+]);
+
+it('blocks recapture and retains destination reservations until owned cleanup is confirmed', function (): void {
+    $this->sources->failMaterialize = true;
+    $this->sources->destinationCleanupIncomplete = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $attempt = $transfer->destination_attempt;
+
+    expect($attempt['phase'])->toBe('owned')
+        ->and($transfer->recovery_evidence['incomplete'])->toContain('destination-checkout')
+        ->and($this->sources->captures)->toHaveCount(1);
+    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->count())->toBe(2);
+    $this->sources->failMaterialize = false;
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_destination_cleanup_incomplete'));
+    expect($this->sources->captures)->toHaveCount(1)
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id);
+
+    $this->sources->destinationCleanupIncomplete = false;
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($this->sources->captures)->toHaveCount(2)
+        ->and($this->sources->preparedDestinationEvidence[1]['id'])->not->toBe($attempt['id'])
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($result['transfer']->destination_attempt)->toBeNull();
+});
+
+it('refuses legacy incomplete destination cleanup without adopting its current path', function (): void {
+    $transfer = orb245_prepared_transfer($this->instance, $this->route, $this->destinationNode, AppInstanceTransferStep::Reserved);
+    $transfer->update(['destination_attempt' => null]);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_destination_cleanup_incomplete'));
+    expect($this->sources->calls)->toBeEmpty()
+        ->and($this->sources->discardedDestinationAttempts)->toBeEmpty()
+        ->and($transfer->refresh()->destination_attempt)->toBeNull()
+        ->and($transfer->recovery_evidence['incomplete'])->toContain('destination-checkout')
+        ->and($transfer->cutover_at)->toBeNull()
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id);
+});
+
+it('retains ownership when cleanup succeeds but its database acknowledgement is rejected', function (): void {
+    $this->sources->failMaterialize = true;
+    DB::unprepared("CREATE TRIGGER fail_destination_cleanup_checkpoint BEFORE UPDATE ON app_instance_transfers WHEN json_extract(NEW.destination_attempt, '$.phase') = 'cleaned' BEGIN SELECT RAISE(FAIL, 'destination cleanup checkpoint refused'); END");
+
+    try {
+        expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER fail_destination_cleanup_checkpoint');
+    }
+
+    $transfer = AppInstanceTransfer::query()->sole();
+    $attemptId = $transfer->destination_attempt['id'];
+    expect($transfer->destination_attempt['phase'])->toBe('owned')
+        ->and($transfer->recovery_evidence['incomplete'])->toContain('destination-checkout')
+        ->and($this->sources->discardedDestinationAttempts)->toHaveCount(1)
+        ->and($this->sources->discardedDestinationAttempts[0]->id)->toBe($attemptId)
+        ->and($transfer->cutover_at)->toBeNull();
+
+    $this->sources->failMaterialize = false;
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($this->sources->discardedDestinationAttempts[1]->id)->toBe($attemptId)
+        ->and($this->sources->preparedDestinationEvidence[1]['id'])->not->toBe($attemptId)
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed);
+});
+
+it('retains malformed destination ownership without another capture or remote discard', function (string $change): void {
+    $this->sources->failMaterialize = true;
+    $this->sources->destinationCleanupIncomplete = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = AppInstanceTransfer::query()->sole();
+    $evidence = $transfer->destination_attempt;
+    $evidence = match ($change) {
+        'scalar' => 'destination-secret-sentinel',
+        'unknown field' => [...$evidence, 'destination-secret-sentinel' => true],
+        'wrong node' => [...$evidence, 'node_id' => $this->sourceNode->id],
+        'wrong path' => [...$evidence, 'destination_path' => '/srv/foreign'],
+        'missing owned receipt' => [...$evidence, 'receipt' => null],
+    };
+    $stored = json_encode($evidence, JSON_THROW_ON_ERROR);
+    DB::table('app_instance_transfers')->where('id', $transfer->id)->update(['destination_attempt' => $stored]);
+    $before = count($this->sources->discardedDestinationAttempts);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.transfer_destination_cleanup_incomplete')
+                ->and($exception->getMessage())->not->toContain('destination-secret-sentinel');
+        });
+    expect(DB::table('app_instance_transfers')->where('id', $transfer->id)->value('destination_attempt'))->toBe($stored)
+        ->and($this->sources->captures)->toHaveCount(1)
+        ->and(count($this->sources->discardedDestinationAttempts))->toBe($before)
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id);
+})->with(['scalar', 'unknown field', 'wrong node', 'wrong path', 'missing owned receipt']);
 
 it('cleans prepared archives across failed database checkpoints without advancing payload work', function (
     string $predicate,
@@ -1342,6 +1503,8 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
 
     expect($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
         ->and($transfer->recovery_evidence)->toHaveKey('incomplete')
+        ->and($transfer->destination_attempt['phase'])->toBe('owned')
+        ->and($this->sources->discardedDestinationAttempts)->toBeEmpty()
         ->and($this->route->refresh()->status)->toBe(RouteStatus::Retiring)
         ->and(Route::query()->findOrFail($transfer->destination_route_id)->replacement_step)->toBe(RouteReplacementStep::DatabaseCutover)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
@@ -1351,6 +1514,8 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
     expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($result['transfer']->destination_attempt)->toBeNull()
+        ->and($this->sources->discardedDestinationAttempts)->toBeEmpty()
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup', 'cleanup']);
     expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
 });
@@ -1427,7 +1592,7 @@ function orb245_prepared_transfer(AppInstance $instance, Route $source, Node $de
         $source->update(['replaced_by_route_id' => $candidate->id]);
     }
 
-    return AppInstanceTransfer::query()->create([
+    $transfer = AppInstanceTransfer::query()->create([
         'app_instance_id' => $instance->id,
         'source_node_id' => $instance->node_id,
         'source_router_node_id' => $instance->node->cluster->routerAssignment->node_id,
@@ -1443,6 +1608,13 @@ function orb245_prepared_transfer(AppInstance $instance, Route $source, Node $de
         'status' => AppInstanceTransferStatus::InProgress,
         'current_step' => $step,
     ]);
+    $attempt = TransferDestinationAttempt::create($transfer, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+    if (! in_array($step, [AppInstanceTransferStep::Reserved, AppInstanceTransferStep::SourceCaptured], true)) {
+        $attempt = $attempt->acquiring()->withReceipt(['root' => '3:1', 'parent' => '3:2', 'scope' => '3:3', 'checkout' => '3:4']);
+    }
+    $transfer->update(['destination_attempt' => $attempt->toArray()]);
+
+    return $transfer;
 }
 
 function orb245_instance(OrbitApp $app, Node $node, string $name, string $layout): AppInstance

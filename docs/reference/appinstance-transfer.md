@@ -44,6 +44,12 @@ Transfer archives can contain environment values and unpublished source. The Gat
 
 An unconfirmed archive cleanup stops the transfer and retains bounded recovery evidence. Retry the identical request to confirm cleanup before another archive attempt. A missing ownership receipt, changed workspace identity, or unexpected artifact prevents deletion; a reserved path alone does not authorize cleanup.
 
+Destination recovery removes only the directory created for the recorded transfer attempt. The Gateway records creation intent before remote work and the exact directory identity before extraction. It preserves a foreign directory that arrives after preflight or replaces the created checkout. Changed parent identity, missing ownership evidence, or unconfirmed cleanup stops recovery and retains the attempt for an identical retry. Legacy incomplete transfers without destination ownership evidence require recovery; the Gateway never adopts their current destination path for deletion. Post-cutover recovery does not discard the destination.
+
+Destination metadata keeps two checksummed records in one bounded, protected file. After an interrupted update, retry uses the latest valid record. An incomplete first record or an unsupported metadata format cannot prove ownership and stops cleanup.
+
+Ownership receipts use private directories owned by the managed account. These checks do not protect against malicious code running as that same account and rewriting its private receipts. Directory creation does not atomically return an identity; checks detect drift after the first observation, before use and after placement or cleanup claims.
+
 ### Selected SQLite
 
 When the operator selects one SQLite database, the Gateway pauses source execution, captures one consistent snapshot, and installs those bytes at the destination. It never discovers or copies another database or persistent path.
@@ -128,6 +134,7 @@ The Gateway returns these transfer conflicts before or during the operation.
 | `instance.transfer_retry_conflict` | A different request tried to resume an incomplete transfer. |
 | `instance.transfer_failed` | Transfer failed and the Gateway restored or retained the current authority. |
 | `instance.transfer_archive_cleanup_incomplete` | Temporary archive cleanup is unconfirmed; retry the identical request before another archive attempt. |
+| `instance.transfer_destination_cleanup_incomplete` | Destination ownership or cleanup is unconfirmed; retain the evidence and retry the identical request. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative and old-placement cleanup still needs the identical retry. |
 | `instance.transfer_source_router_unknown` | The original Router identity is unavailable, so source projection cleanup cannot proceed. |
 | `instance.transfer_cleanup_conflict` | Recorded placement or Route ownership changed, so cleanup stops without finalizing the transfer. |

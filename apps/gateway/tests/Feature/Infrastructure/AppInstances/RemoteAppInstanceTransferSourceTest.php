@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
+use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -41,6 +42,472 @@ it('protects a source archive from creation under a permissive remote umask', fu
 
         expect(fileperms($capture->archiveIdentity) & 0777)->toBe(0600)
             ->and(fileperms(dirname($capture->archiveIdentity)) & 0777)->toBe(0700);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves a foreign destination when capture failed before destination materialization', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    mkdir($fixture->destinationPath, 0755, recursive: true);
+    file_put_contents($fixture->destinationPath.'/foreign', 'foreign-destination-sentinel');
+    $fixture->ssh->programReplacements = ['os.fsync(archive)' => 'raise OSError("capture failed")'];
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        $calls = count($fixture->ssh->calls);
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('foreign-destination-sentinel')
+            ->and($fixture->destinationAttempt->phase)->toBe('reserved')
+            ->and(count($fixture->ssh->calls))->toBe($calls);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves a foreign replacement of a materialized destination during recovery', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    rename($fixture->destinationPath, $fixture->destinationPath.'.retained');
+    mkdir($fixture->destinationPath, 0755);
+    file_put_contents($fixture->destinationPath.'/foreign', 'foreign-destination-sentinel');
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_destination_cleanup_incomplete'));
+
+        expect(is_file($fixture->destinationPath.'/foreign'))->toBeTrue()
+            ->and(is_file($fixture->destinationPath.'.retained/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('cleans only the owned destination and preserves its parent siblings and later arrivals', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $parent = dirname($fixture->destinationPath);
+    mkdir($parent.'/sibling');
+    file_put_contents($parent.'/sibling/foreign', 'sibling-sentinel');
+
+    try {
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(is_dir($parent))->toBeTrue()
+            ->and(file_get_contents($parent.'/sibling/foreign'))->toBe('sibling-sentinel');
+        mkdir($fixture->destinationPath);
+        file_put_contents($fixture->destinationPath.'/foreign', 'later-sentinel');
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('later-sentinel');
+        expect(fn () => $fixture->source->prepareDestination($fixture->destinationIntent()))->toThrow(ResourceOperationException::class);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves a foreign destination that wins placement while deleting only its owned empty stage', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    mkdir($fixture->destinationPath, 0755, recursive: true);
+    file_put_contents($fixture->destinationPath.'/foreign', 'foreign-destination-sentinel');
+
+    try {
+        expect(fn () => $fixture->prepareDestination())->toThrow(ResourceOperationException::class);
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('foreign-destination-sentinel')
+            ->and(array_values(array_diff(scandir($fixture->destinationScope()), ['.', '..'])))->toBe([]);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses a private destination stage changed after its first observation before opening', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->programReplacements = [
+        'stage = self.track(os.open(self.stage_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=scope))' => implode("\n", [
+            'os.rename(self.stage_name, self.stage_name + ".retained", src_dir_fd=scope, dst_dir_fd=scope)',
+            '        os.mkdir(self.stage_name, 0o755, dir_fd=scope)',
+            '        foreign = os.open(self.stage_name + "/foreign", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=scope)',
+            '        os.write(foreign, b"foreign-sentinel")',
+            '        os.close(foreign)',
+            '        stage = self.track(os.open(self.stage_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=scope))',
+        ]),
+    ];
+
+    try {
+        expect(fn () => $fixture->prepareDestination())->toThrow(ResourceOperationException::class);
+        $stage = $fixture->destinationScope().'/'.$fixture->destinationAttempt->id.'.stage';
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(file_get_contents($stage.'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_dir($stage.'.retained'))->toBeTrue();
+        $fixture->ssh->programReplacements = [];
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($stage.'/foreign'))->toBe('foreign-sentinel');
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('restores a foreign stage swapped after its receipt and before atomic destination placement', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->programReplacements = [
+        'self.rename(scope, self.stage_name, parent, self.name)' => implode("\n", [
+            'os.rename(self.stage_name, self.stage_name + ".retained", src_dir_fd=scope, dst_dir_fd=scope)',
+            '        os.mkdir(self.stage_name, 0o755, dir_fd=scope)',
+            '        foreign = os.open(self.stage_name + "/foreign", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=scope)',
+            '        os.write(foreign, b"foreign-sentinel")',
+            '        os.close(foreign)',
+            '        self.rename(scope, self.stage_name, parent, self.name)',
+        ]),
+    ];
+
+    try {
+        expect(fn () => $fixture->prepareDestination())->toThrow(ResourceOperationException::class);
+        $stage = $fixture->destinationScope().'/'.$fixture->destinationAttempt->id.'.stage';
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(file_get_contents($stage.'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_dir($stage.'.retained'))->toBeTrue();
+        $fixture->ssh->programReplacements = [];
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($stage.'/foreign'))->toBe('foreign-sentinel');
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('removes its partially extracted destination after materialization fails', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->transport->failure = 'partial extraction';
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        expect(count(scandir($fixture->destinationPath)))->toBeGreaterThan(2);
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(is_file($fixture->instance->checkout_path.'/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses changed destination parents without deleting a retained checkout or foreign contents', function (bool $symlink): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $parent = dirname($fixture->destinationPath);
+    rename($parent, $parent.'.retained');
+    if ($symlink) {
+        symlink($parent.'.retained', $parent);
+    } else {
+        mkdir($fixture->destinationPath, 0755, recursive: true);
+        file_put_contents($fixture->destinationPath.'/foreign', 'foreign-destination-sentinel');
+    }
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($parent.'.retained/web/.env'))->toBe("KEY=archive-secret-sentinel\n");
+        if (! $symlink) {
+            expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('foreign-destination-sentinel');
+        }
+    } finally {
+        $fixture->close();
+    }
+})->with(['symlink' => true, 'replacement' => false]);
+
+it('preserves a foreign destination quarantine collision', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $claim = $fixture->destinationScope().'/'.$fixture->destinationAttempt->id.'.claimed';
+    mkdir($claim, 0700);
+    file_put_contents($claim.'/foreign', 'foreign-claim-sentinel');
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($claim.'/foreign'))->toBe('foreign-claim-sentinel')
+            ->and(is_file($fixture->destinationPath.'/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('preserves a foreign destination swapped between ownership validation and atomic claim', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $fixture->ssh->programReplacements = [
+        'self.rename(origin_parent, origin_name, scope, self.claim_name)' => implode("\n", [
+            'os.rename(origin_name, origin_name + ".retained", src_dir_fd=origin_parent, dst_dir_fd=origin_parent)',
+            '            os.mkdir(origin_name, 0o755, dir_fd=origin_parent)',
+            '            foreign = os.open(origin_name + "/foreign", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=origin_parent)',
+            '            os.write(foreign, b"foreign-sentinel")',
+            '            os.close(foreign)',
+            '            self.rename(origin_parent, origin_name, scope, self.claim_name)',
+        ]),
+    ];
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_file($fixture->destinationPath.'.retained/.env'))->toBeTrue()
+            ->and(is_dir($fixture->destinationScope().'/'.$fixture->destinationAttempt->id.'.claimed'))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses extraction into a replaced destination before writing any archive contents', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->before = static function (SshConnection $connection, RemoteCommand $command) use ($fixture): void {
+        if ($command->arguments[3] === 'materialize') {
+            rename($fixture->destinationPath, $fixture->destinationPath.'.retained');
+            mkdir($fixture->destinationPath, 0755);
+            file_put_contents($fixture->destinationPath.'/foreign', 'foreign-sentinel');
+        }
+    };
+
+    try {
+        expect(fn () => $fixture->materialize())->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('foreign-sentinel')
+            ->and(array_values(array_diff(scandir($fixture->destinationPath), ['.', '..'])))->toBe(['foreign'])
+            ->and(array_values(array_diff(scandir($fixture->destinationPath.'.retained'), ['.', '..'])))->toBe([]);
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses destination cleanup when the protected receipt root changes', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $root = $fixture->destinationAttempt->privateRoot;
+    rename($root, $root.'.retained');
+    mkdir($root, 0700);
+    file_put_contents($root.'/foreign', 'foreign-sentinel');
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($root.'/foreign'))->toBe('foreign-sentinel')
+            ->and(is_file($fixture->destinationPath.'/.env'))->toBeTrue()
+            ->and(is_file($root.'.retained/'.$fixture->destinationAttempt->id.'.json'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('recovers exact empty destination ownership after interrupted placement', function (string $window): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->programReplacements = match ($window) {
+        'before placement' => ['self.rename(scope, self.stage_name, parent, self.name)' => 'raise OSError("placement interrupted")'],
+        'after placement' => ['self.state["phase"] = "owned"' => 'raise OSError("placement interrupted")'],
+    };
+
+    try {
+        expect(fn () => $fixture->prepareDestination())->toThrow(ResourceOperationException::class);
+        expect($fixture->destinationAttempt->phase)->toBe('acquiring')
+            ->and($fixture->destinationAttempt->receipt)->toBeNull();
+        $fixture->ssh->programReplacements = [];
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(array_values(array_diff(scandir($fixture->destinationScope()), ['.', '..'])))->toBe([]);
+        expect(fn () => $fixture->source->prepareDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+    } finally {
+        $fixture->close();
+    }
+})->with(['before placement', 'after placement']);
+
+it('recovers a created destination after its acknowledgement is lost before receipt persistence', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->after = static function (SshConnection $connection, RemoteCommand $command, CommandResult $result): CommandResult {
+        if ($command->arguments[3] === 'create') {
+            throw new RuntimeException('destination-secret-sentinel');
+        }
+
+        return $result;
+    };
+
+    try {
+        expect(fn () => $fixture->prepareDestination())->toThrow(ResourceOperationException::class);
+        expect(is_dir($fixture->destinationPath))->toBeTrue()
+            ->and($fixture->transfer->refresh()->destination_attempt['receipt'])->toBeNull();
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(is_dir($fixture->destinationPath))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('settles a never-started acquisition without creating the destination and refuses late creation', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->destinationAttempt = $fixture->destinationAttempt->acquiring();
+    $fixture->transfer->update(['destination_attempt' => $fixture->destinationAttempt->toArray()]);
+
+    try {
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(is_dir(dirname($fixture->destinationPath)))->toBeFalse();
+        expect(fn () => $fixture->source->prepareDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(is_dir($fixture->destinationPath))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('refuses delayed materialization after the destination cleanup tombstone is durable', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $capture = $fixture->source->capture($fixture->instance, $fixture->attempt);
+    $fixture->prepareDestination();
+
+    try {
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        expect(fn () => $fixture->source->materialize(
+            $capture, $fixture->destination, StoragePath::parse($fixture->destinationPath), $fixture->attempt, $fixture->destinationAttempt,
+        ))->toThrow(ResourceOperationException::class);
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and($fixture->source->cleanupArchives($fixture->attempt))->toBe([]);
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('retains destination ownership when its checkout disappears without a cleanup claim', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    rename($fixture->destinationPath, $fixture->destinationPath.'.retained');
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(is_file($fixture->destinationPath.'.retained/.env'))->toBeTrue();
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('resumes owned destination deletion after a native cleanup interruption', function (string $window): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $fixture->ssh->programReplacements = match ($window) {
+        'after claim' => ['moved = self.metadata(scope, self.claim_name)' => 'raise OSError("claim interrupted")'],
+        'during deletion' => ['os.unlink(name, dir_fd=directory)' => "os.unlink(name, dir_fd=directory)\n                raise OSError(\"deletion interrupted\")"],
+        'after deletion' => ['os.fsync(scope)' => 'raise OSError("receipt interrupted")'],
+    };
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        $fixture->ssh->programReplacements = [];
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+
+        expect(is_dir($fixture->destinationPath))->toBeFalse()
+            ->and(array_values(array_diff(scandir($fixture->destinationScope()), ['.', '..'])))->toBe([]);
+    } finally {
+        $fixture->close();
+    }
+})->with(['after claim', 'during deletion', 'after deletion']);
+
+it('recovers destination cleanup after a killed metadata update without growing its journal', function (bool $partial): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $journal = $fixture->destinationAttempt->privateRoot.'/'.$fixture->destinationAttempt->id.'.json';
+    $before = stat($journal);
+    $exitCode = null;
+    $fixture->ssh->after = function (SshConnection $connection, RemoteCommand $command, CommandResult $result) use (&$exitCode): CommandResult {
+        $exitCode = $result->exitCode;
+
+        return $result;
+    };
+    $fixture->ssh->programReplacements = [
+        'written = os.pwrite(descriptor, frame[position:], offset + position)' => implode("\n", [
+            'written = os.pwrite(descriptor, frame[position:position + 24] if '.($partial ? 'True' : 'False').' and self.state["phase"] == "cleaned" else frame[position:], offset + position)',
+            '            if self.state["phase"] == "cleaned":',
+            '                os.fsync(descriptor)',
+            '                os.kill(os.getpid(), 9)',
+        ]),
+    ];
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect($exitCode)->toBe(137)
+            ->and(is_dir($fixture->destinationPath))->toBeFalse();
+        mkdir($fixture->destinationPath);
+        file_put_contents($fixture->destinationPath.'/foreign', 'later-sentinel');
+        $fixture->ssh->programReplacements = [];
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+        clearstatcache(true, $journal);
+        $after = stat($journal);
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('later-sentinel')
+            ->and($after['ino'])->toBe($before['ino'])
+            ->and($after['size'])->toBe(32768)
+            ->and(file_exists($fixture->destinationAttempt->privateRoot.'/'.$fixture->destinationAttempt->id.'.next'))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+})->with(['partial write' => true, 'complete write' => false]);
+
+it('refuses destination cleanup when its metadata journal cannot prove a committed receipt', function (string $fault): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $journal = $fixture->destinationAttempt->privateRoot.'/'.$fixture->destinationAttempt->id.'.json';
+    match ($fault) {
+        'legacy format' => file_put_contents($journal, '{"phase":"owned"}'),
+        'both torn' => file_put_contents($journal, str_repeat("\0", 32768)),
+        'oversized' => file_put_contents($journal, str_repeat('x', 32769)),
+        'wrong mode' => chmod($journal, 0644),
+        'hard link' => link($journal, $journal.'.retained'),
+    };
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($fixture->destinationPath.'/.env'))->toBe("KEY=archive-secret-sentinel\n")
+            ->and(is_dir($fixture->destinationScope().'/'.$fixture->destinationAttempt->id.'.claimed'))->toBeFalse();
+    } finally {
+        $fixture->close();
+    }
+})->with(['legacy format', 'both torn', 'oversized', 'wrong mode', 'hard link']);
+
+it('does not infer destination ownership from an interrupted initial metadata record', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->ssh->programReplacements = [
+        'written = os.pwrite(descriptor, frame[position:], offset + position)' => implode("\n", [
+            'written = os.pwrite(descriptor, frame[position:position + 24], offset + position)',
+            '            os.fsync(descriptor)',
+            '            os.kill(os.getpid(), 9)',
+        ]),
+    ];
+
+    try {
+        expect(fn () => $fixture->prepareDestination())->toThrow(ResourceOperationException::class);
+        mkdir($fixture->destinationPath, 0755, recursive: true);
+        file_put_contents($fixture->destinationPath.'/foreign', 'foreign-sentinel');
+        $fixture->ssh->programReplacements = [];
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))->toThrow(ResourceOperationException::class);
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('foreign-sentinel');
+    } finally {
+        $fixture->close();
+    }
+});
+
+it('confirms lost destination cleanup acknowledgements without deleting a later arrival', function (): void {
+    $fixture = new TransferArchiveNativeFixture;
+    $fixture->materialize();
+    $fixture->ssh->after = static function (SshConnection $connection, RemoteCommand $command, CommandResult $result): CommandResult {
+        if ($command->arguments[3] === 'cleanup') {
+            throw new RuntimeException('destination-secret-sentinel');
+        }
+
+        return $result;
+    };
+
+    try {
+        expect(fn () => $fixture->source->discardDestination($fixture->destinationAttempt))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->getMessage())->not->toContain('destination-secret-sentinel'));
+        expect(is_dir($fixture->destinationPath))->toBeFalse();
+        mkdir($fixture->destinationPath);
+        file_put_contents($fixture->destinationPath.'/foreign', 'later-sentinel');
+        $fixture->ssh->after = null;
+        $fixture->source->discardDestination($fixture->destinationAttempt);
+
+        expect(file_get_contents($fixture->destinationPath.'/foreign'))->toBe('later-sentinel');
     } finally {
         $fixture->close();
     }
@@ -424,6 +891,8 @@ final class TransferArchiveNativeFixture
 
     public TransferArchiveAttempt $attempt;
 
+    public TransferDestinationAttempt $destinationAttempt;
+
     public function __construct(bool $prepare = true)
     {
         $this->directory = sys_get_temp_dir().'/orbit-transfer-native-'.Str::uuid();
@@ -522,6 +991,8 @@ final class TransferArchiveNativeFixture
         $this->attempt = TransferArchiveAttempt::create(
             $this->transfer, $accounts->resolve($sourceNode), $accounts->resolve($this->destination),
         );
+        $this->destinationAttempt = TransferDestinationAttempt::create($this->transfer, $accounts->resolve($this->destination));
+        $this->transfer->update(['destination_attempt' => $this->destinationAttempt->toArray()]);
         $this->transfer->update(['archive_attempt' => $this->attempt->toArray()]);
         if ($prepare) {
             $this->prepare();
@@ -538,13 +1009,34 @@ final class TransferArchiveNativeFixture
     {
         try {
             $capture = $this->source->capture($this->instance, $this->attempt);
+            $this->prepareDestination();
 
             return $this->source->materialize(
-                $capture, $this->destination, StoragePath::parse($this->destinationPath), $this->attempt,
+                $capture, $this->destination, StoragePath::parse($this->destinationPath), $this->attempt, $this->destinationAttempt,
             );
         } finally {
             expect($this->source->cleanupArchives($this->attempt))->toBe([]);
         }
+    }
+
+    public function prepareDestination(): void
+    {
+        $this->destinationAttempt = $this->destinationAttempt->acquiring();
+        $this->transfer->update(['destination_attempt' => $this->destinationAttempt->toArray()]);
+        $this->destinationAttempt = $this->source->prepareDestination($this->destinationAttempt);
+        $this->transfer->update(['destination_attempt' => $this->destinationAttempt->toArray()]);
+    }
+
+    public function destinationScope(): string
+    {
+        return dirname($this->destinationPath).'/.orbit-transfer-destinations';
+    }
+
+    public function destinationIntent(): TransferDestinationAttempt
+    {
+        return TransferDestinationAttempt::fromArray([
+            ...$this->destinationAttempt->toArray(), 'phase' => 'acquiring', 'receipt' => null,
+        ], $this->transfer);
     }
 
     /** @param non-empty-list<string> $arguments */
@@ -640,6 +1132,11 @@ final class TransferArchiveNativeTransport implements ProcessRunner
         }
         if ($this->failure === $direction.' typed exception') {
             throw new ResourceOperationException('transport.secret', 'archive-secret-sentinel', 500);
+        }
+        if ($direction === 'upload' && $this->failure === 'partial extraction') {
+            file_put_contents($localTarget, substr(file_get_contents($source), 0, 1536).str_repeat('x', 512));
+
+            return new CommandResult(0, '', '', 1, false);
         }
         if ($this->failure === $direction || $direction === 'upload' && in_array($this->failure, ['truncated upload', 'extraction'], true)) {
             file_put_contents($localTarget, 'partial-archive-secret-sentinel');

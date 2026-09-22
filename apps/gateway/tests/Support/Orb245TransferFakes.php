@@ -22,6 +22,7 @@ use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
+use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -99,6 +100,17 @@ final class Orb245TransferSource implements AppInstanceTransferSource
     /** @var list<TransferArchiveAttempt> */
     public array $capturedArchiveAttempts = [];
 
+    /** @var list<array<string, mixed>|null> */
+    public array $preparedDestinationEvidence = [];
+
+    /** @var list<array<string, mixed>|null> */
+    public array $materializedDestinationEvidence = [];
+
+    /** @var list<TransferDestinationAttempt> */
+    public array $discardedDestinationAttempts = [];
+
+    public bool $destinationCleanupIncomplete = false;
+
     /** @var list<string> */
     public array $calls = [];
 
@@ -169,8 +181,10 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         Node $destination,
         StoragePath $path,
         TransferArchiveAttempt $attempt,
+        TransferDestinationAttempt $destinationAttempt,
     ): TransferCheckout {
         $this->calls[] = 'materialize';
+        $this->materializedDestinationEvidence[] = AppInstanceTransfer::query()->findOrFail($destinationAttempt->transferId)->destination_attempt;
 
         if ($this->failMaterialize) {
             throw new ResourceOperationException('instance.transfer_failed', 'Destination checkout failed.', 409);
@@ -189,9 +203,20 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         return $checkout;
     }
 
-    public function discardDestination(Node $node, StoragePath $path): void
+    public function prepareDestination(TransferDestinationAttempt $attempt): TransferDestinationAttempt
     {
-        $this->discarded[] = $path->value;
+        $this->preparedDestinationEvidence[] = AppInstanceTransfer::query()->findOrFail($attempt->transferId)->destination_attempt;
+
+        return $attempt->withReceipt(['root' => '3:1', 'parent' => '3:2', 'scope' => '3:3', 'checkout' => '3:4']);
+    }
+
+    public function discardDestination(TransferDestinationAttempt $attempt): void
+    {
+        $this->discardedDestinationAttempts[] = $attempt;
+        $this->discarded[] = $attempt->destinationPath;
+        if ($this->destinationCleanupIncomplete) {
+            throw new ResourceOperationException('instance.transfer_destination_cleanup_incomplete', 'Destination ownership is unconfirmed.', 409);
+        }
     }
 
     public function cleanupSource(AppInstanceTransfer $transfer): TransferCleanupResult

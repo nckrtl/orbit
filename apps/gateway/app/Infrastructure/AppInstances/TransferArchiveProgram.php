@@ -263,25 +263,26 @@ final class TransferArchiveProgram
                 }
 
             def materialize(workspace):
-                destination = request["destination_path"]
-                os.makedirs(os.path.dirname(destination), exist_ok=True)
-                os.mkdir(destination)
-                archive = open_artifact(workspace, "archive", os.O_RDONLY)
-                try:
-                    run_checked(["tar", "-xf", "/proc/self/fd/" + str(archive), "-C", destination], pass_fds=(archive,), stdout=subprocess.DEVNULL)
-                finally:
-                    os.close(archive)
-                if not os.path.isdir(destination + "/.git"):
-                    run_checked(["git", "init", "--quiet"], cwd=destination, stdout=subprocess.DEVNULL)
-                    bundles = [name for name in os.listdir(destination) if name.endswith(".bundle") and os.path.isfile(destination + "/" + name)]
-                    if len(bundles) == 1:
-                        run_checked(["git", "fetch", "--quiet", "./" + bundles[0], "HEAD"], cwd=destination, stdout=subprocess.DEVNULL)
-                        os.unlink(destination + "/" + bundles[0])
-                    if request["detached"] or not request["branch"]:
-                        arguments = ["git", "checkout", "--quiet", "--detach", request["head"]]
-                    else:
-                        arguments = ["git", "checkout", "--quiet", "-B", request["branch"], request["head"]]
-                    run_checked(arguments, cwd=destination, stdout=subprocess.DEVNULL)
+                with TransferDestination(request["destination_attempt"]) as owner:
+                    checkout = owner.directory()
+                    destination = "/proc/self/fd/" + str(checkout)
+                    archive = open_artifact(workspace, "archive", os.O_RDONLY)
+                    try:
+                        run_checked(["tar", "-xf", "/proc/self/fd/" + str(archive), "-C", destination], pass_fds=(archive, checkout), stdout=subprocess.DEVNULL)
+                    finally:
+                        os.close(archive)
+                    if not os.path.isdir(destination + "/.git"):
+                        run_checked(["git", "init", "--quiet"], cwd=destination, pass_fds=(checkout,), stdout=subprocess.DEVNULL)
+                        bundles = [name for name in os.listdir(destination) if name.endswith(".bundle") and os.path.isfile(destination + "/" + name)]
+                        if len(bundles) == 1:
+                            run_checked(["git", "fetch", "--quiet", "./" + bundles[0], "HEAD"], cwd=destination, pass_fds=(checkout,), stdout=subprocess.DEVNULL)
+                            os.unlink(destination + "/" + bundles[0])
+                        if request["detached"] or not request["branch"]:
+                            arguments = ["git", "checkout", "--quiet", "--detach", request["head"]]
+                        else:
+                            arguments = ["git", "checkout", "--quiet", "-B", request["branch"], request["head"]]
+                        run_checked(arguments, cwd=destination, pass_fds=(checkout,), stdout=subprocess.DEVNULL)
+                    owner.confirm_current()
                 return "MATERIALIZED"
 
             try:

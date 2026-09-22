@@ -10,6 +10,7 @@ use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
 use App\Domain\AppInstances\Transfer\TransferCheckout;
 use App\Domain\AppInstances\Transfer\TransferCleanupResult;
+use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
@@ -80,6 +81,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         Node $destination,
         StoragePath $path,
         TransferArchiveAttempt $attempt,
+        TransferDestinationAttempt $destinationAttempt,
     ): TransferCheckout {
         $source = Node::query()->findOrFail($capture->nodeId);
         $archive = null;
@@ -91,7 +93,13 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
                 throw $this->failed();
             }
             $archive = $this->stageArchive($source, $capture);
-            $this->uploadArchive($destination, $archive, $path, $capture, $attempt);
+            if ($destinationAttempt->nodeId !== $destination->id
+                || $destinationAttempt->destinationPath !== $path->value
+                || $destinationAttempt->transferId !== $attempt->transferId
+                || $destinationAttempt->phase !== 'owned') {
+                throw $this->failed();
+            }
+            $this->uploadArchive($destination, $archive, $capture, $attempt, $destinationAttempt);
         } catch (Throwable) {
             throw $this->failed();
         } finally {
@@ -127,22 +135,19 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         return $pending;
     }
 
-    public function discardDestination(Node $node, StoragePath $path): void
+    public function prepareDestination(TransferDestinationAttempt $attempt): TransferDestinationAttempt
     {
-        $this->ssh->execute(
-            $node,
-            new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $path->value],
-                input: <<<'BASH'
-                    destination=$1
-                    if [ -e "$destination" ] || [ -L "$destination" ]; then
-                      rm -rf -- "$destination"
-                    fi
-                    BASH,
-            ),
-            step: 'app-instance-transfer-discard',
-            errorCode: 'instance.transfer_failed',
-        );
+        return $attempt->withReceipt($this->destinationOperation($attempt, 'create'));
+    }
+
+    public function discardDestination(TransferDestinationAttempt $attempt): void
+    {
+        if (in_array($attempt->phase, ['reserved', 'cleaned'], true)) {
+            return;
+        }
+        if ($this->destinationOperation($attempt, 'cleanup') !== 'CLEANED') {
+            throw $this->destinationFailed();
+        }
     }
 
     public function cleanupSource(AppInstanceTransfer $transfer): TransferCleanupResult
@@ -209,9 +214,9 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
     private function uploadArchive(
         Node $destination,
         string $archive,
-        StoragePath $path,
         TransferSourceCapture $capture,
         TransferArchiveAttempt $attempt,
+        TransferDestinationAttempt $destinationAttempt,
     ): void {
         if ($destination->id !== $attempt->destination['node_id']
             || $destination->user !== $attempt->destination['execution_user']) {
@@ -233,7 +238,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             'destination',
             'materialize',
             [
-                'destination_path' => $path->value,
+                'destination_attempt' => $destinationAttempt->toArray(),
                 'head' => $capture->head,
                 'branch' => $capture->branch ?? '',
                 'detached' => $capture->detached,
@@ -263,7 +268,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
             $result = $this->ssh->execute(
                 $node,
                 new RemoteCommand(
-                    arguments: ['python3', '-c', TransferArchiveProgram::script(), $operation],
+                    arguments: ['python3', '-c', ($operation === 'materialize' ? TransferDestinationProgram::definitions()."\n" : '').TransferArchiveProgram::script(), $operation],
                     input: json_encode([
                         'id' => $attempt->id,
                         'transfer_id' => $attempt->transferId,
@@ -284,6 +289,42 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         } catch (Throwable) {
             throw $this->failed();
         }
+    }
+
+    private function destinationOperation(TransferDestinationAttempt $attempt, string $operation): mixed
+    {
+        try {
+            $node = Node::query()->findOrFail($attempt->nodeId);
+            if ($node->user !== $attempt->executionUser) {
+                throw $this->destinationFailed();
+            }
+            $result = $this->ssh->execute(
+                $node,
+                new RemoteCommand(
+                    arguments: ['python3', '-c', TransferDestinationProgram::script(), $operation],
+                    input: json_encode($attempt->toArray(), JSON_THROW_ON_ERROR),
+                    maxOutputBytes: 8192,
+                ),
+                step: 'app-instance-transfer-destination-'.$operation,
+                errorCode: 'instance.transfer_destination_cleanup_incomplete',
+            );
+            if ($result->truncated || $result->stderr !== '') {
+                throw $this->destinationFailed();
+            }
+
+            return json_decode($result->stdout, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            throw $this->destinationFailed();
+        }
+    }
+
+    private function destinationFailed(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            'instance.transfer_destination_cleanup_incomplete',
+            'Transfer destination ownership or cleanup is unconfirmed. Retry the identical request.',
+            409,
+        );
     }
 
     /** @return non-empty-list<string> */

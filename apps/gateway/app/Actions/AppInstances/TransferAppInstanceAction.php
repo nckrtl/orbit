@@ -29,6 +29,7 @@ use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\AppInstances\Transfer\TransferArchiveAttempt;
+use App\Domain\AppInstances\Transfer\TransferDestinationAttempt;
 use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -52,6 +53,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class TransferAppInstanceAction
@@ -204,7 +206,8 @@ final readonly class TransferAppInstanceAction
     {
         [$destination, $path, $domain, $route] = $this->preflight($instance, $data);
 
-        return AppInstanceTransfer::query()->create([
+        $transfer = new AppInstanceTransfer([
+            'id' => (string) Str::uuid(),
             'app_instance_id' => $instance->id,
             'source_node_id' => $instance->node_id,
             'source_router_node_id' => $this->sourceRouterId($route),
@@ -221,6 +224,10 @@ final readonly class TransferAppInstanceAction
             'status' => AppInstanceTransferStatus::Reserved,
             'current_step' => AppInstanceTransferStep::Reserved,
         ]);
+        $transfer->destination_attempt = TransferDestinationAttempt::create($transfer, $this->accounts->resolve($destination))->toArray();
+        $transfer->save();
+
+        return $transfer;
     }
 
     /** @return array{Node, StoragePath, string, Route} */
@@ -438,6 +445,12 @@ final readonly class TransferAppInstanceAction
         }
 
         if (in_array($transfer->current_step, [AppInstanceTransferStep::Reserved, AppInstanceTransferStep::SourceCaptured], true)) {
+            $destinationAttempt = TransferDestinationAttempt::fromArray($transfer->destination_attempt, $transfer);
+            if ($destinationAttempt->phase !== 'reserved') {
+                $this->cleanupDestinationAttempt($transfer);
+                $destinationAttempt = TransferDestinationAttempt::create($transfer, $this->accounts->resolve($destination));
+                $transfer->update(['destination_attempt' => $destinationAttempt->toArray()]);
+            }
             if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
                 app(VitePortAllocator::class)->assign($instance);
                 app(VitePortAllocator::class)->assign($instance, $destination);
@@ -521,8 +534,32 @@ final readonly class TransferAppInstanceAction
         AppInstanceTransfer $transfer,
         TransferArchiveAttempt $attempt,
     ): void {
-        $this->sources->materialize($capture, $destination, $path, $attempt);
+        $destinationAttempt = TransferDestinationAttempt::fromArray($transfer->destination_attempt, $transfer)->acquiring();
+        $transfer->update(['destination_attempt' => $destinationAttempt->toArray()]);
+        $destinationAttempt = $this->sources->prepareDestination($destinationAttempt);
+        $transfer->update(['destination_attempt' => $destinationAttempt->toArray()]);
+        $this->sources->materialize($capture, $destination, $path, $attempt, $destinationAttempt);
         $this->checkpoint($transfer, AppInstanceTransferStep::DestinationCheckoutCreated);
+    }
+
+    private function cleanupDestinationAttempt(AppInstanceTransfer $transfer): void
+    {
+        $transfer->refresh();
+        if ($transfer->cutover_at !== null) {
+            throw $this->conflict(
+                'instance.transfer_destination_cleanup_incomplete',
+                'The authoritative destination cannot be discarded.',
+            );
+        }
+        $attempt = TransferDestinationAttempt::fromArray($transfer->destination_attempt, $transfer);
+        $this->sources->discardDestination($attempt);
+        try {
+            $transfer->update(['destination_attempt' => $attempt->cleaned()->toArray()]);
+        } catch (Throwable $exception) {
+            $transfer->refresh();
+
+            throw $exception;
+        }
     }
 
     private function cleanupArchiveAttempt(AppInstanceTransfer $transfer): void
@@ -945,6 +982,7 @@ final readonly class TransferAppInstanceAction
             $this->checkpoint($lockedTransfer, AppInstanceTransferStep::Completed, [
                 'status' => AppInstanceTransferStatus::Completed,
                 'completed_at' => now(),
+                'destination_attempt' => null,
                 'recovery_evidence' => null,
                 'failed_step' => null,
                 'error_code' => null,
@@ -1081,7 +1119,7 @@ final readonly class TransferAppInstanceAction
 
         if ($destination instanceof Node) {
             try {
-                $this->sources->discardDestination($destination, StoragePath::parse($transfer->destination_path));
+                $this->cleanupDestinationAttempt($transfer);
                 app(VitePortAllocator::class)->release($instance, $destination);
             } catch (Throwable) {
                 $incomplete[] = 'destination-checkout';
