@@ -411,7 +411,7 @@ final class State
     {
         foreach ($this->instances as $instance) {
             if ($instance['id'] === $id) {
-                return $instance['node']['name'];
+                return $this->nodeName($instance['node']['id']);
             }
         }
 
@@ -438,13 +438,19 @@ final class State
 
     public function nodeName(int $id): string
     {
+        return $this->nodeById($id)['name'] ?? '—';
+    }
+
+    /** @return array<string, mixed>|null */
+    public function nodeById(int $id): ?array
+    {
         foreach ($this->nodes as $node) {
             if ($node['id'] === $id) {
-                return $node['name'];
+                return $node;
             }
         }
 
-        return '—';
+        return null;
     }
 
     /** @return array<string, mixed>|null */
@@ -472,9 +478,9 @@ final class State
     }
 
     /** @return list<array<string, mixed>> */
-    public function instancesForNode(string $nodeName): array
+    public function instancesForNode(int $nodeId): array
     {
-        return array_values(array_filter($this->instances, static fn (array $i): bool => $i['node']['name'] === $nodeName));
+        return array_values(array_filter($this->instances, static fn (array $i): bool => $i['node']['id'] === $nodeId));
     }
 
     /** @return list<array<string, mixed>> */
@@ -522,20 +528,22 @@ final class State
      */
     public function listRows(string $section, ?string $nodeFilter, ?string $appFilter): array
     {
+        $nodeId = $nodeFilter === null ? null : ($this->nodeByName($nodeFilter)['id'] ?? null);
+
         $instanceIds = array_column(array_filter(
             $this->instances,
-            static fn (array $i): bool => ($nodeFilter === null || $i['node']['name'] === $nodeFilter) && ($appFilter === null || $i['app']['slug'] === $appFilter),
+            static fn (array $i): bool => ($nodeFilter === null || $i['node']['id'] === $nodeId) && ($appFilter === null || $i['app']['slug'] === $appFilter),
         ), 'id');
 
         return match ($section) {
             'nodes' => $this->nodes,
             'apps' => $this->apps,
             'instances' => array_values(array_filter($this->instances, static fn (array $i): bool => in_array($i['id'], $instanceIds, true))),
-            'processes', 'schedules' => array_values(array_filter($this->{$section}, fn (array $p): bool => $p['target_type'] === 'node'
-                ? $appFilter === null && ($nodeFilter === null || $this->nodeName($p['target_id']) === $nodeFilter)
+            'processes', 'schedules' => array_values(array_filter($this->{$section}, static fn (array $p): bool => $p['target_type'] === 'node'
+                ? $appFilter === null && ($nodeFilter === null || $p['target_id'] === $nodeId)
                 : in_array($p['target_id'], $instanceIds, true))),
-            'databases' => array_values(array_filter($this->databases, fn (array $d): bool => $nodeFilter === null || $this->nodeName((int) $d['node_id']) === $nodeFilter)),
-            'firewall' => array_values(array_filter($this->firewall, static fn (array $f): bool => $nodeFilter === null || $f['node'] === $nodeFilter)),
+            'databases' => array_values(array_filter($this->databases, static fn (array $d): bool => $nodeFilter === null || ($nodeId !== null && $d['node_id'] === $nodeId))),
+            'firewall' => array_values(array_filter($this->firewall, static fn (array $f): bool => $nodeFilter === null || $f['node_id'] === $nodeId)),
             default => [],
         };
     }
@@ -557,7 +565,7 @@ final class State
 
         foreach ($this->instances as $instance) {
             if (! self::instanceHealthy($instance)) {
-                $rows[] = ['kind' => 'instances', 'record' => $instance, 'label' => 'Instance', 'name' => "{$instance['app']['slug']}/{$instance['name']}", 'where' => $instance['node']['name'], 'state' => $instance['status']];
+                $rows[] = ['kind' => 'instances', 'record' => $instance, 'label' => 'Instance', 'name' => "{$instance['app']['slug']}/{$instance['name']}", 'where' => $this->nodeName($instance['node']['id']), 'state' => $instance['status']];
             }
         }
 
@@ -575,7 +583,7 @@ final class State
 
         foreach ($this->firewall as $rule) {
             if (! self::firewallHealthy($rule)) {
-                $rows[] = ['kind' => 'firewall', 'record' => $rule, 'label' => 'Firewall', 'name' => "{$rule['port']}/{$rule['protocol']} {$rule['action']} {$rule['source']}", 'where' => $rule['node'], 'state' => $rule['status']];
+                $rows[] = ['kind' => 'firewall', 'record' => $rule, 'label' => 'Firewall', 'name' => "{$rule['port']}/{$rule['protocol']} {$rule['action']} {$rule['source']}", 'where' => $this->nodeName($rule['node_id']), 'state' => $rule['status']];
             }
         }
 

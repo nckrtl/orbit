@@ -28,6 +28,52 @@ function render_for_hit_testing(UiState $ui): void
 }
 
 describe(Interaction::class, function (): void {
+    it('opens the Instance shown on a renamed Node page', function (): void {
+        $state = tui_renamed_node_state();
+        $ui = new UiState;
+        $ui->open('nodes', $state->nodes[0]);
+        expect(render_top_screen($ui, $state))->toContain('charlie-shop');
+        $ui->focus = 'instances';
+        $send = fn (): never => throw new RuntimeException('No request expected.');
+
+        new Interaction($state, $ui, new ActionRunner($send), $send)->handleKey(KeyCode::Enter);
+
+        expect($ui->page()['kind'])->toBe('instances')
+            ->and($ui->page()['row']['id'])->toBe(1);
+    });
+
+    it('opens the record shown by a renamed Node filter', function (string $section): void {
+        $state = tui_renamed_node_state();
+        $state->processLogs[1] = [];
+        $state->scheduleLogs[$state->schedules[0]['id']] = [];
+        $ui = new UiState;
+        $ui->goTo($section);
+        $ui->filters['node'] = 'shark';
+        expect(render_top_screen($ui, $state))->toContain('shark');
+        $ui->focus = 'list';
+        $send = fn (): never => throw new RuntimeException('No request expected.');
+
+        new Interaction($state, $ui, new ActionRunner($send), $send)->handleKey(KeyCode::Enter);
+
+        expect($ui->page()['kind'])->toBe($section)
+            ->and($ui->page()['row']['id'])->toBe($state->{$section}[0]['id']);
+    })->with(['instances', 'processes', 'schedules', 'firewall']);
+
+    it('follows a Node relationship by ID after its old name is reused', function (string $section): void {
+        $state = tui_renamed_node_state();
+        $ui = new UiState;
+        $ui->open($section, $state->{$section}[0]);
+        render_top_screen($ui, $state);
+        $link = $ui->drawn['link:node']['area'];
+        $send = fn (): never => throw new RuntimeException('No request expected.');
+
+        new Interaction($state, $ui, new ActionRunner($send), $send)->handleMouse(MouseEvent::new(MouseEventKind::Down, MouseButton::Left, $link->left(), $link->top(), 0));
+
+        expect($ui->page()['kind'])->toBe('nodes')
+            ->and($ui->page()['row']['id'])->toBe(1)
+            ->and($ui->page()['row']['name'])->toBe('shark');
+    })->with(['instances', 'firewall']);
+
     it('opens the Node Schedule displayed by the Node filter', function (): void {
         $state = tui_target_state();
         $ui = new UiState;

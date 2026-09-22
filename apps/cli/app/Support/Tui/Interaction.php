@@ -401,7 +401,8 @@ final readonly class Interaction
         $row = $this->ui->page()['row'] ?? [];
 
         if ($link === 'link:node') {
-            $node = $this->state->nodeByName($row['node']['name'] ?? $row['node'] ?? '');
+            $nodeId = $row['node']['id'] ?? $row['node_id'] ?? null;
+            $node = $nodeId === null ? null : $this->state->nodeById($nodeId);
 
             if ($node !== null) {
                 $this->openRecord('nodes', $node);
@@ -443,7 +444,7 @@ final readonly class Interaction
             'list' => $this->state->listRows($this->ui->section, $this->ui->filters['node'], $this->ui->filters['project']),
             'attention' => $this->state->attentionRows(),
             'instances' => match ($kind) {
-                'nodes' => $this->state->instancesForNode($row['name']),
+                'nodes' => $this->state->instancesForNode($row['id']),
                 'apps' => $this->state->instancesForApp($row['slug']),
                 default => [],
             },

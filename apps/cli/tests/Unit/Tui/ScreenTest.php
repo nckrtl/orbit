@@ -24,6 +24,41 @@ beforeEach(function (): void {
 });
 
 describe(Screen::class, function (): void {
+    it('renders current Node labels and membership without refreshing related records', function (): void {
+        $state = tui_renamed_node_state();
+        $ui = new UiState;
+
+        foreach (['instances', 'processes', 'schedules', 'firewall'] as $section) {
+            $ui->goTo($section);
+            expect(render_top_screen($ui, $state))->toContain('shark')->not->toContain('beast');
+            $ui->open($section, $state->{$section}[0]);
+            expect(render_top_screen($ui, $state))->toContain('shark')->not->toContain('beast');
+        }
+
+        $ui->goTo('dashboard');
+        expect(render_top_screen($ui, $state))->toMatch('/dev\s+charlie-shop\s+shark/');
+        $ui->open('apps', $state->apps[0]);
+        expect(render_top_screen($ui, $state))->toContain('shark')->not->toContain('beast');
+        $ui->open('nodes', $state->nodes[0]);
+        expect(render_top_screen($ui, $state))->toContain('charlie-shop', 'node-worker')->not->toContain('beast');
+        $ui->open('nodes', $state->nodes[1]);
+        expect(render_top_screen($ui, $state))->not->toContain('charlie-shop', 'node-worker');
+    });
+
+    it('displays a dash when a related Node is missing instead of a stale copied name', function (): void {
+        $state = tui_renamed_node_state();
+        $state->nodes = [$state->nodes[1]];
+        $ui = new UiState;
+
+        foreach (['instances', 'processes', 'schedules', 'firewall'] as $section) {
+            $ui->goTo($section);
+            expect(render_top_screen($ui, $state))->not->toContain('beast', 'shark');
+            $ui->open($section, $state->{$section}[0]);
+            expect(render_top_screen($ui, $state))->toMatch('/Node\s+—/')->not->toContain('beast', 'shark');
+            expect($ui->drawn)->not->toHaveKey('link:node');
+        }
+    });
+
     it('shows complete Schedule owners in the list, dashboard and detail', function (): void {
         $state = tui_target_state();
         $ui = new UiState;

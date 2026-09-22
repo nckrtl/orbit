@@ -202,6 +202,73 @@ describe('runtime target ownership', function (): void {
     });
 });
 
+describe('stable Node relationships', function (): void {
+    it('keeps membership and current labels after a Node-only rename and old-name reuse', function (): void {
+        $state = tui_renamed_node_state();
+
+        expect($state->instances[0]['node'])->toBe(['id' => 1, 'name' => 'beast'])
+            ->and($state->firewall[0]['node_id'])->toBe(1)
+            ->and($state->firewall[0]['node'])->toBe('beast')
+            ->and($state->instancesForNode(1))->toBe($state->instances)
+            ->and($state->instancesForNode(2))->toBe([])
+            ->and($state->instanceNodeName(1))->toBe('shark');
+
+        foreach (['instances', 'processes', 'schedules', 'firewall', 'databases'] as $section) {
+            expect($state->listRows($section, 'shark', null))->toBe($state->{$section})
+                ->and($state->listRows($section, 'beast', null))->toBe([])
+                ->and($state->listRows($section, 'missing', null))->toBe([]);
+        }
+
+        foreach ([$state->processes, $state->schedules] as [$instanceOwned, $nodeOwned]) {
+            expect($state->targetNodeName($instanceOwned))->toBe('shark')
+                ->and($state->targetNodeName($nodeOwned))->toBe('shark')
+                ->and($state->targetOwner($instanceOwned))->toBe('charlie-shop/dev')
+                ->and($state->targetOwner($nodeOwned))->toBe('node shark');
+        }
+
+        expect($state->listRows('instances', 'shark', 'charlie-shop'))->toBe($state->instances)
+            ->and($state->listRows('processes', 'shark', 'charlie-shop'))->toBe([$state->processes[0]])
+            ->and($state->listRows('schedules', 'shark', 'charlie-shop'))->toBe([$state->schedules[0]]);
+    });
+
+    it('uses canonical Node names in attention rows without changing health or owner identity', function (): void {
+        $state = tui_renamed_node_state();
+        $state->instances[0]['status'] = 'failed';
+        $state->processes[1]['runtime_status'] = 'inactive';
+        $state->schedules[1]['status'] = 'failed';
+        $state->firewall[0]['status'] = 'failed';
+
+        expect(array_column($state->attentionRows(), 'where'))->toBe(['shark', 'node shark', 'node shark', 'shark'])
+            ->and(array_column($state->attentionRows(), 'kind'))->toBe(['instances', 'processes', 'schedules', 'firewall']);
+    });
+
+    it('does not attach missing or deleted Node relationships to a reused name', function (): void {
+        $state = tui_renamed_node_state();
+        $state->applyEvent(RealtimeEvent::fromChannelPayload('event', [
+            'type' => 'node.deleted', 'id' => 22, 'at' => '2026-09-22T10:00:02+00:00', 'data' => ['id' => 1],
+        ]));
+
+        expect($state->nodeName(1))->toBe('—')
+            ->and($state->instanceNodeName(1))->toBe('—')
+            ->and($state->instancesForNode(2))->toBe([])
+            ->and($state->instances[0]['node']['id'])->toBe(1);
+
+        foreach (['instances', 'processes', 'schedules', 'firewall', 'databases'] as $section) {
+            expect($state->listRows($section, null, null))->toBe($state->{$section})
+                ->and($state->listRows($section, 'shark', null))->toBe([])
+                ->and($state->listRows($section, 'beast', null))->toBe([])
+                ->and($state->listRows($section, '—', null))->toBe([]);
+        }
+
+        foreach ([$state->processes, $state->schedules] as [$instanceOwned, $nodeOwned]) {
+            expect($state->targetNodeName($instanceOwned))->toBe('—')
+                ->and($state->targetNodeName($nodeOwned))->toBe('—')
+                ->and($state->targetOwner($instanceOwned))->toBe('charlie-shop/dev')
+                ->and($state->targetOwner($nodeOwned))->toBe('—');
+        }
+    });
+});
+
 describe('State health vocabulary', function (): void {
     it('treats a systemd process as healthy only when runtime_status matches desired_state in systemd\'s own vocabulary, not when the strings are equal', function (): void {
         expect(State::processHealthy(['runtime' => 'systemd', 'desired_state' => 'running', 'runtime_status' => 'active']))->toBeTrue()

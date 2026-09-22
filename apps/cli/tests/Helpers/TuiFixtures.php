@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Support\Realtime\RealtimeEvent;
 use App\Support\Tui\Screen;
 use App\Support\Tui\Sources\DatabaseUsersSource;
 use App\Support\Tui\Sources\DeploymentsSource;
@@ -232,6 +233,24 @@ function tui_target_state(): State
         'target_type' => 'node',
         'target_id' => 1,
     ];
+
+    return $state;
+}
+
+/** Only the canonical Node changes; related SDK rows retain their original name snapshots. */
+function tui_renamed_node_state(): State
+{
+    $state = tui_test_state();
+    $state->processes[] = [...$state->processes[0], 'id' => 2, 'name' => 'node-worker', 'target_type' => 'node'];
+    $state->schedules[] = [...$state->schedules[0], 'id' => '0198e15d-16c4-7855-8eb2-182b53ad28bc', 'name' => 'node-backup', 'target_type' => 'node'];
+    $state->applyEvent(RealtimeEvent::fromChannelPayload('event', [
+        'type' => 'node.updated', 'id' => 20, 'at' => '2026-09-22T10:00:00+00:00',
+        'data' => [...$state->nodes[0], 'name' => 'shark'],
+    ]));
+    $state->applyEvent(RealtimeEvent::fromChannelPayload('event', [
+        'type' => 'node.created', 'id' => 21, 'at' => '2026-09-22T10:00:01+00:00',
+        'data' => [...$state->nodes[0], 'id' => 2, 'name' => 'beast'],
+    ]));
 
     return $state;
 }

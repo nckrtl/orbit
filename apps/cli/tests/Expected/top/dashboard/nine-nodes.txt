@@ -13,7 +13,7 @@
 │                  │╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 │                  │╭ Projects ──────────────────────────────────────╮╭ Instances ─────────────────────────────────────╮
 │                  ││  Slug                  Branch         Instances││  Name         Project      Node         Status │
-│                  ││› charlie-shop          main                  1 ││› dev          charlie-shop beast        active │
+│                  ││› charlie-shop          main                  1 ││› dev          charlie-shop node-1       active │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │
 │                  ││                                                ││                                                │

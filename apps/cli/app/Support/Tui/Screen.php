@@ -182,7 +182,7 @@ final class Screen
             'nodes' => [
                 ['Name', 'Status', 'Roles', 'WireGuard IP', 'Instances'],
                 [Constraint::percentage(20), Constraint::percentage(14), Constraint::percentage(24), Constraint::percentage(20), Constraint::percentage(22)],
-                array_map(fn (array $n): TableRow => $this->row([$n['name'], $n['status'], implode(', ', $n['roles']), $n['wireguard_ip'] ?? '—'], (string) count($state->instancesForNode($n['name'])), ! State::nodeHealthy($n)), $rows),
+                array_map(fn (array $n): TableRow => $this->row([$n['name'], $n['status'], implode(', ', $n['roles']), $n['wireguard_ip'] ?? '—'], (string) count($state->instancesForNode($n['id'])), ! State::nodeHealthy($n)), $rows),
             ],
             'apps' => [
                 ['Slug', 'Name', 'Default branch', 'Instances'],
@@ -192,7 +192,7 @@ final class Screen
             'instances' => [
                 ['Project', 'Name', 'Environment', 'Node', 'Domain', 'Status'],
                 [Constraint::percentage(18), Constraint::percentage(14), Constraint::percentage(14), Constraint::percentage(12), Constraint::percentage(28), Constraint::percentage(10)],
-                array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $rows),
+                array_map(fn (array $i): TableRow => $this->row([$i['app']['slug'], $i['name'], $i['environment'], $state->nodeName($i['node']['id']), $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $rows),
             ],
             'processes' => [
                 ['Name', 'Owner', 'Node', 'Runtime', 'Status', 'CPU/MEM'],
@@ -212,7 +212,7 @@ final class Screen
             'firewall' => [
                 ['Node', 'Port', 'Action', 'Source', 'Status'],
                 [Constraint::percentage(22), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(30), Constraint::percentage(18)],
-                array_map(fn (array $f): TableRow => $this->row([$f['node'], "{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $rows),
+                array_map(fn (array $f): TableRow => $this->row([$state->nodeName($f['node_id']), "{$f['port']}/{$f['protocol']}", $f['action'], $f['source']], $f['status'], ! State::firewallHealthy($f)), $rows),
             ],
             default => [[], [], []],
         };
@@ -261,7 +261,7 @@ final class Screen
                     ->constraints(Constraint::percentage(50), Constraint::percentage(50))
                     ->widgets(
                         $this->pane($ui, 'apps', ' Projects ', ['Slug', 'Branch', 'Instances'], [Constraint::percentage(44), Constraint::percentage(30), Constraint::percentage(26)], array_map(fn (array $a): TableRow => $this->row([$a['slug'], $a['default_branch'] ?? 'main'], (string) count($state->instancesForApp($a['slug'])), false), $state->apps), 'No projects.'),
-                        $this->pane($ui, 'instances', ' Instances ', ['Name', 'Project', 'Node', 'Status'], [Constraint::percentage(26), Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['app']['slug'], $i['node']['name']], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
+                        $this->pane($ui, 'instances', ' Instances ', ['Name', 'Project', 'Node', 'Status'], [Constraint::percentage(26), Constraint::percentage(26), Constraint::percentage(24), Constraint::percentage(24)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['app']['slug'], $state->nodeName($i['node']['id'])], $i['status'], ! State::instanceHealthy($i)), $state->instances), 'No instances.'),
                     ),
                 GridWidget::default()
                     ->direction(Direction::Horizontal)
@@ -491,7 +491,7 @@ final class Screen
     /** @param array<string, mixed> $node */
     private function nodePage(State $state, UiState $ui, array $node, Widget $properties, int $propertiesHeight, Area $body): Widget
     {
-        $instances = $state->instancesForNode($node['name']);
+        $instances = $state->instancesForNode($node['id']);
         $metrics = $state->nodeMetrics($node['id']);
         $metricsHeight = $metrics === null ? 3 : intdiv(count($metrics['cores']) + 1, 2) + 4;
         $top = max($propertiesHeight, $metricsHeight);
@@ -539,7 +539,7 @@ final class Screen
             ->constraints(...$constraints)
             ->widgets(
                 $properties,
-                $this->pane($ui, 'instances', ' Instances ', ['Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(40), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['environment'], $i['node']['name'], $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $instances)),
+                $this->pane($ui, 'instances', ' Instances ', ['Name', 'Environment', 'Node', 'Domain', 'Status'], [Constraint::percentage(16), Constraint::percentage(16), Constraint::percentage(14), Constraint::percentage(40), Constraint::percentage(12)], array_map(fn (array $i): TableRow => $this->row([$i['name'], $i['environment'], $state->nodeName($i['node']['id']), $i['domain'] ?? '—'], $i['status'], ! State::instanceHealthy($i)), $instances)),
                 $this->pane($ui, 'schedules', ' Schedules ', ['Name', 'Instance', 'Calendar', 'Last run'], [Constraint::percentage(20), Constraint::percentage(22), Constraint::percentage(36), Constraint::percentage(20)], array_map(fn (array $s): TableRow => $this->row([$s['name'], $state->instanceName($s['target_id']), $s['calendar']], $s['last_run_status'] ?? 'never', ! State::scheduleHealthy($s)), $schedules)),
             );
     }
@@ -669,11 +669,11 @@ final class Screen
         $properties = match ($kind) {
             'nodes' => ['Name' => [$row['name'], false], 'Status' => [$row['status'], ! State::nodeHealthy($row)], 'Roles' => [$row['roles'], false], 'Platform' => [$row['platform'] ?? null, false], 'Architecture' => [$row['architecture'] ?? null, false], 'TLD' => [$row['tld'] ?? null, false], 'WireGuard IP' => [$row['wireguard_ip'] ?? null, false], 'SSH' => ["{$row['user']}@{$row['public_ssh_host']}:{$row['public_ssh_port']}", false]],
             'apps' => ['Name' => [$row['name'], false], 'Slug' => [$row['slug'], false], 'Repository' => [$row['repository_url'] ?? null, false], 'Default branch' => [$row['default_branch'] ?? null, false], 'Root' => [$row['root'] ?? null, false]],
-            'instances' => ['Name' => [$row['name'], false], 'Project' => [$row['app']['slug'], false], 'Node' => [$row['node']['name'], false], 'Environment' => [$row['environment'], false], 'Domain' => [$row['domain'] ?? null, false], 'Status' => [$row['status'], ! State::instanceHealthy($row)], 'Checkout' => [$row['checkout_path'] ?? null, false], 'Selected branch' => [$row['selected_branch'] ?? null, false], 'Deploy steps' => [count($row['deploy_steps']).' steps', false]],
+            'instances' => ['Name' => [$row['name'], false], 'Project' => [$row['app']['slug'], false], 'Node' => [$state->nodeName($row['node']['id']), false], 'Environment' => [$row['environment'], false], 'Domain' => [$row['domain'] ?? null, false], 'Status' => [$row['status'], ! State::instanceHealthy($row)], 'Checkout' => [$row['checkout_path'] ?? null, false], 'Selected branch' => [$row['selected_branch'] ?? null, false], 'Deploy steps' => [count($row['deploy_steps']).' steps', false]],
             'databases' => ['Slug' => [$row['slug'], false], 'Driver' => [$row['driver'], false], 'Node' => [$state->nodeName((int) ($row['node_id'] ?? 0)), false], 'Host' => [$row['host'] !== null ? "{$row['host']}:{$row['port']}" : null, false], 'Path' => [$row['path'] ?? null, false], 'Database' => [$row['database'] ?? null, false], 'Username' => [$row['username'] ?? null, false], 'Password' => [$row['has_password'] ? '••••••••' : null, false]],
             'processes' => ['Name' => [$row['name'], false], 'Owner' => [$state->targetOwner($row), false], 'Node' => [$state->targetNodeName($row), false], 'Runtime' => [$row['runtime'], false], 'Working directory' => [$row['working_directory'] ?? null, false], 'Restart policy' => [$row['restart_policy'] ?? null, false], 'Desired state' => [$row['desired_state'], false], 'Runtime status' => [$row['runtime_status'], ! State::processHealthy($row)], 'CPU/MEM' => [$this->processUsage($row), false]],
             'schedules' => ['Name' => [$row['name'], false], 'Owner' => [$state->targetOwner($row), false], 'Node' => [$state->targetNodeName($row), false], 'Calendar' => [$row['calendar'], false], 'Timeout' => ["{$row['timeout_seconds']} s", false], 'Desired timer' => [$row['desired_timer_state'], $row['desired_timer_state'] !== 'enabled'], 'Status' => [$row['status'], $row['status'] === 'failed'], 'Last run' => [$row['last_run_at'] ?? 'never', false], 'Last run status' => [$row['last_run_status'] ?? '—', false]],
-            'firewall' => ['Name' => [$row['name'], false], 'Port' => [$row['port'], false], 'Protocol' => [$row['protocol'], false], 'Action' => [$row['action'], false], 'Source' => [$row['source'], false], 'Status' => [$row['status'], ! State::firewallHealthy($row)], 'Node' => [$row['node'], false]],
+            'firewall' => ['Name' => [$row['name'], false], 'Port' => [$row['port'], false], 'Protocol' => [$row['protocol'], false], 'Action' => [$row['action'], false], 'Source' => [$row['source'], false], 'Status' => [$row['status'], ! State::firewallHealthy($row)], 'Node' => [$state->nodeName($row['node_id']), false]],
             'deployments' => ['Release' => [$row['release'], false], 'Branch' => [$row['branch'], false], 'Commit' => [$row['commit'], false], 'Started' => [$row['started'], false], 'Finished' => [$row['finished'], false], 'Duration' => [$row['duration'], false], 'Status' => [$row['status'], ! State::deploymentHealthy($row)], 'Failed step' => [$row['failed_step'], false], 'Error code' => [$row['error_code'], false], 'Selected release' => [$row['selected_release'], false], 'Triggered by' => [$row['by'], false]],
             default => [],
         };

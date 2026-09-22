@@ -37,6 +37,8 @@ Every Processes pane carries a right-aligned `CPU/MEM` column, read from cAdviso
 
 Schedules show their owner as either a Node or an Instance. The unfiltered list includes both. A Node filter includes that Node's own Schedules and its Instances' Schedules. A Project filter includes only Schedules owned by that Project's Instances. Missing owners display an em dash.
 
+Node relationships use IDs. After a Node rename, its Instances, Processes, Schedules, and Firewall rules keep their membership and show the current Node name. Node filters use the current names. If a Node is missing or deleted, related records show an em dash for its name; another Node that reuses the old name does not inherit those records.
+
 ## Keys and mouse
 
 | Key | Effect |
