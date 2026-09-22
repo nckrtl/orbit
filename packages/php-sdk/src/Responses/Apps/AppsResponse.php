@@ -12,11 +12,11 @@ final readonly class AppsResponse
         public string $requestId,
     ) {}
 
-    /** @return array{apps: list<array<string, mixed>>, request_id: string} */
+    /** @return array{projects: list<array<string, mixed>>, request_id: string} */
     public function toArray(): array
     {
         return [
-            'apps' => array_map(
+            'projects' => array_map(
                 static function (AppResponse $app): array {
                     $data = $app->toArray();
                     unset($data['request_id']);

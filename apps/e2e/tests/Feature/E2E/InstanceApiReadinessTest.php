@@ -62,7 +62,7 @@ it('accepts validated read-only legacy and typed instance-list envelopes', funct
         expect($process->run())
             ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
-            ->toContain("instance:list --json validated {$shape} envelope")
+            ->toContain('instance:list --json validated instances envelope')
             ->and(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES))
             ->toBe(['instance:list --json']);
     } finally {
@@ -70,7 +70,7 @@ it('accepts validated read-only legacy and typed instance-list envelopes', funct
     }
 })->with([
     'legacy instances' => ['instances', [['name' => 'sample']]],
-    'typed AppInstances' => ['app_instances', [['name' => 'sample']]],
+    'previous typed envelope' => ['app_instances', [['name' => 'sample']]],
     'empty object item' => ['instances', [(object) []]],
 ]);
 

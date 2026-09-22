@@ -48,6 +48,8 @@ function topologyVerifierProbeRoles(): array
         'source.gateway' => 'gateway',
         'source.app-dev' => 'app-dev',
         'source.manifest' => 'gateway',
+        'cluster.shared' => 'app-dev',
+        'sample.fixtures' => 'app-dev',
     ];
 }
 
@@ -183,7 +185,7 @@ function topologyVerifierEvidence(array $request, string $sha): string
 {
     $probe = $request['label'];
     if ($probe === 'sample-app-state') {
-        return json_encode(['shape' => 'instances'], JSON_THROW_ON_ERROR);
+        return json_encode(['shape' => 'workspaces'], JSON_THROW_ON_ERROR);
     }
     $instance = preg_replace('/^[^:]+:/', '', $request['instance']);
 
@@ -227,7 +229,9 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
         $sha,
         'orbit-e2e-topology-snapshot-'.$role,
     ];
-    if ($probe === 'wireguard.reachability') {
+    if ($probe === 'cluster.shared') {
+        array_push($arguments, 'gateway', 'app-dev', 'app-prod');
+    } elseif ($probe === 'wireguard.reachability') {
         $arguments[] = 'app-dev';
         $arguments[] = 'app-prod';
     } elseif (in_array($probe, ['role.assignments', 'metrics.publication'], true)) {
@@ -242,7 +246,7 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
         'project' => 'default',
         'instance' => 'local:orbit-e2e-topology-snapshot-'.$role,
         'argv' => $arguments,
-        'timeout' => 30,
+        'timeout' => $probe === 'sample.fixtures' ? 60 : 30,
         'stdin' => null,
     ]);
 }
@@ -287,6 +291,10 @@ describe('TopologyVerifier mounted source', function () {
             new SourceState($sha, $sha, mounted: true, pointerHash: $pointer),
         );
 
+        expect($argv['cluster.shared'] ?? null)->toBe([
+            '/home/orbit/orbit/apps/e2e/resources/guest/verify-topology.sh',
+            'cluster.shared', 'readiness', $sha, $target->instance('app-dev'), 'gateway', 'app-dev', 'app-prod',
+        ]);
         $script = '/usr/local/bin/verify-topology.sh';
         expect($argv['source.gateway'] ?? null)
             ->toBe([$script, 'source.gateway', 'readiness', $sha, $target->instance('gateway'), $pointer])
@@ -358,7 +366,7 @@ describe('TopologyVerifier', function () {
         expect($report->passed)
             ->toBeTrue()
             ->and($report->probes)
-            ->toHaveCount(24)
+            ->toHaveCount(26)
             ->and($report->probes['service.vpn'] ?? null)
             ->toBe([
                 'passed' => true,
@@ -392,7 +400,7 @@ describe('TopologyVerifier typed application state', function () {
 
             return Process::result(json_encode([[
                 'label' => 'sample-app-state',
-                'stdout' => '{"shape":"instances"}',
+                'stdout' => '{"shape":"workspaces"}',
                 'stderr' => '',
                 'exit_code' => 0,
             ]], JSON_THROW_ON_ERROR));
@@ -408,7 +416,7 @@ describe('TopologyVerifier typed application state', function () {
             ->toBe(['/usr/local/bin/converge-sample-app.sh', 'inspect-state', 'native']);
     });
 
-    it('selects typed source probes and omits legacy Workspace and app-prod site probes', function (): void {
+    it('refuses incomplete native production state instead of omitting production readiness', function (): void {
         setUpTopologyVerifierProcessFacade();
         $sha = str_repeat('a', 40);
         $checkout = '/srv/orbit/apps/laravel-typed/e2e-dev';
@@ -429,7 +437,7 @@ describe('TopologyVerifier typed application state', function () {
                     $results[] = [
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
-                            'shape' => 'app_instances',
+                            'shape' => 'instances',
                             'app_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
@@ -464,7 +472,7 @@ describe('TopologyVerifier typed application state', function () {
             return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
         });
 
-        $report = new TopologyVerifier(
+        expect(fn () => new TopologyVerifier(
             new IncusHost(pool: 'orbit-e2e'),
             readinessTimeoutSeconds: 60,
             readinessPollIntervalMicroseconds: 0,
@@ -472,20 +480,8 @@ describe('TopologyVerifier typed application state', function () {
             TopologyTarget::topologySnapshot(),
             VerificationMode::Readiness,
             new SourceState($sha, $sha),
-        );
-
-        expect($report->passed)
-            ->toBeTrue()
-            ->and(array_keys($report->probes))
-            ->not
-            ->toContain('workspace.app-dev', 'role.app-prod', 'laravel.prod')
-            ->toContain('role.app-dev', 'laravel.dev', 'php-fpm.app-prod', 'caddy.app-prod')
-            ->and($argv['role.app-dev'][array_key_last($argv['role.app-dev'])] ?? null)
-            ->toBe($checkout)
-            ->and($argv['laravel.dev'][array_key_last($argv['laravel.dev'])] ?? null)
-            ->toBe($checkout)
-            ->and($batches[0] ?? null)
-            ->toBe(['sample-app-state']);
+        ))->toThrow(RuntimeException::class, 'Native sample production placement is missing');
+        expect($argv)->toBe([]);
     });
 
     it('passes the exact recorded production placement to every production probe', function (array $production): void {
@@ -505,7 +501,7 @@ describe('TopologyVerifier typed application state', function () {
                     $results[] = [
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
-                            'shape' => 'app_instances',
+                            'shape' => 'instances',
                             'app_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
@@ -614,7 +610,7 @@ describe('TopologyVerifier typed application state', function () {
                     $results[] = [
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
-                            'shape' => 'app_instances',
+                            'shape' => 'instances',
                             'app_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
@@ -692,7 +688,7 @@ describe('TopologyVerifier typed application state', function () {
                     $results[] = [
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
-                            'shape' => 'app_instances',
+                            'shape' => 'instances',
                             'app_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
@@ -753,7 +749,7 @@ describe('TopologyVerifier typed application state', function () {
                     $results[] = [
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
-                            'shape' => 'app_instances',
+                            'shape' => 'instances',
                             'app_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
@@ -1158,7 +1154,7 @@ describe('TopologyVerifier declared end state', function (): void {
         $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]);
 
         expect(TopologyVerifier::skippedProbes($endState))
-            ->toBe(['vm.app-prod.running', 'role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'])
+            ->toBe(['vm.app-prod.running', 'role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod', 'cluster.shared', 'sample.fixtures'])
             ->and(array_keys(TopologyVerifier::probesFor($endState)))
             ->toContain('role.assignments', 'wireguard.reachability', 'role.app-dev', 'source.manifest');
     });
@@ -1196,8 +1192,8 @@ describe('TopologyVerifier declared end state', function (): void {
                 $sha,
                 $gateway,
                 base64_encode(json_encode([
-                    'gateway' => ['gateway', 'vpn'],
-                    'app-dev' => ['app-dev', 'metrics'],
+                    'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
+                    'app-dev' => ['app-dev', 'metrics', 'database'],
                 ], JSON_THROW_ON_ERROR)),
             ])
             ->and($run['argv']['wireguard.reachability'] ?? null)
@@ -1210,8 +1206,8 @@ describe('TopologyVerifier declared end state', function (): void {
                 $sha,
                 $gateway,
                 base64_encode(json_encode([
-                    'gateway' => ['gateway', 'vpn'],
-                    'app-dev' => ['app-dev', 'metrics'],
+                    'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
+                    'app-dev' => ['app-dev', 'metrics', 'database'],
                 ], JSON_THROW_ON_ERROR)),
             ])
             ->and(array_keys($run['argv']))
@@ -1244,7 +1240,7 @@ describe('TopologyVerifier declared end state', function (): void {
             ->and($run['argv']['wireguard.reachability'] ?? null)
             ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'app-prod'])
             ->and($run['report']->probes)
-            ->toHaveCount(24);
+            ->toHaveCount(26);
     });
 
     it('keeps the Gateway publication probe when app-dev is declared absent', function (): void {
@@ -1262,8 +1258,8 @@ describe('TopologyVerifier declared end state', function (): void {
                 $sha,
                 TopologyTarget::topologySnapshot()->instance('gateway'),
                 base64_encode(json_encode([
-                    'gateway' => ['gateway', 'vpn'],
-                    'app-prod' => ['app-prod'],
+                    'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
+                    'app-prod' => ['app-prod', 'ingress'],
                 ], JSON_THROW_ON_ERROR)),
             ])
             ->and(TopologyVerifier::skippedProbes($endState))

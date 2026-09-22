@@ -37,6 +37,7 @@ it('observes private Route projections without application HTTP checks', functio
         ->toEqual(new PrivateRouteProjectionObservation(true, true, true, true, true, true, true))
         ->and($ssh->commands[0]->arguments)
         ->toContain($route->domain)
+        ->and(array_slice($ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu'])
         ->and($ssh->commands[0]->input)
         ->toContain('getent ahostsv4')
         ->toContain('APP_URL=')
@@ -92,7 +93,8 @@ it('inspects Router Caddy on a selected Cluster Route', function (): void {
         ->and($ssh->connections[1]->host)
         ->toBe($router->wireguard_ip)
         ->and($ssh->commands[1]->arguments)
-        ->toContain($route->domain);
+        ->toContain($route->domain)
+        ->and(array_slice($ssh->commands[1]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu']);
 });
 
 /** @return array{AppInstance, Route} */

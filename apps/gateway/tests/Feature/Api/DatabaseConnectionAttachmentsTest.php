@@ -146,7 +146,7 @@ it('writes sqlite-appropriate keys and clears leftover host keys on prefix reuse
         ->toBe(DatabaseConnection::query()->where('slug', 'local')->sole()->id);
 });
 
-it('rewrites same-node Docker Process host and port and keeps remote registry values otherwise', function (): void {
+it('rewrites same-node Docker Process host and port and keeps remote registry values otherwise', function (string $binding, string $expectedHost): void {
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',
         'driver' => 'mysql',
@@ -168,7 +168,7 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
             'image' => 'mysql:8',
             'command' => ['mysqld'],
             'environment' => [],
-            'ports' => ['127.0.0.1:3307:3306/tcp'],
+            'ports' => [$binding.':3307:3306/tcp'],
             'volumes' => [],
         ],
         'restart_policy' => 'unless-stopped',
@@ -183,10 +183,10 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
         content: '{}',
     )
         ->assertOk()
-        ->assertJsonPath('data.host', '127.0.0.1')
+        ->assertJsonPath('data.host', $expectedHost)
         ->assertJsonPath('data.port', 3307);
 
-    expect(stored_env($this->instance)['DB_HOST'])->toBe('127.0.0.1')
+    expect(stored_env($this->instance)['DB_HOST'])->toBe($expectedHost)
         ->and(stored_env($this->instance)['DB_PORT'])->toBe('3307');
 
     $remote = Node::query()->create([
@@ -230,8 +230,7 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
 
     expect(stored_env($remoteInstance->fresh())['DB_HOST'])->toBe('10.44.0.201')
         ->and(stored_env($remoteInstance->fresh())['DB_PORT'])->toBe('3306');
-});
-
+})->with([['127.0.0.1', '127.0.0.1'], ['10.44.0.2', '10.44.0.2'], ['0.0.0.0', '127.0.0.1']]);
 it('detaches the mapping and clears related stored keys without logging the password', function (): void {
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',

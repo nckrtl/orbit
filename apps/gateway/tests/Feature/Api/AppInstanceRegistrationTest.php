@@ -1086,7 +1086,8 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         'instance_name' => 'default',
         'domain' => 'primary.test',
     ])->assertOk();
-    $completed = collect($response->json('data.app_instances'))->keyBy('name');
+    $response->assertJsonMissingPath('data.app_instances');
+    $completed = collect($response->json('data.instances'))->keyBy('name');
 
     expect($response->json('data.source_count'))
         ->toBe(2)
@@ -1192,7 +1193,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
         'app_id' => $app->id,
         'domain' => 'primary.test',
     ])->assertOk();
-    $retried = collect($response->json('data.app_instances'))->keyBy('name');
+    $retried = collect($response->json('data.instances'))->keyBy('name');
     $instanceIds = $instances->mapWithKeys(
         static fn (AppInstance $instance): array => [$instance->name => $instance->id],
     )->all();
@@ -2126,14 +2127,14 @@ it('uses an explicit hostname only for the primary member of a requested source 
         'domain' => 'primary.test',
     ])->assertOk();
 
-    $instances = collect($response->json('data.app_instances'))->keyBy('name');
+    $instances = collect($response->json('data.instances'))->keyBy('name');
     $retry = $this->postJson('/api/v1/instances/register', [
         'source_path' => $paths[0],
         'include_worktrees' => true,
         'app_id' => $app->id,
         'domain' => 'primary.test',
     ])->assertOk();
-    $retried = collect($retry->json('data.app_instances'))->keyBy('name');
+    $retried = collect($retry->json('data.instances'))->keyBy('name');
     $retained = AppInstance::query()->get()->keyBy('name');
     expect($instances['default']['route']['domain'])
         ->toBe('primary.test')

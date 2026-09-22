@@ -9,7 +9,8 @@ use JsonException;
 
 final class FilePrivateDnsCatalogStore
 {
-    private ?int $mtime = null;
+    /** @var array{int, int, int}|null */
+    private ?array $signature = null;
 
     private PrivateDnsAnswerCatalog $catalog;
 
@@ -26,12 +27,17 @@ final class FilePrivateDnsCatalogStore
 
     public function refresh(): bool
     {
+        clearstatcache(true, $this->path);
         if (! is_file($this->path)) {
             return false;
         }
 
-        $mtime = filemtime($this->path);
-        if ($mtime === false || $mtime === $this->mtime) {
+        $stat = stat($this->path);
+        if ($stat === false) {
+            return false;
+        }
+        $signature = [$stat['ino'], $stat['mtime'], $stat['size']];
+        if ($signature === $this->signature) {
             return false;
         }
 
@@ -60,7 +66,7 @@ final class FilePrivateDnsCatalogStore
 
         $this->catalog = PrivateDnsAnswerCatalog::fromPublished($published);
         $this->requesters = WireGuardDnsRequesterResolver::fromPublished($requesters);
-        $this->mtime = $mtime;
+        $this->signature = $signature;
         $this->cache?->flush();
 
         return true;

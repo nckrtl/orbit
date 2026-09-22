@@ -379,9 +379,9 @@ function pinnedWorktreeGuestCommandResult(array $guest): ProcessResult
         ], JSON_THROW_ON_ERROR));
     }
     if ($guest === ['/usr/local/bin/converge-sample-app.sh', 'inspect-state']) {
-        return Process::result('{"shape":"instances"}');
+        return Process::result('{"shape":"workspaces"}');
     }
-    if (($guest[0] ?? null) === '/usr/local/bin/verify-topology.sh') {
+    if (in_array($guest[0] ?? null, ['/usr/local/bin/verify-topology.sh', '/home/orbit/orbit/apps/e2e/resources/guest/verify-topology.sh'], true)) {
         return Process::result(json_encode([
             'probe' => $guest[1],
             'passed' => true,

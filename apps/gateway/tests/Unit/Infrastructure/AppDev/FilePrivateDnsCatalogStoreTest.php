@@ -34,7 +34,6 @@ it('loads published requesters and overrides then keeps the last valid catalog a
 
         $files->put($path, '{not-json');
         touch($path, time() + 2);
-        clearstatcache(true, $path);
         expect($store->refresh())
             ->toBeFalse()
             ->and($store->catalog()->addressFor(new DnsQuestion('commander.test', DnsRecordType::A), $eligible))
@@ -48,7 +47,6 @@ it('loads published requesters and overrides then keeps the last valid catalog a
         ], JSON_THROW_ON_ERROR);
         $files->put($path, $updated);
         touch($path, time() + 4);
-        clearstatcache(true, $path);
 
         expect($store->refresh())
             ->toBeTrue()
@@ -56,5 +54,26 @@ it('loads published requesters and overrides then keeps the last valid catalog a
             ->toBe('192.168.6.21');
     } finally {
         $files->deleteDirectory($root);
+    }
+});
+
+it('reloads an atomic replacement with the same timestamp and byte count without caller cache clearing', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'orbit-dns-catalog-');
+    $question = new DnsQuestion('sample.orbit', DnsRecordType::A);
+    $requester = DnsRequester::unidentified('10.44.0.9');
+    try {
+        file_put_contents($path, json_encode(['records' => ['sample.orbit' => '10.44.0.2']], JSON_THROW_ON_ERROR));
+        $timestamp = filemtime($path);
+        $store = new FilePrivateDnsCatalogStore($path);
+        expect($store->catalog()->addressFor($question, $requester))->toBe('10.44.0.2');
+        file_put_contents($path.'.next', json_encode(['records' => ['sample.orbit' => '10.44.0.1']], JSON_THROW_ON_ERROR));
+        touch($path.'.next', $timestamp);
+        rename($path.'.next', $path);
+        expect($store->refresh())->toBeTrue()
+            ->and($store->catalog()->addressFor($question, $requester))->toBe('10.44.0.1')
+            ->and($store->refresh())->toBeFalse();
+    } finally {
+        @unlink($path.'.next');
+        unlink($path);
     }
 });

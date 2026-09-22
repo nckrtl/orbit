@@ -202,7 +202,7 @@ final readonly class PreparedStateFingerprint
         if (
             ! $this->isExactOrderedList($orderedRoles, TopologyProfile::ROLES)
             || ! $this->isExactOrderedList($orderedCheckoutRoles, TopologyProfile::CHECKOUT_ROLES)
-            || serialize($assignments) !== serialize(TopologyProfile::ASSIGNMENTS)
+            || ! in_array($assignments, [TopologyProfile::ASSIGNMENTS, TopologyProfile::PREVIOUS_ASSIGNMENTS], true)
         ) {
             throw new InvalidArgumentException('The prepared-state topology is invalid.');
         }
@@ -233,7 +233,15 @@ final readonly class PreparedStateFingerprint
             throw new InvalidArgumentException('The structural prepared fingerprint is invalid.');
         }
 
-        $topology['assignments'] = TopologyProfile::ASSIGNMENTS;
+        $originalTopology = $manifest['topology'] ?? null;
+        $originalAssignments = is_array($originalTopology) ? ($originalTopology['assignments'] ?? null) : null;
+        if (! is_array($originalAssignments)) {
+            throw new InvalidArgumentException('The structural prepared fingerprint is invalid.');
+        }
+        $topology['assignments'] = array_replace(
+            array_fill_keys(TopologyProfile::ROLES, []),
+            $originalAssignments,
+        );
         $payload['topology'] = $topology;
 
         return $payload;

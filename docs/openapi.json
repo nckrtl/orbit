@@ -20872,7 +20872,7 @@
           "app_instance": {
             "$ref": "#/components/schemas/AppInstance"
           },
-          "app_instances": {
+          "instances": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AppInstance"

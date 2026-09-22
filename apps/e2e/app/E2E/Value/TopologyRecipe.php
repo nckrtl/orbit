@@ -63,7 +63,7 @@ final readonly class TopologyRecipe
                 TopologyNodePurpose::Extension,
                 13,
                 false,
-                TopologyProfile::ASSIGNMENTS['app-prod'],
+                ['app-prod'],
             ),
         ]);
     }

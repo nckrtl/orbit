@@ -2965,7 +2965,7 @@ export interface components {
         AppInstanceRegistration: {
             app?: components["schemas"]["App"];
             app_instance?: components["schemas"]["AppInstance"];
-            app_instances?: components["schemas"]["AppInstance"][];
+            instances?: components["schemas"]["AppInstance"][];
             status?: string;
             source_count?: number;
             completed_count?: number;

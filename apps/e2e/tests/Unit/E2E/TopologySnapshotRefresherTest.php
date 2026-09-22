@@ -654,7 +654,7 @@ function refreshGuestProcess(array $guestArguments, string $target, object $stat
     }
 
     if ($guestArguments === ['/usr/local/bin/converge-sample-app.sh', 'inspect-state']) {
-        return Process::result('{"shape":"instances"}');
+        return Process::result('{"shape":"workspaces"}');
     }
 
     if (
@@ -808,6 +808,10 @@ function copyPreparedStateManifest(string $worktree): void
     $destination = $worktree.'/apps/e2e/resources/prepared-state.json';
 
     expect(copy($source, $destination))->toBeTrue();
+    $script = 'apps/e2e/resources/guest/converge-sample-fixtures.sh';
+    expect(copy(dirname(__DIR__, 5).'/'.$script, $worktree.'/'.$script))->toBeTrue();
+    chmod($worktree.'/'.$script, 0755);
+    expect(new ProcessFactory()->run(['git', '-C', $worktree, 'add', $script])->successful())->toBeTrue();
 }
 
 /** @param array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} $fixture */

@@ -65,7 +65,7 @@ final readonly class TopologySnapshotGeneration
         if (
             $manifestSchema === self::SCHEMA
             && ($preparedSchema !== 2
-            || serialize($topologyAssignments) !== serialize(TopologyProfile::ASSIGNMENTS))
+            || ! in_array($topologyAssignments, [TopologyProfile::ASSIGNMENTS, TopologyProfile::PREVIOUS_ASSIGNMENTS], true))
         ) {
             throw new InvalidArgumentException('The generation assignment declaration is invalid.');
         }

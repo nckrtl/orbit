@@ -14,26 +14,26 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppInstanceRegistrationData extends Data
 {
-    /** @param list<AppInstanceData> $appInstances */
+    /** @param list<AppInstanceData> $instances */
     public function __construct(
         public AppData $app,
         public AppInstanceData $appInstance,
-        public array $appInstances,
+        public array $instances,
         public string $status,
         public int $sourceCount,
         public int $completedCount,
     ) {}
 
-    /** @param list<AppInstance> $instances */
-    public static function fromModels(OrbitApp $app, AppInstance $primary, array $instances): self
+    /** @param list<AppInstance> $sourceInstances */
+    public static function fromModels(OrbitApp $app, AppInstance $primary, array $sourceInstances): self
     {
         return new self(
             app: AppData::fromModel($app),
             appInstance: AppInstanceData::fromModel($primary),
-            appInstances: array_map(AppInstanceData::fromModel(...), $instances),
+            instances: array_map(AppInstanceData::fromModel(...), $sourceInstances),
             status: 'active',
-            sourceCount: count($instances),
-            completedCount: count($instances),
+            sourceCount: count($sourceInstances),
+            completedCount: count($sourceInstances),
         );
     }
 }

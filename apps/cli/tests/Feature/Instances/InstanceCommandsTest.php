@@ -515,7 +515,7 @@ describe('instance:list', function (): void {
             ]),
         ]);
         $expected = json_encode([
-            'app_instances' => [[
+            'instances' => [[
                 ...instance_payload(),
                 'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
             ]],

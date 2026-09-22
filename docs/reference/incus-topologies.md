@@ -18,12 +18,18 @@ Orbit registers the three-Node profile `gateway_app-dev_app-prod`. A discovery o
 | Field | Value |
 | --- | --- |
 | Ordered roles | `gateway`, `app-dev`, `app-prod` |
-| Required assignments | `gateway`: `gateway`, `vpn`; `app-dev`: `app-dev`, `metrics`; `app-prod`: `app-prod` |
+| Required assignments | `gateway`: `gateway`, `vpn`, `websocket`, `router`; `app-dev`: `app-dev`, `metrics`, `database`; `app-prod`: `app-prod`, `ingress` |
 | Checkout roles | `gateway` and `app-dev` at `/home/orbit/orbit`; `app-prod` has no checkout |
 | Network | `oe-<hash>` on `10.232.<slot>.0/24`; the hash is 12 hex characters of the SHA-256 of `<issue>:<attempt>` |
 | Instances | `orbit-e2e-<issue-lowercase>-<attempt-prefix>-<role>`, with 8 characters of the attempt ID |
 | Addresses | Incus `.10`, `.11`, `.12`; WireGuard `10.44.0.1`, `.2`, `.3`, fixed on every clone; acquisition aligns the Gateway's stored network identity and each peer's saved and running endpoint with the cloned network |
 | Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}` and appears in the worktree branch name |
+
+The three registered Nodes share the active `e2e-development` Cluster, which keeps its existing name and has no Cluster TLD. Gateway is its Router; app-prod is its Ingress. The explicit private sample Route keeps `e2e-dev.orbit`. Development traffic crosses from Gateway Router to app-dev. Public production Routes, when added, enter app-prod and pass through Gateway Router to the workload. The `database` role ensures Docker only; database containers and additional sample applications are separate resources. [ADR 0114](/decisions/0114-expand-the-three-node-incus-cluster) explains the layout.
+
+Convergence expands the existing one-Node sample Cluster through Orbit commands. It refuses foreign members, another Cluster membership, an unexpected Router, or another Ingress. Repeated convergence reuses the same Cluster and roles. Router assignment retries at most five times on a lost Gateway response or a busy Router operation, because a Gateway Caddy upgrade can interrupt its own API connection. Other command failures stop convergence; retry reads the recorded membership. The optional app-prod-2 remains a workload-only extension outside this default Cluster until its scenario attaches it.
+
+Changing this recipe does not promote a snapshot. Ordinary acquisition still clones the saved generation and does not provision the new roles. A generation with the old assignments cannot pass the new profile's readiness checks. Prepare and inspect a disposable topology before explicitly updating the shared snapshot.
 
 An extended attempt keeps the three cloned Nodes and constructs one Node from the configured `orbit-base-ubuntu-26.04-runtime` image.
 
@@ -33,7 +39,27 @@ An extended attempt keeps the three cloned Nodes and constructs one Node from th
 
 The attempt record stores the normalized construction declaration, the complete physical Node inventory, its snapshot generation or generic-base inputs, and every image alias and fingerprint used for cold construction. Discovery and proof construct separate `app-prod-2` VMs and never adopt one from another attempt. A replacement proof constructs all three registered Nodes from the generic base and never adopts records, source, or runtime from the promoted generation.
 
-Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The `e2e-dev` Instance stays on `app-dev`; neither app-prod Node contains an Instance. The extension creates no legacy Instance or Workspace and no Route target or other graph edge that creates multi-target routing.
+Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The `e2e-dev` Instance stays on `app-dev`, and `e2e-prod` stays on `app-prod`. The extra Node has no Instance. The extension creates no legacy Instance or Workspace and no Route target or other graph edge that creates multi-target routing.
+
+## Prepared database resources
+
+The disposable topology being prepared for the next snapshot runs three Node-owned Docker Processes on app-dev. Standard sample convergence creates or validates these resources through Orbit; ordinary acquisition obtains them only after that prepared generation is saved. The database role alone does not create them.
+
+| Process and connection | Image | Database | Private address | Data volume |
+| --- | --- | --- | --- | --- |
+| `e2e-mysql` | `mysql:8.4` | `orbit_e2e` | `10.44.0.2:3306` | `e2e-mysql-data` |
+| `e2e-postgres` | `postgres:18-alpine` | `orbit_e2e` | `10.44.0.2:5432` | `e2e-postgres-data` |
+| `e2e-valkey` | `valkey/valkey:8-alpine` | Logical database `1`, registered with driver `redis` | `10.44.0.2:6379` | `e2e-valkey-data` |
+
+Each Process uses `unless-stopped`, a persistent Docker volume, and a listener bound to the Node's WireGuard address. Same-Node attachments use that explicit Docker bind address; wildcard listeners use loopback. SQL connections use a separate application user. Gateway prerequisites include the MySQL and PostgreSQL PDO drivers so database queries can use these connections. Credentials remain in the guest's protected configuration and the Gateway registry; they do not belong in Git. Convergence preserves credentials and persistent volumes on repeat runs, refuses conflicting resource identities, and verifies authenticated queries.
+
+The development Instance uses MySQL and Valkey; production uses PostgreSQL and Valkey. An Instance-owned queue worker and a Schedule exercise managed background work. The worker follows development hibernation; readiness accepts a sleeping worker only when its desired state is running and Doctor confirms healthy Process state. Small monorepo and Laravel package Projects each have a development Instance without a web Route.
+
+The sample repository is a Laravel Project with Instances `e2e-dev` and `e2e-prod` on their respective workload Nodes. Sample convergence uses `project:list` and `project:create` with the explicit `laravel-app` type. CLI collections use `projects` and `instances`; native sample state uses `shape: instances`. The harness reads previous `app_instances` envelopes and state during snapshot upgrades, but writes the current names. Snapshots with Workspace samples use the distinct `workspaces` state marker. Database table names remain unchanged.
+
+Convergence discovers commands by name, reuses existing production Instances even when old saved metadata is incomplete, and refreshes placement metadata from the live Instance. It establishes the shared Cluster, Gateway Router, and private DNS before hydrating production. Production readiness must run for native samples.
+
+Gateway preparation updates the runtime checkout path in its preserved environment. Private DNS reloads atomically published catalogs, including replacements within the same second. Doctor reads protected Caddy projections through the managed sudo channel and treats WebSocket access as part of the shared WireGuard member rule. Development hydration preserves the registered source identity and fast-forwards an older checkout to its registered starting commit, preserving local changes and refusing divergent history. Route verification expects one Route for web-serving Projects and none for non-web Project types.
 
 ## Topology states
 
@@ -98,7 +124,7 @@ The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit
 
 ## Discovery mount
 
-`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. The mount device is part of the attempt inventory, so exact release removes it.
+`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests. Acquisition and `sync` also install the current guest helper scripts on every physical Node before readiness checks, including three-node topologies cloned from an older snapshot. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. The mount device is part of the attempt inventory, so exact release removes it.
 
 Before reporting readiness, acquisition updates the three cloned Nodes' stored public SSH addresses and retargets stored VPN endpoints that name the snapshot Gateway. It keeps omitted endpoints omitted, preserves endpoint ports, and aligns each peer's saved and running endpoint with the Gateway's provisioning inputs. A later peer configuration therefore selects the acquired Gateway without a manual override. Acquisition uses the current harness preparation code, not a cached copy from the snapshot.
 
