@@ -88,17 +88,18 @@ final readonly class TaskScheduler
                 $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
                 $observation = $this->observer->observe($group, $task);
 
-                if ($observation->threads === [] && $observation->available) {
+                if ($observation->available) {
                     $this->clearUnavailable($group);
-
+                }
+                if (($observation->available && $observation->threads === []) || ($task->status === TaskStatus::Running && $observation->thread(TaskThreadRole::Implementer) === null)) {
                     continue;
                 }
 
-                if ($task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
+                if ($observation->available && $task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
                     continue;
                 }
 
-                if ($task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
+                if ($observation->available && $task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
                     continue;
                 }
 
@@ -163,18 +164,21 @@ final readonly class TaskScheduler
             return false;
         }
 
+        if ($task->completion_handoff_attempt !== null && ! $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
+            return true;
+        }
+
         try {
             $waiting = $this->waitingItem($implementer);
             $checks = $waiting instanceof TaskRubricItem
                 ? []
                 : $this->classifier->classifyTranscript($observation, TaskThreadRole::Implementer);
-            $items = $this->implementerItems($implementer, $checks);
+            $items = $this->implementerItems($task, $implementer, $checks);
         } catch (TaskSessionClassificationException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return true;
         }
-        $this->clearCommunicationFailures($task);
         if ($this->failedItems($items) === []) {
             $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer)?->turnId);
 
@@ -232,6 +236,10 @@ final readonly class TaskScheduler
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
                 'completion_attempt' => $task->completion_attempt + 1,
+                'completion_handoff_attempt' => $task->completion_attempt + 1,
+                'completion_handoff_turn_id' => $implementer->turnId,
+                'completion_handoff_check_id' => ComposerCheckEvidence::fromMessages($implementer->recentMessages)->runId,
+                'communication_failures' => 0,
                 'completion_handoff_comment_id' => null,
                 'completion_reminder_attempt' => null,
                 'completion_reminder_input_id' => null,
@@ -247,7 +255,7 @@ final readonly class TaskScheduler
 
                 return true;
             }
-            if (! $this->reviewTurnHasStopped($task, $reviewer)) {
+            if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
                 return true;
             }
         }
@@ -269,7 +277,6 @@ final readonly class TaskScheduler
 
                     return true;
                 }
-                $this->clearCommunicationFailures($task);
                 $items[] = $this->jevItem($checks['blocked'], 'no', 'The reviewer is blocked. Post an assistance_requested comment with the blocker, or continue the review.');
             }
         } else {
@@ -285,7 +292,7 @@ final readonly class TaskScheduler
                 if ($isFinal) {
                     $group->update(['pr_url' => $comment->pr_url]);
                 }
-                $task->update(['review_handled_comment_id' => $comment->id]);
+                $task->update(['review_handled_comment_id' => $comment->id, 'communication_failures' => 0]);
                 $this->acceptReview($task);
             }
 
@@ -300,13 +307,15 @@ final readonly class TaskScheduler
     /** @param array<string, TaskTranscriptCheck> $checks
      * @return list<TaskRubricItem>
      */
-    private function implementerItems(TaskThreadObservation $thread, array $checks): array
+    private function implementerItems(Task $task, TaskThreadObservation $thread, array $checks): array
     {
         $evidence = ComposerCheckEvidence::fromMessages($thread->recentMessages);
+        $freshRun = $task->completion_handoff_attempt === null
+            || ($evidence->runId !== null && $evidence->runId !== $task->completion_handoff_check_id);
         $items = [
             new TaskRubricItem('check_invoked', $evidence->invoked, 'composer check was not found in the recent tool output. Run composer check.'),
             new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
-            new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current, 'composer check output is from before a change to the tree. Run composer check again.'),
+            new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),
         ];
         $waiting = $this->waitingItem($thread);
         if ($waiting instanceof TaskRubricItem) {
@@ -394,7 +403,7 @@ final readonly class TaskScheduler
 
                 return;
             }
-            $task->update([$reminder => $task->{$attempt}, $input => $pendingId]);
+            $task->update([$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]);
 
             return;
         }
@@ -611,15 +620,11 @@ final readonly class TaskScheduler
         $this->clearCommunicationFailures($task);
     }
 
-    private function reviewTurnHasStopped(Task $task, TaskThreadObservation $reviewer): bool
+    private function newerTurnHasStopped(?string $previousTurnId, TaskThreadObservation $thread): bool
     {
-        $stored = $task->review_notified_turn_id;
-        $current = $reviewer->turnId;
-        if (! is_string($stored) || $stored === '' || ! is_string($current) || $current === '') {
-            return $reviewer->sessState !== AgentThreadState::Idle->value;
-        }
-
-        return $current !== $stored && $reviewer->sessState !== AgentThreadState::Idle->value;
+        return is_string($thread->turnId) && $thread->turnId !== ''
+            && $thread->turnId !== $previousTurnId
+            && in_array($thread->sessState, [AgentThreadState::Done->value, AgentThreadState::AskingForInput->value], true);
     }
 
     public function settleImplementer(Task $task, ?string $turnId = null): TaskGroup

@@ -19,6 +19,9 @@ use Illuminate\Support\Carbon;
  * @property int|null $completion_handoff_comment_id
  * @property int|null $completion_reminder_attempt
  * @property string|null $completion_reminder_input_id
+ * @property int|null $completion_handoff_attempt
+ * @property string|null $completion_handoff_turn_id
+ * @property string|null $completion_handoff_check_id
  * @property int $review_attempt
  * @property int|null $review_handled_comment_id
  * @property int|null $review_reminder_attempt
@@ -72,6 +75,9 @@ final class Task extends Model
         'completion_handoff_comment_id',
         'completion_reminder_attempt',
         'completion_reminder_input_id',
+        'completion_handoff_attempt',
+        'completion_handoff_turn_id',
+        'completion_handoff_check_id',
         'review_attempt',
         'review_handled_comment_id',
         'review_reminder_attempt',
@@ -113,6 +119,7 @@ final class Task extends Model
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'completion_attempt' => 'integer',
+            'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',
             'completion_reminder_attempt' => 'integer',
             'review_attempt' => 'integer',

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
@@ -797,7 +798,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 });
 
-it('waits for a newer reviewer turn before asking for an outcome', function (): void {
+it('waits for a newer reviewer turn before asking for an outcome', function (?string $observedTurn): void {
     $group = tick_group();
     $task = $group->tasks->sole();
     $attempt = $task->fresh()?->review_attempt ?? 1;
@@ -807,9 +808,9 @@ it('waits for a newer reviewer turn before asking for an outcome', function (): 
         'review_notified_attempt' => $attempt,
         'review_notified_turn_id' => 'turn-old',
     ]);
-    $reader = new class implements T3ThreadReader
+    $reader = new class($observedTurn) implements T3ThreadReader
     {
-        public string $turnId = 'turn-old';
+        public function __construct(public ?string $turnId) {}
 
         public function snapshot(Node $node, string $threadId): ?array
         {
@@ -835,7 +836,7 @@ it('waits for a newer reviewer turn before asking for an outcome', function (): 
 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['message']['text'])->toContain('changes_requested or approved');
-});
+})->with(['turn-old', null, '']);
 
 it('retries review findings until the implementer receives them', function (): void {
     $group = tick_group();
@@ -889,4 +890,226 @@ it('retries review findings until the implementer receives them', function (): v
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.');
+});
+
+it('repeated reminder send failures reach assistance', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'waiting'], 'pendingApprovals' => [['requestId' => 'pending-1']]]];
+        }
+    });
+    app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
+    {
+        public function dispatch(Node $node, array $command): array
+        {
+            throw new T3DispatchException('send failed');
+        }
+    });
+    Classification::fake();
+    for ($i = 0; $i < 6; $i++) {
+        app(TaskScheduler::class)->tick();
+    }
+    expect($group->tasks()->sole()->communication_failures)->toBeGreaterThanOrEqual(5);
+    expect($group->fresh()->assistance_requested)->toBeTrue();
+});
+
+it('handoff waits while reviewer still reports its old turn', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['latestTurn'] = ['id' => $threadId.'-old', 'state' => 'completed'];
+
+            return $snapshot;
+        }
+    });
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)], ['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
+    app(TaskScheduler::class)->tick();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing);
+    expect($dispatcher->commands)->toHaveCount(1);
+    app(TaskScheduler::class)->tick();
+    expect($dispatcher->commands)->toHaveCount(1);
+});
+
+it('unavailable implementer uses observation grace instead of rubric', function (): void {
+    $group = tick_group();
+    AgentThread::query()->where('task_id', $group->tasks->sole()->id)->update(['state' => 'done']);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return null;
+        }
+    });
+    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
+    {
+        public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            throw new LogicException('unused');
+        }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            throw new LogicException('unused');
+        }
+
+        public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
+        {
+            return ['blocked' => new TaskTranscriptCheck('blocked', 'no', 0.95)];
+        }
+    });
+    app(TaskScheduler::class)->tick();
+    expect($dispatcher->commands)->toBe([]);
+    expect($group->fresh()->agent_unavailable_since)->not->toBeNull();
+});
+it('an unavailable reviewer cannot advance an approval', function (): void {
+    $group = tick_final_review();
+    AgentThread::query()->where('task_group_id', $group->id)->update(['state' => 'done']);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return null;
+        }
+    });
+    mock(CoderSettleNotifier::class)->shouldReceive('notify');
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_reviewed_pull_request($group)),
+        'https://api.github.com/repos/acme/orbit' => Http::response(['default_branch' => 'main']),
+    ]);
+    app(TaskScheduler::class)->tick();
+    expect($group->tasks()->sole()->status)->toBe(TaskStatus::Reviewing);
+});
+it('relayed findings require a newer implementer turn and a new check before review', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update(['status' => TaskStatus::Reviewing]);
+    $task->comments()->create([
+        'task_group_id' => $group->id, 'type' => 'changes_requested',
+        'body' => 'Fix the regression before requesting review again.',
+        'author' => 'reviewer', 'review_attempt' => $task->review_attempt, 'posted_at' => now(),
+    ]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    $reader = new class implements T3ThreadReader
+    {
+        public string $turnId = 'before-findings';
+
+        public string $checkId = 'check-1';
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['latestTurn'] = ['id' => $this->turnId, 'state' => 'completed'];
+            $snapshot['thread']['activities'][0]['id'] = $this->checkId;
+
+            return $snapshot;
+        }
+    };
+    app()->instance(T3ThreadReader::class, $reader);
+    $answer = ['blocked' => new ChoiceAnswer('no', [], 0.95)];
+    Classification::fake([$answer, $answer]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect(app(T3Dispatcher::class)->commands)->toHaveCount(1);
+    Classification::assertNothingClassified();
+
+    $reader->turnId = 'after-findings';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('latest review findings');
+
+    $reader->checkId = 'check-after-findings';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('retains reminder send failures across successful classifications and clears them on delivery', function (TaskStatus $status): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running]);
+    $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'old-turn']);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'new-turn', 'state' => 'completed']]];
+        }
+    });
+    $dispatcher = new class implements T3Dispatcher
+    {
+        public bool $fails = true;
+
+        public function dispatch(Node $node, array $command): array
+        {
+            if ($this->fails) {
+                throw new T3DispatchException('send failed');
+            }
+
+            return ['sequence' => 1, 'thread_id' => $command['threadId']];
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    $answer = ['blocked' => new ChoiceAnswer('no', [], 0.95)];
+    Classification::fake([$answer, $answer, $answer]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->communication_failures)->toBe(2);
+
+    $dispatcher->fails = false;
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->communication_failures)->toBe(0);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+})->with([TaskStatus::Running, TaskStatus::Reviewing]);
+
+it('keeps check evidence from before the findings invalid after assistance is resolved', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update([
+        'completion_handoff_attempt' => $task->completion_attempt,
+        'completion_handoff_turn_id' => 'before-findings',
+        'completion_handoff_check_id' => 'check-1',
+        'assistance_requested' => true,
+    ]);
+    $group->update(['assistance_requested' => true]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['latestTurn'] = ['id' => 'after-findings', 'state' => 'completed'];
+
+            return $snapshot;
+        }
+    });
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Continue with the review findings.', 'author' => 'operator',
+    ]);
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('latest review findings');
 });

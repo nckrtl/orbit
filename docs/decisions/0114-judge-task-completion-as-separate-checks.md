@@ -22,11 +22,13 @@ The observation keeps the last five messages and the tool activity from the olde
 
 ## Decision
 
-Evaluate the implementer rubric when the task is `running` and the implementer thread is `Idle`, `Done`, or `AskingForInput`. Evaluate the reviewer rubric when the task is `reviewing` and the reviewer thread is `Idle`, `Done`, or `AskingForInput`. The observation must be available. A `Working` thread defers the task. A thread in `Failed` asks for assistance from that runtime state on that tick and does not receive the rubric reminder.
+Evaluate the implementer rubric when the task is `running` and the implementer thread is `Idle`, `Done`, or `AskingForInput`. Evaluate the reviewer rubric when the task is `reviewing` and the reviewer thread is `Idle`, `Done`, or `AskingForInput`. The observation must be available. If any attached thread cannot be observed, the tick uses the observation grace period before evaluating a rubric or accepting a comment. Cached thread state cannot advance a task. A `Working` thread defers the task. A thread in `Failed` asks for assistance from that runtime state on that tick and does not receive the rubric reminder.
 
 `AskingForInput` fails the code item `waiting_for_input`. That item joins the same reminder as the other failures. The second pass waits until that pending input has cleared or the reminder has started a turn that has since stopped. Ticks that still show the same pending input do not escalate. If the driver refuses the reminder, the tick records the refusal and uses the existing communication-failure path.
 
 A Jev item passes only when Jev selects the passing choice at a confidence greater than or equal to `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`). The threshold applies to each question. A code item passes or fails on the fact itself. A confident failing choice and a passing choice below the threshold are both failures. The Gateway asks the transcript questions in one Classification call. A missing answer, a missing TypeSafe key, or a classification error follows the existing communication-failure path. That path does not send the rubric reminder and does not treat the missing answer as a pass.
+
+A successful classification does not clear a failed-send counter. When the rubric requires a message, successful delivery clears that counter.
 
 ### Implementer
 
@@ -40,7 +42,7 @@ Use this rubric while a `running` task's implementer is `Idle`, `Done`, or `Aski
 | `blocked` | Jev yes/no over the thread | `no` at or above the threshold |
 | `waiting_for_input` | Runtime pending-input state | No pending input |
 
-`check_invoked` passes from a tool activity. An assistant message does not pass it. A run with no `exit code` fails `check_passed`. When `check_invoked` fails, `check_passed` and `check_current` fail with it. The activities are the ones already in the observation window. A `composer check` that has scrolled out of that window fails `check_invoked`, and the reminder asks for a new run. Jev is not asked these three questions. When every item passes, the Gateway sets the task status to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. While the reviewer thread is still idle, or its snapshot is still the turn recorded at the handoff, the Gateway waits. It asks for an outcome only after a newer review turn stops. A pending input skips the blocked question. A thread state the rubric does not recognize waits without a model call. The agent does not post a `ready_for_review` comment, and a posted comment of that type is not a gate.
+`check_invoked` passes from a tool activity. An assistant message does not pass it. A run with no `exit code` fails `check_passed`. When `check_invoked` fails, `check_passed` and `check_current` fail with it. The activities are the ones already in the observation window. A `composer check` that has scrolled out of that window fails `check_invoked`, and the reminder asks for a new run. Jev is not asked these three questions. When every item passes, the Gateway sets the task status to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. The Gateway observes the shared reviewer before the handoff and records its current turn. While the reviewer thread is still idle, or its snapshot is still the turn recorded at the handoff, the Gateway waits. A missing current turn ID does not prove that a newer turn stopped. It asks for an outcome only after a newer review turn stops. A pending input skips the blocked question. A thread state the rubric does not recognize waits without a model call. The agent does not post a `ready_for_review` comment, and a posted comment of that type is not a gate.
 
 Task status stays the current phase: `running`, `reviewing`, or `completed`. These comments stay events, and each accepted event updates status or the assistance flag:
 
@@ -51,7 +53,7 @@ Task status stays the current phase: `running`, `reviewing`, or `completed`. The
 | `assistance_requested` | Immediately on post | The assistance flag and reason, while status stays `running` or `reviewing` |
 | `resolution` | Immediately on post, with a non-empty body | Clears the assistance flag, starts a new attempt, and continues the thread. Status stays in progress |
 
-Earlier comments remain stored. The next assistance or review cycle keeps those comments.
+After findings are delivered, the Gateway records the implementer turn and the latest check activity. A newer implementer turn must stop and a new check must pass before another review. Resolving assistance keeps that evidence requirement. Earlier comments remain stored. The next assistance or review cycle keeps those comments.
 
 ### Reviewer
 
@@ -89,7 +91,7 @@ The second pass is the next rubric evaluation after that reminder, once the same
 
 ## Consequences
 
-- An idle implementer causes one Jev call with four questions until the task leaves implementation.
+- An eligible stopped implementer causes one Jev call with the blocked question until the task leaves implementation.
 - A reviewer causes a Jev call only when its outcome comment for the current attempt is missing.
 - Assistance reasons name the failed checks, which makes repeated blockers comparable.
 - A long thread can fail `check_invoked` after a real run has left the observation window. The repair is a new run.

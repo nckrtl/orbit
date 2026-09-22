@@ -136,7 +136,7 @@ It is forward-only; reverting to an older Gateway requires restoring a database 
 | `Done` | Latest turn completed successfully |
 | `Failed` | Latest turn failed |
 
-Completion and failure remain visible until a new turn starts. Task completion still requires the scheduler workflow and review. Failed observations preserve the last known state and metrics and mark them unavailable. Connection health does not change a thread to idle or failed.
+Completion and failure remain visible until a new turn starts. Task completion still requires the scheduler workflow and review. Failed observations preserve the last known state and metrics and mark them unavailable. Connection health does not change a thread to idle or failed. Unavailable observations use the outage grace period and cannot advance a task from cached state.
 
 `ORBIT_TASKS_AGENT_DRIVER` selects the registered driver for new groups and defaults to `t3`. Existing groups and threads keep their recorded driver. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
@@ -152,7 +152,9 @@ Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`,
 
 When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. Jev is asked only whether the agent is blocked. A pending input fails on its own.
 
-When every item passes, the Gateway sets the task to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. While that thread is still idle, or its snapshot is still the turn from before the handoff, the Gateway waits. It asks for an outcome only after a newer review turn stops. The implementer does not post a `ready_for_review` comment.
+When every item passes, the Gateway sets the task to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. While that thread is still idle, or its snapshot is still the turn from before the handoff, the Gateway waits. It asks for an outcome only after a newer review turn stops.
+
+After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new composer-check run before handing back to the reviewer. The implementer does not post a `ready_for_review` comment.
 
 A reviewer posts `changes_requested` or `approved`. The Gateway relays the findings to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. An approval is checked in code before advancing. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
 
@@ -168,7 +170,7 @@ For each eligible stopped implementer, the tick reads `composer check` from tool
 
 A stopped reviewer with `changes_requested` is relayed, and the task returns to `running`. An `approved` comment is checked in code: the commit equals HEAD, the branch is `task-{group id}`, the tree is clean, the commit is new for the subtask, and the final pull request verifies. A missing outcome comment asks Jev only whether the reviewer is blocked. `assistance_requested` and `resolution` still update the assistance flag and keep their history. Status stays the current phase for those two comments.
 
-The Gateway sends one reminder that names every failed item. The next idle evaluation asks for assistance when any item still fails. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder. A missing Jev answer counts as a communication failure and asks for assistance on the fifth consecutive failure.
+The Gateway sends one reminder that names every failed item. The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder. A missing Jev answer counts as a communication failure and asks for assistance on the fifth consecutive failure.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
 

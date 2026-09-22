@@ -155,13 +155,15 @@ it('routes an attached conversation without a legacy pointer', function (): void
     [$group, $task, $driver] = driver_group();
     $task->update(['implementer_agent_thread_id' => null]);
     $driver->observation = new AgentObservation(AgentThreadState::Done);
-    Classification::fake([['next_action' => new ChoiceAnswer('noop', [], 1.0)]]);
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 1.0)]]);
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+    expect($decisions)->toBe([])
+        ->and($driver->calls)->toHaveCount(3)
+        ->and($driver->calls[2]['operation'])->toBe('send')
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -194,7 +196,7 @@ it('alerts once after a continuous observation outage and rearms after recovery'
         public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake([['next_action' => new ChoiceAnswer('noop', [], 1.0)]]);
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 1.0)]]);
     $scheduler = app(TaskScheduler::class);
 
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);

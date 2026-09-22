@@ -10,6 +10,7 @@ final readonly class ComposerCheckEvidence
         public bool $invoked,
         public bool $passed,
         public bool $current,
+        public ?string $runId = null,
     ) {}
 
     /** @param list<array{id: string, kind: string, label: string, text: string, at: string}> $messages */
@@ -27,7 +28,7 @@ final readonly class ComposerCheckEvidence
             if (preg_match('/exit code (-?\d+)/', $message['text'], $match) === 1) {
                 $exit = (int) $match[1];
             }
-            $runs[] = ['index' => $index, 'at' => $message['at'], 'exit' => $exit];
+            $runs[] = ['id' => $message['id'], 'index' => $index, 'at' => $message['at'], 'exit' => $exit];
         }
         if ($runs === []) {
             return new self(false, false, false);
@@ -37,7 +38,7 @@ final readonly class ComposerCheckEvidence
         $latest = array_last($runs);
         $passed = $latest['exit'] === 0;
 
-        return new self(true, $passed, $passed && ! self::mutatesAfter($messages, $latest['at'], $latest['index']));
+        return new self(true, $passed, $passed && ! self::mutatesAfter($messages, $latest['at'], $latest['index']), $latest['id']);
     }
 
     /** @param list<array{id: string, kind: string, label: string, text: string, at: string}> $messages */
