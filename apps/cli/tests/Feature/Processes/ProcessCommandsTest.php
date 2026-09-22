@@ -560,7 +560,8 @@ describe('safe Process results', function (): void {
         $output = $tester->getDisplay();
 
         expect($status)->toBe(0)
-            ->and($output)->toContain($expectedPath, process_cli_request_id())->not->toContain($secret, "\x1b")
+            ->and($output)->toContain($expectedPath, process_cli_request_id())
+            ->not->toContain($secret)->not->toContain("\x1b")
             ->and($tester->getErrorOutput())->toBe('')
             ->and($mock->getRecordedResponses())->toHaveCount(1)
             ->and($mock->getLastRequest())->toBeInstanceOf($request);
