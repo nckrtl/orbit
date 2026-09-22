@@ -200,7 +200,11 @@ final class StreamWebSocketTransport implements WebSocketTransport
                 'verify_peer_name' => true,
             ];
 
-            if ($caPath !== null && is_file($caPath)) {
+            if ($caPath !== null) {
+                if (! is_file($caPath) || ! is_readable($caPath)) {
+                    throw new RealtimeConnectionException('The selected realtime CA certificate is unavailable.');
+                }
+
                 $options['ssl']['cafile'] = $caPath;
             }
         }

@@ -11,6 +11,8 @@ The Gateway can publish realtime events over a private WebSocket channel. `realt
 
 Run `orbit realtime:show` to see what the active Gateway itself reports.
 
+Realtime uses the active profile's selected CA file for both channel authorization and the WebSocket connection. A selected file stays required if it disappears or cannot be read; only a profile without a pin uses system trust. Channel authorization accepts a successful response from the selected Gateway directly and never follows redirects.
+
 ## Commands
 
 | Command | Result |

@@ -27,9 +27,13 @@ final readonly class GatewayChannelAuthorizer implements RealtimeChannelAuthoriz
     #[\Override]
     public function authorize(string $socketId, string $channelName): string
     {
-        $request = Http::baseUrl($this->gatewayUrl)->acceptJson()->timeout($this->timeoutSeconds);
+        $request = Http::baseUrl($this->gatewayUrl)->acceptJson()->withoutRedirecting()->timeout($this->timeoutSeconds);
 
-        if ($this->caPath !== null && is_file($this->caPath)) {
+        if ($this->caPath !== null) {
+            if (! is_file($this->caPath) || ! is_readable($this->caPath)) {
+                throw new RealtimeConnectionException('The selected realtime CA certificate is unavailable.');
+            }
+
             $request = $request->withOptions(['verify' => $this->caPath]);
         }
 
@@ -45,7 +49,7 @@ final readonly class GatewayChannelAuthorizer implements RealtimeChannelAuthoriz
             );
         }
 
-        if ($response->failed()) {
+        if (! $response->successful()) {
             throw new RealtimeConnectionException(
                 "Realtime channel authorization failed with HTTP status {$response->status()}.",
             );
