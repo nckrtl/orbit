@@ -78,7 +78,7 @@ After a successful closeout refresh, `bin/e2e-topology closeout` records the pro
 
 ### Convergence
 
-Convergence prepares the sample resources and every product projection before verification.
+Convergence prepares the sample resources and every product projection before verification. Guest preparation persists public upstream DNS servers for systemd-resolved before selecting its stub resolver. Public package downloads therefore work after a snapshot reboot, while Orbit keeps routing private names through its managed DNS configuration.
 
 Every convergence runs, in order, `converge-sample-app.sh reproject` on `app-dev`, `metrics-publication`, a wait until `instance:list --json` answers on `app-dev`, `hydrate` on the sample checkouts, and `prepare-node.sh permissions` on every role. Reproject runs `node:role:add --converge` for every app role. On the legacy `instances` envelope it then runs `instance:php` for every Instance, development last.
 
