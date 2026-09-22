@@ -601,7 +601,7 @@ it('starts the next pending subtask as the sole running task after review is acc
         ->and($tasks->pluck('status')->all())->toBe([TaskStatus::Completed, TaskStatus::Running])
         ->and($tasks->filter(fn (Task $task): bool => $task->status === TaskStatus::Running)->count())->toBe(1)
         ->and($tasks->get(1)?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-2')->sole()->id)
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'signoff:1', 'implementer:2']);
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'implementer:2']);
 });
 
 it('hands a settled subtask to the reviewer and starts the next implementer after sign-off', function (): void {
@@ -683,7 +683,7 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
         ->and($advanced->tasks->last()?->status)->toBe(TaskStatus::Running)
         ->and($advanced->tasks->last()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-2')->sole()->id)
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'signoff:1', 'implementer:2']);
+        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'implementer:2']);
 
     $lastReview = app(TaskScheduler::class)->settleImplementer($advanced->tasks->last());
     $settled = app(TaskScheduler::class)->acceptReview($lastReview->tasks->last());

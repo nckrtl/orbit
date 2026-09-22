@@ -55,7 +55,7 @@ final readonly class TaskSessionObserver
                 hasNewCommitsSinceThreadStart: $hasNewCommits, prUrl: $group->pr_url, ciSummary: null,
                 available: $observation !== null && $observation->state !== null,
                 error: $observation?->error, inputRequests: $requests,
-                recentMessages: $observation === null ? [] : array_slice($observation->entries, -5),
+                recentMessages: $observation === null ? [] : $this->recentMessages($observation->entries),
             );
         }
 
@@ -84,5 +84,18 @@ final readonly class TaskSessionObserver
         }
 
         return is_string($since) && $since !== '' && $this->diff->hasCommitsSince($instance, $since);
+    }
+
+    /** @param list<array{id: string, kind: string, label: string, text: string, at: string}> $entries
+     * @return list<array{id: string, kind: string, label: string, text: string, at: string}>
+     */
+    private function recentMessages(array $entries): array
+    {
+        $messages = array_values(array_filter($entries, static fn (array $entry): bool => $entry['kind'] === 'message'));
+        $messages = array_slice($messages, -5);
+        $firstAt = $messages[0]['at'] ?? '';
+        $activities = array_values(array_filter($entries, static fn (array $entry): bool => $entry['kind'] === 'activity' && ($firstAt === '' || $entry['at'] >= $firstAt)));
+
+        return array_map(static fn (array $entry): array => [...$entry, 'text' => mb_substr($entry['text'], -2000)], [...$messages, ...$activities]);
     }
 }

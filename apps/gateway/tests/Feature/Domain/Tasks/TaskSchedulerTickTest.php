@@ -8,6 +8,8 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskJevDecision;
+use App\Domain\Tasks\TaskJevOutcome;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
@@ -15,6 +17,7 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
@@ -270,6 +273,11 @@ it('notifies Coder when classification fails closed', function (): void {
                 'TYPESAFE_API_KEY is missing. Task session routing will not invent a next action.',
             );
         }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            throw new LogicException('Not expected.');
+        }
     });
 
     $decisions = app(TaskScheduler::class)->tick();
@@ -347,6 +355,11 @@ it('does not classify or advance a task while its T3 thread is active', function
     app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
     {
         public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            throw new LogicException('Active tasks must not call Jev.');
+        }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
         {
             throw new LogicException('Active tasks must not call Jev.');
         }
@@ -436,6 +449,11 @@ it('targets the idle in-progress task while another task is working', function (
             $this->observations[] = $observation;
 
             return new TaskSessionDecision($this->action, 0.95, 'Route the observed task.');
+        }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            return new TaskJevDecision(TaskJevOutcome::AssistanceRequired, 1.0, 'Legacy test classifier.');
         }
     };
     app()->instance(TaskSessionClassifier::class, $classifier);

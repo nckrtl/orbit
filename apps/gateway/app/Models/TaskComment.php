@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskCommentType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -37,6 +38,6 @@ final class TaskComment extends Model
 
     protected function casts(): array
     {
-        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'posted_at' => 'immutable_datetime'];
+        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'type' => TaskCommentType::class, 'posted_at' => 'immutable_datetime'];
     }
 }

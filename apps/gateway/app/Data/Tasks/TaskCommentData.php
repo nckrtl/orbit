@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\TaskCommentType;
 use App\Models\TaskComment;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -35,7 +36,7 @@ final class TaskCommentData extends Data
             taskGroupId: $comment->task_group_id,
             taskId: $comment->task_id,
             agentThreadId: $comment->agent_thread_id,
-            type: $comment->type,
+            type: TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'))->value,
             body: $comment->body,
             author: $comment->author,
             postedAt: $comment->posted_at->toIso8601String(),

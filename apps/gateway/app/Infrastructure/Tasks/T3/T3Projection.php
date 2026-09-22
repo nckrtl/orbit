@@ -33,13 +33,17 @@ final readonly class T3Projection
             foreach ($this->rows($thread[$key] ?? []) as $row) {
                 $payload = $this->map($row['payload'] ?? []);
                 $id = $this->text($row['id'] ?? $row['messageId'] ?? '');
-                $text = $this->text($row['text'] ?? $row['summary'] ?? $payload['text'] ?? '');
+                $text = $this->text($row['text'] ?? $row['summary'] ?? $payload['text'] ?? $row['output'] ?? $payload['output'] ?? '');
+                $exitCode = $row['exitCode'] ?? $row['exit_code'] ?? $payload['exitCode'] ?? $payload['exit_code'] ?? null;
+                if ($exitCode !== null) {
+                    $text .= ' exit code '.(string) $exitCode;
+                }
                 if ($id === '') {
                     $id = hash('sha256', json_encode($row, JSON_THROW_ON_ERROR));
                 }
                 $entries[] = [
                     'id' => $id, 'kind' => $kind,
-                    'label' => $this->text($row['role'] ?? $row['kind'] ?? $payload['role'] ?? 'Activity'),
+                    'label' => $this->text($row['role'] ?? $row['kind'] ?? $payload['role'] ?? ($exitCode !== null ? 'tool' : 'Activity')),
                     'text' => $text, 'at' => $this->text($row['createdAt'] ?? ''),
                 ];
             }
