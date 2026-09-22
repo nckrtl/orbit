@@ -175,6 +175,18 @@ The inspected price is $0.042 per million input tokens. Assuming 5,000–20,000 
 
 No live Jev budget or suitable labeled workload has been established. No live result is claimed. Locked dependencies were restored in the isolated implementation worktree and `composer guidance:check` passed. A real Gateway-only runner probe took 392.018 seconds: validate 0.214 seconds, check 237.537 seconds, affected tests 151.869 seconds, and focused evidence capture 0.114 seconds. This is one local measurement, not a latency distribution or the full five-project budget. The Gateway command deadline is 900 seconds, its rendered FPM and Caddy limits are 4,500 seconds, and the SDK default is 900 seconds. The runner reserves 840 seconds, SSH 880 seconds, and the run lease 900 seconds. External MCP clients can impose shorter limits; they must retain the run key and query after a disconnect. The implementation PR must include the tests, full-profile timing, Incus reproduction, and the semantic evaluation result before this pilot is enabled. A failed experiment is a reason to revise this proposal, not to expand the feature.
 
+### Implementation findings
+
+The disabled implementation was checked on 22 September 2026. The complete local Builder gate passed all fifteen commands at `5fe7948ed9063d59b97495281848b6b4ae4addda` in 338.399 seconds with unchanged source. Its Gateway check ran all 6,032 tests. The affected-test step reused its cache and selected no Gateway tests; the full suite and a separate fresh affected-test run supplied that coverage.
+
+Real SSH checks from Gateway ran on the Incus topology allocated to this task. The initial Node had 2 GiB of memory and one CPU. It killed Rector with exit 137; the runner returned failure. An interrupted run also produced no accepted result. On a Node with 8 GiB of memory and four CPUs, an E2E unit test read the real source marker outside its fixture. The fixture now owns that path and verifies that a conflicting marker is refused.
+
+After that fix, the complete native run at `35af72a7f` passed all fifteen project commands and captured one named test from JUnit. The runner took 795.698 seconds. SSH execution plus the final freshness check took 798.755 seconds. Both source fingerprints matched, and a script verified all sixteen log digests and the captured test-source digest before archiving the evidence outside the checkout. This measures the runner and transport; it excludes a live Jev request, HTTP client overhead, scheduler wait, and review. Gateway API and scheduler tests use fake Jev answers.
+
+Snapshots exclude ignored environment files. The Incus guidance checks reported suppressed warnings from phpdotenv when `.env` files were absent. An event log confirmed that cause.
+
+These measurements do not establish production latency or savings. The successful native run used 95% of the 840-second runner budget. The fixed profile also repeats Gateway tests after `composer check` runs the full suite. Keep the pilot disabled while review resolves the resource and timeout margin and evaluation on held-out cases measures the value of Nouls. Compare reuse of required checks and removal of redundant execution before increasing timeouts or adding a background system. One larger-Node success does not establish a minimum Node size or performance under concurrent tasks.
+
 ## Rejected alternatives
 
 - More transcript regexes: cannot establish execution ownership or preserve evidence outside the observation window.
