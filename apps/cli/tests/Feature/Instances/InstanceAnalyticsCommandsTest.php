@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Analytics\DisableInstanceAnalyticsRequest;
@@ -11,6 +12,8 @@ use Orbit\Sdk\Requests\Analytics\EnableInstanceAnalyticsRequest;
 use Orbit\Sdk\Requests\Analytics\ShowInstanceAnalyticsRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -56,6 +59,45 @@ afterEach(function (): void {
 });
 
 describe('instance:analytics:enable', function (): void {
+    it('preserves every explicit invalid host for correlated Gateway refusal', function (array $hosts, bool $json): void {
+        $mockClient = MockClient::global([
+            EnableInstanceAnalyticsRequest::class => function (PendingRequest $pending) use ($hosts): MockResponse {
+                if ($pending->body()->all() !== ['hosts' => $hosts]) {
+                    return ($this->enabled)();
+                }
+
+                return MockResponse::make([
+                    'error' => ['code' => 'validation.failed', 'message' => 'The request is invalid.'],
+                ], 422, ['X-Orbit-Request-Id' => $this->requestId]);
+            },
+        ]);
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:analytics:enable']);
+        $status = $tester->execute(['instance' => '12', '--host' => $hosts, '--json' => $json], [
+            'interactive' => false, 'capture_stderr_separately' => true,
+        ]);
+        $output = $tester->getDisplay();
+
+        expect($status)->toBe(1)
+            ->and($mockClient->getRecordedResponses())->toHaveCount(1)
+            ->and($mockClient->getLastPendingRequest()?->body()->all())->toBe(['hosts' => $hosts])
+            ->and($output)->toContain('The request is invalid.', $this->requestId)
+            ->not->toContain('Analytics tracking enabled.')
+            ->not->toContain('stats.example.com')
+            ->and($tester->getErrorOutput())->toBe('');
+
+        if ($json) {
+            expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+                'error' => ['code' => 'validation.failed', 'message' => 'The request is invalid.', 'request_id' => $this->requestId],
+            ]);
+        }
+    })->with([
+        'empty host' => [['']],
+        'valid then empty' => [['stats.example.com', '']],
+        'empty then valid' => [['', 'stats.example.com']],
+        'whitespace-only host' => [['   ']],
+        'valid then whitespace' => [['stats.example.com', "\t "]],
+    ])->with(['human' => false, 'JSON' => true]);
+
     it('publishes the default host when none is named, and tells the operator what to do next', function (): void {
         $mockClient = MockClient::global([EnableInstanceAnalyticsRequest::class => ($this->enabled)()]);
 

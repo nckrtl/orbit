@@ -30,7 +30,7 @@ final class EnableInstanceAnalyticsCommand extends InstanceAnalyticsCommand
 
         $hosts = array_values(array_filter(
             (array) $this->option('host'),
-            static fn (mixed $host): bool => is_string($host) && $host !== '',
+            is_string(...),
         ));
 
         $connector = $this->gatewayConnector($repository, $connectors);

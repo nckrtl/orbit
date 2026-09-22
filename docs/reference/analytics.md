@@ -47,6 +47,8 @@ The first person to open `https://analytics.orbit` registers the Plausible owner
 
 `orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>` as a Route that belongs to the Instance. The Instance must already serve a domain. `--host=HOST` names another host, and you can repeat it up to ten times. The command sets the exact host set, so a host you leave out is removed.
 
+Omit `--host` to use the default host. An explicit empty or whitespace-only host is invalid, including within a list of valid hosts. The CLI sends every supplied host unchanged for Gateway validation; it does not discard an invalid entry or replace it with the default.
+
 A tracking host is served wherever the Instance's own domain is served, because its Route mirrors that Route's scope and publication.
 
 | The Instance's Route | The tracking host |
