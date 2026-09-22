@@ -3072,6 +3072,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0116-run-task-implementers-on-pi.md",
+            "title": "ADR 0116: Run task implementers on Pi",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0112",
+                "0114",
+                "0116"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3216,7 +3240,8 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0116"
             ]
         },
         {
@@ -4078,6 +4103,21 @@
             ]
         },
         {
+            "path": "docs/reference/pi-server.md",
+            "title": "Pi server",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0116"
+            ]
+        },
+        {
             "path": "docs/reference/private-dns.md",
             "title": "Private DNS",
             "kind": "reference",
@@ -4246,7 +4286,8 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0116"
             ]
         },
         {

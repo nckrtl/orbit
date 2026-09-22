@@ -160,6 +160,14 @@ A reviewer posts `changes_requested` or `approved`. The Gateway relays the findi
 
 `thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
 
+### Pi driver
+
+The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the Node that owns the Instance. [ADR 0116](/decisions/0116-run-task-implementers-on-pi) records the decision. A Node allows the driver while its `pi-server` Process is active with desired state `running`.
+
+The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form: `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused.
+
+Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`, so the `composer check` rubric items read Pi threads the same way as T3 threads. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
+
 ## Session routing
 
 A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. Pending, completed, failed, and cancelled tasks do not ask Jev for decisions.

@@ -39,6 +39,10 @@ return [
         'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
         'token' => env('ORBIT_T3_TOKEN'),
     ],
+    'pi' => [
+        'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
+        'token' => env('ORBIT_PI_TOKEN'),
+    ],
     'tasks' => [
         'agent_driver' => env('ORBIT_TASKS_AGENT_DRIVER', 't3'),
         'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),

@@ -109,6 +109,7 @@
               "reference/proxycli",
               "reference/herdr-sessions",
               "reference/tasks",
+              "reference/pi-server",
               "reference/local-resolver-overrides",
               "reference/cli-binaries",
               "reference/events",
@@ -649,7 +650,8 @@
               "decisions/0110-route-task-sessions-with-laravel-ai-jev",
               "decisions/0112-isolate-agent-threads-behind-drivers",
               "decisions/0113-gate-task-completion-on-validation-and-review",
-              "decisions/0114-judge-task-completion-as-separate-checks"
+              "decisions/0114-judge-task-completion-as-separate-checks",
+              "decisions/0116-run-task-implementers-on-pi"
             ]
           }
         ]
