@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
@@ -11,14 +13,15 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
-use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTranscriptCheck;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -35,6 +38,7 @@ use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 use function Pest\Laravel\mock;
 
@@ -81,6 +85,32 @@ function tick_group(): TaskGroup
     test_link_agent_threads($group);
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+}
+
+/** @return list<array<string, ChoiceAnswer>> */
+function tick_transcript(string $invoked = 'yes', string $passed = 'yes', string $current = 'yes', string $blocked = 'no', float $confidence = 0.95): array
+{
+    return [[
+        'check_invoked' => new ChoiceAnswer($invoked, [], $confidence),
+        'check_passed' => new ChoiceAnswer($passed, [], $confidence),
+        'check_current' => new ChoiceAnswer($current, [], $confidence),
+        'blocked' => new ChoiceAnswer($blocked, [], $confidence),
+    ]];
+}
+
+/** @return array{thread: array<string, mixed>} */
+function tick_checked_thread(string $status): array
+{
+    return ['thread' => [
+        'session' => ['status' => $status],
+        'activities' => [[
+            'id' => 'check-1',
+            'kind' => 'command.completed',
+            'output' => 'composer check',
+            'exitCode' => 0,
+            'createdAt' => '2026-09-22T12:00:00Z',
+        ]],
+    ]];
 }
 
 function tick_dispatcher(): T3Dispatcher
@@ -281,14 +311,22 @@ it('requests assistance without approving a pending request when tool evidence i
             ];
         }
     });
-    Classification::fake();
+    $answers = tick_transcript(invoked: 'no', passed: 'no', current: 'no', blocked: 'yes')[0];
+    Classification::fake([$answers, $answers]);
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions)->toHaveCount(1)
-        ->and($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($dispatcher->commands)->toHaveCount(0)
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+    expect($decisions)->toBe([])
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('waiting for input')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check was not found')
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->tasks()->first()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($dispatcher->commands)->toHaveCount(1);
 });
 
 it('requests assistance without calling a dispatcher that would fail on approval', function (): void {
@@ -340,14 +378,13 @@ it('requests assistance without calling a dispatcher that would fail on approval
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake();
+    Classification::fake(tick_transcript());
 
-    $decisions = app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decisions[0]->reason)->toContain('composer check')
-        ->and($notifier->reason)->toContain('composer check')
-        ->and($dispatcher->commands)->toHaveCount(0)
+    expect($group->tasks()->first()?->communication_failures)->toBe(1)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($notifier->reason)->toBeNull()
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -384,19 +421,19 @@ it('keeps the current subtask running when completion has no typed handoff or to
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            return ['thread' => ['session' => ['status' => 'done']]];
+            return tick_checked_thread('done');
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
-    Classification::fake();
+    Classification::fake(tick_transcript());
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
+    expect($decisions)->toBe([])
         ->and($dispatcher->commands)->toBe([])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
-        ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Running)
-        ->and($spawner->reviews)->toBe(0);
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
+        ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($spawner->reviews)->toBe(1);
 });
 
 it('notifies Coder when classification fails closed', function (): void {
@@ -434,15 +471,22 @@ it('notifies Coder when classification fails closed', function (): void {
         {
             throw new LogicException('Not expected.');
         }
+
+        public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
+        {
+            throw new TaskSessionClassificationException(
+                'TYPESAFE_API_KEY is missing. Task session routing will not invent a next action.',
+            );
+        }
     });
 
-    $decisions = app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($decisions[0]->reason)->toContain('composer check')
-        ->and($notifier->reason)->toContain('composer check')
+    expect($group->tasks()->first()?->communication_failures)->toBe(1)
+        ->and($notifier->reason)->toBeNull()
         ->and($dispatcher->commands)->toBe([])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
 });
 
 it('requests assistance without a follow-up turn when an idle snapshot has no tool evidence', function (): void {
@@ -477,13 +521,14 @@ it('requests assistance without a follow-up turn when an idle snapshot has no to
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake();
+    Classification::fake(tick_transcript(invoked: 'no', passed: 'no', current: 'no'));
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions[0]->action)->toBe(TaskSessionNextAction::EscalateCoder)
-        ->and($dispatcher->commands)->toBe([])
-        ->and($notifier->called)->toBeTrue();
+    expect($decisions)->toBe([])
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check was not found')
+        ->and($notifier->called)->toBeFalse();
 });
 
 it('runs the artisan tick while the extension is enabled', function (): void {
@@ -514,6 +559,11 @@ it('does not classify or advance a task while its T3 thread is active', function
     app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
     {
         public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            throw new LogicException('Active tasks must not call Jev.');
+        }
+
+        public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
         {
             throw new LogicException('Active tasks must not call Jev.');
         }
@@ -600,13 +650,446 @@ it('targets the idle in-progress task while another task is working', function (
         {
             throw new LogicException('Missing tool evidence must not call Jev.');
         }
+
+        public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
+        {
+            return [
+                'check_invoked' => new TaskTranscriptCheck('check_invoked', 'no', 0.95),
+                'check_passed' => new TaskTranscriptCheck('check_passed', 'no', 0.95),
+                'check_current' => new TaskTranscriptCheck('check_current', 'no', 0.95),
+                'blocked' => new TaskTranscriptCheck('blocked', 'no', 0.95),
+            ];
+        }
     };
     app()->instance(TaskSessionClassifier::class, $classifier);
 
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions)->toHaveCount(1)
-        ->and($dispatcher->commands)->toBe([])
+    expect($decisions)->toBe([])
+        ->and($dispatcher->commands)->toHaveCount(1)
         ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
+});
+
+it('asks for assistance when implementer checks still fail after one reminder', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public ?string $reason = null;
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+    $answers = tick_transcript(invoked: 'no')[0];
+    Classification::fake([$answers, $answers]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check was not found')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check did not pass')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('change to the tree');
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($notifier->reason)->toContain('Checks still failed')
+        ->and($notifier->reason)->toContain('composer check was not found')
+        ->and($dispatcher->commands)->toHaveCount(1);
+});
+
+it('retries the reviewer nudge until the handoff send succeeds', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $spawner = new class implements AgentSpawner
+    {
+        public int $reviews = 0;
+
+        public function spawnReviewer(TaskGroup $group): ?int
+        {
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            return null;
+        }
+
+        public function requestReview(Task $task): void
+        {
+            $this->reviews++;
+            if ($this->reviews === 1) {
+                throw new AgentDriverException('Reviewer send failed.');
+            }
+        }
+
+        public function signOff(Task $task): ?string
+        {
+            return null;
+        }
+    };
+    app()->instance(AgentSpawner::class, $spawner);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('idle');
+        }
+    });
+    Classification::fake(tick_transcript());
+
+    app(TaskScheduler::class)->tick();
+
+    $task = $group->tasks()->first();
+    expect($spawner->reviews)->toBe(1)
+        ->and($task?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task?->review_notified_attempt)->toBeNull()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($spawner->reviews)->toBe(2)
+        ->and($task?->fresh()?->review_notified_attempt)->toBe($task?->review_attempt)
+        ->and($task?->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($spawner->reviews)->toBe(2)
+        ->and($task?->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+});
+
+it('waits for a newer reviewer turn before asking for an outcome', function (?string $observedTurn): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $attempt = $task->fresh()?->review_attempt ?? 1;
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update([
+        'status' => TaskStatus::Reviewing,
+        'review_notified_attempt' => $attempt,
+        'review_notified_turn_id' => 'turn-old',
+    ]);
+    $reader = new class($observedTurn) implements T3ThreadReader
+    {
+        public function __construct(public ?string $turnId) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => 'done'],
+                'latestTurn' => ['id' => $this->turnId, 'state' => 'completed'],
+            ]];
+        }
+    };
+    $dispatcher = tick_dispatcher();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, $reader);
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($dispatcher->commands)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+
+    $reader->turnId = 'turn-new';
+    app(TaskScheduler::class)->tick();
+
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('changes_requested or approved');
+})->with(['turn-old', null, '']);
+
+it('retries review findings until the implementer receives them', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update(['status' => TaskStatus::Reviewing]);
+    $task->comments()->create([
+        'task_group_id' => $group->id,
+        'type' => 'changes_requested',
+        'body' => 'Add the missing test.',
+        'author' => 'reviewer',
+        'review_attempt' => $task->review_attempt,
+        'posted_at' => now(),
+    ]);
+    $dispatcher = new class implements T3Dispatcher
+    {
+        public int $calls = 0;
+
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $this->calls++;
+            $this->commands[] = $command;
+            if ($this->calls === 1) {
+                throw new T3DispatchException('relay failed');
+            }
+
+            return ['sequence' => $this->calls, 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done']]];
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.');
+});
+
+it('repeated reminder send failures reach assistance', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'waiting'], 'pendingApprovals' => [['requestId' => 'pending-1']]]];
+        }
+    });
+    app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
+    {
+        public function dispatch(Node $node, array $command): array
+        {
+            throw new T3DispatchException('send failed');
+        }
+    });
+    Classification::fake();
+    for ($i = 0; $i < 6; $i++) {
+        app(TaskScheduler::class)->tick();
+    }
+    expect($group->tasks()->sole()->communication_failures)->toBeGreaterThanOrEqual(5);
+    expect($group->fresh()->assistance_requested)->toBeTrue();
+});
+
+it('handoff waits while reviewer still reports its old turn', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['latestTurn'] = ['id' => $threadId.'-old', 'state' => 'completed'];
+
+            return $snapshot;
+        }
+    });
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)], ['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
+    app(TaskScheduler::class)->tick();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing);
+    expect($dispatcher->commands)->toHaveCount(1);
+    app(TaskScheduler::class)->tick();
+    expect($dispatcher->commands)->toHaveCount(1);
+});
+
+it('unavailable implementer uses observation grace instead of rubric', function (): void {
+    $group = tick_group();
+    AgentThread::query()->where('task_id', $group->tasks->sole()->id)->update(['state' => 'done']);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return null;
+        }
+    });
+    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
+    {
+        public function classify(TaskSessionObservation $observation): TaskSessionDecision
+        {
+            throw new LogicException('unused');
+        }
+
+        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
+        {
+            throw new LogicException('unused');
+        }
+
+        public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
+        {
+            return ['blocked' => new TaskTranscriptCheck('blocked', 'no', 0.95)];
+        }
+    });
+    app(TaskScheduler::class)->tick();
+    expect($dispatcher->commands)->toBe([]);
+    expect($group->fresh()->agent_unavailable_since)->not->toBeNull();
+});
+it('an unavailable reviewer cannot advance an approval', function (): void {
+    $group = tick_final_review();
+    AgentThread::query()->where('task_group_id', $group->id)->update(['state' => 'done']);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return null;
+        }
+    });
+    mock(CoderSettleNotifier::class)->shouldReceive('notify');
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_reviewed_pull_request($group)),
+        'https://api.github.com/repos/acme/orbit' => Http::response(['default_branch' => 'main']),
+    ]);
+    app(TaskScheduler::class)->tick();
+    expect($group->tasks()->sole()->status)->toBe(TaskStatus::Reviewing);
+});
+it('relayed findings require a newer implementer turn and a new check before review', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->update(['status' => TaskStatus::Reviewing]);
+    $task->comments()->create([
+        'task_group_id' => $group->id, 'type' => 'changes_requested',
+        'body' => 'Fix the regression before requesting review again.',
+        'author' => 'reviewer', 'review_attempt' => $task->review_attempt, 'posted_at' => now(),
+    ]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    $reader = new class implements T3ThreadReader
+    {
+        public string $turnId = 'before-findings';
+
+        public string $checkId = 'check-1';
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['latestTurn'] = ['id' => $this->turnId, 'state' => 'completed'];
+            $snapshot['thread']['activities'][0]['id'] = $this->checkId;
+
+            return $snapshot;
+        }
+    };
+    app()->instance(T3ThreadReader::class, $reader);
+    $answer = ['blocked' => new ChoiceAnswer('no', [], 0.95)];
+    Classification::fake([$answer, $answer]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect(app(T3Dispatcher::class)->commands)->toHaveCount(1);
+    Classification::assertNothingClassified();
+
+    $reader->turnId = 'after-findings';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('latest review findings');
+
+    $reader->checkId = 'check-after-findings';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('retains reminder send failures across successful classifications and clears them on delivery', function (TaskStatus $status): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running]);
+    $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'old-turn']);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'new-turn', 'state' => 'completed']]];
+        }
+    });
+    $dispatcher = new class implements T3Dispatcher
+    {
+        public bool $fails = true;
+
+        public function dispatch(Node $node, array $command): array
+        {
+            if ($this->fails) {
+                throw new T3DispatchException('send failed');
+            }
+
+            return ['sequence' => 1, 'thread_id' => $command['threadId']];
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    $answer = ['blocked' => new ChoiceAnswer('no', [], 0.95)];
+    Classification::fake([$answer, $answer, $answer]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->communication_failures)->toBe(2);
+
+    $dispatcher->fails = false;
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->communication_failures)->toBe(0);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+})->with([TaskStatus::Running, TaskStatus::Reviewing]);
+
+it('keeps check evidence from before the findings invalid after assistance is resolved', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update([
+        'completion_handoff_attempt' => $task->completion_attempt,
+        'completion_handoff_turn_id' => 'before-findings',
+        'completion_handoff_check_id' => 'check-1',
+        'assistance_requested' => true,
+    ]);
+    $group->update(['assistance_requested' => true]);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['latestTurn'] = ['id' => 'after-findings', 'state' => 'completed'];
+
+            return $snapshot;
+        }
+    });
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Continue with the review findings.', 'author' => 'operator',
+    ]);
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()->status)->toBe(TaskStatus::Running);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('latest review findings');
 });

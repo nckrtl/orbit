@@ -113,6 +113,8 @@ orbit metrics:disable --force
 orbit metrics:disable --force --purge-data
 ```
 
+Metrics reconvergence and removal preserve Caddy global options and unrelated site fragments when withdrawing the Metrics route.
+
 Interactive disable shows a preview and asks for confirmation, defaulting to No. Interactive decline, Ctrl-C, or EOF exits with `input.cancelled` and makes no changes. Non-interactive disable without `--force` fails with `metrics.force_required`, and so does `--purge-data` without `--force`, in every mode.
 
 After a disable without `--purge-data`, the Metrics node runs neither container. The Gateway removes `/etc/orbit/metrics`, both Grafana firewall rules, every exporter drop-in and exporter firewall rule on an eligible managed Node, and the `metrics.orbit` route, certificate, and DNS record. Exporter state that was converged before a Node became ineligible remains unchanged because the Gateway does not inspect or change it. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.

@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RequestTaskAssistanceAction;
 use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -89,17 +90,18 @@ final readonly class TaskScheduler
                 $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
                 $observation = $this->observer->observe($group, $task);
 
-                if ($observation->threads === [] && $observation->available) {
+                if ($observation->available) {
                     $this->clearUnavailable($group);
-
+                }
+                if (($observation->available && $observation->threads === []) || ($task->status === TaskStatus::Running && $observation->thread(TaskThreadRole::Implementer) === null)) {
                     continue;
                 }
 
-                if ($task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
+                if ($observation->available && $task->status === TaskStatus::Running && $this->handleImplementerCompletion($group, $task, $observation)) {
                     continue;
                 }
 
-                if ($task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
+                if ($observation->available && $task->status === TaskStatus::Reviewing && $this->handleReviewerOutcome($group, $task, $observation)) {
                     continue;
                 }
 
@@ -134,39 +136,41 @@ final readonly class TaskScheduler
     private function handleImplementerCompletion(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
     {
         $implementer = $observation->thread(TaskThreadRole::Implementer);
-        if ($implementer === null || ! $implementer->idle) {
+        if ($implementer === null) {
+            return false;
+        }
+        $state = AgentThreadState::tryFrom($implementer->sessState);
+        if ($state === AgentThreadState::Failed) {
+            $this->assistance->execute($task, 'The implementer thread failed.');
+
+            return true;
+        }
+        if (! in_array($state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::AskingForInput], true)) {
             return false;
         }
 
-        $comment = $task->comments()->where('type', TaskCommentType::ReadyForReview->value)->where('completion_attempt', $task->completion_attempt)->latest('posted_at')->latest('id')->first();
-        $mentionsComposerCheck = array_any($implementer->recentMessages, static fn (array $message): bool => str_contains(strtolower($message['text']), 'composer check'));
-        if ($comment === null && ! $mentionsComposerCheck) {
-            return false;
+        if ($task->completion_handoff_attempt !== null && ! $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
+            return true;
         }
-        $validEvidence = array_any($implementer->recentMessages, static function (array $message): bool {
-            $text = strtolower($message['text'].' '.$message['label']);
 
-            return $message['kind'] === 'activity'
-                && $message['label'] !== 'assistant'
-                && str_contains($text, 'composer check')
-                && (str_contains($text, 'passed') || str_contains($text, 'exit code 0') || str_contains($text, 'code 0'));
-        });
+        try {
+            $waiting = $this->waitingItem($implementer);
+            $checks = $waiting instanceof TaskRubricItem
+                ? []
+                : $this->classifier->classifyTranscript($observation, TaskThreadRole::Implementer);
+            $items = $this->implementerItems($task, $implementer, $checks);
+        } catch (TaskSessionClassificationException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
-        if ($comment !== null && $validEvidence && $task->completion_handoff_comment_id !== $comment->id) {
-            $task->completion_handoff_comment_id = $comment->id;
-            $task->save();
-            $this->settleImplementer($task);
+            return true;
+        }
+        if ($this->failedItems($items) === []) {
+            $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer)?->turnId);
 
             return true;
         }
 
-        if ($task->completion_reminder_attempt !== $task->completion_attempt) {
-            $this->actor->remindCompletion($group, $implementer);
-            $task->completion_reminder_attempt = $task->completion_attempt;
-            $task->save();
-        } else {
-            $this->assistance->execute($task, 'Implementer did not provide a ready_for_review comment and passing composer check after the reminder.');
-        }
+        $this->remindOrAssist($group, $task, $implementer, $items, true);
 
         return true;
     }
@@ -174,104 +178,273 @@ final readonly class TaskScheduler
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
     {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        if ($reviewer === null || ! $reviewer->idle) {
+        if ($reviewer === null) {
+            return false;
+        }
+        $state = AgentThreadState::tryFrom($reviewer->sessState);
+        if ($state === AgentThreadState::Failed) {
+            $this->assistance->execute($task, 'The reviewer thread failed.');
+
+            return true;
+        }
+        if (! in_array($state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::AskingForInput], true)) {
             return false;
         }
 
+        /** @var TaskComment|null $comment */
         $comment = $task->comments()
             ->whereIn('type', [TaskCommentType::ChangesRequested->value, TaskCommentType::Approved->value])
             ->where('review_attempt', $task->review_attempt)
             ->latest('posted_at')->latest('id')->first();
         $commentType = $comment === null ? null : TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
-        if ($commentType === TaskCommentType::ChangesRequested) {
+        if ($comment instanceof TaskComment && $commentType === TaskCommentType::ChangesRequested) {
             if ($task->review_handled_comment_id === $comment->id) {
                 return true;
             }
             $implementer = $observation->thread(TaskThreadRole::Implementer);
             if ($implementer === null) {
-                return false;
+                $this->assistance->execute($task, 'The implementer thread is unavailable for the review findings.');
+
+                return true;
             }
-            $this->actor->relayReviewBody($group, $implementer, $comment->body);
+            try {
+                $this->actor->relayReviewBody($group, $implementer, $comment->body);
+            } catch (AgentDriverException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return true;
+            }
             $task->update([
                 'status' => TaskStatus::Running,
                 'review_handled_comment_id' => $comment->id,
                 'review_attempt' => $task->review_attempt + 1,
                 'review_reminder_attempt' => null,
+                'review_reminder_input_id' => null,
                 'completion_attempt' => $task->completion_attempt + 1,
+                'completion_handoff_attempt' => $task->completion_attempt + 1,
+                'completion_handoff_turn_id' => $implementer->turnId,
+                'completion_handoff_check_id' => ComposerCheckEvidence::fromMessages($implementer->recentMessages)->runId,
+                'communication_failures' => 0,
                 'completion_handoff_comment_id' => null,
                 'completion_reminder_attempt' => null,
+                'completion_reminder_input_id' => null,
             ]);
             $group->update(['status' => TaskGroupStatus::Running]);
 
             return true;
         }
 
-        if ($commentType !== TaskCommentType::Approved) {
-            return $this->remindReviewer($group, $task, $reviewer, false, $observation);
+        if (! $comment instanceof TaskComment || $commentType !== TaskCommentType::Approved) {
+            if ($task->review_notified_attempt !== $task->review_attempt) {
+                $this->nudgeReviewer($task, $reviewer->turnId);
+
+                return true;
+            }
+            if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
+                return true;
+            }
         }
 
-        $instance = $group->taskable;
-        $head = $instance instanceof AppInstance ? $this->workspace->headCommit($instance) : null;
-        $hasCommit = is_string($comment->commit_sha)
-            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $comment->commit_sha) === 1
-            && $instance instanceof AppInstance
-            && $comment->commit_sha === $head
-            && $this->workspace->currentBranch($instance) === 'task-'.$group->id
-            && $this->workspace->isClean($instance)
-            && $comment->commit_sha !== $task->subtask_start_commit
-            && $this->diff->hasCommitsSince($instance, (string) $task->subtask_start_commit);
-        $isFinal = ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
-        $hasPr = ! $isFinal || (is_string($comment->pr_url)
-            && $this->pullRequestWatcher->verifies($group, $comment->pr_url, (string) $comment->commit_sha));
-        if (! $hasCommit || ! $hasPr) {
-            return $this->remindReviewer($group, $task, $reviewer, true, $observation);
+        $items = [];
+        if (! $comment instanceof TaskComment || $commentType !== TaskCommentType::Approved) {
+            $items[] = new TaskRubricItem('outcome_comment', false, 'Post one changes_requested or approved comment for this review attempt.');
+            $waiting = $this->waitingItem($reviewer);
+            if (! $waiting instanceof TaskRubricItem) {
+                try {
+                    $checks = $this->classifier->classifyTranscript($observation, TaskThreadRole::Reviewer);
+                } catch (TaskSessionClassificationException $exception) {
+                    $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                    return true;
+                }
+                if (! isset($checks['blocked'])) {
+                    $this->recordCommunicationFailure($task, $group, 'TypeSafe Jev did not return the blocked check.');
+
+                    return true;
+                }
+                $items[] = $this->jevItem($checks['blocked'], 'no', 'The reviewer is blocked. Post an assistance_requested comment with the blocker, or continue the review.');
+            }
+        } else {
+            array_push($items, ...$this->approvalItems($group, $task, $comment));
+        }
+        $waiting = $this->waitingItem($reviewer);
+        if ($waiting instanceof TaskRubricItem) {
+            $items[] = $waiting;
+        }
+        if ($this->failedItems($items) === []) {
+            if ($comment !== null && $commentType === TaskCommentType::Approved) {
+                $isFinal = $this->isFinalSubtask($group, $task);
+                if ($isFinal) {
+                    $group->update(['pr_url' => $comment->pr_url]);
+                }
+                $task->update(['review_handled_comment_id' => $comment->id, 'communication_failures' => 0]);
+                $this->acceptReview($task);
+            }
+
+            return true;
         }
 
-        if ($isFinal) {
-            $group->update(['pr_url' => $comment->pr_url]);
-        }
-        $task->update(['review_handled_comment_id' => $comment->id]);
-        $this->acceptReview($task);
+        $this->remindOrAssist($group, $task, $reviewer, $items, false);
 
         return true;
     }
 
-    private function remindReviewer(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, bool $artifactsMissing, TaskSessionObservation $observation): bool
+    /** @param array<string, TaskTranscriptCheck> $checks
+     * @return list<TaskRubricItem>
+     */
+    private function implementerItems(Task $task, TaskThreadObservation $thread, array $checks): array
     {
-        if ($task->review_reminder_attempt === $task->review_attempt) {
-            $this->assistance->execute($task, 'Reviewer did not provide the required outcome or approved artifacts after the reminder.');
+        $evidence = ComposerCheckEvidence::fromMessages($thread->recentMessages);
+        $freshRun = $task->completion_handoff_attempt === null
+            || ($evidence->runId !== null && $evidence->runId !== $task->completion_handoff_check_id);
+        $items = [
+            new TaskRubricItem('check_invoked', $evidence->invoked, 'composer check was not found in the recent tool output. Run composer check.'),
+            new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
+            new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),
+        ];
+        $waiting = $this->waitingItem($thread);
+        if ($waiting instanceof TaskRubricItem) {
+            $items[] = $waiting;
 
-            return true;
+            return $items;
         }
-        $this->actor->remindReviewer($group, $reviewer, $artifactsMissing);
-        $task->update(['review_reminder_attempt' => $task->review_attempt]);
+        if (! isset($checks['blocked'])) {
+            throw new TaskSessionClassificationException('TypeSafe Jev did not return the blocked check.');
+        }
+        $items[] = $this->jevItem($checks['blocked'], 'no', 'The thread is blocked. Post an assistance_requested comment with the blocker, or continue the brief.');
 
-        return true;
+        return $items;
+    }
+
+    /** @return list<TaskRubricItem> */
+    private function approvalItems(TaskGroup $group, Task $task, TaskComment $comment): array
+    {
+        $instance = $group->taskable;
+        $head = $instance instanceof AppInstance ? $this->workspace->headCommit($instance) : null;
+        $sha = is_string($comment->commit_sha) ? $comment->commit_sha : '';
+        $shaMatches = preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $sha) === 1
+            && $instance instanceof AppInstance
+            && $sha === $head;
+        $items = [];
+        if (! $shaMatches) {
+            $items[] = new TaskRubricItem('commit_sha', false, 'commit_sha does not equal the workspace HEAD.');
+        }
+        if (! $instance instanceof AppInstance || $this->workspace->currentBranch($instance) !== 'task-'.$group->id) {
+            $items[] = new TaskRubricItem('branch', false, 'the workspace branch is not task-'.$group->id.'.');
+        }
+        if (! $instance instanceof AppInstance || ! $this->workspace->isClean($instance)) {
+            $items[] = new TaskRubricItem('working_tree', false, 'the working tree is not clean.');
+        }
+        $start = (string) $task->subtask_start_commit;
+        if (! $instance instanceof AppInstance || $sha === $task->subtask_start_commit || ! $this->diff->hasCommitsSince($instance, $start)) {
+            $items[] = new TaskRubricItem('new_commit', false, 'the commit is not new since this subtask started.');
+        }
+        if ($this->isFinalSubtask($group, $task) && (! is_string($comment->pr_url) || ! $this->pullRequestWatcher->verifies($group, $comment->pr_url, $sha))) {
+            $items[] = new TaskRubricItem('pull_request', false, 'the pull request does not verify for the approved commit.');
+        }
+
+        return $items;
+    }
+
+    private function jevItem(TaskTranscriptCheck $check, string $passingChoice, string $reminder): TaskRubricItem
+    {
+        return new TaskRubricItem(
+            $check->key,
+            $check->choice === $passingChoice && $check->confidence >= $this->jevThreshold(),
+            $reminder,
+            $check->choice,
+            $check->confidence,
+        );
+    }
+
+    private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
+    {
+        $waiting = $thread->sessState === AgentThreadState::AskingForInput->value
+            || $thread->pendingApprovalId !== null
+            || $thread->pendingUserInputId !== null;
+        if (! $waiting) {
+            return null;
+        }
+
+        return new TaskRubricItem('waiting_for_input', false, 'The thread is waiting for input. Continue the current brief or post an assistance_requested comment.');
+    }
+
+    /** @param list<TaskRubricItem> $items */
+    private function remindOrAssist(TaskGroup $group, Task $task, TaskThreadObservation $thread, array $items, bool $implementer): void
+    {
+        $failures = $this->failedItems($items);
+        $attempt = $implementer ? 'completion_attempt' : 'review_attempt';
+        $reminder = $implementer ? 'completion_reminder_attempt' : 'review_reminder_attempt';
+        $input = $implementer ? 'completion_reminder_input_id' : 'review_reminder_input_id';
+        $pendingId = $thread->pendingUserInputId ?? $thread->pendingApprovalId;
+        if ($task->{$reminder} === $task->{$attempt} && $pendingId !== null && $pendingId === $task->{$input}) {
+            return;
+        }
+        if ($task->{$reminder} !== $task->{$attempt}) {
+            try {
+                $this->actor->remindRubric($group, $thread, 'These checks failed. '.implode(' ', array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures)));
+            } catch (AgentDriverException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return;
+            }
+            $task->update([$reminder => $task->{$attempt}, $input => $pendingId, 'communication_failures' => 0]);
+
+            return;
+        }
+
+        $reasons = array_map(static function (TaskRubricItem $item): string {
+            $reason = $item->reminder;
+            if ($item->choice !== null && $item->confidence !== null) {
+                $reason .= ' Jev answered '.$item->choice.' at '.$item->confidence.'.';
+            }
+
+            return $reason;
+        }, $failures);
+        $this->assistance->execute($task, 'Checks still failed after the reminder. '.implode(' ', $reasons));
+    }
+
+    /** @param list<TaskRubricItem> $items
+     * @return list<TaskRubricItem>
+     */
+    private function failedItems(array $items): array
+    {
+        return array_values(array_filter($items, static fn (TaskRubricItem $item): bool => ! $item->passed));
+    }
+
+    private function isFinalSubtask(TaskGroup $group, Task $task): bool
+    {
+        return ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
+    }
+
+    private function jevThreshold(): float
+    {
+        $threshold = config('orbit.tasks.jev_confidence_threshold', 0.75);
+
+        return is_numeric($threshold) ? (float) $threshold : 0.75;
+    }
+
+    private function clearCommunicationFailures(Task $task): void
+    {
+        if ($task->communication_failures > 0) {
+            $task->update(['communication_failures' => 0]);
+        }
+    }
+
+    private function recordCommunicationFailure(Task $task, TaskGroup $group, string $reason): void
+    {
+        $task->increment('communication_failures');
+        $task->refresh();
+        if ($task->communication_failures >= 5) {
+            $this->assistance->execute($task, $reason);
+        }
     }
 
     private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
     {
         $this->clearUnavailable($group);
 
-        $hasToolEvidence = array_any($observation->threads, static fn (TaskThreadObservation $thread): bool => array_any($thread->recentMessages, static fn (array $message): bool => $message['kind'] === 'activity'));
-        if (! $hasToolEvidence) {
-            return TaskSessionDecision::escalate('Jev cannot verify a composer check in the recent tool output.');
-        }
-
-        $role = $observation->thread(TaskThreadRole::Reviewer) !== null && $group->status === TaskGroupStatus::Reviewing
-            ? TaskThreadRole::Reviewer
-            : TaskThreadRole::Implementer;
-        $outcome = $this->classifier->classifyOutcome($observation, $role);
-        if ($outcome->outcome === TaskJevOutcome::AssistanceRequired) {
-            return TaskSessionDecision::escalate($outcome->reason, $outcome->confidence);
-        }
-
-        return TaskSessionDecision::escalate(
-            $outcome->outcome === TaskJevOutcome::ChangesRequested
-                ? 'Jev requested changes without a typed reviewer comment.'
-                : 'Jev reported completion without the required typed comment and mechanical gates.',
-            $outcome->confidence,
-        );
+        return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for a known agent state.');
     }
 
     private function clearUnavailable(TaskGroup $group): void
@@ -371,7 +544,35 @@ final readonly class TaskScheduler
         return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
     }
 
-    public function settleImplementer(Task $task): TaskGroup
+    private function nudgeReviewer(Task $task, ?string $turnId): void
+    {
+        if ($task->review_notified_attempt === $task->review_attempt) {
+            return;
+        }
+
+        try {
+            $this->spawner->requestReview($task);
+        } catch (AgentDriverException $exception) {
+            $this->recordCommunicationFailure($task, $task->taskGroup, $exception->getMessage());
+
+            return;
+        }
+
+        $task->update([
+            'review_notified_attempt' => $task->review_attempt,
+            'review_notified_turn_id' => $turnId,
+        ]);
+        $this->clearCommunicationFailures($task);
+    }
+
+    private function newerTurnHasStopped(?string $previousTurnId, TaskThreadObservation $thread): bool
+    {
+        return is_string($thread->turnId) && $thread->turnId !== ''
+            && $thread->turnId !== $previousTurnId
+            && in_array($thread->sessState, [AgentThreadState::Done->value, AgentThreadState::AskingForInput->value], true);
+    }
+
+    public function settleImplementer(Task $task, ?string $turnId = null): TaskGroup
     {
         $group = DB::transaction(function () use ($task): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
@@ -397,7 +598,7 @@ final readonly class TaskScheduler
         );
 
         if ($reviewing instanceof Task && $reviewing->status === TaskStatus::Reviewing) {
-            $this->spawner->requestReview($reviewing);
+            $this->nudgeReviewer($reviewing, $turnId);
         }
 
         return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;

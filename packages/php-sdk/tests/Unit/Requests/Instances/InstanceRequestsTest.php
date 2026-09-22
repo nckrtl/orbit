@@ -191,7 +191,7 @@ describe('AppInstance requests', function (): void {
                 'defaults' => null,
             ],
             'app_instance' => instance_gateway_data(),
-            'app_instances' => [instance_gateway_data()],
+            'instances' => [instance_gateway_data()],
             'status' => 'active',
             'source_count' => 1,
             'completed_count' => 1,
@@ -294,7 +294,7 @@ describe('AppInstance requests', function (): void {
             ->toHaveCount(1)
             ->and($response->toArray())
             ->toBe([
-                'app_instances' => [instance_sdk_data()],
+                'instances' => [instance_sdk_data()],
                 'request_id' => instance_request_id(),
             ]);
     });

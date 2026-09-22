@@ -208,6 +208,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
         return new RemoteCommand(
             arguments: [
+                'sudo',
                 'bash',
                 '-seu',
                 '--',
@@ -291,6 +292,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
         return new RemoteCommand(
             arguments: [
+                'sudo',
                 'bash',
                 '-seu',
                 '--',

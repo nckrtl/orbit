@@ -187,7 +187,7 @@ function task7_process_result(
 
     if ($typed && in_array('create-resources', $command, true)) {
         $state = [
-            'shape' => 'app_instances',
+            'shape' => 'instances',
             'app_id' => 1,
             'node_id' => 2,
             'name' => 'e2e-dev',
@@ -507,7 +507,10 @@ describe('TopologyConverger', function () {
             'reproject.product-state',
             'refresh.metrics-publication',
             'await.instance-api-readiness',
+            'converge.shared-cluster',
+            'refresh.private-dns',
             'hydrate.sample-apps',
+            'converge.sample-fixtures',
             'normalize.permissions',
         ]);
 
@@ -521,7 +524,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(27)
+            ->toHaveCount(31)
             ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
@@ -529,7 +532,7 @@ describe('TopologyConverger', function () {
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 27)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 31)))
             ->toBe([
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
@@ -565,8 +568,12 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'instance-api-readiness'],
+                ['/usr/local/bin/converge-sample-app.sh', 'shared-cluster', 'gateway', 'app-dev', 'app-prod'],
+                ['/usr/local/bin/converge-gateway.sh', 'private-dns', 'app-dev', 'app-prod'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
+                ['/usr/local/bin/converge-sample-fixtures.sh', 'converge'],
+                ['/usr/local/bin/converge-sample-app.sh', 'create-resources', 'app-dev', 'app-prod', str_repeat('b', 40)],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
@@ -733,7 +740,7 @@ describe('TopologyConverger', function () {
             [
                 'grant-operator' => 1,
                 'configure-cli' => 1,
-                'create-resources' => 1,
+                'create-resources' => 2,
                 'metrics' => 1,
                 'internal-tls' => $typed ? null : 1,
                 'reproject' => 1,
@@ -756,7 +763,7 @@ describe('TopologyConverger', function () {
 
         expect(
             $actions
-                ->slice(-($typed ? 8 : 9), 7)
+                ->slice(-($typed ? 10 : 11), 7)
                 ->values()
                 ->all(),
         )

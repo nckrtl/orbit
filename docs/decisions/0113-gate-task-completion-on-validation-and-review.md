@@ -12,7 +12,7 @@ Typed task comments record implementation and review outcomes. Jev identifies mi
 
 Accepted on 2026-09-22. The typed-comment and documentation portions are implemented; completion gating, merge watching, and independent review remain in progress.
 
-This amends the routing choices in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) and the task lifecycle in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension).
+This amends the routing choices in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) and the task lifecycle in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension). [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) amends the composer-check evidence check in this record and removes `ready_for_review` as a required comment. `changes_requested`, `approved`, `assistance_requested`, `resolution`, review ownership, the reminder allowance, and assistance history in this record stay.
 
 ## Context
 

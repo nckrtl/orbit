@@ -155,6 +155,19 @@ it('offers only the three ADR 0113 Jev outcomes', function (): void {
         ->toBe(['completed_successfully', 'changes_requested', 'assistance_required']);
 });
 
+it('asks Jev only whether the implementer is blocked', function (): void {
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.96)]]);
+
+    $checks = app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(
+        classifier_observation(),
+        TaskThreadRole::Implementer,
+    );
+
+    expect($checks)->toHaveKeys(['blocked'])
+        ->and($checks['blocked']->choice)->toBe('no')
+        ->and($checks['blocked']->confidence)->toBe(0.96);
+});
+
 it('requires a passing composer check in the last five messages for completion', function (): void {
     Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]]);
 

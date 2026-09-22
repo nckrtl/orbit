@@ -181,6 +181,7 @@ final readonly class MetricsCaddyPublisher
                 '/etc/caddy/Caddyfile',
                 'caddy',
                 '/run/lock/orbit-caddy.lock',
+                $this->encodedGlobalOptions(),
             ],
             timeout: 60.0,
             input: <<<'BASH'
@@ -190,6 +191,7 @@ final readonly class MetricsCaddyPublisher
                 live_caddyfile=$4
                 caddy_service=$5
                 lock=$6
+                global_options=$7
                 exec 9>"$lock"
                 flock -w 30 9
                 source_main=$(readlink -f "$live_caddyfile")
@@ -223,13 +225,13 @@ final readonly class MetricsCaddyPublisher
                     fi
                     cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
                 done
-                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
+                printf '%s\n' "$global_options" | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
                 runuser -u caddy -- caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
-                printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "$candidate/Caddyfile"
+                printf '%s\n' "$global_options" | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"
                 mv -fT -- "$candidate" "$published"
                 ln -s -- "$published/Caddyfile" "$candidate_link"

@@ -3026,7 +3026,49 @@
                 "0103",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
+            ]
+        },
+        {
+            "path": "docs/decisions/0114-expand-the-three-node-incus-cluster.md",
+            "title": "ADR 0114: Expand the three-node Incus Cluster",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0114"
+            ]
+        },
+        {
+            "path": "docs/decisions/0114-judge-task-completion-as-separate-checks.md",
+            "title": "ADR 0114: Judge task completion as separate checks",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0110",
+                "0113",
+                "0114"
             ]
         },
         {
@@ -3173,7 +3215,8 @@
                 "0109",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
@@ -3777,7 +3820,8 @@
                 "0052",
                 "0054",
                 "0076",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
@@ -3790,15 +3834,19 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Proof topology",
-                "Route"
+                "Route",
+                "Router",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0005",
@@ -3806,7 +3854,8 @@
                 "0037",
                 "0040",
                 "0049",
-                "0056"
+                "0056",
+                "0114"
             ]
         },
         {
@@ -4198,7 +4247,8 @@
                 "0103",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
@@ -4231,15 +4281,18 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Cluster",
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Proof topology",
                 "Route",
+                "Router",
                 "Web root"
             ],
             "governing_adrs": [

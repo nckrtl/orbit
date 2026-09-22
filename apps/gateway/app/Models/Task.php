@@ -18,9 +18,16 @@ use Illuminate\Support\Carbon;
  * @property int $completion_attempt
  * @property int|null $completion_handoff_comment_id
  * @property int|null $completion_reminder_attempt
+ * @property string|null $completion_reminder_input_id
+ * @property int|null $completion_handoff_attempt
+ * @property string|null $completion_handoff_turn_id
+ * @property string|null $completion_handoff_check_id
  * @property int $review_attempt
  * @property int|null $review_handled_comment_id
  * @property int|null $review_reminder_attempt
+ * @property string|null $review_reminder_input_id
+ * @property int|null $review_notified_attempt
+ * @property string|null $review_notified_turn_id
  * @property bool $assistance_requested
  * @property string|null $assistance_reason
  * @property int $communication_failures
@@ -67,9 +74,16 @@ final class Task extends Model
         'completion_attempt',
         'completion_handoff_comment_id',
         'completion_reminder_attempt',
+        'completion_reminder_input_id',
+        'completion_handoff_attempt',
+        'completion_handoff_turn_id',
+        'completion_handoff_check_id',
         'review_attempt',
         'review_handled_comment_id',
         'review_reminder_attempt',
+        'review_reminder_input_id',
+        'review_notified_attempt',
+        'review_notified_turn_id',
         'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
     ];
 
@@ -105,11 +119,13 @@ final class Task extends Model
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'completion_attempt' => 'integer',
+            'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',
             'completion_reminder_attempt' => 'integer',
             'review_attempt' => 'integer',
             'review_handled_comment_id' => 'integer',
             'review_reminder_attempt' => 'integer',
+            'review_notified_attempt' => 'integer',
             'assistance_requested' => 'boolean',
             'communication_failures' => 'integer',
             'resolution_delivered_comment_id' => 'integer',

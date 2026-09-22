@@ -14,6 +14,7 @@ case "$1" in
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  cluster.shared) [[ $# -eq 7 ]] ;;
   wireguard.reachability) [[ $# -ge 5 ]] ;;
   role.assignments|metrics.publication) [[ $# -eq 5 ]] ;;
   *) [[ $# -eq 4 ]] ;;
@@ -134,6 +135,12 @@ assert_mounted_source() {
 case "$probe" in
   vm.gateway.running|vm.app-dev.running|vm.app-prod.running|vm.app-prod-2.running) state=$(systemctl is-system-running 2>/dev/null) || { [[ "$state" == degraded ]] || exit 1; }; expected='running|degraded'; observed=$state; [[ "$state" == running || "$state" == degraded ]] ;;
   role.gateway) [[ -f /home/orbit/orbit/apps/gateway/artisan && -f /home/orbit/orbit/apps/gateway/.env && -f /home/orbit/.orbit/gateway.app-key && -f /home/orbit/.orbit/gateway.sqlite && "$(stat -c '%U:%a' /home/orbit/.orbit/gateway.sqlite 2>/dev/null)" == orbit:600 && -f /etc/wireguard/orbit.conf && -f /etc/caddy/Caddyfile ]]; expected='gateway,vpn:configured'; observed=$expected ;;
+  cluster.shared)
+    "$(dirname "$0")/converge-sample-app.sh" verify-cluster "$5" "$6" "$7" >/dev/null
+    [[ "$(systemctl is-active docker)" == active ]]
+    expected='shared-cluster:active,gateway-router,app-prod-ingress,database-docker'
+    observed=$expected
+    ;;
   role.assignments)
     db=/home/orbit/.orbit/gateway.sqlite
     [[ -r "$db" ]]
@@ -147,11 +154,16 @@ case "$probe" in
       observed="${expected}+${extra}"
     fi
     ;;
+  sample.fixtures)
+    /usr/local/bin/converge-sample-fixtures.sh verify >/dev/null
+    expected='databases,typed-projects,queue,schedule:ready'
+    observed=$expected
+    ;;
   appinstance.routes)
     db=/home/orbit/.orbit/gateway.sqlite
     [[ -r "$db" ]]
-    read -r active associations < <(php -r '$pdo=new PDO("sqlite:".$argv[1], null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]); $statement=$pdo->prepare("SELECT ai.id, COUNT(rt.id) AS association_count FROM app_instances ai LEFT JOIN route_targets rt ON rt.app_instance_id = ai.id WHERE ai.status = ? GROUP BY ai.id ORDER BY ai.id"); $statement->execute(["active"]); $rows=$statement->fetchAll(PDO::FETCH_ASSOC); $associations=0; foreach($rows as $row) { if(!is_array($row) || !ctype_digit((string)($row["id"] ?? "")) || (int)$row["id"]<1 || !ctype_digit((string)($row["association_count"] ?? "")) || (int)$row["association_count"]!==1) exit(1); $associations++; } echo count($rows), " ", $associations, "\n";' -- "$db")
-    expected="active-appinstances=$active,route-associations=$active"
+    read -r active associations < <(php -r '$pdo=new PDO("sqlite:".$argv[1], null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]); $statement=$pdo->prepare("SELECT ai.id, a.type, COUNT(rt.id) AS association_count FROM app_instances ai INNER JOIN apps a ON a.id = ai.app_id LEFT JOIN route_targets rt ON rt.app_instance_id = ai.id WHERE ai.status = ? GROUP BY ai.id ORDER BY ai.id"); $statement->execute(["active"]); $rows=$statement->fetchAll(PDO::FETCH_ASSOC); $associations=0; foreach($rows as $row) { if(!is_array($row) || !ctype_digit((string)($row["id"] ?? "")) || (int)$row["id"]<1 || !ctype_digit((string)($row["association_count"] ?? "")) || (int)$row["association_count"]!==($row["type"]==="laravel-app" ? 1 : 0)) exit(1); $associations+=(int)$row["association_count"]; } echo count($rows), " ", $associations, "\n";' -- "$db")
+    expected="active-appinstances=$active,route-associations=$associations"
     observed="active-appinstances=$active,route-associations=$associations"
     [[ "$observed" == "$expected" ]]
     ;;
@@ -301,8 +313,8 @@ case "$probe" in
   laravel.prod)
     if [[ -n "$production_placement" ]]; then
       assert_production_caddy
-      sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" --version >/dev/null
-      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve "$production_domain:443:127.0.0.1" "https://$production_domain/" >/dev/null
+      sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" migrate:status --no-interaction >/dev/null
+      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt --resolve "$production_domain:443:10.44.0.1" "https://$production_domain/" >/dev/null
       expected="app-prod-laravel:$production_layout:https-operational"
       observed=$expected
     else

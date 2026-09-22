@@ -568,12 +568,20 @@ final class ReplacementInstallerIncusFake
             && ($guest[5] ?? null) === 'native'
         ) {
             return Process::result(json_encode([
-                'shape' => 'app_instances',
+                'shape' => 'instances',
                 'app_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
                 'checkout_path' => '/srv/orbit/apps/e2e-dev',
                 'effective_root' => 'public',
+                'production' => [
+                    'layout' => 'release', 'instance_id' => 2, 'user' => 'orbit-app-1',
+                    'home' => '/home/orbit-app-1', 'checkout_path' => '/home/orbit-app-1/current',
+                    'effective_root' => '/home/orbit-app-1/current/public',
+                    'environment_path' => '/home/orbit-app-1/.env', 'database_path' => null,
+                    'service' => 'orbit-orbit-app-1-php8.5-fpm.service', 'socket' => '/run/php/orbit-app-1.sock',
+                    'current_target' => '/home/orbit-app-1/releases/one', 'domain' => 'e2e-prod.orbit.test',
+                ],
             ], JSON_THROW_ON_ERROR));
         }
 
