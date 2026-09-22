@@ -45,6 +45,8 @@ Node relationships use IDs. After a Node rename, its Instances, Processes, Sched
 
 Open fleet record pages read the current record by ID, including pages reached again with Back. Events, polling, and local action responses update those pages. If the record disappears, its page says it is unavailable and keeps the Back link; it cannot open related records, load data, or run actions. A different record with the same name does not replace it. A Deployment page keeps the selected deployment snapshot and its recorded log; it does not become a live fleet record.
 
+Record text, logs, messages, and form values cannot control the terminal. The screen shows control characters and bidirectional text controls as visible escapes, such as `\r`, `\t`, and `\u{001B}`. Invalid UTF-8 displays a replacement character. Ordinary Unicode stays readable. Logs keep their line breaks, order, and visible tail; escape sequences inside each line remain text. Form values are escaped for display only: editing, validation, and submitted values keep the original text. The screen's own colors, cursor, and selection styles still work.
+
 ## Keys and mouse
 
 Destructive actions show the complete target and effect and default to **No**. Use Left/Right or `y`/`n` to select, then Enter to accept; Escape cancels. Only a left-click on the **Yes** button approves. Outside clicks and other mouse buttons do not approve. If the question does not fit, enlarge the terminal or cancel. If the selected record is deleted or its request selector changes before approval, reopen its actions and confirm the current target.

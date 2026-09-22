@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Tui\Prompts;
 
+use App\Support\Console\TerminalText;
+
 /**
  * A Laravel Prompts prompt drawn inside a php-tui panel instead of on the terminal.
  *
@@ -23,10 +25,21 @@ trait PanelPrompt
         $this->emit('key', $key);
     }
 
-    /** The frame the active theme renders for this prompt, with its ANSI colours. */
+    /** Escape a display copy before the theme adds its trusted ANSI colours. */
     public function frame(): string
     {
-        return $this->renderTheme();
+        $display = clone $this;
+        $display->prepareDisplay();
+
+        return $display->renderTheme();
+    }
+
+    protected function prepareDisplay(): void
+    {
+        $this->label = TerminalText::safe($this->label);
+        $this->hint = TerminalText::safe($this->hint);
+        $this->error = TerminalText::safe($this->error);
+        $this->cancelMessage = TerminalText::safe($this->cancelMessage);
     }
 
     public function done(): bool

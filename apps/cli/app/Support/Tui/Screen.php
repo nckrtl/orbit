@@ -42,7 +42,8 @@ use RuntimeException;
  *
  * Screen never mutates State. It publishes each pane's identities and renderer state in
  * `UiState::$drawn`, records pane order and clamps selections to the rows it draws. Interaction
- * consumes that frame for keyboard and mouse input.
+ * consumes that frame for keyboard and mouse input. Record text is escaped at the span, cell,
+ * or title boundary; State keeps the original values and renderer-owned styles stay separate.
  */
 final class Screen
 {
@@ -81,7 +82,7 @@ final class Screen
             ->constraints(Constraint::min(12), Constraint::length(60))
             ->widgets(
                 ParagraphWidget::fromString('  orbit')->style(Style::default()->addModifier(Modifier::BOLD)),
-                ParagraphWidget::fromString($header)->style($dim)->alignment(HorizontalAlignment::Right),
+                ParagraphWidget::fromString(TerminalText::safe($header))->style($dim)->alignment(HorizontalAlignment::Right),
             );
 
         $body = $ui->form !== null
@@ -97,7 +98,7 @@ final class Screen
                     ->direction(Direction::Horizontal)
                     ->constraints(Constraint::length(self::NAV_WIDTH), Constraint::min(40))
                     ->widgets($this->nav($state, $ui), $body),
-                ParagraphWidget::fromString($footer)->style($dim),
+                ParagraphWidget::fromString(TerminalText::safe($footer))->style($dim),
             );
 
         $ui->retainTableOffsets($previous);
@@ -168,12 +169,12 @@ final class Screen
 
         if ($ui->hasFilters()) {
             foreach (['node', 'project'] as $filter) {
-                $text = "{$filter}: ".($ui->filters[$filter] ?? 'all').' ▾';
+                $text = TerminalText::safe("{$filter}: ".($ui->filters[$filter] ?? 'all').' ▾');
                 $spans[] = Span::fromString('   ');
                 $spans[] = Span::styled($text, $ui->filters[$filter] === null ? $dim : Style::default()->fg(AnsiColor::Cyan));
                 $x += 3;
-                $ui->drawn["filter:{$filter}"] = ['area' => Area::fromScalars($x, $split->get(0)->top(), mb_strlen($text), 1), 'header' => false];
-                $x += mb_strlen($text);
+                $ui->drawn["filter:{$filter}"] = ['area' => Area::fromScalars($x, $split->get(0)->top(), TerminalText::width($text), 1), 'header' => false];
+                $x += TerminalText::width($text);
             }
         }
 
@@ -400,7 +401,7 @@ final class Screen
         if ($metrics === null) {
             return BlockWidget::default()
                 ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-                ->titles(Title::fromString(" {$node['name']} · {$node['status']} "))
+                ->titles(Title::fromString(TerminalText::safe(" {$node['name']} · {$node['status']} ")))
                 ->borderStyle(State::nodeHealthy($node) ? $dim : Style::default()->fg(AnsiColor::Yellow))
                 ->padding(Padding::horizontal(1))
                 ->widget(ParagraphWidget::fromString('No metrics.')->style($dim));
@@ -413,7 +414,7 @@ final class Screen
 
         return BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-            ->titles(Title::fromString(" {$node['name']} · {$node['status']} · up {$metrics['uptime']} "))
+            ->titles(Title::fromString(TerminalText::safe(" {$node['name']} · {$node['status']} · up {$metrics['uptime']} ")))
             ->borderStyle(State::nodeHealthy($node) ? $dim : Style::default()->fg(AnsiColor::Yellow))
             ->padding(Padding::horizontal(1))
             ->widget(ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(...[
@@ -467,12 +468,12 @@ final class Screen
         ];
         $right = [
             Line::fromSpans(...$this->bar(str_pad((string) $mount, 3), $total > 0 ? $used / $total : 0, sprintf('%.0fG/%.0fG', $used, $total), $lastHalf, [80, 90])),
-            Line::fromSpans(Span::styled('Up ', $dim), Span::fromString($metrics['uptime'])),
+            Line::fromSpans(Span::styled('Up ', $dim), Span::fromString(TerminalText::safe($metrics['uptime']))),
         ];
 
         return BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
-            ->titles(Title::fromString(" {$node['name']} · {$node['status']} · metrics "))
+            ->titles(Title::fromString(TerminalText::safe(" {$node['name']} · {$node['status']} · metrics ")))
             ->borderStyle(State::nodeHealthy($node) ? $dim : Style::default()->fg(AnsiColor::Yellow))
             ->padding(Padding::horizontal(1))
             ->widget(
@@ -515,7 +516,7 @@ final class Screen
         $crumbs = ParagraphWidget::fromText(Text::fromLines(Line::fromSpans(
             Span::styled('  ‹ back  ', Style::default()->fg(AnsiColor::Cyan)),
             Span::styled("{$label}: ", $dim),
-            Span::styled($row === null ? 'unavailable' : $this->rowTitle($kind, $row), Style::default()->addModifier(Modifier::BOLD)),
+            Span::styled($row === null ? 'unavailable' : TerminalText::safe($this->rowTitle($kind, $row)), Style::default()->addModifier(Modifier::BOLD)),
         )));
 
         if ($row === null) {
@@ -539,7 +540,7 @@ final class Screen
                 $ui->drawn['link:'.str_replace(' ', '', strtolower($name))] = ['area' => Area::fromScalars($body->left() + 2, $body->top() + 1 + $index, max(10, $propertiesWidth - 4), 1), 'header' => false];
             }
 
-            $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled($value, Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
+            $valueCell = $link ? TableCell::fromLine(Line::fromSpan(Span::styled(TerminalText::safe($value), Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::UNDERLINED)))) : $this->cell($value, $warn);
             $propertyRows[] = TableRow::fromCells(TableCell::fromLine(Line::fromSpan(Span::styled($name, $dim))), $valueCell);
             $index++;
         }
@@ -720,7 +721,7 @@ final class Screen
 
     /**
      * Properties across the top, then lines the record produced (a log, for example) over the
-     * full width.
+     * full width. Log loaders split line breaks; escape each remaining line before joining.
      *
      * @param  list<string>  $lines
      */
@@ -728,7 +729,7 @@ final class Screen
     {
         $dim = Style::default()->fg(AnsiColor::DarkGray);
         $tail = max(1, $body->height - $propertiesHeight - 2);
-        $text = $lines === [] ? 'No log lines yet.' : implode("\n", array_slice($lines, -$tail));
+        $text = $lines === [] ? 'No log lines yet.' : implode("\n", array_map(TerminalText::safe(...), array_slice($lines, -$tail)));
 
         return GridWidget::default()
             ->direction(Direction::Vertical)
@@ -837,7 +838,7 @@ final class Screen
 
         if ($form->error !== null) {
             $lines[] = Line::fromString('');
-            $lines[] = Line::fromSpans(Span::styled($form->error, Style::default()->fg(AnsiColor::Red)));
+            $lines[] = Line::fromSpans(Span::styled(TerminalText::safe($form->error), Style::default()->fg(AnsiColor::Red)));
         }
 
         return GridWidget::default()
@@ -896,12 +897,12 @@ final class Screen
         $lines = [];
 
         foreach ($labels as $index => $label) {
-            $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$label, $width - 2), $index === $menu['selected'] ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()));
+            $lines[] = Line::fromSpan(Span::styled(str_pad('  '.TerminalText::safe($label), $width - 2), $index === $menu['selected'] ? Style::default()->addModifier(Modifier::REVERSED) : Style::default()));
         }
 
         $lines[] = Line::fromString(str_repeat(' ', $width - 2));
         $activeAction = $menu['actions'][$labels[$menu['selected']]];
-        $description = $activeAction->description;
+        $description = TerminalText::safe($activeAction->description);
         $lines[] = Line::fromSpan(Span::styled(str_pad('  '.$description, $width - 2), Style::default()->fg(AnsiColor::DarkGray)));
         $height = count($lines) + 2;
 
@@ -913,7 +914,7 @@ final class Screen
         $box = BlockWidget::default()
             ->borders(Borders::ALL)->borderType(BorderType::Rounded)
             ->borderStyle(Style::default()->fg(AnsiColor::Cyan)->addModifier(Modifier::BOLD))
-            ->titles(Title::fromString(" {$menu['title']} "))
+            ->titles(Title::fromString(TerminalText::safe(" {$menu['title']} ")))
             ->widget(ParagraphWidget::fromText(Text::fromLines(...$lines)));
 
         return BlockWidget::default()

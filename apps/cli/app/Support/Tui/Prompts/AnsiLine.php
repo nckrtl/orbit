@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Tui\Prompts;
 
+use App\Support\Console\TerminalText;
 use PhpTui\Tui\Color\AnsiColor;
 use PhpTui\Tui\Style\Modifier;
 use PhpTui\Tui\Style\Style;
@@ -12,7 +13,8 @@ use PhpTui\Tui\Text\Span;
 
 /**
  * Turns one line of SGR-coloured terminal text, as Laravel Prompts renders it, into a php-tui
- * Line of styled spans. Only the codes the Prompts themes emit are read.
+ * Line of styled spans. Only renderer-owned SGR codes are read; PanelPrompt escapes input
+ * before rendering. Other control bytes in text fragments remain visible data.
  */
 final class AnsiLine
 {
@@ -32,7 +34,7 @@ final class AnsiLine
                 continue;
             }
             // Style methods change the object itself, so every span gets its own copy.
-            $spans[] = Span::styled($part, $reverse ? (clone $style)->addModifier(Modifier::REVERSED) : clone $style);
+            $spans[] = Span::styled(TerminalText::safe($part), $reverse ? (clone $style)->addModifier(Modifier::REVERSED) : clone $style);
         }
 
         return Line::fromSpans(...$spans);
