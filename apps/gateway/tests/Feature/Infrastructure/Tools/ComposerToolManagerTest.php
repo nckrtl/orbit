@@ -21,6 +21,9 @@ use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 describe(ComposerToolManager::class, function (): void {
@@ -768,4 +771,221 @@ function composer_tool_known_hosts(): KnownHostsStore
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
+}
+
+it('prepares the orbit Composer workspace with the managed path', function (): void {
+    $script =
+        composer_materialization_script();
+
+    expect($script)
+        ->toContain(
+            'install -d -m 0755 /opt/orbit',
+            'install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer',
+            'test -f /opt/orbit/composer/composer.json',
+            'test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"',
+            'if [ -L /opt/orbit/composer/composer.json ]; then',
+            'composer_manifest=$(mktemp /opt/orbit/.composer.json.XXXXXX)',
+            'chmod 0644 "$composer_manifest"',
+            'chown "$managed_user:$managed_group" "$composer_manifest"',
+            'ln "$composer_manifest" /opt/orbit/composer/composer.json',
+            '! -L /opt/orbit/composer/composer.json',
+            'trap cleanup_composer_manifest EXIT',
+            'trap - EXIT',
+            'rm -f -- "$composer_manifest"',
+            'COMPOSER_HOME=/opt/orbit/composer',
+            '/usr/bin/composer --version --no-ansi',
+            '{"require":{}}',
+        )
+        ->not->toContain('/home/orbit/.composer');
+});
+
+it('materializes the Composer manifest and vendor bin directory idempotently', function (): void {
+    $harness = composer_materialization_harness();
+
+    try {
+        expect($harness['first']->isSuccessful())
+            ->toBeTrue($harness['first']->getErrorOutput())
+            ->and(trim(file_get_contents("{$harness['composer']}/composer.json")))
+            ->toBe('{"require":{}}')
+            ->and("{$harness['composer']}/composer.json")
+            ->toBeFile()
+            ->and(fileperms("{$harness['composer']}/composer.json") & 0o777)
+            ->toBe(0o644)
+            ->and(posix_getpwuid(fileowner("{$harness['composer']}/composer.json"))['name'])
+            ->toBe($harness['owner'])
+            ->and(posix_getgrgid(filegroup("{$harness['composer']}/composer.json"))['name'])
+            ->toBe($harness['group'])
+            ->and("{$harness['composer']}/vendor/bin")
+            ->toBeDirectory()
+            ->and($harness['second']->isSuccessful())
+            ->toBeTrue($harness['second']->getErrorOutput())
+            ->and(iterator_count(new Filesystem()->files($harness['root'])))
+            ->toBe(1);
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('rejects Composer manifest file, directory, and symlink conflicts without overwrite', function (): void {
+    foreach (['file', 'directory', 'symlink'] as $conflict) {
+        $harness = composer_materialization_harness(conflict: $conflict);
+
+        try {
+            expect($harness['first']->isSuccessful())
+                ->toBeFalse()
+                ->and($harness['first']->getErrorOutput())
+                ->toContain('Orbit Composer manifest conflict:')
+                ->and(file_exists($harness['manifest']) || is_link($harness['manifest']))
+                ->toBeTrue();
+
+            match ($conflict) {
+                'file' => expect(file_get_contents($harness['manifest']))->toBe("foreign\n"),
+                'directory' => expect($harness['manifest'])->toBeDirectory(),
+                'symlink' => expect(readlink($harness['manifest']))->toBe('/tmp/foreign'),
+            };
+        } finally {
+            new Filesystem()->deleteDirectory($harness['root']);
+        }
+    }
+});
+
+it('cleans Composer temp candidates after success, failure, and publication races', function (): void {
+    foreach (['success', 'failure', 'race'] as $mode) {
+        $harness = composer_materialization_harness(mode: $mode);
+
+        try {
+            expect($harness['first']->isSuccessful())->toBe($mode !== 'failure');
+            expect(glob("{$harness['root']}/.composer.json.*"))->toBeEmpty();
+            if ($mode === 'race') {
+                expect(trim(file_get_contents($harness['manifest'])))->toBe('{"require":{"winner":true}}');
+            }
+        } finally {
+            new Filesystem()->deleteDirectory($harness['root']);
+        }
+    }
+});
+
+/**
+ * @return array{root: string, composer: string, manifest: string, owner: string, group: string, first: Process, second: Process}
+ */
+function composer_materialization_harness(?string $conflict = null, string $mode = 'success'): array
+{
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-manager-composer-'.Str::random(16);
+    $composer = "{$root}/composer";
+    $manifest = "{$composer}/composer.json";
+    $filesystem->makeDirectory($root, 0o755, true);
+
+    if ($conflict !== null) {
+        $filesystem->makeDirectory($composer, 0o755);
+    }
+
+    $script =
+        composer_materialization_script();
+    $start = mb_strpos(
+        haystack: $script,
+        needle: 'install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer',
+    );
+    if (! is_int($start)) {
+        $start = mb_strpos(haystack: $script, needle: 'install -d -m 0755 -o orbit -g orbit /opt/orbit/composer');
+    }
+    $end = mb_strpos(haystack: $script, needle: '--no-ansi', offset: $start === false ? 0 : $start);
+    $fragment = is_int($start) && is_int($end) ? mb_substr($script, $start, $end - $start) : '';
+    $fragment = str_replace(['/opt/orbit/composer', '/opt/orbit'], [$composer, $root], $fragment);
+    $owner = posix_getpwuid(fileowner($root))['name'] ?? get_current_user();
+    $group = posix_getgrgid(filegroup($root))['name'] ?? $owner;
+    $fragment = str_replace(
+        [
+            '-o "$managed_user" -g "$managed_group"',
+            '-o orbit -g orbit',
+            '"$managed_user":"$managed_group"',
+            '"$managed_user:$managed_group"',
+            'orbit:orbit',
+        ],
+        [
+            "-o {$owner} -g {$group}",
+            "-o {$owner} -g {$group}",
+            "{$owner}:{$group}",
+            "{$owner}:{$group}",
+            "{$owner}:{$group}",
+        ],
+        $fragment,
+    );
+    $fragment = str_replace(
+        [
+            'managed_user=orbit',
+            'managed_group=orbit',
+            'managed_home=/home/orbit',
+            'sudo -u "$managed_user" -H env',
+            'sudo -u orbit -H env',
+        ],
+        ["managed_user={$owner}", "managed_group={$group}", "managed_home={$root}", 'env', 'env'],
+        $fragment,
+    );
+    $stub = "{$root}/composer-stub";
+    $filesystem->put($stub, "#!/bin/sh\nexit 0\n");
+    chmod(filename: $stub, permissions: 0o755);
+    $fragment = str_replace('/usr/bin/composer', $stub, $fragment);
+
+    if ($mode === 'failure') {
+        $manifestWrite = <<<'BASH'
+            printf '%s\n' '{"require":{}}' > "$composer_manifest"
+            BASH;
+
+        if (! str_contains($fragment, $manifestWrite)) {
+            throw new RuntimeException('Could not inject the Composer manifest failure.');
+        }
+
+        $fragment = str_replace(search: $manifestWrite, replace: 'false', subject: $fragment);
+    }
+
+    $ln = null;
+
+    if ($conflict === 'file') {
+        $filesystem->put($manifest, "foreign\n");
+        $fragment = str_replace(
+            search: "= {$owner}:{$group}",
+            replace: '= foreign:foreign',
+            subject: $fragment,
+        );
+    }
+
+    if ($conflict === 'directory') {
+        $filesystem->makeDirectory($manifest);
+    }
+
+    if ($conflict === 'symlink') {
+        symlink('/tmp/foreign', $manifest);
+    }
+
+    if ($mode === 'race') {
+        $ln = "{$root}/ln";
+        $filesystem->put(
+            $ln,
+            "#!/bin/sh\nif [ \"\$2\" = \"{$manifest}\" ]; then printf '%s\\n' '{\"require\":{\"winner\":true}}' > \"\$2\"; fi\nexec /usr/bin/ln \"\$@\"\n",
+        );
+        chmod(filename: $ln, permissions: 0o755);
+    }
+
+    $path = $mode === 'race' ? dirname($ln).':'.getenv('PATH') : getenv('PATH');
+    $run = function () use ($fragment, $path): Process {
+        $process = new Process(['bash', '-seu']);
+        $process->setEnv(['PATH' => $path]);
+        $process->setInput($fragment);
+        $process->run();
+
+        return $process;
+    };
+    $first = $run();
+    $second = $run();
+
+    return compact('root', 'composer', 'manifest', 'owner', 'group', 'first', 'second');
+}
+
+function composer_materialization_script(): string
+{
+    [$manager, $ssh] = composer_tool_manager([composer_result()]);
+    $manager->materialize(composer_tool_node(role: null));
+
+    return $ssh->commands[0]->input ?? '';
 }

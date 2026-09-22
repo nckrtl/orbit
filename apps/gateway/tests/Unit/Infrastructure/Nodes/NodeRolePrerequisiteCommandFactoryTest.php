@@ -41,7 +41,7 @@ it('uses healthy Docker CE as the private Docker prerequisite without allowing r
             RoleName::AppProd,
             default_managed_user_account(),
         )->input ?? '';
-    $preflight = Str::before($script, 'install -d -m 0755 /opt/orbit');
+    $preflight = Str::before($script, 'if { [ -e /opt/orbit ]');
     $fixture = role_prerequisite_os_release_fixture("ID=ubuntu\nVERSION_CODENAME=\"resolute\"\n");
     $root = sys_get_temp_dir().'/orbit-docker-ce-'.Str::uuid();
     $filesystem = new Filesystem;
@@ -213,8 +213,6 @@ it('uses fixed managed account argv and dynamic paths for a nondefault home', fu
             'managed_group=$2',
             'managed_home=$3',
             'install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"',
-            '"$managed_home/.vite-plus"',
-            'sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi',
         )
         ->not->toContain('/home/orbit/apps', '/home/orbit/.orbit/worktrees', 'sudo -u orbit');
 });
@@ -230,7 +228,6 @@ it('uses the managed account for ownership validation on shared prerequisites', 
     expect($script)
         ->toContain(
             'stat -c \'%U:%G\' "$directory")" != "$managed_user:$managed_group"',
-            'stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"',
         )
         ->not->toContain('orbit:orbit');
 });
@@ -386,802 +383,164 @@ it('accepts bare, single quoted, double quoted, and final unterminated supported
     'final unterminated value' => "ID=ubuntu\nVERSION_CODENAME=resolute",
 ]);
 
-it('prepares the orbit Composer workspace with the managed path', function (RoleName $role): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
-
-    expect($script)
-        ->toContain(
-            'install -d -m 0755 /opt/orbit',
-            'install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer',
-            'test -f /opt/orbit/composer/composer.json',
-            'test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"',
-            'if [ -L /opt/orbit/composer/composer.json ]; then',
-            'composer_manifest=$(mktemp /opt/orbit/.composer.json.XXXXXX)',
-            'chmod 0644 "$composer_manifest"',
-            'chown "$managed_user":"$managed_group" "$composer_manifest"',
-            'ln "$composer_manifest" /opt/orbit/composer/composer.json',
-            '! -L /opt/orbit/composer/composer.json',
-            'trap cleanup_composer_manifest EXIT',
-            'trap - EXIT',
-            'rm -f -- "$composer_manifest"',
-            'revalidate',
-            'COMPOSER_HOME=/opt/orbit/composer',
-            '/usr/bin/composer --version --no-ansi',
-            '{"require":{}}',
-        )
-        ->not->toContain('/home/orbit/.composer');
-})->with([RoleName::AppDev, RoleName::AppProd]);
-
-it('preserves the complete Vite Plus and Bun application-host runtime', function (RoleName $role): void {
-    expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
-
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
+it('keeps Bun and system prerequisites outside the Tool manager owners', function (RoleName $role): void {
+    $script = new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $syntax = new Process(['bash', '-n']);
     $syntax->setInput($script);
     $syntax->run();
 
-    expect($script)
-        ->toContain(
-            '"$managed_home/.vite-plus"',
-            'if [ ! -x "$vp_binary" ]; then',
-            'https://vite.plus',
-            'bash -o pipefail -c',
-            'env setup',
-            'env on',
-            'env install lts',
-            'env default lts',
-            'install -g --node lts pnpm',
-            'BUN_INSTALL=/opt/orbit/bun',
-            'https://bun.com/install',
-            '/usr/local/bin/vp',
-            '/usr/local/bin/node',
-            '/usr/local/bin/pnpm',
-            '/usr/local/bin/npm',
-            '/usr/local/bin/npx',
-            '/usr/local/bin/bun',
-            'Orbit JavaScript runtime directory conflict:',
-            'Orbit JavaScript runtime launcher conflict:',
-            'Orbit JavaScript runtime link conflict:',
-            'rollback_javascript_runtime()',
-        )
-        ->not
-        ->toContain('VP_HOME=', '/opt/orbit/vite-plus', 'vp env install bun', 'npm install -g', 'bun install')
-        ->and($syntax->isSuccessful())
-        ->toBeTrue($syntax->getErrorOutput());
-})->with([
-    'app development' => RoleName::AppDev,
-    'app production' => RoleName::AppProd,
-]);
+    expect($script)->toContain(
+        'BUN_INSTALL=/opt/orbit/bun',
+        'https://bun.com/install',
+        'bash -o pipefail -c',
+        'apt-get install --yes --no-install-recommends --no-remove -- "$@"',
+        'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun /usr/local/bin/bun --version',
+    )->and($syntax->isSuccessful())->toBeTrue($syntax->getErrorOutput());
 
-it('adopts an existing Vite Plus installation without running environment mutations', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-    $fragment = role_vite_plus_fragment($script);
-    $root = sys_get_temp_dir().'/orbit-vite-plus-adoption-'.Str::uuid();
-    $filesystem = new Filesystem;
-    $filesystem->makeDirectory("{$root}/.vite-plus/bin", 0o755, true);
-    $filesystem->put("{$root}/.vite-plus/bin/vp", "#!/bin/sh\nprintf '%s\n' \"\$*\" >> \"\$VP_LOG\"\n");
-    $filesystem->put("{$root}/.vite-plus/bin/pnpm", "#!/bin/sh\nexit 0\n");
-    chmod("{$root}/.vite-plus/bin/vp", 0o755);
-    chmod("{$root}/.vite-plus/bin/pnpm", 0o755);
-    $log = "{$root}/vp.log";
-
-    try {
-        $process = new Process(['bash', '-seu']);
-        $process->setEnv(['VP_LOG' => $log]);
-        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$fragment}");
-        $process->run();
-
-        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())->and(is_file($log))->toBeFalse();
-    } finally {
-        $filesystem->deleteDirectory($root);
+    foreach (['VP_HOME', 'vite-plus', 'https://vite.plus', '/usr/local/bin/node', '/usr/local/bin/pnpm', '/usr/local/bin/npm', '/usr/local/bin/npx', '/opt/orbit/composer', '/usr/bin/composer'] as $managerSetup) {
+        expect($script)->not->toContain($managerSetup);
     }
-});
+})->with([RoleName::AppDev, RoleName::AppProd]);
 
-it('executes the default installer into the XDG Vite Plus home', function (): void {
-    $script = role_vite_plus_fragment(
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '',
-    );
-    $root = sys_get_temp_dir().'/orbit-vite-plus-xdg-'.Str::uuid();
-    new Filesystem()->makeDirectory($root, 0o755, true);
-    $script = str_replace('sudo -u "$managed_user" -H ', '', $script);
-    $script = str_replace(
-        "env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'",
-        "mkdir -p \"\$managed_home/.local/share/vite-plus/bin\"; printf '#!/bin/sh\\nexit 0\\n' > \"\$managed_home/.local/share/vite-plus/bin/vp\"; printf '#!/bin/sh\\nexit 0\\n' > \"\$managed_home/.local/share/vite-plus/bin/pnpm\"; chmod 755 \"\$managed_home/.local/share/vite-plus/bin/vp\" \"\$managed_home/.local/share/vite-plus/bin/pnpm\"",
-        $script,
-    );
-
-    try {
-        $process = new Process(['bash', '-seu']);
-        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$script}");
-        $process->run();
-
-        expect($process->isSuccessful())
-            ->toBeTrue($process->getErrorOutput())
-            ->and("{$root}/.local/share/vite-plus/bin/vp")
-            ->toBeFile()
-            ->and("{$root}/.vite-plus")
-            ->not->toBeDirectory();
-    } finally {
-        new Filesystem()->deleteDirectory($root);
-    }
-});
-
-it('rejects Vite Plus home conflicts before adoption or installation', function (string $type): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-    $fragment = role_vite_plus_fragment($script);
-    $root = sys_get_temp_dir().'/orbit-vite-plus-conflict-'.Str::uuid();
-    $filesystem = new Filesystem;
-    $filesystem->makeDirectory($root, 0o755, true);
-    $vitePlus = "{$root}/.vite-plus";
-    $type === 'symlink' ? symlink('/tmp/foreign-vite-plus', $vitePlus) : $filesystem->put($vitePlus, "foreign\n");
-
-    try {
-        $process = new Process(['bash', '-seu']);
-        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$fragment}");
-        $process->run();
-
-        expect($process->isSuccessful())
-            ->toBeFalse()
-            ->and($process->getErrorOutput())
-            ->toContain('Orbit Vite Plus directory conflict:');
-    } finally {
-        $filesystem->deleteDirectory($root);
-    }
-})->with(['symlink', 'file']);
-
-it('propagates failures from both official runtime installer downloads', function (): void {
-    expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
-
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-
-    foreach (['https://vite.plus', 'https://bun.com/install'] as $installerUrl) {
-        $installerLine = collect(preg_split('/\R/', $script))
-            ->first(static fn (string $line): bool => str_contains($line, $installerUrl));
-
-        expect($installerLine)
-            ->toBeString()
-            ->toContain('bash -o pipefail -c');
-
-        $failureCommand = preg_replace(
-            pattern: '/^sudo -u (?:orbit|"\$managed_user") -H (?:env \S+ )?/',
-            replacement: '',
-            subject: trim($installerLine),
-        );
-        $failureCommand = str_replace(
-            search: "curl -fsSL {$installerUrl}",
-            replace: 'false',
-            subject: $failureCommand ?? '',
-        );
-        $failure = Process::fromShellCommandline($failureCommand);
-        $failure->run();
-
-        expect($failure->isSuccessful())->toBeFalse();
-    }
-});
-
-it('guards managed JavaScript paths before publishing stable entry points', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppProd,
-            default_managed_user_account(),
-        )->input ?? '';
-    $runtimeGuard = mb_strpos(haystack: $script, needle: 'Orbit JavaScript runtime directory conflict:');
-    $runtimeCreation = mb_strpos(
-        haystack: $script,
-        needle: 'install -d -m 0755 /opt/orbit',
-        offset: $runtimeGuard,
-    );
-    $candidateCreation = mb_strpos(
-        haystack: $script,
-        needle: 'launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-js-runtime.XXXXXX")',
-    );
-    $launcherGuard = mb_strpos(haystack: $script, needle: 'Orbit JavaScript runtime launcher conflict:');
-    $bunGuard = mb_strpos(haystack: $script, needle: 'Orbit JavaScript runtime link conflict:');
-    $launcherPublish = mb_strpos(haystack: $script, needle: 'mv "$candidate" "$launcher"');
-    $bunPublish = mb_strpos(haystack: $script, needle: 'ln -s "$bun_binary" /usr/local/bin/bun');
+it('guards Bun paths and repairs managed ownership before installing', function (): void {
+    $script = new NodeRolePrerequisiteCommandFactory()->make(new Node, RoleName::AppDev, nondefault_managed_user_account())->input ?? '';
+    $directoryGuard = mb_strpos($script, 'Orbit JavaScript runtime directory conflict:');
+    $creation = mb_strpos($script, 'install -d -m 0755 /opt/orbit');
+    $repair = mb_strpos($script, 'chown -R --no-dereference "$managed_user:$managed_group"');
+    $installer = mb_strpos($script, 'https://bun.com/install');
+    $linkGuard = mb_strpos($script, 'Orbit JavaScript runtime link conflict:');
+    $publication = mb_strpos($script, 'ln -s "$bun_binary" /usr/local/bin/bun');
 
     expect($script)->toContain(
         'stat -c \'%U:%G\' /opt/orbit',
         'stat -c \'%U:%G\' "$directory"',
-        'stat -c \'%U:%G\' "$launcher"',
-        'stat -c \'%a\' "$launcher"',
         'stat -c \'%U:%G\' /usr/local/bin/bun',
-        'cmp -s "$launcher" "$candidate"',
-        'published_paths=',
-        'rollback_javascript_runtime()',
-        'rm -f -- "$published_path"',
+        'readlink /usr/local/bin/bun',
+        'rollback_bun_runtime()',
+        'rm -f -- /usr/local/bin/bun',
     );
-    expect($runtimeGuard)->toBeInt()->toBeLessThan($runtimeCreation);
-    expect($runtimeCreation)->toBeInt()->toBeLessThan($candidateCreation);
-    expect($candidateCreation)->toBeInt()->toBeLessThan($launcherGuard);
-    expect($launcherGuard)->toBeInt()->toBeLessThan($launcherPublish);
-    expect($bunGuard)->toBeInt()->toBeLessThan($launcherPublish);
-    expect($bunGuard)->toBeInt()->toBeLessThan($bunPublish);
-    expect(substr_count(haystack: $script, needle: '> "$candidate"'))->toBe(1);
+    expect($directoryGuard)->toBeInt()->toBeLessThan($creation);
+    expect($creation)->toBeInt()->toBeLessThan($repair);
+    expect($repair)->toBeInt()->toBeLessThan($installer);
+    expect($installer)->toBeInt()->toBeLessThan($linkGuard);
+    expect($linkGuard)->toBeInt()->toBeLessThan($publication);
 });
 
-it('repairs existing managed runtime ownership without following symlinks before installers', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-    $repair = mb_strpos($script, 'chown -R --no-dereference "$managed_user:$managed_group"');
-    $viteInstaller = mb_strpos($script, 'https://vite.plus');
-    $bunInstaller = mb_strpos($script, 'https://bun.com/install');
-
-    expect($repair)
-        ->toBeInt()
-        ->and($viteInstaller)
-        ->toBeInt()
-        ->toBeGreaterThan($repair)
-        ->and($bunInstaller)
-        ->toBeInt()
-        ->toBeGreaterThan($repair)
-        ->and($script)
-        ->toContain(
-            'sudo -u "$managed_user" -H /usr/local/bin/vp --version',
-            'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun /usr/local/bin/bun --version',
-        )
-        ->and($script)
-        ->toContain(
-            'sudo -u "$managed_user" -H /usr/local/bin/node --version',
-            'sudo -u "$managed_user" -H /usr/local/bin/pnpm --version',
-            'sudo -u "$managed_user" -H /usr/local/bin/npm --version',
-            'sudo -u "$managed_user" -H /usr/local/bin/npx --version',
-        );
-});
-
-it('rejects foreign launchers before publishing stable entry points', function (): void {
-    expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
-
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppProd,
-            default_managed_user_account(),
-        )->input ?? '';
-    $harness = role_javascript_runtime_harness($script, foreignLauncher: 'npm');
-
-    try {
-        expect($harness['process']->isSuccessful())
-            ->toBeFalse()
-            ->and($harness['process']->getErrorOutput())
-            ->toContain("Orbit JavaScript runtime launcher conflict: {$harness['stableDirectory']}/npm")
-            ->and(file_get_contents("{$harness['stableDirectory']}/npm"))
-            ->toBe("foreign\n");
-
-        foreach (['vp', 'node', 'pnpm', 'npx', 'bun'] as $binary) {
-            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
-        }
-
-        expect($harness['candidateDirectories'])->toBeEmpty();
-    } finally {
-        new Filesystem()->deleteDirectory($harness['root']);
-    }
-});
-
-it('accepts existing Orbit launchers for the old Vite Plus home', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppProd,
-            default_managed_user_account(),
-        )->input ?? '';
-    $harness = role_javascript_runtime_harness($script, legacyLaunchers: true);
-
-    try {
-        expect($harness['process']->isSuccessful())->toBeTrue($harness['process']->getErrorOutput());
-        expect($harness['versionChecks'])->toBe([
-            "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
-            "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 0",
-            "-u {$harness['owner']} -H {$harness['stableDirectory']}/pnpm --version => 0",
-            "-u {$harness['owner']} -H {$harness['stableDirectory']}/npm --version => 0",
-            "-u {$harness['owner']} -H {$harness['stableDirectory']}/npx --version => 0",
-            "-u {$harness['owner']} -H env BUN_INSTALL=/opt/orbit/bun {$harness['stableDirectory']}/bun --version => 0",
-        ]);
-
-        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
-            expect(file_get_contents("{$harness['stableDirectory']}/{$binary}"))
-                ->toBe(
-                    "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$harness['sourceDirectory']}/{$binary}\" \"\$@\"\n",
-                );
-        }
-    } finally {
-        new Filesystem()->deleteDirectory($harness['root']);
-    }
-});
-
-it('preserves exact launchers while rolling back new entry points after verification fails', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-    $harness = role_javascript_runtime_harness(
-        $script,
-        failingRuntime: 'npx',
-        failingRuntimeExitCode: 23,
-        exactLauncher: 'vp',
+it('propagates a failed Bun installer download', function (): void {
+    $script = new NodeRolePrerequisiteCommandFactory()->make(new Node, RoleName::AppDev, default_managed_user_account())->input ?? '';
+    $installer = collect(preg_split('/\R/', $script))->first(static fn (string $line): bool => str_contains($line, 'https://bun.com/install'));
+    expect($installer)->toBeString()->toContain('bash -o pipefail -c');
+    $failureCommand = str_replace(
+        ['sudo -u "$managed_user" -H ', 'curl -fsSL https://bun.com/install'],
+        ['', 'false'],
+        trim($installer),
     );
-
-    try {
-        expect($harness['process']->isSuccessful())
-            ->toBeFalse()
-            ->and($harness['process']->getExitCode())
-            ->toBe(23)
-            ->and($harness['versionChecks'])
-            ->toBe([
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 0",
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/pnpm --version => 0",
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/npm --version => 0",
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/npx --version => 23",
-            ])
-            ->and(file_get_contents("{$harness['stableDirectory']}/vp"))
-            ->toBe($harness['exactLauncherContents'])
-            ->and(file_get_contents("{$harness['stableDirectory']}/unrelated"))
-            ->toBe("unrelated\n")
-            ->and($harness['candidateDirectories'])
-            ->toBeEmpty();
-
-        foreach (['node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
-            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
-        }
-    } finally {
-        new Filesystem()->deleteDirectory($harness['root']);
-    }
-});
-
-it('distinguishes an earlier version failure from the intended npx rollback failure', function (): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-    $harness = role_javascript_runtime_harness(
-        $script,
-        failingRuntime: 'node',
-        failingRuntimeExitCode: 19,
-        exactLauncher: 'vp',
-    );
-
-    try {
-        expect($harness['process']->getExitCode())
-            ->toBe(19)
-            ->and($harness['versionChecks'])
-            ->toBe([
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
-                "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 19",
-            ])
-            ->and(file_get_contents("{$harness['stableDirectory']}/vp"))
-            ->toBe($harness['exactLauncherContents'])
-            ->and($harness['candidateDirectories'])
-            ->toBeEmpty();
-
-        foreach (['node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
-            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
-        }
-    } finally {
-        new Filesystem()->deleteDirectory($harness['root']);
-    }
-});
-
-it('rejects privileged version checks outside the fixture contract', function (string $unexpectedInvocation): void {
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppProd,
-            default_managed_user_account(),
-        )->input ?? '';
-    $harness = role_javascript_runtime_harness($script, unexpectedPrivilegedInvocation: $unexpectedInvocation);
-    $unexpectedCommand = $unexpectedInvocation === 'shape'
-        ? "-u {$harness['owner']} {$harness['stableDirectory']}/vp --version"
-        : "-u {$harness['owner']} -H {$harness['root']}/nonfixture --version";
-
-    try {
-        expect($harness['process']->getExitCode())
-            ->toBe(125)
-            ->and($harness['process']->getErrorOutput())
-            ->toContain("Rejected JavaScript runtime fixture command ({$unexpectedInvocation}): {$unexpectedCommand}")
-            ->and($harness['versionChecks'])
-            ->toBeEmpty()
-            ->and($harness['nonFixtureExecuted'])
-            ->toBeFalse()
-            ->and($harness['candidateDirectories'])
-            ->toBeEmpty();
-
-        foreach (['vp', 'node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
-            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
-        }
-    } finally {
-        new Filesystem()->deleteDirectory($harness['root']);
-    }
-})->with([
-    'unexpected command shape' => 'shape',
-    'nonfixture executable target' => 'target',
-]);
-
-it('materializes the Composer manifest and vendor bin directory idempotently', function (): void {
-    $harness = role_composer_harness();
-
-    try {
-        expect($harness['first']->isSuccessful())
-            ->toBeTrue($harness['first']->getErrorOutput())
-            ->and(trim(file_get_contents("{$harness['composer']}/composer.json")))
-            ->toBe('{"require":{}}')
-            ->and("{$harness['composer']}/composer.json")
-            ->toBeFile()
-            ->and(fileperms("{$harness['composer']}/composer.json") & 0o777)
-            ->toBe(0o644)
-            ->and(posix_getpwuid(fileowner("{$harness['composer']}/composer.json"))['name'])
-            ->toBe($harness['owner'])
-            ->and(posix_getgrgid(filegroup("{$harness['composer']}/composer.json"))['name'])
-            ->toBe($harness['group'])
-            ->and("{$harness['composer']}/vendor/bin")
-            ->toBeDirectory()
-            ->and($harness['second']->isSuccessful())
-            ->toBeTrue($harness['second']->getErrorOutput())
-            ->and(iterator_count(new Filesystem()->files($harness['root'])))
-            ->toBe(1);
-    } finally {
-        new Filesystem()->deleteDirectory($harness['root']);
-    }
-});
-
-it('rejects Composer manifest file, directory, and symlink conflicts without overwrite', function (): void {
-    foreach (['file', 'directory', 'symlink'] as $conflict) {
-        $harness = role_composer_harness(conflict: $conflict);
-
-        try {
-            expect($harness['first']->isSuccessful())
-                ->toBeFalse()
-                ->and($harness['first']->getErrorOutput())
-                ->toContain('Orbit Composer manifest conflict:')
-                ->and(file_exists($harness['manifest']) || is_link($harness['manifest']))
-                ->toBeTrue();
-
-            match ($conflict) {
-                'file' => expect(file_get_contents($harness['manifest']))->toBe("foreign\n"),
-                'directory' => expect($harness['manifest'])->toBeDirectory(),
-                'symlink' => expect(readlink($harness['manifest']))->toBe('/tmp/foreign'),
-            };
-        } finally {
-            new Filesystem()->deleteDirectory($harness['root']);
-        }
-    }
-});
-
-it('cleans Composer temp candidates after success, failure, and publication races', function (): void {
-    foreach (['success', 'failure', 'race'] as $mode) {
-        $harness = role_composer_harness(mode: $mode);
-
-        try {
-            expect($harness['first']->isSuccessful())->toBe($mode !== 'failure');
-            expect(glob("{$harness['root']}/.composer.json.*"))->toBeEmpty();
-            if ($mode === 'race') {
-                expect(trim(file_get_contents($harness['manifest'])))->toBe('{"require":{"winner":true}}');
-            }
-        } finally {
-            new Filesystem()->deleteDirectory($harness['root']);
-        }
-    }
-});
-
-/**
- * @return array{root: string, sourceDirectory: string, stableDirectory: string, owner: string, exactLauncherContents: string, versionChecks: list<string>, nonFixtureExecuted: bool, candidateDirectories: list<string>, process: Process}
- */
-function role_javascript_runtime_harness(
-    string $script,
-    ?string $foreignLauncher = null,
-    ?string $failingRuntime = null,
-    int $failingRuntimeExitCode = 1,
-    ?string $exactLauncher = null,
-    bool $legacyLaunchers = false,
-    ?string $unexpectedPrivilegedInvocation = null,
-): array {
-    $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-role-javascript-runtime-'.Str::random(16);
-    $sourceDirectory = "{$root}/source";
-    $stableDirectory = "{$root}/stable";
-    $filesystem->makeDirectory($sourceDirectory, 0o700, recursive: true);
-    $filesystem->makeDirectory($stableDirectory, 0o700, recursive: true);
-    $filesystem->put("{$stableDirectory}/unrelated", "unrelated\n");
-
-    foreach (['vp', 'node', 'pnpm', 'npm', 'npx', 'bun'] as $binary) {
-        $exitCode = $binary === $failingRuntime ? $failingRuntimeExitCode : 0;
-        $filesystem->put("{$sourceDirectory}/{$binary}", "#!/bin/sh\nexit {$exitCode}\n");
-        chmod(filename: "{$sourceDirectory}/{$binary}", permissions: 0o755);
-    }
-
-    $exactLauncherContents = '';
-
-    if ($exactLauncher !== null) {
-        $exactLauncherContents = "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
-        $filesystem->put("{$stableDirectory}/{$exactLauncher}", $exactLauncherContents);
-        chmod(filename: "{$stableDirectory}/{$exactLauncher}", permissions: 0o755);
-    }
-
-    if ($legacyLaunchers) {
-        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
-            $filesystem->put(
-                "{$stableDirectory}/{$binary}",
-                "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$binary}\" \"\$@\"\n",
-            );
-            chmod(filename: "{$stableDirectory}/{$binary}", permissions: 0o755);
-        }
-    }
-
-    if ($foreignLauncher !== null) {
-        $filesystem->put("{$stableDirectory}/{$foreignLauncher}", "foreign\n");
-        chmod(filename: "{$stableDirectory}/{$foreignLauncher}", permissions: 0o755);
-    }
-
-    $start = mb_strpos(
-        haystack: $script,
-        needle: 'launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-js-runtime.XXXXXX")',
-    );
-    $end = is_int($start) ? mb_strpos(haystack: $script, needle: 'trap - EXIT', offset: $start) : false;
-
-    if (! is_int($start) || ! is_int($end)) {
-        throw new RuntimeException('Could not isolate the JavaScript runtime publication block.');
-    }
-
-    $publicationScript = mb_substr(
-        string: $script,
-        start: $start,
-        length: $end - $start + mb_strlen('trap - EXIT'),
-    );
-    $owner = posix_getpwuid(fileowner($stableDirectory));
-    $group = posix_getgrgid(filegroup($stableDirectory));
-
-    if (! is_array($owner) || ! is_array($group)) {
-        throw new RuntimeException('Could not resolve the JavaScript runtime harness owner.');
-    }
-
-    $publicationScript = str_replace(
-        [
-            '$managed_home/.vite-plus/bin',
-            '$vp_home/bin',
-            '/usr/local/bin',
-            "'root:root'",
-            'chown root:root "$candidate"',
-        ],
-        [$sourceDirectory, $sourceDirectory, $stableDirectory, "'{$owner['name']}:{$group['name']}'", 'true'],
-        $publicationScript,
-    );
-    $privilegeFixture = "{$root}/privilege-fixture";
-    $versionCheckLog = "{$root}/version-checks.log";
-    $privilegeFixtureScript = <<<'SH'
-#!/bin/sh
-set -u
-reject() {
-    printf 'Rejected JavaScript runtime fixture command (%s): %s\n' "$1" "$original" >&2
-    exit 125
-}
-original="$*"
-[ "$#" -ge 5 ] || reject shape
-[ "$1" = -u ] || reject shape
-[ "$2" = "__OWNER__" ] || reject shape
-[ "$3" = -H ] || reject shape
-shift 3
-if [ "$1" = env ]; then
-    [ "$#" -eq 4 ] || reject shape
-    [ "$2" = BUN_INSTALL=/opt/orbit/bun ] || reject shape
-    shift 2
-else
-    [ "$#" -eq 2 ] || reject shape
-fi
-target=$1
-[ "$2" = --version ] || reject shape
-case "$target" in
-    __STABLE_DIRECTORY__/vp|__STABLE_DIRECTORY__/node|__STABLE_DIRECTORY__/pnpm|__STABLE_DIRECTORY__/npm|__STABLE_DIRECTORY__/npx|__STABLE_DIRECTORY__/bun) ;;
-    *) reject target ;;
-esac
-[ -x "$target" ] || reject target
-if "$target" --version; then
-    status=0
-else
-    status=$?
-fi
-printf '%s => %s\n' "$original" "$status" >> __VERSION_CHECK_LOG__
-exit "$status"
-SH;
-    $privilegeFixtureScript = str_replace(
-        ['__OWNER__', '__STABLE_DIRECTORY__', '__VERSION_CHECK_LOG__'],
-        [$owner['name'], $stableDirectory, $versionCheckLog],
-        $privilegeFixtureScript,
-    );
-    $filesystem->put($privilegeFixture, $privilegeFixtureScript);
-    chmod(filename: $privilegeFixture, permissions: 0o755);
-    $nonFixtureMarker = "{$root}/nonfixture-ran";
-    $nonFixtureExecutable = "{$root}/nonfixture";
-    $filesystem->put($nonFixtureExecutable, "#!/bin/sh\nprintf 'ran\\n' > {$nonFixtureMarker}\n");
-    chmod(filename: $nonFixtureExecutable, permissions: 0o755);
-
-    $publicationScript = match ($unexpectedPrivilegedInvocation) {
-        null => $publicationScript,
-        'shape' => str_replace(
-            "sudo -u \"\$managed_user\" -H {$stableDirectory}/vp --version",
-            "sudo -u \"\$managed_user\" {$stableDirectory}/vp --version",
-            $publicationScript,
-        ),
-        'target' => str_replace(
-            "sudo -u \"\$managed_user\" -H {$stableDirectory}/vp --version",
-            "sudo -u \"\$managed_user\" -H {$nonFixtureExecutable} --version",
-            $publicationScript,
-        ),
-        default => throw new InvalidArgumentException('Unknown unexpected privileged invocation.'),
-    };
-    $publicationScript = str_replace('sudo -u ', escapeshellarg($privilegeFixture).' -u ', $publicationScript, $adaptedCalls);
-
-    if ($adaptedCalls !== 6 || preg_match('/(^|\s)sudo(\s|$)/m', $publicationScript) === 1) {
-        throw new RuntimeException('Could not isolate every JavaScript runtime privileged fixture command.');
-    }
-
-    $process = new Process(['bash', '-seu']);
-    $process->setInput(
-        "managed_user=$(id -un)\nvp_home={$sourceDirectory}\nvp_environment='VP_HOME=/opt/orbit/vite-plus'\nlauncher_environment='export VP_HOME=/opt/orbit/vite-plus'\nbun_binary={$sourceDirectory}/bun\n{$publicationScript}\n",
-    );
+    $process = Process::fromShellCommandline($failureCommand);
     $process->run();
 
-    return [
-        'root' => $root,
-        'sourceDirectory' => $sourceDirectory,
-        'stableDirectory' => $stableDirectory,
-        'owner' => $owner['name'],
-        'exactLauncherContents' => $exactLauncherContents,
-        'versionChecks' => is_file($versionCheckLog) ? file($versionCheckLog, FILE_IGNORE_NEW_LINES) : [],
-        'nonFixtureExecuted' => is_file($nonFixtureMarker),
-        'candidateDirectories' => glob("{$stableDirectory}/.orbit-js-runtime.*") ?: [],
-        'process' => $process,
-    ];
-}
+    expect($process->isSuccessful())->toBeFalse();
+});
+
+it('publishes and verifies Bun without touching manager launchers', function (): void {
+    $harness = role_bun_runtime_harness();
+
+    try {
+        expect($harness['process']->isSuccessful())->toBeTrue($harness['process']->getErrorOutput())
+            ->and(is_link($harness['link']))->toBeTrue()
+            ->and(readlink($harness['link']))->toBe($harness['binary'])
+            ->and($harness['process']->getOutput())->toBe("bun-version\n")
+            ->and(file_get_contents($harness['unrelated']))->toBe("manager-owned\n");
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('refuses foreign Bun entry points without replacing them', function (string $existing): void {
+    $harness = role_bun_runtime_harness(existing: $existing);
+
+    try {
+        expect($harness['process']->isSuccessful())->toBeFalse()
+            ->and($harness['process']->getErrorOutput())->toContain('Orbit JavaScript runtime link conflict:')
+            ->and($harness['process']->getOutput())->toBeEmpty()
+            ->and(file_get_contents($harness['unrelated']))->toBe("manager-owned\n");
+
+        match ($existing) {
+            'file' => expect(file_get_contents($harness['link']))->toBe("foreign\n"),
+            'symlink' => expect(readlink($harness['link']))->toBe($harness['unrelated']),
+        };
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+})->with(['file', 'symlink']);
+
+it('rolls back only a newly published Bun link when verification fails', function (string $existing): void {
+    $harness = role_bun_runtime_harness(existing: $existing, exitCode: 23);
+
+    try {
+        expect($harness['process']->getExitCode())->toBe(23)
+            ->and(is_link($harness['link']))->toBe($existing === 'exact')
+            ->and(file_get_contents($harness['unrelated']))->toBe("manager-owned\n");
+
+        if ($existing === 'exact') {
+            expect(readlink($harness['link']))->toBe($harness['binary']);
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+})->with(['none', 'exact']);
 
 /**
- * @return array{root: string, composer: string, manifest: string, owner: string, group: string, first: Process, second: Process}
+ * @return array{root: string, binary: string, link: string, unrelated: string, process: Process}
  */
-function role_composer_harness(?string $conflict = null, string $mode = 'success'): array
+function role_bun_runtime_harness(string $existing = 'none', int $exitCode = 0): array
 {
     $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-role-composer-'.Str::random(16);
-    $composer = "{$root}/composer";
-    $manifest = "{$composer}/composer.json";
-    $filesystem->makeDirectory($root, 0o755, true);
+    $root = sys_get_temp_dir().'/orbit-role-bun-'.Str::uuid();
+    $filesystem->makeDirectory("{$root}/stable", 0o755, true);
+    $filesystem->makeDirectory("{$root}/orbit/bun/bin", 0o755, true);
+    $binary = "{$root}/orbit/bun/bin/bun";
+    $link = "{$root}/stable/bun";
+    $unrelated = "{$root}/stable/vp";
+    $filesystem->put($binary, "#!/bin/sh\nprintf 'bun-version\\n'\nexit {$exitCode}\n");
+    chmod($binary, 0o755);
+    $filesystem->put($unrelated, "manager-owned\n");
 
-    if ($conflict !== null) {
-        $filesystem->makeDirectory($composer, 0o755);
-    }
-
-    $script =
-        new NodeRolePrerequisiteCommandFactory()->make(
-            new Node,
-            RoleName::AppDev,
-            default_managed_user_account(),
-        )->input ?? '';
-    $start = mb_strpos(
-        haystack: $script,
-        needle: 'install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer',
-    );
-    if (! is_int($start)) {
-        $start = mb_strpos(haystack: $script, needle: 'install -d -m 0755 -o orbit -g orbit /opt/orbit/composer');
-    }
-    $end = mb_strpos(haystack: $script, needle: '--no-ansi', offset: $start === false ? 0 : $start);
-    $fragment = is_int($start) && is_int($end) ? mb_substr($script, $start, $end - $start) : '';
-    $fragment = str_replace(['/opt/orbit/composer', '/opt/orbit'], [$composer, $root], $fragment);
-    $owner = posix_getpwuid(fileowner($root))['name'] ?? get_current_user();
-    $group = posix_getgrgid(filegroup($root))['name'] ?? $owner;
-    $fragment = str_replace(
-        [
-            '-o "$managed_user" -g "$managed_group"',
-            '-o orbit -g orbit',
-            '"$managed_user":"$managed_group"',
-            '"$managed_user:$managed_group"',
-            'orbit:orbit',
-        ],
-        [
-            "-o {$owner} -g {$group}",
-            "-o {$owner} -g {$group}",
-            "{$owner}:{$group}",
-            "{$owner}:{$group}",
-            "{$owner}:{$group}",
-        ],
-        $fragment,
-    );
-    $fragment = str_replace(
-        [
-            'managed_user=orbit',
-            'managed_group=orbit',
-            'managed_home=/home/orbit',
-            'sudo -u "$managed_user" -H env',
-            'sudo -u orbit -H env',
-        ],
-        ["managed_user={$owner}", "managed_group={$group}", "managed_home={$root}", 'env', 'env'],
-        $fragment,
-    );
-    $stub = "{$root}/composer-stub";
-    $filesystem->put($stub, "#!/bin/sh\nexit 0\n");
-    chmod(filename: $stub, permissions: 0o755);
-    $fragment = str_replace('/usr/bin/composer', $stub, $fragment);
-
-    if ($mode === 'failure') {
-        $manifestWrite = <<<'BASH'
-            printf '%s\n' '{"require":{}}' > "$composer_manifest"
-            BASH;
-
-        if (! str_contains($fragment, $manifestWrite)) {
-            throw new RuntimeException('Could not inject the Composer manifest failure.');
-        }
-
-        $fragment = str_replace(search: $manifestWrite, replace: 'false', subject: $fragment);
-    }
-
-    $ln = null;
-
-    if ($conflict === 'file') {
-        $filesystem->put($manifest, "foreign\n");
-        $fragment = str_replace(
-            search: "= {$owner}:{$group}",
-            replace: '= foreign:foreign',
-            subject: $fragment,
-        );
-    }
-
-    if ($conflict === 'directory') {
-        $filesystem->makeDirectory($manifest);
-    }
-
-    if ($conflict === 'symlink') {
-        symlink('/tmp/foreign', $manifest);
-    }
-
-    if ($mode === 'race') {
-        $ln = "{$root}/ln";
-        $filesystem->put(
-            $ln,
-            "#!/bin/sh\nif [ \"\$2\" = \"{$manifest}\" ]; then printf '%s\\n' '{\"require\":{\"winner\":true}}' > \"\$2\"; fi\nexec /usr/bin/ln \"\$@\"\n",
-        );
-        chmod(filename: $ln, permissions: 0o755);
-    }
-
-    $path = $mode === 'race' ? dirname($ln).':'.getenv('PATH') : getenv('PATH');
-    $run = function () use ($fragment, $path): Process {
-        $process = new Process(['bash', '-seu']);
-        $process->setEnv(['PATH' => $path]);
-        $process->setInput($fragment);
-        $process->run();
-
-        return $process;
+    match ($existing) {
+        'none' => null,
+        'exact' => symlink($binary, $link),
+        'file' => $filesystem->put($link, "foreign\n"),
+        'symlink' => symlink($unrelated, $link),
+        default => throw new InvalidArgumentException('Unknown Bun fixture entry point.'),
     };
-    $first = $run();
-    $second = $run();
 
-    return compact('root', 'composer', 'manifest', 'owner', 'group', 'first', 'second');
+    $script = new NodeRolePrerequisiteCommandFactory()->make(new Node, RoleName::AppDev, default_managed_user_account())->input ?? '';
+    $start = mb_strpos($script, 'if { [ -e /opt/orbit ]');
+    if (! is_int($start)) {
+        throw new RuntimeException('Could not isolate the Bun runtime block.');
+    }
+    $script = mb_substr($script, $start);
+    $script = str_replace(
+        'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -c \'curl -fsSL https://bun.com/install | bash\'',
+        'true',
+        $script,
+        $installers,
+    );
+    $script = str_replace('sudo -u "$managed_user" -H env BUN_INSTALL=', 'env BUN_INSTALL=', $script, $probes);
+    if ($installers !== 1 || $probes !== 1 || str_contains($script, 'sudo') || str_contains($script, 'curl')) {
+        throw new RuntimeException('Could not isolate every Bun runtime fixture command.');
+    }
+    $owner = posix_getpwuid(fileowner($root))['name'];
+    $group = posix_getgrgid(filegroup($root))['name'];
+    $script = str_replace(
+        ['/opt/orbit', '/usr/local/bin', "'root:root'"],
+        ["{$root}/orbit", "{$root}/stable", "'{$owner}:{$group}'"],
+        $script,
+    );
+    $process = new Process(['bash', '-seu']);
+    $process->setInput("managed_user={$owner}\nmanaged_group={$group}\n{$script}");
+    $process->run();
+
+    return compact('root', 'binary', 'link', 'unrelated', 'process');
 }
 
 function role_prerequisite_os_release_fixture(string $contents): string
@@ -1190,18 +549,6 @@ function role_prerequisite_os_release_fixture(string $contents): string
     file_put_contents($path, $contents);
 
     return $path;
-}
-
-function role_vite_plus_fragment(string $script): string
-{
-    $start = mb_strpos($script, 'vp_home=');
-    $end = mb_strpos($script, 'sudo -u "$managed_user" -H env BUN_INSTALL=', $start === false ? 0 : $start);
-
-    if (! is_int($start) || ! is_int($end)) {
-        throw new RuntimeException('Could not isolate the Vite Plus runtime block.');
-    }
-
-    return str_replace('sudo -u "$managed_user" -H ', '', mb_substr($script, $start, $end - $start));
 }
 
 /**

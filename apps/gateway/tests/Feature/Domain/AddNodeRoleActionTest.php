@@ -10,6 +10,7 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -122,6 +123,73 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($assignment->error_code)
             ->toBe('node.tool_manager_probe_failed');
     })->with(['VP' => ToolManagerName::Vp, 'Composer' => ToolManagerName::Composer]);
+
+    it('materializes each app manager once during provisioning and existing role convergence', function (RoleName $role): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $vp = new FakeToolManager(ToolManagerName::Vp);
+        $composer = new FakeToolManager(ToolManagerName::Composer);
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, new NativeToolManagerMaterializer(
+            new ToolManagerRegistry([$vp, $composer]),
+            app(ToolManagerScopeLock::class),
+        ));
+        $node = add_role_node(LifecycleStatus::Provisioning);
+
+        $assignment = app(AddNodeRoleAction::class)->executeDuringProvisioning($node, $role);
+
+        expect($assignment->status)->toBe(LifecycleStatus::Active)
+            ->and($vp->calls)->toBe(['materialize', 'managerVersion'])
+            ->and($composer->calls)->toBe(['materialize', 'managerVersion']);
+        $managerIds = $node->toolManagers()->orderBy('name')->pluck('id')->all();
+        $node->update(['status' => LifecycleStatus::Active]);
+
+        $result = app(AddNodeRoleAction::class)->execute($node, $role, convergeExisting: true);
+
+        expect($result['assignment']->id)->toBe($assignment->id)
+            ->and($result['assignment']->status)->toBe(LifecycleStatus::Active)
+            ->and($vp->calls)->toBe(['materialize', 'managerVersion', 'materialize', 'managerVersion'])
+            ->and($composer->calls)->toBe(['materialize', 'managerVersion', 'materialize', 'managerVersion'])
+            ->and($node->toolManagers()->orderBy('name')->pluck('id')->all())->toBe($managerIds)
+            ->and($baseline->observedStatuses)->toBe([LifecycleStatus::Provisioning, LifecycleStatus::Provisioning]);
+    })->with([RoleName::AppDev, RoleName::AppProd]);
+
+    it('keeps failed manager materialization and role convergence retryable', function (ToolManagerName $managerName): void {
+        $vp = new FakeToolManager(ToolManagerName::Vp);
+        $composer = new FakeToolManager(ToolManagerName::Composer);
+        $failedManager = $managerName === ToolManagerName::Vp ? $vp : $composer;
+        $failedManager->failures['materialize'] = [new ToolManagerException('materialize', 'Installer failed.')];
+        app()->instance(RoleBaselineConverger::class, new AddNodeRoleBaselineFake);
+        app()->instance(ToolManagerMaterializer::class, new NativeToolManagerMaterializer(
+            new ToolManagerRegistry([$vp, $composer]),
+            app(ToolManagerScopeLock::class),
+        ));
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($managerName): void {
+                expect($exception->step)->toBe("converge:tool-manager-{$managerName->value}")
+                    ->and($exception->underlyingErrorCode)->toBe('node.tool_manager_materialization_failed');
+            });
+
+        $assignment = $node->roles()->sole();
+        $record = $node->toolManagers()->where('name', $managerName)->sole();
+        expect($assignment->status)->toBe(LifecycleStatus::Failed)
+            ->and($record->status)->toBe(LifecycleStatus::Failed)
+            ->and($record->failed_step)->toBe('materialize')
+            ->and($record->error_code)->toBe('node.tool_manager_materialization_failed')
+            ->and($failedManager->calls)->toBe(['materialize'])
+            ->and($composer->calls)->toBe($managerName === ToolManagerName::Vp ? [] : ['materialize']);
+
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev, convergeExisting: true);
+
+        expect($result['assignment']->id)->toBe($assignment->id)
+            ->and($result['assignment']->status)->toBe(LifecycleStatus::Active)
+            ->and($record->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and($record->failed_step)->toBeNull()
+            ->and($record->error_code)->toBeNull()
+            ->and($failedManager->calls)->toBe(['materialize', 'materialize', 'managerVersion'])
+            ->and($node->toolManagers()->count())->toBe(2);
+    })->with([ToolManagerName::Vp, ToolManagerName::Composer]);
 
     it('reactivates retained app manager records when an app role is added again', function (): void {
         $baseline = new AddNodeRoleBaselineFake;

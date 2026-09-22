@@ -17,6 +17,9 @@ use App\Infrastructure\Tools\RemoteToolCommandRunner;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
 describe(VpToolManager::class, function (): void {
@@ -109,6 +112,49 @@ describe(VpToolManager::class, function (): void {
             ->toContain('curl -fsSL https://vite.plus | bash')
             ->and($ssh->commands[0]->input)
             ->toContain('/usr/local/bin/vp --version');
+    });
+
+    it('resolves nondefault managed homes and owns the complete VP environment', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $node = vp_tool_node();
+        $node->user = 'nckrtl';
+
+        $manager->materialize($node);
+
+        $script = $ssh->commands[0]->input ?? '';
+        $syntax = new Process(['bash', '-n']);
+        $syntax->setInput($script);
+        $syntax->run();
+        expect($ssh->arguments())->toBe([['sudo', 'bash', '-seu', '--', 'nckrtl']])
+            ->and($script)->toContain(
+                'getent passwd -- "$managed_user"',
+                'managed_home=$(printf',
+                'for candidate in /opt/orbit/vite-plus "$managed_home/.vite-plus" "$managed_home/.local/share/vite-plus"',
+                'env setup',
+                'env on',
+                'env install lts',
+                'env default lts',
+                'install -g --node lts pnpm',
+                'stat -c \'%U:%G\' "$launcher"',
+                'stat -c \'%a\' "$launcher"',
+                'cmp -s "$launcher" "$candidate"',
+                'rollback_vp_runtime()',
+            )->and($syntax->isSuccessful())->toBeTrue($syntax->getErrorOutput());
+    });
+
+    it('propagates a failed VP installer download', function (): void {
+        $script = vp_materialization_script();
+        $installer = collect(preg_split('/\R/', $script))->first(static fn (string $line): bool => str_contains($line, 'https://vite.plus'));
+        expect($installer)->toBeString()->toContain('bash -o pipefail -c');
+        $failureCommand = str_replace(
+            ['sudo -u "$managed_user" -H ', 'curl -fsSL https://vite.plus'],
+            ['', 'false'],
+            trim($installer),
+        );
+        $process = Process::fromShellCommandline($failureCommand);
+        $process->run();
+
+        expect($process->isSuccessful())->toBeFalse();
     });
 
     it('rejects an unsupported node before any SSH I/O', function (Closure $operation): void {
@@ -525,4 +571,415 @@ function vp_tool_known_hosts(): KnownHostsStore
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
+}
+
+it('adopts an existing Vite Plus installation without running environment mutations', function (): void {
+    $script =
+        vp_materialization_script();
+    $fragment = vp_runtime_fragment($script);
+    $root = sys_get_temp_dir().'/orbit-vite-plus-adoption-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory("{$root}/.vite-plus/bin", 0o755, true);
+    $filesystem->put("{$root}/.vite-plus/bin/vp", "#!/bin/sh\nprintf '%s\n' \"\$*\" >> \"\$VP_LOG\"\n");
+    $filesystem->put("{$root}/.vite-plus/bin/pnpm", "#!/bin/sh\nexit 0\n");
+    chmod("{$root}/.vite-plus/bin/vp", 0o755);
+    chmod("{$root}/.vite-plus/bin/pnpm", 0o755);
+    $log = "{$root}/vp.log";
+
+    try {
+        $process = new Process(['bash', '-seu']);
+        $process->setEnv(['VP_LOG' => $log]);
+        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$fragment}");
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())->and(is_file($log))->toBeFalse();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('executes the default installer into the XDG Vite Plus home', function (): void {
+    $script = vp_runtime_fragment(
+        vp_materialization_script(),
+    );
+    $root = sys_get_temp_dir().'/orbit-vite-plus-xdg-'.Str::uuid();
+    new Filesystem()->makeDirectory($root, 0o755, true);
+    $script = str_replace('sudo -u "$managed_user" -H ', '', $script);
+    $script = str_replace(
+        "env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'",
+        "mkdir -p \"\$managed_home/.local/share/vite-plus/bin\"; printf '#!/bin/sh\\nexit 0\\n' > \"\$managed_home/.local/share/vite-plus/bin/vp\"; printf '#!/bin/sh\\nexit 0\\n' > \"\$managed_home/.local/share/vite-plus/bin/pnpm\"; chmod 755 \"\$managed_home/.local/share/vite-plus/bin/vp\" \"\$managed_home/.local/share/vite-plus/bin/pnpm\"",
+        $script,
+    );
+
+    try {
+        $process = new Process(['bash', '-seu']);
+        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$script}");
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getErrorOutput())
+            ->and("{$root}/.local/share/vite-plus/bin/vp")
+            ->toBeFile()
+            ->and("{$root}/.vite-plus")
+            ->not->toBeDirectory();
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('rejects Vite Plus home conflicts before adoption or installation', function (string $type): void {
+    $script =
+        vp_materialization_script();
+    $fragment = vp_runtime_fragment($script);
+    $root = sys_get_temp_dir().'/orbit-vite-plus-conflict-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory($root, 0o755, true);
+    $vitePlus = "{$root}/.vite-plus";
+    $type === 'symlink' ? symlink('/tmp/foreign-vite-plus', $vitePlus) : $filesystem->put($vitePlus, "foreign\n");
+
+    try {
+        $process = new Process(['bash', '-seu']);
+        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$fragment}");
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeFalse()
+            ->and($process->getErrorOutput())
+            ->toContain('Orbit Vite Plus directory conflict:');
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+})->with(['symlink', 'file']);
+
+it('rejects foreign launchers before publishing stable entry points', function (): void {
+    $script =
+        vp_materialization_script();
+    $harness = vp_runtime_harness($script, foreignLauncher: 'npm');
+
+    try {
+        expect($harness['process']->isSuccessful())
+            ->toBeFalse()
+            ->and($harness['process']->getErrorOutput())
+            ->toContain("Orbit Vite Plus launcher conflict: {$harness['stableDirectory']}/npm")
+            ->and(file_get_contents("{$harness['stableDirectory']}/npm"))
+            ->toBe("foreign\n");
+
+        foreach (['vp', 'node', 'pnpm', 'npx'] as $binary) {
+            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
+        }
+
+        expect($harness['candidateDirectories'])->toBeEmpty();
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('accepts existing Orbit launchers for the old Vite Plus home', function (): void {
+    $script =
+        vp_materialization_script();
+    $harness = vp_runtime_harness($script, legacyLaunchers: true);
+
+    try {
+        expect($harness['process']->isSuccessful())->toBeTrue($harness['process']->getErrorOutput());
+        expect($harness['versionChecks'])->toBe([
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/pnpm --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/npm --version => 0",
+            "-u {$harness['owner']} -H {$harness['stableDirectory']}/npx --version => 0",
+        ]);
+
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            expect(file_get_contents("{$harness['stableDirectory']}/{$binary}"))
+                ->toBe(
+                    "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$harness['sourceDirectory']}/{$binary}\" \"\$@\"\n",
+                );
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('preserves exact launchers while rolling back new entry points after verification fails', function (): void {
+    $script =
+        vp_materialization_script();
+    $harness = vp_runtime_harness(
+        $script,
+        failingRuntime: 'npx',
+        failingRuntimeExitCode: 23,
+        exactLauncher: 'vp',
+    );
+
+    try {
+        expect($harness['process']->isSuccessful())
+            ->toBeFalse()
+            ->and($harness['process']->getExitCode())
+            ->toBe(23)
+            ->and($harness['versionChecks'])
+            ->toBe([
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/pnpm --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/npm --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/npx --version => 23",
+            ])
+            ->and(file_get_contents("{$harness['stableDirectory']}/vp"))
+            ->toBe($harness['exactLauncherContents'])
+            ->and(file_get_contents("{$harness['stableDirectory']}/unrelated"))
+            ->toBe("unrelated\n")
+            ->and($harness['candidateDirectories'])
+            ->toBeEmpty();
+
+        foreach (['node', 'pnpm', 'npm', 'npx'] as $binary) {
+            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('distinguishes an earlier version failure from the intended npx rollback failure', function (): void {
+    $script =
+        vp_materialization_script();
+    $harness = vp_runtime_harness(
+        $script,
+        failingRuntime: 'node',
+        failingRuntimeExitCode: 19,
+        exactLauncher: 'vp',
+    );
+
+    try {
+        expect($harness['process']->getExitCode())
+            ->toBe(19)
+            ->and($harness['versionChecks'])
+            ->toBe([
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/vp --version => 0",
+                "-u {$harness['owner']} -H {$harness['stableDirectory']}/node --version => 19",
+            ])
+            ->and(file_get_contents("{$harness['stableDirectory']}/vp"))
+            ->toBe($harness['exactLauncherContents'])
+            ->and($harness['candidateDirectories'])
+            ->toBeEmpty();
+
+        foreach (['node', 'pnpm', 'npm', 'npx'] as $binary) {
+            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
+it('rejects privileged version checks outside the fixture contract', function (string $unexpectedInvocation): void {
+    $script =
+        vp_materialization_script();
+    $harness = vp_runtime_harness($script, unexpectedPrivilegedInvocation: $unexpectedInvocation);
+    $unexpectedCommand = $unexpectedInvocation === 'shape'
+        ? "-u {$harness['owner']} {$harness['stableDirectory']}/vp --version"
+        : "-u {$harness['owner']} -H {$harness['root']}/nonfixture --version";
+
+    try {
+        expect($harness['process']->getExitCode())
+            ->toBe(125)
+            ->and($harness['process']->getErrorOutput())
+            ->toContain("Rejected JavaScript runtime fixture command ({$unexpectedInvocation}): {$unexpectedCommand}")
+            ->and($harness['versionChecks'])
+            ->toBeEmpty()
+            ->and($harness['nonFixtureExecuted'])
+            ->toBeFalse()
+            ->and($harness['candidateDirectories'])
+            ->toBeEmpty();
+
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            expect("{$harness['stableDirectory']}/{$binary}")->not->toBeFile();
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+})->with([
+    'unexpected command shape' => 'shape',
+    'nonfixture executable target' => 'target',
+]);
+
+/**
+ * @return array{root: string, sourceDirectory: string, stableDirectory: string, owner: string, exactLauncherContents: string, versionChecks: list<string>, nonFixtureExecuted: bool, candidateDirectories: list<string>, process: Process}
+ */
+function vp_runtime_harness(
+    string $script,
+    ?string $foreignLauncher = null,
+    ?string $failingRuntime = null,
+    int $failingRuntimeExitCode = 1,
+    ?string $exactLauncher = null,
+    bool $legacyLaunchers = false,
+    ?string $unexpectedPrivilegedInvocation = null,
+): array {
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-vp-runtime-'.Str::random(16);
+    $sourceDirectory = "{$root}/source";
+    $stableDirectory = "{$root}/stable";
+    $filesystem->makeDirectory($sourceDirectory, 0o700, recursive: true);
+    $filesystem->makeDirectory($stableDirectory, 0o700, recursive: true);
+    $filesystem->put("{$stableDirectory}/unrelated", "unrelated\n");
+
+    foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+        $exitCode = $binary === $failingRuntime ? $failingRuntimeExitCode : 0;
+        $filesystem->put("{$sourceDirectory}/{$binary}", "#!/bin/sh\nexit {$exitCode}\n");
+        chmod(filename: "{$sourceDirectory}/{$binary}", permissions: 0o755);
+    }
+
+    $exactLauncherContents = '';
+
+    if ($exactLauncher !== null) {
+        $exactLauncherContents = "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
+        $filesystem->put("{$stableDirectory}/{$exactLauncher}", $exactLauncherContents);
+        chmod(filename: "{$stableDirectory}/{$exactLauncher}", permissions: 0o755);
+    }
+
+    if ($legacyLaunchers) {
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            $filesystem->put(
+                "{$stableDirectory}/{$binary}",
+                "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$binary}\" \"\$@\"\n",
+            );
+            chmod(filename: "{$stableDirectory}/{$binary}", permissions: 0o755);
+        }
+    }
+
+    if ($foreignLauncher !== null) {
+        $filesystem->put("{$stableDirectory}/{$foreignLauncher}", "foreign\n");
+        chmod(filename: "{$stableDirectory}/{$foreignLauncher}", permissions: 0o755);
+    }
+
+    $start = mb_strpos(
+        haystack: $script,
+        needle: 'launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-vp-runtime.XXXXXX")',
+    );
+    $end = is_int($start) ? mb_strpos(haystack: $script, needle: 'trap - EXIT', offset: $start) : false;
+
+    if (! is_int($start) || ! is_int($end)) {
+        throw new RuntimeException('Could not isolate the JavaScript runtime publication block.');
+    }
+
+    $publicationScript = mb_substr(
+        string: $script,
+        start: $start,
+        length: $end - $start + mb_strlen('trap - EXIT'),
+    );
+    $owner = posix_getpwuid(fileowner($stableDirectory));
+    $group = posix_getgrgid(filegroup($stableDirectory));
+
+    if (! is_array($owner) || ! is_array($group)) {
+        throw new RuntimeException('Could not resolve the JavaScript runtime harness owner.');
+    }
+
+    $publicationScript = str_replace(
+        [
+            '$managed_home/.vite-plus/bin',
+            '$vp_home/bin',
+            '/usr/local/bin',
+            "'root:root'",
+            'chown root:root "$candidate"',
+        ],
+        [$sourceDirectory, $sourceDirectory, $stableDirectory, "'{$owner['name']}:{$group['name']}'", 'true'],
+        $publicationScript,
+    );
+    $privilegeFixture = "{$root}/privilege-fixture";
+    $versionCheckLog = "{$root}/version-checks.log";
+    $privilegeFixtureScript = <<<'SH'
+#!/bin/sh
+set -u
+reject() {
+    printf 'Rejected JavaScript runtime fixture command (%s): %s\n' "$1" "$original" >&2
+    exit 125
+}
+original="$*"
+[ "$#" -ge 5 ] || reject shape
+[ "$1" = -u ] || reject shape
+[ "$2" = "__OWNER__" ] || reject shape
+[ "$3" = -H ] || reject shape
+shift 3
+[ "$#" -eq 2 ] || reject shape
+target=$1
+[ "$2" = --version ] || reject shape
+case "$target" in
+    __STABLE_DIRECTORY__/vp|__STABLE_DIRECTORY__/node|__STABLE_DIRECTORY__/pnpm|__STABLE_DIRECTORY__/npm|__STABLE_DIRECTORY__/npx) ;;
+    *) reject target ;;
+esac
+[ -x "$target" ] || reject target
+if "$target" --version; then
+    status=0
+else
+    status=$?
+fi
+printf '%s => %s\n' "$original" "$status" >> __VERSION_CHECK_LOG__
+exit "$status"
+SH;
+    $privilegeFixtureScript = str_replace(
+        ['__OWNER__', '__STABLE_DIRECTORY__', '__VERSION_CHECK_LOG__'],
+        [$owner['name'], $stableDirectory, $versionCheckLog],
+        $privilegeFixtureScript,
+    );
+    $filesystem->put($privilegeFixture, $privilegeFixtureScript);
+    chmod(filename: $privilegeFixture, permissions: 0o755);
+    $nonFixtureMarker = "{$root}/nonfixture-ran";
+    $nonFixtureExecutable = "{$root}/nonfixture";
+    $filesystem->put($nonFixtureExecutable, "#!/bin/sh\nprintf 'ran\\n' > {$nonFixtureMarker}\n");
+    chmod(filename: $nonFixtureExecutable, permissions: 0o755);
+
+    $publicationScript = match ($unexpectedPrivilegedInvocation) {
+        null => $publicationScript,
+        'shape' => str_replace(
+            "sudo -u \"\$managed_user\" -H {$stableDirectory}/vp --version",
+            "sudo -u \"\$managed_user\" {$stableDirectory}/vp --version",
+            $publicationScript,
+        ),
+        'target' => str_replace(
+            "sudo -u \"\$managed_user\" -H {$stableDirectory}/vp --version",
+            "sudo -u \"\$managed_user\" -H {$nonFixtureExecutable} --version",
+            $publicationScript,
+        ),
+        default => throw new InvalidArgumentException('Unknown unexpected privileged invocation.'),
+    };
+    $publicationScript = str_replace('sudo -u ', escapeshellarg($privilegeFixture).' -u ', $publicationScript, $adaptedCalls);
+
+    if ($adaptedCalls !== 5 || preg_match('/(^|\s)sudo(\s|$)/m', $publicationScript) === 1) {
+        throw new RuntimeException('Could not isolate every JavaScript runtime privileged fixture command.');
+    }
+
+    $process = new Process(['bash', '-seu']);
+    $process->setInput(
+        "managed_user=$(id -un)\nvp_home={$sourceDirectory}\nvp_environment='VP_HOME=/opt/orbit/vite-plus'\nlauncher_environment='export VP_HOME=/opt/orbit/vite-plus'\n{$publicationScript}\n",
+    );
+    $process->run();
+
+    return [
+        'root' => $root,
+        'sourceDirectory' => $sourceDirectory,
+        'stableDirectory' => $stableDirectory,
+        'owner' => $owner['name'],
+        'exactLauncherContents' => $exactLauncherContents,
+        'versionChecks' => is_file($versionCheckLog) ? file($versionCheckLog, FILE_IGNORE_NEW_LINES) : [],
+        'nonFixtureExecuted' => is_file($nonFixtureMarker),
+        'candidateDirectories' => glob("{$stableDirectory}/.orbit-vp-runtime.*") ?: [],
+        'process' => $process,
+    ];
+}
+
+function vp_runtime_fragment(string $script): string
+{
+    $start = mb_strpos($script, 'vp_home=');
+    $end = mb_strpos($script, 'launcher_candidates=', $start === false ? 0 : $start);
+
+    if (! is_int($start) || ! is_int($end)) {
+        throw new RuntimeException('Could not isolate the Vite Plus runtime block.');
+    }
+
+    return str_replace('sudo -u "$managed_user" -H ', '', mb_substr($script, $start, $end - $start));
+}
+
+function vp_materialization_script(): string
+{
+    [$manager, $ssh] = vp_tool_manager([vp_result()]);
+    $manager->materialize(vp_tool_node('linux', []));
+
+    return $ssh->commands[0]->input ?? '';
 }
