@@ -46,6 +46,22 @@ beforeEach(function (): void {
 });
 
 describe('TUI destructive consent', function (): void {
+    it('invalidates approval and old hitboxes immediately on a resize event', function (): void {
+        open_tui_consent($this->state, $this->ui, $this->interaction, 'databases');
+        $confirmation = $this->ui->menu['confirm'];
+        $yes = $confirmation->buttons['yes'];
+        $this->interaction->handleChar('y');
+        $confirmation->invalidate();
+        $this->interaction->handleKey(KeyCode::Enter);
+        $this->interaction->handleMouse(MouseEvent::new(MouseEventKind::Down, MouseButton::Left, $yes->left(), $yes->top(), 0));
+
+        expect($this->sent)->toBe([])->and($confirmation->fits)->toBeFalse()->and($confirmation->buttons)->toBe([]);
+
+        render_top_screen($this->ui, $this->state, columns: 80, rows: 24);
+        $this->interaction->handleKey(KeyCode::Enter);
+        expect($this->sent)->toBe(['/api/v1/database-connections/charlie-shop']);
+    });
+
     it('wraps the complete target and effect at a narrow width', function (string $kind, int $columns): void {
         $this->state->databases[0]['slug'] = 'production-orders-primary-with-a-long-connection-name';
         $this->state->firewall[0]['name'] = 'production-ssh-access-for-maintenance-from-office-network';

@@ -185,8 +185,11 @@ final class TopCommand extends GatewayCommand
                     }
 
                     if ($event instanceof TerminalResizedEvent) {
+                        ($ui->menu['confirm'] ?? null)?->invalidate();
                         $display = DisplayBuilder::default()->fullscreen()->build();
                         $display->clear();
+
+                        break;
                     }
                 }
 

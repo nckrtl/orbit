@@ -65,6 +65,13 @@ final class Confirmation
         return null;
     }
 
+    /** Discard consent hit regions until a frame is drawn at the new size. */
+    public function invalidate(): void
+    {
+        $this->fits = false;
+        $this->buttons = [];
+    }
+
     public function widget(Area $area): Widget
     {
         $this->buttons = [];
