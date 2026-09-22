@@ -323,9 +323,18 @@ final readonly class UpdateAppAction
         }
 
         if (is_array($inventory['slug'] ?? null) && is_string($update->requested_slug)) {
-            $update->mergeEvidence([
-                'slug' => $this->projections->prepareSlug($app, $update->requested_slug, $inventory['slug']),
-            ]);
+            DB::transaction(function () use ($app, $update, $inventory): void {
+                $locked = AppUpdate::query()->lockForUpdate()->findOrFail($update->id);
+
+                if (is_array($locked->evidence['slug'] ?? null)) {
+                    return;
+                }
+
+                $locked->mergeEvidence([
+                    'slug' => $this->projections->prepareSlug($app, (string) $locked->requested_slug, $inventory['slug']),
+                ]);
+            });
+            $update->refresh();
         }
 
         if (is_array($inventory['root'] ?? null) && is_string($update->requested_root)) {

@@ -14,6 +14,8 @@ interface AppUpdateProjectionMutator
     public function preflightSlug(OrbitApp $app, string $newSlug): array;
 
     /**
+     * Prepare database records within the caller's recovery-evidence transaction.
+     *
      * @param  array<string, mixed>  $inventory
      * @return array<string, mixed>
      */

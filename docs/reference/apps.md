@@ -111,6 +111,8 @@ When `default_branch` cannot switch on an inheriting `default` source, the Gatew
 
 When the slug or web root changes, the Gateway reconciles generated Routes, runtime projections, and Laravel canonical URLs before publication. An application HTTP error does not block completion after Orbit-owned writes succeed. [Applications](/domains/applications#reconcile-an-app-update) describes source ownership and Laravel URL ownership during these updates.
 
+Generated Route preparation saves replacement Routes, original replacement pointers, copied targets, and recovery evidence in one database transaction. A failed write leaves none of that preparation behind. An interrupted retry reuses the recorded candidates. Remote source changes stay outside this transaction and recover through their own saved evidence.
+
 ## Incomplete source defaults
 
 A Project whose source defaults are incomplete can have a null default branch or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading or retrying creation does not infer missing values.
