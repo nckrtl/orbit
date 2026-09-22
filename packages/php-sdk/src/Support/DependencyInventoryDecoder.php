@@ -123,7 +123,9 @@ final class DependencyInventoryDecoder
             $this->invalid();
         }
         $this->requestId = $requestId;
-        $this->uniqueKeys($body);
+        if (! JsonObjectKeys::areUnique($body)) {
+            $this->invalid();
+        }
 
         return $envelope;
     }
@@ -317,37 +319,6 @@ final class DependencyInventoryDecoder
         }
 
         return $value;
-    }
-
-    /** Reject duplicate JSON keys before a decoded overwrite can become inventory. */
-    private function uniqueKeys(#[SensitiveParameter] string $body): void
-    {
-        $stack = [];
-        $offset = 0;
-        $length = strlen($body);
-        while ($offset < $length) {
-            $matched = preg_match('/"(?:[^"\\\\]++|\\\\.)*+"|[{}\[\]]/s', $body, $match, PREG_OFFSET_CAPTURE, $offset);
-            if ($matched === false) {
-                $this->invalid();
-            }
-            if ($matched === 0) {
-                break;
-            }
-            [$token, $position] = $match[0];
-            $offset = $position + strlen($token);
-            if ($token === '{' || $token === '[') {
-                $stack[] = [];
-            } elseif ($token === '}' || $token === ']') {
-                array_pop($stack);
-            } elseif (($body[$offset + strspn($body, " \t\r\n", $offset)] ?? null) === ':') {
-                $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
-                $level = count($stack) - 1;
-                if (isset($stack[$level][$key])) {
-                    $this->invalid();
-                }
-                $stack[$level][$key] = true;
-            }
-        }
     }
 
     private function invalid(): never

@@ -52,6 +52,30 @@ describe('strict decoder correlation', function (): void {
         'conflict' => [['request_id' => '11111111-1111-4111-8111-111111111111'], '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-222222222222'],
     ]);
 
+    it('rejects duplicate keys while preserving decoder correlation order', function (string $factory, string $duplicate, ?string $header): void {
+        [$request, $data, $message] = strict_decoder_fixture($factory);
+        $id = '11111111-1111-4111-8111-111111111111';
+        $body = json_encode(['data' => $data, 'meta' => ['request_id' => $id]], JSON_THROW_ON_ERROR);
+        $body = match ($duplicate) {
+            'ownership' => str_replace('"instance_id":17', '"instance_id":18,"instance_\u0069d":17', $body),
+            'correlation' => str_replace('"request_id":', '"request_id":"22222222-2222-4222-8222-222222222222","request_\u0069d":', $body),
+        };
+        $expectedId = $header === $id || in_array($factory, ['show', 'scan', 'update'], true) ? $id : null;
+
+        try {
+            strict_decoder_response($request, $body, $header)->dtoOrFail();
+            test()->fail('Duplicate keys were accepted.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->getMessage())->toBe($message)
+                ->and($exception->requestId())->toBe($expectedId)
+                ->and($exception->getPrevious())->toBeNull()
+                ->and($exception->details())->toBe([])
+                ->and(print_r($exception, return: true))->not->toContain('strict-decoder-header-secret');
+        }
+    })->with(['show', 'scan', 'update', 'domain', 'directory'])
+        ->with(['ownership', 'correlation'])
+        ->with([null, '11111111-1111-4111-8111-111111111111', 'token=strict-decoder-header-secret']);
+
     it('rejects JSON beyond the strict depth limit before trusting body correlation', function (string $factory): void {
         [$request, , $message] = strict_decoder_fixture($factory);
         $body = '{"data":'.str_repeat('[', 16).'"token=strict-decoder-body-secret"'.str_repeat(']', 16).',"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}';
