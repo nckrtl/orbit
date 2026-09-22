@@ -1,4 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
+import { queryClient } from "../../src/api/queryClient";
+import { proxycliStatusQuery } from "../../src/api/queries";
 import { openApp, pane, row } from "./app";
 import { screenText } from "./screen";
 
@@ -7,6 +10,70 @@ it("keeps Quota out of the sidebar while proxycli is disabled", async () => {
 
     await expect.poll(() => screenText()).toContain("Dashboard");
     expect(screenText()).not.toContain("Quota");
+});
+
+it.each([false, true])(
+    "matches mobile primary navigation to desktop when proxycli enabled is %s",
+    async (enabled) => {
+        const app = await openApp("/", { proxycli: enabled });
+        await expect
+            .poll(() => queryClient.getQueryData(proxycliStatusQuery.queryKey)?.enabled)
+            .toBe(enabled);
+        const desktop = [
+            ...pane("Navigation").element().querySelectorAll(".nav-row > span:first-child"),
+        ].map((item) => item.textContent);
+        expect(desktop).toEqual([
+            "Dashboard",
+            "Nodes",
+            "Projects",
+            "Databases",
+            "Tasks",
+            ...(enabled ? ["Quota"] : []),
+        ]);
+
+        await page.viewport(390, 844);
+        try {
+            await page.getByRole("button", { name: "Toggle navigation menu" }).click();
+            const drawer = pane("Navigation");
+            await expect.element(drawer).toHaveTextContent("Other Sections");
+            const mobile = [
+                ...drawer.element().querySelectorAll("[data-link] > span:first-child"),
+            ].map((item) => item.textContent);
+
+            expect(mobile.slice(0, desktop.length)).toEqual(desktop);
+            expect(mobile.slice(desktop.length)).toEqual([
+                "Instances",
+                "Processes",
+                "Schedules",
+                "Firewall",
+            ]);
+            expect(mobile.filter((label) => label === "Quota")).toHaveLength(enabled ? 1 : 0);
+            await drawer.getByText("Processes", { exact: true }).click();
+            await expect.poll(app.url).toBe("/processes");
+            await expect
+                .element(page.getByText("Other Sections", { exact: true }))
+                .not.toBeInTheDocument();
+        } finally {
+            await page.viewport(1280, 800);
+        }
+    },
+);
+
+it("keeps direct mobile Quota navigation disabled while hiding its drawer link", async () => {
+    await page.viewport(390, 844);
+    try {
+        await openApp("/quota");
+        await expect
+            .poll(() => screenText())
+            .toContain("require both the CLIProxyAPI collector and the tasks extension");
+        await page.getByRole("button", { name: "Toggle navigation menu" }).click();
+
+        await expect
+            .element(pane("Navigation").getByText("Quota", { exact: true }))
+            .not.toBeInTheDocument();
+    } finally {
+        await page.viewport(1280, 800);
+    }
 });
 
 it("shows an explicit disabled state when tasks are disabled", async () => {

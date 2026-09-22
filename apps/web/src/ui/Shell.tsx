@@ -11,7 +11,6 @@ import { useLiveness, usePollingReason } from "../realtime/liveness";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
-    NAV,
     navFor,
     useNav,
     SECTION_TITLES,
@@ -236,7 +235,7 @@ export function Shell() {
                                 <div className="pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
                                     Main
                                 </div>
-                                {NAV.map((key) => {
+                                {nav.map((key) => {
                                     const [count, warn] = navCount(key, totals, taskCount);
                                     const isSelected = key === activeNav;
 
@@ -270,7 +269,7 @@ export function Shell() {
                                     Other Sections
                                 </div>
                                 {SECTIONS.filter(
-                                    (s) => !NAV.includes(s as (typeof NAV)[number]),
+                                    (section) => section !== "quota" && !nav.includes(section),
                                 ).map((sec) => {
                                     const isSelected = sec === section;
 
