@@ -83,7 +83,7 @@ final class PiTranscript
             $text = trim($name.' '.$target).($failed ? ' failed: '.mb_substr($output, 0, 500) : '');
         }
 
-        return ['id' => $id, 'kind' => 'activity', 'label' => $name, 'text' => ltrim($text), 'at' => $at];
+        return ['id' => $id, 'kind' => 'activity', 'label' => $name, 'text' => ltrim($text, "\n"), 'at' => $at];
     }
 
     /** Pi reports a failed command as an error result ending in "Command exited with code N". */

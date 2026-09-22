@@ -238,6 +238,17 @@ describe('observe', function (): void {
             ->and(ComposerCheckEvidence::fromMessages($observation->entries)->current)->toBeFalse();
     });
 
+    it('keeps the leading spaces of bash output, such as git status lines', function (): void {
+        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', [
+            ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
+                ['type' => 'toolCall', 'id' => 'call-1', 'name' => 'bash', 'arguments' => ['command' => 'git status --short']],
+            ]]],
+            ['id' => 'e2', 'timestamp' => '2026-09-22T10:00:01.000Z', 'message' => ['role' => 'toolResult', 'toolCallId' => 'call-1', 'toolName' => 'bash', 'isError' => false, 'content' => [['type' => 'text', 'text' => " M routes/web.php\n?? boost.json"]]]],
+        ]))]);
+
+        expect(pi_driver()->observe(pi_thread(pi_node()))->entries[0]['text'])->toBe(" M routes/web.php\n?? boost.json\n$ git status --short\nexit code 0");
+    });
+
     it('keeps file contents out of non-bash activity', function (): void {
         $entries = [
             ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
