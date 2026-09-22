@@ -9,6 +9,7 @@ use Illuminate\Validation\Rule;
 
 final class StoreTaskCommentRequest extends FormRequest
 {
+    /** @return array<string, array<int, mixed>> */
     public function rules(): array
     {
         $reviewType = ['changes_requested', 'approved'];
