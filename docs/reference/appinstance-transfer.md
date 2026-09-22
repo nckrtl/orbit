@@ -48,6 +48,8 @@ When the operator selects one SQLite database, the Gateway pauses source executi
 
 Transfer imports the source `.env` into the encrypted Gateway store without returning or logging values. Stored application keys win over imported keys. The Gateway resolves destination references and writes the destination environment before it activates destination runtime.
 
+The source environment file must exist and be readable. A valid empty file is allowed. A failed or incomplete read, unsafe file, or invalid dotenv stops transfer before destination environment rebuild and cutover. The source remains authoritative. Correct the file or observation failure, then retry the identical request.
+
 Existing Process and Schedule records keep their IDs, definitions, and desired states. The Gateway stops source processes and timers for the downtime window, recreates destination runtime artifacts under the destination identity, and leaves no source or destination duplicate.
 
 ## Move the Route

@@ -201,6 +201,25 @@ it('returns 200 for an identical completed transfer request', function (): void 
         ->assertJsonPath('data.transfer.status', 'completed');
 });
 
+it('returns a bounded environment error and failed activity without exposing source values', function (): void {
+    transfer_api_bind_fakes();
+    $reader = app(AppInstanceEnvironmentReader::class);
+    $reader->contents = "SOURCE_ONLY environment-secret-sentinel\n";
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->postJson($this->transferUrl, ['node_id' => $this->destinationNode->id]);
+
+    $response->assertUnprocessable()->assertJsonPath('error.code', 'env.import_invalid');
+    $activity = Activity::query()->where('command', 'instance:transfer')->sole();
+    expect($activity->status)->toBe('failed')
+        ->and($response->getContent())->not->toContain('environment-secret-sentinel')
+        ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))->not->toContain('environment-secret-sentinel')
+        ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->instance->environmentValues()->exists())->toBeFalse()
+        ->and(app(AppInstanceEnvironmentWriter::class)->contents)->toBeNull();
+});
+
 function transfer_api_node(string $name): Node
 {
     return Node::query()->create([

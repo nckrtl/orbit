@@ -28,6 +28,14 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppInstances\RemoteAppInstanceEnvironmentAccess;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
@@ -473,6 +481,98 @@ it('imports source .env without overwriting stored keys and rebuilds destination
         ->and(json_encode($this->writer->observed))->not->toContain('from-file');
 });
 
+it('preserves source authority and stored configuration when environment observation or parsing fails', function (
+    CommandResult|Throwable $observation,
+    string $errorCode,
+): void {
+    $ssh = new TransferEnvironmentObservationSsh($observation);
+    $this->reader->delegate = transfer_environment_access($ssh);
+    $storedBefore = DB::table('app_instance_environment_values')
+        ->where('app_instance_id', $this->instance->id)->orderBy('env_key')->pluck('env_value', 'env_key')->all();
+    $sourcePath = $this->instance->checkout_path;
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(function (ResourceOperationException $exception) use ($errorCode): void {
+            expect($exception->errorCode)->toBe($errorCode)
+                ->and($exception->getMessage())->not->toContain('environment-secret-sentinel')
+                ->and($exception->getPrevious())->toBeNull()
+                ->and($exception->details)->toBeEmpty();
+        });
+
+    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    expect($transfer->status)->toBe(AppInstanceTransferStatus::Failed)
+        ->and($transfer->failed_step)->toBe(AppInstanceTransferStep::SqliteTransferred)
+        ->and($transfer->error_code)->toBe($errorCode)
+        ->and($transfer->cutover_at)->toBeNull()
+        ->and($transfer->completed_at)->toBeNull()
+        ->and($transfer->destination_route_id)->toBeNull()
+        ->and(json_encode($transfer->toArray(), JSON_THROW_ON_ERROR))->not->toContain('environment-secret-sentinel');
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->instance->checkout_path)->toBe($sourcePath)
+        ->and($this->instance->authoritativeRoute()?->id)->toBe($this->route->id)
+        ->and($this->route->refresh()->status)->toBe(RouteStatus::Active)
+        ->and($this->route->replaced_by_route_id)->toBeNull()
+        ->and($this->process->refresh()->working_directory)->toBe($sourcePath)
+        ->and($this->process->desired_state)->toBe(DesiredProcessState::Running)
+        ->and($this->schedule->refresh()->host_node_id)->toBe($this->sourceNode->id)
+        ->and($this->schedule->desired_timer_state)->toBe(DesiredTimerState::Enabled);
+    expect(DB::table('app_instance_environment_values')
+        ->where('app_instance_id', $this->instance->id)->orderBy('env_key')->pluck('env_value', 'env_key')->all())
+        ->toBe($storedBefore);
+    expect($this->writer->contents)->toBeNull()
+        ->and($this->projection->calls)->toBeEmpty()
+        ->and($this->runtime->calls)->toBe(['pause', 'restore'])
+        ->and($this->sources->calls)->toBe(['capture', 'materialize'])
+        ->and($this->sources->discarded)->toBe(['/srv/orbit/apps/shop/web'])
+        ->and($ssh->commands)->toHaveCount(1)
+        ->and($ssh->commands[0]->arguments)->toContain('read', $sourcePath)
+        ->and($ssh->commands[0]->arguments)->not->toContain('environment-secret-sentinel');
+
+    $ssh->observation = new CommandResult(
+        0,
+        base64_encode("APP_KEY=from-file\nSOURCE_ONLY=environment-secret-sentinel\n"),
+        '',
+        1,
+        false,
+    );
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+    $imported = $this->instance->environmentValues()->where('env_key', 'SOURCE_ONLY')->sole();
+
+    expect($result['created'])->toBeFalse()
+        ->and($result['transfer']->id)->toBe($transfer->id)
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($result['appInstance']->node_id)->toBe($this->destinationNode->id)
+        ->and($imported->env_value)->toBe('environment-secret-sentinel')
+        ->and($imported->getRawOriginal('env_value'))->not->toContain('environment-secret-sentinel')
+        ->and($this->instance->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)->toBe('base64:stored-app-key')
+        ->and($this->writer->contents)->toContain('SOURCE_ONLY="environment-secret-sentinel"')
+        ->and(json_encode($this->writer->observed, JSON_THROW_ON_ERROR))->not->toContain('environment-secret-sentinel')
+        ->and($this->sources->calls)->toBe(['capture', 'materialize', 'capture', 'materialize', 'cleanup']);
+})->with([
+    'reader refusal' => [new CommandResult(42, "REFUSED\n", '', 1, false), 'env.import_preflight_failed'],
+    'transport failure' => [new RuntimeException('environment-secret-sentinel'), 'env.import_preflight_failed'],
+    'nonzero result' => [new CommandResult(1, 'environment-secret-sentinel', 'environment-secret-sentinel', 1, false), 'env.import_preflight_failed'],
+    'truncated result' => [new CommandResult(0, base64_encode('SOURCE_ONLY=environment-secret-sentinel'), '', 1, true), 'env.import_preflight_failed'],
+    'malformed result' => [new CommandResult(0, '%environment-secret-sentinel%', '', 1, false), 'env.import_preflight_failed'],
+    'unexpected diagnostics' => [new CommandResult(0, base64_encode('SOURCE_ONLY=environment-secret-sentinel'), 'environment-secret-sentinel', 1, false), 'env.import_preflight_failed'],
+    'malformed dotenv' => [new CommandResult(0, base64_encode("SOURCE_ONLY environment-secret-sentinel\n"), '', 1, false), 'env.import_invalid'],
+]);
+
+it('accepts a positively observed empty environment file without losing stored keys', function (): void {
+    $ssh = new TransferEnvironmentObservationSsh(new CommandResult(0, '', '', 1, false));
+    $this->reader->delegate = transfer_environment_access($ssh);
+
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($this->instance->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all())->toBe([
+            'APP_KEY' => 'base64:stored-app-key',
+            'APP_URL' => 'https://{{app_instance.domain}}/{{app_instance.environment}}',
+        ])
+        ->and($this->writer->contents)->toBe("APP_KEY=\"base64:stored-app-key\"\nAPP_URL=\"https://web.shop.other.orbit/development\"\n")
+        ->and($ssh->commands)->toHaveCount(1);
+});
+
 it('restores the source and discards destination state when transfer fails before cutover', function (): void {
     $this->sources->failMaterialize = true;
 
@@ -631,4 +731,50 @@ function orb245_route(AppInstance $instance, string $domain, RouteProvenance $pr
     $route->update(['status' => RouteStatus::Active]);
 
     return $route->refresh();
+}
+
+function transfer_environment_access(SshExecutor $ssh): RemoteAppInstanceEnvironmentAccess
+{
+    return new RemoteAppInstanceEnvironmentAccess(
+        $ssh,
+        new class implements SshKeyProvider
+        {
+            public function privateKeyPath(): string
+            {
+                return '/tmp/transfer-key';
+            }
+
+            public function publicKey(): string
+            {
+                return 'ssh-ed25519 synthetic';
+            }
+        },
+        new class implements KnownHostsStore
+        {
+            public function path(): string
+            {
+                return '/tmp/transfer-known-hosts';
+            }
+
+            public function put(string $host, int $port, HostKey $key): void {}
+        },
+    );
+}
+
+final class TransferEnvironmentObservationSsh implements SshExecutor
+{
+    /** @var list<RemoteCommand> */
+    public array $commands = [];
+
+    public function __construct(public CommandResult|Throwable $observation) {}
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $this->commands[] = $command;
+        if ($this->observation instanceof Throwable) {
+            throw $this->observation;
+        }
+
+        return $this->observation;
+    }
 }

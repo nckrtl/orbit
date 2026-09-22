@@ -193,6 +193,44 @@ it('reads a maximum-size file through the explicit native output bound', functio
     }
 });
 
+it('refuses a missing environment file instead of observing empty content', function (): void {
+    $directory = environment_access_directory();
+
+    try {
+        $access = environment_remote_access(new LocalEnvironmentProgramSshExecutor(new NativeProcessRunner));
+
+        expect(fn () => $access->assertEnvironmentReadable(environment_access_context($directory)))
+            ->toThrow(ResourceOperationException::class, 'cannot be read safely');
+        expect(fn () => $access->read(environment_access_context($directory)))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('env.import_preflight_failed')
+                    ->and($exception->getMessage())->toBe('The recorded AppInstance environment file cannot be read safely.')
+                    ->and($exception->getPrevious())->toBeNull();
+            });
+        expect(file_exists("{$directory}/.env"))->toBeFalse();
+    } finally {
+        rmdir($directory);
+    }
+});
+
+it('reads a valid empty native environment file as successful empty content', function (): void {
+    $directory = environment_access_directory();
+    file_put_contents("{$directory}/.env", '');
+    chmod("{$directory}/.env", 0600);
+
+    try {
+        $access = environment_remote_access(new LocalEnvironmentProgramSshExecutor(new NativeProcessRunner));
+
+        $access->assertEnvironmentReadable(environment_access_context($directory));
+
+        expect($access->read(environment_access_context($directory)))->toBe('')
+            ->and(file_get_contents("{$directory}/.env"))->toBe('');
+    } finally {
+        unlink("{$directory}/.env");
+        rmdir($directory);
+    }
+});
+
 it('refuses symlink path components symlink files and non-regular files', function (string $kind): void {
     $parent = environment_access_directory();
     $real = "{$parent}/real";

@@ -535,14 +535,7 @@ final readonly class TransferAppInstanceAction
     private function importEnvironment(AppInstance $instance): void
     {
         $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
-        $imported = [];
-
-        try {
-            $imported = $this->environmentImporter->parse($this->environmentReader->read($context));
-        } catch (ResourceOperationException) {
-            $imported = [];
-        }
-
+        $imported = $this->environmentImporter->parse($this->environmentReader->read($context));
         $stored = [];
 
         foreach (AppInstanceEnvironmentValue::query()
