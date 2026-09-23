@@ -67,6 +67,11 @@ final class ShowNodeCommand extends NodeCommand
             'Accessible by' => NodeOutput::accessList($node->access->accessibleBy ?? []),
         ];
 
+        if ($node->excludedProjects !== null) {
+            $names = array_map(static fn (array $exclusion): string => $exclusion['project_slug'], $node->excludedProjects);
+            $fields['Excluded projects'] = $names === [] ? null : implode(', ', $names);
+        }
+
         if ($node->failedStep !== null || $node->errorCode !== null) {
             $fields['Failure'] = implode(' / ', array_filter([$node->failedStep, $node->errorCode], is_string(...)));
         }

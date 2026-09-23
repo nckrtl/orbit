@@ -13,7 +13,9 @@ Fetching Instances...
 │
 ├  Default branch   release
 │
-└  Web root         web/public
+├  Web root         web/public
+│
+└  Excluded nodes   —
 
  ┌────┬──────────────────┬─────────────┬─────────┬────────────────────────────────────┬────────┐
  │ ID │ NAME             │ ENVIRONMENT │ NODE    │ DOMAIN                             │ STATUS │
