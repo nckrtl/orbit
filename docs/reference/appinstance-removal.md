@@ -69,7 +69,7 @@ The Gateway answers a refused development source preflight with the code that na
 
 ### Development source sets
 
-Orbit accepts one development worktree in normal or forced mode. Normal checkout removal refuses registered linked worktrees and tells the operator to use `--force`. Forced checkout removal discovers every linked source from Git inventory and accepts the checkout only when each source is an active Orbit-owned Instance on the same Node, with the same Project repository identity and safe Route and source ownership. An unregistered linked worktree refuses both modes before mutation.
+Orbit accepts one development worktree in normal or forced mode. A linked worktree whose directory is gone, which Git reports as prunable, does not count. A test worktree under a cleared `/tmp` is one example. Normal checkout removal refuses registered linked worktrees and tells the operator to use `--force`. Forced checkout removal discovers every linked source from Git inventory and accepts the checkout only when each source is an active Orbit-owned Instance on the same Node, with the same Project repository identity and safe Route and source ownership. An unregistered linked worktree refuses both modes before mutation.
 
 Forced checkout removal sorts worktrees by checkout path and puts the common checkout last. The Gateway inspects every member against the same linked-worktree inventory before one transaction records the ordered set and marks every member `removing`. After acceptance, the Gateway refuses a new Process or Schedule for every Instance in that fixed deletion set. Force never waives source identity, ownership, path, repository, linked-worktree, overlap, migration, Process or Schedule artifact, or Route checks.
 
