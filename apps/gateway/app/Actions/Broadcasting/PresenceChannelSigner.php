@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Actions\Broadcasting;
 
 use App\Domain\Broadcasting\RealtimeConnectionData;
-use Illuminate\Http\JsonResponse;
 use JsonException;
 
 final readonly class PresenceChannelSigner
 {
-    /** @param array{kind: string, node_id: int, version?: ?string} $userInfo */
-    public function sign(string $socketId, string $channel, RealtimeConnectionData $connection, string $member, array $userInfo): JsonResponse
+    /**
+     * Returns the Pusher presence authorization for one member: `auth` signs the socket, channel, and exact `channel_data`.
+     *
+     * @param  array{kind: string, node_id: int, version?: ?string}  $userInfo
+     * @return array{auth: string, channel_data: string}
+     */
+    public function sign(string $socketId, string $channel, RealtimeConnectionData $connection, string $member, array $userInfo): array
     {
         try {
             $channelData = json_encode(['user_id' => $member, 'user_info' => $userInfo], JSON_THROW_ON_ERROR);
@@ -21,6 +25,6 @@ final readonly class PresenceChannelSigner
 
         $auth = $connection->key.':'.hash_hmac('sha256', "{$socketId}:{$channel}:{$channelData}", $connection->secret);
 
-        return response()->json(['auth' => $auth, 'channel_data' => $channelData]);
+        return ['auth' => $auth, 'channel_data' => $channelData];
     }
 }

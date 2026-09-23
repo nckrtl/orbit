@@ -40,10 +40,10 @@ final class RealtimeAuthController extends Controller
 
             $viewerNodeId = $this->nodeId($peer);
 
-            return $signer->sign($request->socketId(), $channel, $connection, 'viewer.'.$request->socketId(), [
+            return response()->json($signer->sign($request->socketId(), $channel, $connection, 'viewer.'.$request->socketId(), [
                 'kind' => 'viewer',
                 'node_id' => $viewerNodeId,
-            ]);
+            ]));
         }
 
         if (str_starts_with($channel, 'presence-')) {

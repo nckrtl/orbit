@@ -62,6 +62,7 @@ The two agent endpoints require an active WireGuard peer, but no Gateway access 
 | `peer.identity_unknown` | 403 | The caller's address does not belong to an active Node. |
 | `agent.node_ineligible` | 403 | The caller's Node is outside the managed-node boundary. |
 | `agent.channel_forbidden` | 403 | `channel_name` is not the caller's own `presence-node.{id}`. |
+| `validation.failed` | 422 | `socket_id` is missing or not a Pusher socket ID, `channel_name` is missing, or `version` is not a short version string. |
 | `realtime.not_configured` | 404 | No `websocket` role is active, so there is nothing to sign. |
 
 When the connection drops, the agent reconnects with exponential backoff from 1 second to 30 seconds, with jitter. Every connection repeats all four steps, because Reverb gives each connection a new `socket_id`. The agent answers Reverb's `pusher:ping` with `pusher:pong`.

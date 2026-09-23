@@ -50,11 +50,11 @@ final class AgentRealtimeController extends Controller
             throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
         }
 
-        return $signer->sign($request->socketId(), $channel, $connection, 'agent.'.(int) $node->getKey(), [
+        return response()->json($signer->sign($request->socketId(), $channel, $connection, 'agent.'.(int) $node->getKey(), [
             'kind' => 'agent',
             'node_id' => (int) $node->getKey(),
             'version' => $request->version(),
-        ]);
+        ]));
     }
 
     private function peer(Request $request): Node

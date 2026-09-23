@@ -184,11 +184,11 @@ Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/
 | `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for a request from Node `{id}`'s own WireGuard address when that Node is managed. |
 | `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
 
-A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` member. Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once.
+A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` member. It refuses any other `presence-*` channel, including a malformed `presence-node.*` name, with `broadcast.channel_forbidden` (403). Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once.
 
 ### Events
 
-The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber must ignore an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`. Viewer authorization rejects other presence channels with `broadcast.channel_forbidden` (403).
+The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber must ignore an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`.
 
 | Event | When | Data |
 | --- | --- | --- |
