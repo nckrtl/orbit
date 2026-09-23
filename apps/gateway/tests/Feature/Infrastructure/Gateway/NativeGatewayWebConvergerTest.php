@@ -386,6 +386,7 @@ it('adapts Caddy to a listener bound only to the gateway WireGuard address', fun
         hostname: 'gateway.orbit',
         wireguardIp: '10.44.0.1',
         checkoutPath: '/home/orbit/orbit-gateway',
+        webRoot: '/home/orbit/web',
     );
     $result = caddy_adapt($configuration);
     /** @var array{apps: array{http: array{servers: array<string, array{listen: list<string>}>}}} $adapted */
