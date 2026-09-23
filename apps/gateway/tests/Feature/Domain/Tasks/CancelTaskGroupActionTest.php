@@ -109,3 +109,22 @@ it('returns 409 when a group is settling or completed', function (TaskGroupStatu
     'settling' => TaskGroupStatus::Settling,
     'completed' => TaskGroupStatus::Completed,
 ]);
+
+it('still cancels and drops the workspace record when removal refuses', function (): void {
+    app(TaskExtensionState::class)->enable();
+    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    {
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            throw new ResourceOperationException('instance.remove_refused', 'The checkout could not be inspected.', 409);
+        }
+    });
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $instanceId = $group->taskable_id;
+
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+    expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($cancelled->taskable_id)->toBeNull()
+        ->and(AppInstance::query()->find($instanceId))->toBeNull();
+});
