@@ -1,0 +1,31 @@
+[package]
+name = "orbit-agent"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "orbit_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "orbit-agent"
+path = "src/main.rs"
+
+[dependencies]
+bollard = "0.18"
+futures-util = "0.3"
+http = "1"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync", "test-util"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
+toml = "0.8"
+zbus = { version = "5", features = ["tokio"] }
+
+[dev-dependencies]
+axum = { version = "0.8", features = ["ws"] }
