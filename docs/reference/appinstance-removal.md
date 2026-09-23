@@ -48,6 +48,8 @@ Forced removal validates the configured origin identity locally and does not req
 
 The Gateway checks source ownership and the active Route before changing records, processes, schedules, runtime, Git, or files. A failed source check changes nothing. A development Instance must be its Route's only target. Production instances of the same Project can share an explicit Cluster Route across distinct active app-prod Nodes. Development removal holds the Node's source lock through inspection, Route checks, and acceptance. Source preparation and retries use the same lock.
 
+A `monorepo` or `laravel-package` Instance has a Route only when an operator set one, as [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) allows. Removal deletes that Route like any other. An Instance without a Route skips the Route checks and records the `none` Route outcome. A `laravel-app` Instance without exactly one Route returns `instance.remove_refused`. An Instance with more than one Route returns the same code.
+
 Preflight compares the recorded checkout with its source layout, Project repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
 
 The Gateway answers a refused development source preflight with the code that names the failed check, in normal and forced mode alike.
