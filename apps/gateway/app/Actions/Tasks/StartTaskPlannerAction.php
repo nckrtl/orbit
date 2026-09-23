@@ -7,6 +7,7 @@ namespace App\Actions\Tasks;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskGroupGuard;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Models\AppInstance;
 use App\Models\TaskGroup;
@@ -19,6 +20,7 @@ final readonly class StartTaskPlannerAction
     public function __construct(
         private InstanceProvisioning $provisioning,
         private TaskPlannerSpawner $planners,
+        private TaskPlannerMcp $mcp,
         private CancelTaskGroupAction $cancel,
     ) {}
 
@@ -36,7 +38,9 @@ final readonly class StartTaskPlannerAction
         $group->taskable()->associate($instance);
         $group->save();
 
-        $thread = $this->planners->spawnPlanner($group->refresh()->load(['app', 'taskable']));
+        $thread = $this->mcp->install($instance)
+            ? $this->planners->spawnPlanner($group->refresh()->load(['app', 'taskable']))
+            : null;
 
         if ($thread === null) {
             $this->cancel->execute($group);

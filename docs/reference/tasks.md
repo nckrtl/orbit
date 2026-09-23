@@ -116,7 +116,7 @@ At the first review handoff, the scheduler sends the review request to the plann
 | --- | --- |
 | Driver | The planner uses the reviewer's T3 driver, model, and effort |
 | Placement | App-dev Nodes with access to themselves or to the Gateway; the one with the fewest active groups wins |
-| MCP | The planner's T3 agent needs Orbit MCP configured on its Node; Orbit does not configure it |
+| MCP | Orbit writes an untracked `.mcp.json` for the Gateway's MCP server into the workspace and excludes it from Git; a tracked `.mcp.json` stays unchanged |
 | Node ceiling | A Backlog group does not count, with or without an Instance |
 | Uncommitted work | The ADRs and documentation stay uncommitted until the move to `todo`; an empty workspace produces no commit |
 | Failed start | When no Node fits or the planner thread cannot start, create removes any Instance and stores no group |
