@@ -66,6 +66,28 @@ function lineDiffProperty(detail: TaskGroup | Task) {
     ];
 }
 
+/** The group's pull request, labelled owner/repo#number when it is a GitHub pull request URL. */
+function pullRequestProperty(url: string | null) {
+    if (url === null || url === "") {
+        return [];
+    }
+    const match = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/.exec(url);
+    const label = match === null ? url : `${match[1]}#${match[2]}`;
+
+    return [
+        {
+            name: "Pull request",
+            value: label,
+            title: url,
+            node: (
+                <a className="link" href={url} target="_blank" rel="noreferrer">
+                    {label}
+                </a>
+            ),
+        },
+    ];
+}
+
 function taskProperties(
     group: TaskGroup,
     detail: TaskGroup | Task,
@@ -108,6 +130,7 @@ function taskProperties(
                   },
               ]
             : []),
+        ...pullRequestProperty(group.pr_url),
         {
             name: "Tokens",
             value: formatCompactCount(detail.tokens),

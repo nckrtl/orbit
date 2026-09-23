@@ -285,6 +285,19 @@ it("opens a subtask with its own detail and returns to the parent board", async 
     expect(app.url()).toBe("/tasks/1");
 });
 
+it("links the group's pull request in the task properties", async () => {
+    const task = { ...group(1, "settling"), pr_url: "https://github.com/nckrtl/orbit/pull/612" };
+    const app = await openTasks(async (_, path) => ({
+        status: 200,
+        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+    }));
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+
+    const link = pane("Task").getByRole("link", { name: "nckrtl/orbit#612" });
+    await expect.element(link).toBeVisible();
+    await expect.element(link).toHaveAttribute("href", "https://github.com/nckrtl/orbit/pull/612");
+});
+
 it("loads a subtask URL directly and refuses an unknown subtask", async () => {
     const task = group(1, "running");
     const app = await openTasks(async (_, path) => ({
