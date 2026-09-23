@@ -17,7 +17,7 @@ final readonly class GatewayFpmConfigRenderer
             listen.group = caddy
             listen.mode = 0660
             pm = ondemand
-            pm.max_children = 5
+            pm.max_children = 8
             pm.process_idle_timeout = 10s
             pm.max_requests = 500
             request_terminate_timeout = 4500s
