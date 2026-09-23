@@ -102,6 +102,24 @@ jobs:
             ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
             orbit-phpstan-php8.5-${{ matrix.directory }}-
 
+      - name: Compute Pint and Rector cache prefix
+        id: orbit-lint-key
+        working-directory: .
+        run: |
+          printf 'prefix=%s\n' "orbit-lint-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/pint.json', matrix.directory), format('{0}/rector.php', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Pint and Rector caches
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ matrix.directory }}/vendor/pint.cache
+            ${{ matrix.directory }}/vendor/rector/cache
+          key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ steps.orbit-lint-key.outputs.prefix }}-main-
+            orbit-lint-php8.5-${{ matrix.directory }}-
+
       - name: Run project quality checks
         run: composer check
 
@@ -111,6 +129,15 @@ jobs:
         with:
           path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+
+      - name: Save Pint and Rector caches
+        if: success()
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ matrix.directory }}/vendor/pint.cache
+            ${{ matrix.directory }}/vendor/rector/cache
+          key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Compute Pest TIA cache prefix
         id: orbit-tia-key

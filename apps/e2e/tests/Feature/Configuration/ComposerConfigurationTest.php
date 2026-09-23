@@ -216,6 +216,27 @@ describe('Composer configuration', function (): void {
         expect($ignored->getExitCode())->toBe(0, 'The hosted TIA graph must stay out of the candidate tree.');
     });
 
+    it('persists per-project Pint and Rector caches around the quality checks', function (): void {
+        $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
+
+        expect($workflow)
+            ->toBeString()
+            ->toContain('${{ matrix.directory }}/vendor/pint.cache')
+            ->toContain('${{ matrix.directory }}/vendor/rector/cache')
+            ->toContain("format('{0}/pint.json', matrix.directory)")
+            ->toContain("format('{0}/rector.php', matrix.directory)")
+            ->toContain('orbit-lint-php8.5-${{ matrix.directory }}-')
+            ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
+            ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-main-');
+
+        expect(strpos($workflow, 'Install dependencies'))
+            ->toBeLessThan(strpos($workflow, 'Restore Pint and Rector caches'));
+        expect(strpos($workflow, 'Restore Pint and Rector caches'))
+            ->toBeLessThan(strpos($workflow, 'Run project quality checks'));
+        expect(strpos($workflow, 'Run project quality checks'))
+            ->toBeLessThan(strpos($workflow, 'Save Pint and Rector caches'));
+    });
+
     it('persists per-project portable PHPStan result caches after install', function (): void {
         $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
 
@@ -227,8 +248,6 @@ describe('Composer configuration', function (): void {
             ->toContain('orbit-phpstan-php8.5-${{ matrix.directory }}-')
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
-            ->not->toContain('vendor/pint.cache')
-            ->not->toContain('vendor/rector/cache')
             ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
             ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\s*$/m');
 
