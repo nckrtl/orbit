@@ -117,7 +117,7 @@ function planner_create(mixed $test, array $extra = []): TestResponse
     ]);
 }
 
-it('provisions the workspace on a Gateway-access Node and starts the planner as the reviewer thread', function (): void {
+it('provisions the workspace on a self-access Node and starts the planner as the reviewer thread', function (): void {
     $group = planner_create($this)->assertCreated()->json('data');
 
     expect($group['status'])->toBe('backlog')
@@ -126,7 +126,7 @@ it('provisions the workspace on a Gateway-access Node and starts the planner as 
         ->and($group['reviewer_agent_thread_id'])->not->toBeNull()
         ->and($this->planners->groups)->toBe([$group['id']])
         ->and($this->provisioning->intents)->toHaveCount(1)
-        ->and($this->provisioning->intents[0]->gatewayAccess)->toBeTrue()
+        ->and($this->provisioning->intents[0]->selfAccess)->toBeTrue()
         ->and($this->provisioning->intents[0]->visitable)->toBeTrue();
 });
 
@@ -224,4 +224,45 @@ it('removes the workspace when a planning group is cancelled', function (): void
         ->assertJsonPath('data.taskable_id', null);
 
     expect(AppInstance::query()->count())->toBe(0);
+});
+
+it('lets a Node with access to itself manage the planning group its workspace holds', function (): void {
+    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.']]])->assertCreated()->json('data');
+    $this->workspaceNode->accessibleNodes()->attach($this->workspaceNode->id);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->workspaceNode->wireguard_ip]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['brief' => 'Shaped by the planner.'])->assertOk();
+    $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Two', 'brief' => 'Two.'])->assertCreated()->json('data');
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", ['position' => 1])->assertOk();
+    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])->assertOk();
+
+    expect(TaskGroup::query()->findOrFail($group['id'])->brief)->toBe('Shaped by the planner.')
+        ->and($this->signer->messages)->toBe(['Plan: Planned feature']);
+});
+
+it('refuses plan changes from a Node without access to the group workspace Node', function (): void {
+    $group = planner_create($this)->assertCreated()->json('data');
+    $other = Node::query()->create([
+        'name' => 'other-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.93', 'wireguard_ip' => '10.44.0.93',
+    ]);
+    $other->accessibleNodes()->attach($other->id);
+    $this->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['brief' => 'Not mine.'])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Two', 'brief' => 'Two.'])
+        ->assertForbidden();
+});
+
+it('keeps Gateway access for create and for groups without a workspace', function (): void {
+    $group = planner_create($this, ['plan' => false])->assertCreated()->json('data');
+    $this->workspaceNode->accessibleNodes()->attach($this->workspaceNode->id);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->workspaceNode->wireguard_ip]);
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['brief' => 'No workspace.'])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
+    planner_create($this)->assertForbidden();
 });

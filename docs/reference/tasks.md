@@ -51,18 +51,18 @@ v1 attaches the group to one Instance. A new decision is required before another
 
 ## Groups and subtasks
 
-Use these operations after the extension is enabled. Every operation except list and show requires Gateway access. List and show accept any authorized peer.
+Use these operations after the extension is enabled. List and show accept any authorized peer. Update and the subtask operations are served by the Node that holds the group's Instance, or by the Gateway for a group without one. The other operations require Gateway access.
 
 | Operation | Route | Access |
 | --- | --- | --- |
 | `tasks:create` | `POST /api/v1/task-groups` | Gateway |
-| `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Gateway |
+| `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Group workspace Node |
 | `tasks:list` | `GET /api/v1/task-groups` | Collection |
 | `tasks:show` | `GET /api/v1/task-groups/{group}` | Collection |
 | `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
-| `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Gateway |
-| `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
-| `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
+| `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Group workspace Node |
+| `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
+| `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
 
 Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, `plan: true` to start a [planner](#plan-a-group-with-a-planner), and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
 
@@ -77,7 +77,7 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
 | `tasks.plan_requires_backlog` | 422 | Create with `plan: true` and `status: todo` |
 | `tasks.planner_driver_unavailable` | 409 | Create with `plan: true` when the reviewer driver is not T3 |
-| `tasks.planner_node_unavailable` | 409 | Create with `plan: true` when no app-dev Node with Gateway access fits |
+| `tasks.planner_node_unavailable` | 409 | Create with `plan: true` when no app-dev Node with access to itself fits |
 | `tasks.planner_unavailable` | 409 | Create with `plan: true` when the T3 driver refuses the planner thread |
 | `tasks.commit_failed` | 409 | Update to `todo` on a planning group when Orbit cannot commit its workspace |
 
@@ -112,7 +112,7 @@ At the first review handoff, the scheduler sends the review request to the plann
 | Rule | Behavior |
 | --- | --- |
 | Driver | The planner uses the reviewer's T3 driver, model, and effort |
-| Placement | Only app-dev Nodes with access to the Gateway, because the planner calls Orbit MCP from its Node |
+| Placement | App-dev Nodes with access to themselves or to the Gateway; the one with the fewest active groups wins |
 | MCP | The planner's T3 agent needs Orbit MCP configured on its Node; Orbit does not configure it |
 | Node ceiling | A Backlog group does not count, with or without an Instance |
 | Uncommitted work | The ADRs and documentation stay uncommitted until the move to `todo`; an empty workspace produces no commit |
@@ -121,7 +121,7 @@ At the first review handoff, the scheduler sends the review request to the plann
 | Back to Backlog | The group keeps its Instance, planner, and commits |
 | Cancel | Removes the Instance; the conversation stays in T3 |
 
-Every agent on the planner's Node can call every Gateway operation, because Node access is not limited per operation.
+A Node holds planners once it has access to itself, for example after [`node:access:add`](/cli/node#orbit-nodeaccessadd) from the Node to itself. Every agent on that Node can then change the task groups whose workspace it holds.
 
 ### Start planning from a conversation
 

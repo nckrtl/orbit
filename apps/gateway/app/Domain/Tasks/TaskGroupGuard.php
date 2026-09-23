@@ -40,7 +40,7 @@ final class TaskGroupGuard
     {
         return new ResourceOperationException(
             errorCode: 'tasks.planner_node_unavailable',
-            message: __('No app-dev Node with access to the Gateway can hold this planner.'),
+            message: __('No app-dev Node with access to itself can hold this planner.'),
             status: 409,
         );
     }

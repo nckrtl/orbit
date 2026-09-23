@@ -64,7 +64,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $intent->gatewayAccess);
+        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $intent->selfAccess);
 
         if (! $node instanceof Node) {
             return null;
@@ -256,7 +256,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     }
 
     /** @param list<string> $drivers Every driver the group uses must allow the Node. */
-    private function selectNode(OrbitApp $app, array $drivers, bool $gatewayAccess): ?Node
+    private function selectNode(OrbitApp $app, array $drivers, bool $selfAccess): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -276,7 +276,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         $eligible = $nodes
             ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)))
-            ->filter(fn (Node $node): bool => ! $gatewayAccess || $this->access->hasGatewayAuthority($node))
+            ->filter(fn (Node $node): bool => ! $selfAccess || $this->access->allows($node, $node))
             ->filter(fn (Node $node): bool => $this->ceilings->activeForNode($node->id) < TaskCeilings::PerNode)
             ->sortBy(fn (Node $node): array => [$this->ceilings->activeForNode($node->id), $node->id])
             ->values();

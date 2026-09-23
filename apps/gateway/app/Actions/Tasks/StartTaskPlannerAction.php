@@ -25,7 +25,7 @@ final readonly class StartTaskPlannerAction
     /** A group whose Instance or planner cannot start is removed, so create stores no group. */
     public function execute(TaskGroup $group): TaskGroup
     {
-        $instance = $this->provisioning->provision(InstanceProvisionIntent::for($group, gatewayAccess: true));
+        $instance = $this->provisioning->provision(InstanceProvisionIntent::for($group, selfAccess: true));
 
         if (! $instance instanceof AppInstance) {
             $group->delete();

@@ -20,7 +20,7 @@ ADR 0122 holds a group in Backlog so its ADRs, documentation, and subtasks can b
 
 The operator shapes many features while talking to an agent. The operator wants that conversation to start the planning and hand it to a dedicated thread, then keep thinking about the plan in T3, away from the session that started it.
 
-Orbit MCP identifies a caller by its WireGuard address and applies the same directed Node access as the API. A Node with access to the Gateway can call every Gateway operation. The app-dev Node that holds Orbit's task workspaces already has that access.
+Orbit MCP identifies a caller by its WireGuard address and applies the same directed Node access as the API. Every task operation requires access to the Gateway, and a Node with that access can call every Gateway operation. A planner only needs to change its own group.
 
 The reviewer thread starts at the first handoff under ADR 0121. The planner holds the most context about the feature at exactly that point.
 
@@ -33,12 +33,13 @@ A planner is an opt-in T3 thread that shapes a Backlog group through Orbit MCP a
 - `tasks:create` accepts `plan: true` for a group created in `backlog`. The Gateway then provisions the group's shared Instance at once, on the feature branch `task-{group id}`, and starts the planner thread through the T3 driver on that Instance's Node. The thread title is `Orbit task #{group id} · Planner: {title}`, so it appears in the operator's T3 client like every other task thread.
 - `plan: true` with `status: todo` fails with `tasks.plan_requires_backlog` (HTTP 422). A group without `plan` behaves as in ADR 0122.
 - The planner uses the group's reviewer model and effort. Planning requires the T3 driver for the reviewer role. Otherwise create fails with `tasks.planner_driver_unavailable` (HTTP 409) before storing a group.
-- Placement for a planning group considers only app-dev Nodes with access to the Gateway, because the planner calls Orbit MCP from its Node. When none fits, create fails with `tasks.planner_node_unavailable` (HTTP 409) and stores no group. When the T3 driver refuses the planner thread, create removes the Instance, stores no group, and fails with `tasks.planner_unavailable` (HTTP 409). The planner's T3 agent needs Orbit MCP configured on that Node; Orbit does not configure it.
+- Placement for a planning group considers only app-dev Nodes with access to themselves, because the planner changes its group through Orbit from its Node. Access to the Gateway also qualifies. Among the Nodes that fit, placement picks the one with the fewest active groups, as for every group. When none fits, create fails with `tasks.planner_node_unavailable` (HTTP 409) and stores no group. When the T3 driver refuses the planner thread, create removes the Instance, stores no group, and fails with `tasks.planner_unavailable` (HTTP 409). The planner's T3 agent needs Orbit MCP configured on that Node; Orbit does not configure it.
 - The planner's opening prompt holds the group ID, title, and brief. It tells the planner to shape the feature with the operator, following the repository's own instructions for feature design, to manage the group and its subtasks through Orbit MCP, and to move the group to Todo when the operator agrees the plan is ready. Orbit's repository maps feature design to the `grill-with-docs` skill.
 - Planning does not count toward the Node ceiling. Backlog groups never count, with or without an Instance.
 
 ### Managing the plan
 
+- `tasks:update` and the subtask create, update, and destroy operations are served by the Node that holds the group's Instance. A Node with access to itself can therefore change the groups whose workspace it holds, and nothing else. A group without an Instance is served by the Gateway, as before. Create, cancel, and complete stay Gateway operations.
 - The planner and the operator change the group through the same operations: `tasks:update` for the title, brief, and status, and the subtask operations for the subtasks. The Gateway holds the only copy of the plan, so neither side overwrites the other.
 - The ADRs and documentation stay as uncommitted changes in the workspace while the group is in Backlog.
 
@@ -66,7 +67,8 @@ A planner is an opt-in T3 thread that shapes a Backlog group through Orbit MCP a
 ## Rejected alternatives
 
 - The MCP caller writes the documents and the Gateway commits them: it works from any client, but the operator loses a dedicated thread for thinking about the plan, and nothing in the workspace checks the documents before the move to Todo.
-- A plan file in the workspace that the Gateway reads: it avoids Gateway access for the planner, but it keeps a second copy of the plan that the operator's edits and the planner's edits overwrite.
+- A plan file in the workspace that the Gateway reads: it needs no access for the planner, but it keeps a second copy of the plan that the operator's edits and the planner's edits overwrite.
+- Access to the Gateway for every planner Node: every agent on that Node then calls every Gateway operation, while a planner only changes its own group.
 - The planner posts typed comments to the Gateway: ADR 0121 removed that channel because the agent needs IDs it cannot know.
 - Only the operator may move the group to Todo: the operator already tells the planner when the plan is ready, and a second step adds no safety.
 - A fresh reviewer after planning: the planner holds the context of every decision. A long transcript may weaken its reviews; the group can revisit this with evidence from real runs.
@@ -80,7 +82,7 @@ A planner is an opt-in T3 thread that shapes a Backlog group through Orbit MCP a
 - The implementers start on a branch that already holds the committed ADRs and documentation.
 - A planning group holds an Instance and a T3 thread on a Node while it waits in Backlog. Idle planning groups use Node resources that the ceiling does not see.
 - The reviewer's context includes the planning conversation. If long transcripts weaken reviews, a new decision can start a fresh reviewer.
-- Every agent on a planner's Node can call every Gateway operation. That is already true of the Node that holds Orbit's task workspaces.
+- A Node needs access to itself to hold planners. Every agent on that Node can then change the task groups whose workspace it holds and call the other operations that Node serves.
 - A planner's Node needs Orbit MCP configured for its T3 agent, which Orbit does not check.
 
 ## Affects
