@@ -1,10 +1,10 @@
 ---
-title: "ADR 0116: Verify task evidence before review"
-sidebarTitle: "0116 Verify evidence before review"
+title: "ADR 0120: Verify task evidence before review"
+sidebarTitle: "0120 Verify evidence before review"
 description: "Proposed. First slice: automatically capture check results, require task-specific Jev questions, and consume both before requesting review."
 ---
 
-# ADR 0116: Verify task evidence before review
+# ADR 0120: Verify task evidence before review
 
 Prepare one complete path: define what a task must demonstrate, run its checks, verify the evidence, then request review. Every stored result must serve that decision. The implementation is an opt-in pilot, disabled by default. This decision remains proposed until review and evaluation are complete.
 

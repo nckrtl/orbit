@@ -3101,8 +3101,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0116-verify-task-evidence-before-review.md",
-            "title": "ADR 0116: Verify task evidence before review",
+            "path": "docs/decisions/0120-verify-task-evidence-before-review.md",
+            "title": "ADR 0120: Verify task evidence before review",
             "kind": "decision",
             "components": [
                 "apps/cli",
@@ -3128,7 +3128,7 @@
                 "0113",
                 "0114",
                 "0115",
-                "0116"
+                "0120"
             ]
         },
         {
@@ -3276,7 +3276,8 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0120"
             ]
         },
         {
@@ -4046,7 +4047,7 @@
                 "0059",
                 "0113",
                 "0114",
-                "0116",
+                "0120",
                 "2000"
             ]
         },
@@ -4359,7 +4360,7 @@
                 "0112",
                 "0113",
                 "0114",
-                "0116"
+                "0120"
             ]
         },
         {
