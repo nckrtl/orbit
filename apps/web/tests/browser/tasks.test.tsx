@@ -33,6 +33,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
                 type: "implementation",
                 target_thread_id: null,
                 completion_summary: null,
+                check: null,
                 position: 1,
                 title: "First step",
                 brief: "Acceptance details",
