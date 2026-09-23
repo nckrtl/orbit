@@ -1,10 +1,10 @@
+import { subscribeAnnotationUpdates } from "./realtime/annotations";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { queryClient } from "./api/queryClient";
-import { configureCommander } from "./annotation/commander";
-import { ensureAnnotationRuntime } from "./annotation/runtime";
+import { mountAnnotation } from "@nckrtl/annotate";
 import { createAppRouter } from "./router";
 import "./styles.css";
 
@@ -15,11 +15,28 @@ if (import.meta.env.VITE_ORBIT_DEMO) {
 
 // Mount annotation overlay + document listeners once for the app lifetime.
 // Do not createRoot/teardown from AnnotationChrome (StrictMode double-mount races).
-configureCommander({
-    enabled: import.meta.env.VITE_COMMANDER_ENABLED !== "0",
-    project: import.meta.env.VITE_COMMANDER_PROJECT || "commander",
+const annotation = mountAnnotation({
+    serviceUrl: import.meta.env.VITE_ANNOTATION_SERVICE_URL,
+    realtime: { configUrl: "/api/v1/realtime", subscribe: subscribeAnnotationUpdates },
+    thread: {
+        id: import.meta.env.VITE_ANNOTATION_THREAD_ID,
+        discoveryUrl: import.meta.env.DEV ? "/__annotate/thread" : undefined,
+    },
+    commander: {
+        enabled:
+            !import.meta.env.VITE_ANNOTATION_SERVICE_URL &&
+            import.meta.env.VITE_COMMANDER_ENABLED === "1",
+        project: import.meta.env.VITE_COMMANDER_PROJECT || "commander",
+    },
+    dictation: {
+        provider: import.meta.env.VITE_ANNOTATION_DICTATION_PROVIDER,
+        postUrl: import.meta.env.VITE_ANNOTATION_DICTATION_POST_URL,
+        stopUrl: import.meta.env.VITE_ANNOTATION_DICTATION_STOP_URL,
+        wsUrl: import.meta.env.VITE_ANNOTATION_TRANSCRIPTION_URL,
+        autoStart: import.meta.env.VITE_ANNOTATION_AUTO_START !== "0",
+    },
 });
-ensureAnnotationRuntime();
+if (import.meta.hot) import.meta.hot.dispose(() => annotation.destroy());
 
 const router = createAppRouter();
 

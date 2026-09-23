@@ -1,3 +1,4 @@
+import { notifyAnnotationUpdates } from "./annotations";
 import type { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
 import { get } from "../api/client";
@@ -88,6 +89,7 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
                 void client.invalidateQueries();
             }
 
+            notifyAnnotationUpdates();
             wasLive = true;
             setLiveness("live");
         });
@@ -111,6 +113,11 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
                 typeof event.data === "object" &&
                 event.data !== null
             ) {
+                if (event.type === "annotation.updated") {
+                    notifyAnnotationUpdates();
+                    void client.invalidateQueries({ queryKey: ["instance-annotations"] });
+                    void client.invalidateQueries({ queryKey: ["task-groups"] });
+                }
                 applyEvent(client, event as RealtimeEvent);
             }
         });

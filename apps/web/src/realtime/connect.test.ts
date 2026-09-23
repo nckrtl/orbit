@@ -1,3 +1,4 @@
+import { subscribeAnnotationUpdates } from "./annotations";
 import { getEventListeners } from "node:events";
 import { QueryClient } from "@tanstack/react-query";
 import Pusher from "pusher-js";
@@ -282,4 +283,25 @@ it("unbinds callbacks before disconnect and ignores callbacks already queued by 
     expect(client.getQueryData(["processes"])).toEqual([{ id: 1, runtime_status: "inactive" }]);
     expect(pusher.disconnect).toHaveBeenCalledOnce();
     expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+});
+
+it("shares the existing socket with annotation subscribers and refreshes on reconnect", async () => {
+    const refresh = vi.fn();
+    const unsubscribe = subscribeAnnotationUpdates(refresh);
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await connectRealtime(client, controller.signal);
+    const channel = sockets[0]!.channel;
+    channel.emit("pusher:subscription_succeeded");
+    channel.emit("annotation.updated", {
+        type: "annotation.updated",
+        id: "note",
+        data: { instanceId: 107, revision: 2 },
+    });
+    channel.emit("pusher:subscription_succeeded");
+    expect(refresh).toHaveBeenCalledTimes(3);
+    expect(Pusher).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["instance-annotations"] });
+    unsubscribe();
+    channel.emit("annotation.updated", { type: "annotation.updated", data: {} });
+    expect(refresh).toHaveBeenCalledTimes(3);
 });

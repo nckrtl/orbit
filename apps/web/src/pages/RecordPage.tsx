@@ -1,7 +1,9 @@
+import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
+import { TasksBoard } from "./Tasks";
 import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
     databaseTablesQuery,
     databaseUsersQuery,
@@ -416,6 +418,80 @@ function analyticsProperties(analytics: InstanceAnalytics | undefined): Property
 }
 
 function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
+    const [tab, setTab] = useState<"overview" | "tasks">("overview");
+    const groups = useQuery(taskGroupsQuery);
+    const taskCount = tasksForInstance(groups.data ?? [], instance.id).length;
+    return (
+        <div className={`flex h-full min-h-0 min-w-0 flex-row ${GAPS}`}>
+            <Frame
+                title="Menu"
+                label="Instance navigation"
+                className="w-[16ch] min-h-0 shrink-0 self-stretch"
+            >
+                <div
+                    role="tablist"
+                    aria-label="Instance sections"
+                    aria-orientation="vertical"
+                    className="flex flex-col gap-1"
+                >
+                    {(["overview", "tasks"] as const).map((section, index) => (
+                        <button
+                            key={section}
+                            id={`instance-${instance.id}-${section}-tab`}
+                            role="tab"
+                            type="button"
+                            aria-selected={tab === section}
+                            aria-controls={`instance-${instance.id}-${section}-panel`}
+                            tabIndex={tab === section ? 0 : -1}
+                            className="row nav-row text-left focus-visible:outline-2 focus-visible:outline-cyan"
+                            style={{ gridTemplateColumns: "1fr auto" }}
+                            data-link=""
+                            data-selected={tab === section ? "" : undefined}
+                            data-focused=""
+                            onClick={() => setTab(section)}
+                            onKeyDown={(event) => {
+                                if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
+                                    return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                const next =
+                                    event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - index;
+                                setTab(next === 0 ? "overview" : "tasks");
+                                event.currentTarget.parentElement
+                                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                                    [next]?.focus();
+                            }}
+                        >
+                            <span>{section === "overview" ? "Overview" : "Tasks"}</span>
+                            {section === "tasks" && taskCount > 0 && (
+                                <span className="font-normal">{taskCount}</span>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            </Frame>
+            {(["overview", "tasks"] as const).map((section) => (
+                <div
+                    key={section}
+                    id={`instance-${instance.id}-${section}-panel`}
+                    role="tabpanel"
+                    aria-labelledby={`instance-${instance.id}-${section}-tab`}
+                    hidden={tab !== section}
+                    className="min-h-0 min-w-0 flex-1"
+                >
+                    {tab === section &&
+                        (section === "overview" ? (
+                            <InstanceOverview fleet={fleet} instance={instance} />
+                        ) : (
+                            <TasksBoard instanceId={instance.id} />
+                        ))}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
     const go = useGo();
     const deployments = useQuery(deploymentsQuery(instance.id));
     const logs = useQuery(instanceLogsQuery(instance.id));
@@ -724,7 +800,7 @@ export function RecordPage() {
                 return (
                     instance && (
                         <RecordLayout kind="instances" row={instance}>
-                            <InstancePage fleet={fleet} instance={instance} />
+                            <InstancePage key={instance.id} fleet={fleet} instance={instance} />
                         </RecordLayout>
                     )
                 );

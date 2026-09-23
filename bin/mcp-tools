@@ -24,6 +24,7 @@ OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
 # the wake page a browser receives, the completion report a Node's schedule timer posts, and the two pages
 # that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
+    'annotation-events',
     'tasks-agent-stream',
     'realtime-auth',
     'metrics-grafana-authorize',

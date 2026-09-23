@@ -1,0 +1,162 @@
+/*
+ * Self-contained annotation Shadow DOM stylesheet.
+ * Mirrors laravel-toolbar resources/css/toolbar.css isolation:
+ * Tailwind is compiled into this sheet and adopted on the annotation host shadow root.
+ * Do not rely on Orbit document styles.css piercing the shadow.
+ */
+
+@import "tailwindcss" source(none);
+
+@source "./**/*.{ts,tsx}";
+
+/*
+ * Annotation overlay tokens (from toolbar.css / former toolbar-annotation.css).
+ */
+#laravel-toolbar-annotation-root {
+    --toolbar-font-size: 0.75rem;
+    --toolbar-line-height: 1rem;
+    --toolbar-annotation-line-height: 1.25rem;
+    --toolbar-control-size: 26px;
+    --toolbar-icon-size: 13px;
+    font-size: var(--toolbar-font-size);
+    line-height: var(--toolbar-line-height);
+}
+
+#laravel-toolbar-annotation-root[data-toolbar-font-size="small"] {
+    --toolbar-font-size: 0.625rem;
+    --toolbar-line-height: 0.875rem;
+    --toolbar-annotation-line-height: 1.125rem;
+    --toolbar-control-size: 24px;
+    --toolbar-icon-size: 12px;
+}
+
+#laravel-toolbar-annotation-root[data-toolbar-font-size="large"] {
+    --toolbar-font-size: 0.875rem;
+    --toolbar-line-height: 1.25rem;
+    --toolbar-annotation-line-height: 1.375rem;
+    --toolbar-control-size: 28px;
+    --toolbar-icon-size: 14px;
+}
+
+#laravel-toolbar-annotation-root {
+    --radius: 0.625rem;
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+}
+
+/*
+ * Tailwind v4 utility variable defaults for Shadow DOM
+ * (host document theme vars do not pierce the shadow).
+ */
+@layer base {
+    *,
+    ::before,
+    ::after {
+        --tw-border-style: solid;
+        --tw-border-width: 0px;
+        --tw-translate-x: 0;
+        --tw-translate-y: 0;
+        --tw-rotate: 0;
+        --tw-skew-x: 0;
+        --tw-skew-y: 0;
+        --tw-scale-x: 1;
+        --tw-scale-y: 1;
+        --tw-ring-offset-width: 0px;
+        --tw-ring-offset-color: #fff;
+        --tw-ring-color: rgb(59 130 246 / 0.5);
+        --tw-ring-offset-shadow: 0 0 #0000;
+        --tw-ring-shadow: 0 0 #0000;
+        --tw-shadow: 0 0 #0000;
+        --tw-shadow-colored: 0 0 #0000;
+    }
+}
+
+@keyframes toolbar-annotation-shake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    25% {
+        transform: translateX(-4px);
+    }
+    75% {
+        transform: translateX(4px);
+    }
+}
+.toolbar-annotation-shake {
+    animation: toolbar-annotation-shake 0.25s ease;
+}
+
+@keyframes toolbar-annotation-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+.toolbar-annotation-spin {
+    animation: toolbar-annotation-spin 0.7s linear infinite;
+}
+
+@keyframes toolbar-annotation-marker-in {
+    0% {
+        opacity: 0;
+        scale: 0.3;
+    }
+    100% {
+        opacity: 1;
+        scale: 1;
+    }
+}
+.toolbar-annotation-marker-in {
+    animation: toolbar-annotation-marker-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes toolbar-annotation-marker-pulse {
+    0% {
+        opacity: 0.55;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(2.15);
+    }
+}
+.toolbar-annotation-marker-pulse {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 2px solid var(--toolbar-annotation-pulse);
+    pointer-events: none;
+    animation: toolbar-annotation-marker-pulse 1.7s ease-out infinite;
+}
+.toolbar-annotation-marker-pulse-delay {
+    animation-delay: 0.85s;
+}
+@media (prefers-reduced-motion: reduce) {
+    .toolbar-annotation-marker-pulse {
+        animation: none;
+        opacity: 0.4;
+        transform: scale(1.25);
+    }
+    .toolbar-annotation-marker-pulse-delay {
+        display: none;
+    }
+}

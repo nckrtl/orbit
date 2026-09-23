@@ -83,6 +83,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             $group->brief,
+            $this->contract($group).' Review each subtask against them.',
         ]);
     }
 
@@ -95,7 +96,17 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             'Orbit subtask #'.$task->id,
             'Subtask: '.$task->title,
             $task->brief,
+            $this->contract($group).' Build to them.',
         ]);
+    }
+
+    /** ADR 0122: the ADRs and documentation prepared on the branch while the group was in Backlog. */
+    private function contract(TaskGroup $group): string
+    {
+        $branch = $group->app->default_branch;
+        $base = is_string($branch) && $branch !== '' ? '`origin/'.$branch.'`' : 'the Project default branch';
+
+        return 'The ADRs and documentation that this branch changes against '.$base.' are the feature\'s contract.';
     }
 
     private function reviewPrompt(Task $task): string

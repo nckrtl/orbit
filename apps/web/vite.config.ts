@@ -1,9 +1,11 @@
+import { annotationServerProxy } from "../../packages/agent-annotation/bin/vite.mjs";
+import { annotationThread } from "./dev/annotation-thread.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent } from "node:https";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite-plus";
+import { defineConfig, loadEnv, type Plugin } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
 import { gatewayProfile, grafanaTarget, realtimeTarget } from "./dev/gateway-profile.ts";
 import { commanderOneShot } from "./dev/commander-oneshot.ts";
@@ -68,12 +70,61 @@ function orbitGateway(): Plugin {
     };
 }
 
+function annotationSpeech(): Plugin {
+    return {
+        name: "annotation-speech",
+        config(_, { mode }) {
+            const target =
+                process.env.ANNOTATION_TRANSCRIPTION_TARGET ??
+                loadEnv(mode, rootDir, "ANNOTATION_").ANNOTATION_TRANSCRIPTION_TARGET;
+            if (!target) return;
+            return {
+                server: {
+                    proxy: {
+                        "/__annotate/speech": {
+                            target,
+                            ws: true,
+                            changeOrigin: true,
+                            rewrite: (url: string) =>
+                                url.replace(/^\/__annotate\/speech/, "/v1/audio/stream"),
+                        },
+                    },
+                },
+            };
+        },
+    };
+}
+
 export default defineConfig({
-    plugins: [react(), tailwindcss(), orbitGateway(), commanderOneShot(), orbitProfile()],
-    resolve: { alias: { "@": path.join(rootDir, "src") } },
+    plugins: [
+        react(),
+        tailwindcss(),
+        orbitGateway(),
+        commanderOneShot(),
+        orbitProfile(),
+        annotationSpeech(),
+        annotationThread(),
+        annotationServerProxy(),
+    ],
+    resolve: {
+        alias: [
+            {
+                find: /^@nckrtl\/annotate$/,
+                replacement: path.resolve(rootDir, "../../packages/agent-annotation/src/index.ts"),
+            },
+            {
+                find: "@nckrtl/annotate",
+                replacement: path.resolve(rootDir, "../../packages/agent-annotation/src"),
+            },
+            { find: "@", replacement: path.join(rootDir, "src") },
+        ],
+        dedupe: ["react", "react-dom"],
+    },
     define: { __ORBIT_GATEWAY__: "null" },
     // The demo Gateway imports recorded fixtures from the SDK package, outside this app.
-    server: { fs: { allow: [".", "../../packages/php-sdk/fixtures"] } },
+    server: {
+        fs: { allow: [".", "../../packages/php-sdk/fixtures", "../../packages/agent-annotation"] },
+    },
     test: {
         projects: [
             // Pure logic: health rules, event application, log and uptime formatting.

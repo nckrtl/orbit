@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\TaskGroupStatus;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -18,6 +19,7 @@ final class CreateTaskGroupData extends Data
         public int $appId,
         public string $title,
         public string $brief,
+        public TaskGroupStatus $status,
         public bool $notifyCoder,
         public array $tasks,
     ) {}

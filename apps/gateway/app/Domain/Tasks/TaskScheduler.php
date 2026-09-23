@@ -43,7 +43,7 @@ final readonly class TaskScheduler
             return [];
         }
 
-        $groups = TaskGroup::query()
+        $groups = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
             ->with(['app', 'tasks', 'taskable'])
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
             ->orderBy('id')
@@ -582,9 +582,9 @@ final readonly class TaskScheduler
     public function claimNext(): ?TaskGroup
     {
         $reserved = DB::transaction(function (): ?TaskGroup {
-            $candidates = TaskGroup::query()
+            $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'taskable'])
-                ->where('status', TaskGroupStatus::Queued)
+                ->where('status', TaskGroupStatus::Todo)
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
@@ -613,13 +613,13 @@ final readonly class TaskScheduler
         ));
 
         if (! $instance instanceof AppInstance) {
-            $reserved->update(['status' => TaskGroupStatus::Queued]);
+            $reserved->update(['status' => TaskGroupStatus::Todo]);
 
             return null;
         }
 
         $started = DB::transaction(function () use ($reserved, $instance): TaskGroup {
-            $group = TaskGroup::query()
+            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'app', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($reserved->id);
@@ -628,7 +628,7 @@ final readonly class TaskScheduler
             $group->load('taskable');
 
             if (! $this->ceilings->canActivate($group)) {
-                $group->status = TaskGroupStatus::Queued;
+                $group->status = TaskGroupStatus::Todo;
                 $group->taskable()->dissociate();
                 $group->save();
 
@@ -694,9 +694,10 @@ final readonly class TaskScheduler
 
     public function settleImplementer(Task $task, ?string $turnId = null): TaskGroup
     {
+        $task->taskGroup->requireManagedExecution();
         $group = DB::transaction(function () use ($task): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()
+            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'app', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($locked->task_group_id);
@@ -726,6 +727,7 @@ final readonly class TaskScheduler
 
     public function startTask(Task $task): TaskGroup
     {
+        $task->taskGroup->requireManagedExecution();
         $started = $this->activateRunningTask($task);
         $this->recordSubtaskStart($started);
         $this->assignImplementer($started);
@@ -737,11 +739,12 @@ final readonly class TaskScheduler
 
     public function acceptReview(Task $task): TaskGroup
     {
+        $task->taskGroup->requireManagedExecution();
         /** @var Task|null $next */
         $next = null;
         $group = DB::transaction(function () use ($task, &$next): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()
+            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'app', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($locked->task_group_id);
@@ -755,7 +758,7 @@ final readonly class TaskScheduler
             $locked->save();
 
             $tasks = $this->lockedTasks($group);
-            $next = $this->lowestPending($tasks);
+            $next = $this->lowestTodo($tasks);
 
             if ($next instanceof Task) {
                 try {
@@ -790,6 +793,7 @@ final readonly class TaskScheduler
 
     public function settle(TaskGroup $group): TaskGroup
     {
+        $group->requireManagedExecution();
         $group->loadMissing(['app', 'tasks', 'taskable']);
 
         if ($group->status !== TaskGroupStatus::Settling) {
@@ -835,7 +839,7 @@ final readonly class TaskScheduler
     {
         $first = $this->orderedTasks($group->tasks)->first();
 
-        if (! $first instanceof Task || $first->status !== TaskStatus::Pending) {
+        if (! $first instanceof Task || $first->status !== TaskStatus::Todo) {
             return;
         }
 
@@ -852,7 +856,7 @@ final readonly class TaskScheduler
     {
         return DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()
+            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
                 ->findOrFail($locked->task_group_id);
             $tasks = $this->lockedTasks($group);
@@ -876,7 +880,7 @@ final readonly class TaskScheduler
             throw TaskSequenceException::siblingRunning($task->task_group_id, $running->id);
         }
 
-        $next = $this->lowestPending($tasks);
+        $next = $this->lowestTodo($tasks);
 
         if (! $next instanceof Task || $next->id !== $task->id || ! $this->predecessorsCompleted($task, $tasks)) {
             throw TaskSequenceException::notNext($task->id, $task->task_group_id);
@@ -949,10 +953,10 @@ final readonly class TaskScheduler
     }
 
     /** @param  Collection<int, Task>  $tasks */
-    private function lowestPending(Collection $tasks): ?Task
+    private function lowestTodo(Collection $tasks): ?Task
     {
         return $this->orderedTasks($tasks)->first(
-            static fn (Task $task): bool => $task->status === TaskStatus::Pending,
+            static fn (Task $task): bool => $task->status === TaskStatus::Todo,
         );
     }
 

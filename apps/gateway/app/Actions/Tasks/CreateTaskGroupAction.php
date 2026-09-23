@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
@@ -34,13 +35,17 @@ final readonly class CreateTaskGroupAction
             throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
         }
 
+        if ($data->status === TaskGroupStatus::Todo && $data->tasks === []) {
+            throw TaskGroupGuard::noSubtasks();
+        }
+
         $group = TaskGroup::query()->create([
             'app_id' => $data->appId,
             'implementer_agent_driver' => $implementerDriver,
             'reviewer_agent_driver' => $reviewerDriver,
             'title' => $data->title,
             'brief' => $data->brief,
-            'status' => TaskGroupStatus::Queued,
+            'status' => $data->status,
             'notify_coder' => $data->notifyCoder,
             'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
             'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
@@ -52,11 +57,13 @@ final readonly class CreateTaskGroupAction
                 'position' => $index + 1,
                 'title' => $task->title,
                 'brief' => $task->brief,
-                'status' => TaskStatus::Pending,
+                'status' => TaskStatus::Todo,
             ]);
         }
 
-        $this->scheduler->claimNext();
+        if ($data->status === TaskGroupStatus::Todo) {
+            $this->scheduler->claimNext();
+        }
 
         return $group->refresh()->load(['app', 'tasks', 'taskable']);
     }

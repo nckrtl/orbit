@@ -9,6 +9,7 @@ describe('RecordEventType', function (): void {
         $values = array_map(static fn (RecordEventType $case): string => $case->value, RecordEventType::cases());
 
         expect($values)->toBe([
+            'annotation.updated',
             'node.created',
             'node.updated',
             'node.deleted',

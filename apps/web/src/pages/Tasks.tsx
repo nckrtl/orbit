@@ -15,6 +15,7 @@ import {
     taskColumn,
     taskGroupQuery,
     taskGroupsQuery,
+    tasksForInstance,
     taskIdentity,
     taskStatusLabels,
     type Task,
@@ -26,9 +27,10 @@ import { PageHeader } from "../ui/PageHeader";
 import { Properties } from "../ui/Properties";
 import { useGo } from "../ui/go";
 
-const columns: TaskColumn[] = ["Todo", "In progress", "Done"];
+const columns: TaskColumn[] = ["Backlog", "Todo", "In progress", "Done"];
+const subtaskColumns: TaskColumn[] = ["Todo", "In progress", "Done"];
 
-function TaskStatus({ status }: { status: TaskGroup["status"] | "pending" }) {
+function TaskStatus({ status }: { status: TaskGroup["status"] }) {
     const color =
         status === "failed"
             ? "text-red"
@@ -72,6 +74,19 @@ function taskProperties(
 ) {
     return [
         { name: "Title", value: detail.title },
+        ...(group.execution_mode === "existing_thread"
+            ? [
+                  { name: "Type", value: "Annotation" },
+                  { name: "Execution", value: "Existing T3 thread" },
+                  {
+                      name: "Thread",
+                      value:
+                          ("target_thread_id" in detail
+                              ? detail.target_thread_id
+                              : group.tasks[0]?.target_thread_id) ?? "Unassigned",
+                  },
+              ]
+            : []),
         {
             name: "Status",
             value: taskColumn(detail.status),
@@ -149,7 +164,7 @@ function CardFooter({
     progress?: { completed: number; total: number };
 }) {
     const column = taskColumn(task.status);
-    if (column === "Todo") return null;
+    if (column === "Backlog" || column === "Todo") return null;
 
     const duration = formatCardDuration(task.duration_ms);
     const progressLabel =
@@ -203,17 +218,19 @@ function KanbanCardBody({
 const kanbanCardClassName =
     "kanban-card block rounded-[2px] focus-visible:outline-2 focus-visible:outline-cyan";
 
-export function TasksBoard() {
+export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
     const groups = useQuery(taskGroupsQuery);
+    const visibleGroups =
+        instanceId === undefined ? groups.data : tasksForInstance(groups.data ?? [], instanceId);
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
-            <PageHeader trail={[{ label: "Tasks" }]} />
+            {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
             {groups.data && !groups.error && (
-                <div className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-3">
+                <div className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-4">
                     {columns.map((column) => {
-                        const tasks = groups.data.filter(
+                        const tasks = (visibleGroups ?? []).filter(
                             (group) => taskColumn(group.status) === column,
                         );
                         return (
@@ -226,11 +243,13 @@ export function TasksBoard() {
                             >
                                 {tasks.length === 0 && (
                                     <p className="text-dim">
-                                        {column === "Todo"
-                                            ? "No tasks waiting."
-                                            : column === "In progress"
-                                              ? "No tasks in progress."
-                                              : "No finished tasks yet."}
+                                        {column === "Backlog"
+                                            ? "No tasks being prepared."
+                                            : column === "Todo"
+                                              ? "No tasks waiting."
+                                              : column === "In progress"
+                                                ? "No tasks in progress."
+                                                : "No finished tasks yet."}
                                     </p>
                                 )}
                                 {tasks.map((group) => (
@@ -335,7 +354,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                     {subtaskId === undefined && (
                         <section aria-label="Subtasks" className="shrink-0">
                             <div className="kanban-board grid grid-cols-1 lg:grid-cols-3">
-                                {columns.map((column) => {
+                                {subtaskColumns.map((column) => {
                                     const subtasks = task.tasks
                                         .filter((subtask) => taskColumn(subtask.status) === column)
                                         .sort((a, b) => a.position - b.position);

@@ -83,7 +83,7 @@ function queued_group(OrbitApp $app, string $title, ?AppInstance $instance = nul
         'app_id' => $app->id,
         'title' => $title,
         'brief' => "{$title} brief",
-        'status' => TaskGroupStatus::Queued,
+        'status' => TaskGroupStatus::Todo,
     ]);
 
     Task::query()->create([
@@ -91,7 +91,7 @@ function queued_group(OrbitApp $app, string $title, ?AppInstance $instance = nul
         'position' => 1,
         'title' => "{$title} first",
         'brief' => 'First subtask',
-        'status' => TaskStatus::Pending,
+        'status' => TaskStatus::Todo,
     ]);
 
     if ($instance instanceof AppInstance) {
@@ -109,7 +109,7 @@ function scheduler_pending_task(TaskGroup $group, int $position, string $title):
         'position' => $position,
         'title' => $title,
         'brief' => "{$title} subtask",
-        'status' => TaskStatus::Pending,
+        'status' => TaskStatus::Todo,
     ]);
 }
 
@@ -171,10 +171,10 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
     $scheduler = app(TaskScheduler::class);
 
     expect($scheduler->claimNext())->toBeNull()
-        ->and($first->fresh()?->status)->toBe(TaskGroupStatus::Queued)
-        ->and($second->fresh()?->status)->toBe(TaskGroupStatus::Queued)
-        ->and($third->fresh()?->status)->toBe(TaskGroupStatus::Queued)
-        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and($first->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+        ->and($second->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+        ->and($third->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+        ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(0);
 });
 
@@ -189,7 +189,7 @@ it('does not count completed groups toward the App ceiling', function (): void {
     $queued = queued_group($app, 'Next');
 
     expect(app(TaskScheduler::class)->claimNext())->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
 });
 
 it('claims another group when three reserved groups already occupy the App', function (): void {
@@ -205,7 +205,7 @@ it('claims another group when three reserved groups already occupy the App', fun
     $queued = queued_group($app, 'Overflow');
 
     expect(app(TaskScheduler::class)->claimNext())->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
 });
 
 it('applies the Node ceiling only after an App instance is assigned', function (): void {
@@ -230,7 +230,7 @@ it('applies the Node ceiling only after an App instance is assigned', function (
 
     expect(app(TaskConcurrencyGuard::class)->activeForNode($node->id))->toBe(TaskCeilings::PerNode)
         ->and(app(TaskScheduler::class)->claimNext())->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued);
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
 });
 
 it('starts a group when provisioning assigns an instance under both ceilings', function (): void {
@@ -412,7 +412,7 @@ it('fails the group when a later implementer spawn returns no thread id', functi
         'position' => 2,
         'title' => 'Second',
         'brief' => 'Next subtask',
-        'status' => TaskStatus::Pending,
+        'status' => TaskStatus::Todo,
     ]);
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
@@ -483,7 +483,7 @@ it('leaves a provisioned group reserved when the Node is already at the ceiling'
     $claimed = app(TaskScheduler::class)->claimNext();
 
     expect($claimed)->toBeNull()
-        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Queued)
+        ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($queued->fresh()?->taskable_id)->toBeNull()
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
@@ -579,7 +579,7 @@ it('starts only the first pending subtask when a claimed group has later sibling
     $tasks = $claimed?->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Running)
-        ->and($tasks?->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Pending])
+        ->and($tasks?->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Todo])
         ->and($tasks?->get(0)?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-1')->sole()->id)
         ->and($tasks?->get(1)?->implementer_agent_thread_id)->toBeNull()
         ->and($spawner->events)->toBe(['implementer:1']);
@@ -607,7 +607,7 @@ it('rejects starting a later subtask while a sibling is still running', function
         ->sortBy(fn (Task $task): array => [$task->position, $task->id])
         ->values();
 
-    expect($tasks->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Pending])
+    expect($tasks->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Todo])
         ->and($tasks->get(1)?->implementer_agent_thread_id)->toBeNull()
         ->and($spawner->events)->toBe(['implementer:1']);
 });
@@ -643,7 +643,7 @@ it('starts the reviewer at the first handoff, reuses it for later handoffs, and 
         'position' => 2,
         'title' => 'Second',
         'brief' => 'Next subtask',
-        'status' => TaskStatus::Pending,
+        'status' => TaskStatus::Todo,
     ]);
     $spawner = new class implements AgentSpawner
     {

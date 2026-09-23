@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\AnnotationsController;
 use App\Http\Controllers\Api\AppInstanceClonesController;
 use App\Http\Controllers\Api\AppInstanceDependenciesController;
 use App\Http\Controllers\Api\AppInstanceDeploymentsController;
@@ -60,6 +61,15 @@ use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
+        ->prefix('instances/{instance}/annotations')->group(function (): void {
+            Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');
+            Route::post('', [AnnotationsController::class, 'store'])->name('annotation:create');
+            Route::get('events', [AnnotationsController::class, 'events'])->withoutMiddleware(RecordCommandActivity::class)->name('annotation:events');
+            Route::post('{annotation}/status', [AnnotationsController::class, 'update'])->name('annotation:update');
+            Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
+        });
+
     Route::get('gateway/status', [GatewayStatusesController::class, 'show'])
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
@@ -548,9 +558,16 @@ Route::prefix('v1')->group(function (): void {
         Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
             ->whereNumber('group')
             ->name('tasks:show');
-        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'addTask'])
+        Route::patch('task-groups/{group}', [TaskGroupsController::class, 'update'])
             ->whereNumber('group')
-            ->name('tasks:add');
+            ->name('tasks:update');
+        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'createTask'])
+            ->whereNumber('group')
+            ->name('tasks:subtask:create');
+        Route::patch('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'updateTask'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:update');
+        Route::delete('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:destroy');
         Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
         Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])

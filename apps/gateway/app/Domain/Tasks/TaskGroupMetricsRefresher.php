@@ -23,7 +23,7 @@ final readonly class TaskGroupMetricsRefresher
     {
         $group->loadMissing(['app', 'tasks', 'taskable']);
 
-        if (! $group->status->isActive()) {
+        if ($group->execution_mode !== TaskExecutionMode::Managed || ! $group->status->isActive()) {
             return $group;
         }
 

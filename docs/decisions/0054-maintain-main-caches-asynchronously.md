@@ -39,7 +39,7 @@ Worktree creation waits for main test recording even when compatible successful 
 - New worktrees can start with compatible earlier main caches while maintenance catches up.
 - Another feature can merge before a previous integration failure is detected.
 - Background maintenance needs durable requests, observable failures, and recovery after missed closeout or worker interruption.
-- Hosted GitHub Actions cache for `.orbit-tia` and PHPStan `resultCache.php` is a separate CI mechanism and does not replace repository `bin/tia-cache` publications.
+- Hosted GitHub Actions cache for `.orbit-tia`, PHPStan `resultCache.php`, `vendor/pint.cache`, and `vendor/rector/cache` is a separate CI mechanism and does not replace repository `bin/tia-cache` publications.
 
 ## Affects
 

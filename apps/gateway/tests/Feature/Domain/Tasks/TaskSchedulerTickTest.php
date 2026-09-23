@@ -666,7 +666,7 @@ it('ignores tasks that are not in progress even when they have a thread', functi
     expect($decisions)->toBe([])
         ->and($task->fresh()->status)->toBe($status);
     Classification::assertNothingClassified();
-})->with([TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled]);
+})->with([TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled]);
 
 it('does not classify an in-progress task without an attached session', function (): void {
     $group = tick_group();
@@ -1153,7 +1153,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
     $group = tick_group();
     $task = $group->tasks->sole();
     if (! $last) {
-        Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Pending]);
+        Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
     }
     $group->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn']);

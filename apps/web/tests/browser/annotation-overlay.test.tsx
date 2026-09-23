@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { ANNOTATION_HOST_ID, ANNOTATION_ROOT_ID } from "../../src/annotation/host";
+import { ANNOTATION_HOST_ID, ANNOTATION_ROOT_ID } from "@nckrtl/annotate/host";
 import { openApp } from "./app";
 
 function annotationShadow(): ShadowRoot {
@@ -102,7 +102,7 @@ it("mounts annotation in open Shadow DOM with sized controls and blocks row navi
         })
         .toBe(true);
 
-    const field = page.getByPlaceholder("What should change?");
+    const field = page.getByPlaceholder("Listening");
     await expect.element(field).toBeVisible();
     await field.fill("shadow control sizing");
 

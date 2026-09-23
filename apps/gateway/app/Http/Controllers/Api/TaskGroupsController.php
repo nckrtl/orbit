@@ -4,24 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Tasks\AddTaskAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\CreateTaskAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Actions\Tasks\DestroyTaskAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Actions\Tasks\UpdateTaskAction;
+use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Tasks\AddTaskRequest;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
+use App\Http\Requests\Tasks\CreateTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
+use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
+use App\Http\Requests\Tasks\UpdateTaskRequest;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -42,7 +47,16 @@ final class TaskGroupsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function addTask(AddTaskRequest $request, TaskGroup $group, AddTaskAction $action): JsonResponse
+    public function update(UpdateTaskGroupRequest $request, TaskGroup $group, UpdateTaskGroupAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => TaskGroupData::fromModel($action->execute($group, $request->payload()))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function createTask(CreateTaskRequest $request, TaskGroup $group, CreateTaskAction $action): JsonResponse
     {
         $task = $action->execute($group, $request->payload());
 
@@ -50,6 +64,28 @@ final class TaskGroupsController extends Controller
             'data' => TaskData::fromModel($task)->toArray(),
             'meta' => $this->meta($request),
         ], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function updateTask(UpdateTaskRequest $request, TaskGroup $group, Task $task, UpdateTaskAction $action): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+
+        return response()->json([
+            'data' => TaskData::fromModel($action->execute($group, $task, $request->payload()))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function destroyTask(EmptyTasksRequest $request, TaskGroup $group, Task $task, DestroyTaskAction $action): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+
+        return response()->json([
+            'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]

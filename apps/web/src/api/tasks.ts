@@ -13,14 +13,15 @@ export type TaskGroup = Omit<
         tasks: Task[];
         project_code?: string;
     };
-export type TaskColumn = "Todo" | "In progress" | "Done";
+export type TaskColumn = "Backlog" | "Todo" | "In progress" | "Done";
 
 export function taskIdentity(id: number, projectCode?: string): string {
     return projectCode ? `${projectCode}-${id}` : `#${id}`;
 }
 
 export function taskColumn(status: TaskGroup["status"] | Task["status"]): TaskColumn {
-    if (status === "queued" || status === "pending") return "Todo";
+    if (status === "backlog") return "Backlog";
+    if (status === "todo") return "Todo";
     if (["completed", "failed", "cancelled"].includes(status)) return "Done";
     return "In progress";
 }
@@ -129,9 +130,9 @@ export function formatDurationMs(value: number | null | undefined): string | nul
     return parts.join(" ");
 }
 
-export const taskStatusLabels: Record<TaskGroup["status"] | "pending", string> = {
-    queued: "Waiting for capacity",
-    pending: "Pending",
+export const taskStatusLabels: Record<TaskGroup["status"], string> = {
+    backlog: "Being prepared",
+    todo: "Waiting for capacity",
     reserved: "Preparing workspace",
     running: "Running",
     reviewing: "In review",
@@ -140,6 +141,13 @@ export const taskStatusLabels: Record<TaskGroup["status"] | "pending", string> =
     failed: "Failed",
     cancelled: "Cancelled",
 };
+
+/** Task groups shown on an Instance's board and counted in its navigation. */
+export function tasksForInstance(groups: readonly TaskGroup[], instanceId: number): TaskGroup[] {
+    return groups.filter(
+        (group) => group.taskable_type === "instance" && group.taskable_id === instanceId,
+    );
+}
 
 export const taskGroupsQuery = queryOptions({
     queryKey: ["task-groups"],

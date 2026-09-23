@@ -58,6 +58,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function (Schedule $schedule): void {
         app(TaskSchedule::class)->register($schedule);
+        $schedule->command('annotations:dispatch')->everyTenSeconds()->withoutOverlapping();
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

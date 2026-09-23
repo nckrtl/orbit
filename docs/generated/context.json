@@ -2789,7 +2789,8 @@
                 "0098",
                 "0103",
                 "0112",
-                "0113"
+                "0113",
+                "0122"
             ]
         },
         {
@@ -3193,6 +3194,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0120-extract-agent-annotation-package.md",
+            "title": "ADR 0120: Extract the agent annotation package",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0120"
+            ]
+        },
+        {
             "path": "docs/decisions/0121-end-agent-turns-with-a-run-receipt.md",
             "title": "ADR 0121: End agent turns with a run receipt",
             "kind": "decision",
@@ -3212,6 +3231,28 @@
                 "0114",
                 "0117",
                 "0121"
+            ]
+        },
+        {
+            "path": "docs/decisions/0122-hold-task-groups-in-backlog-until-ready.md",
+            "title": "ADR 0122: Hold task groups in Backlog until they are ready",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0010",
+                "0071",
+                "0103",
+                "0122"
             ]
         },
         {
@@ -3362,7 +3403,9 @@
                 "0114",
                 "0116",
                 "0117",
-                "0121"
+                "0120",
+                "0121",
+                "0122"
             ]
         },
         {
@@ -3451,6 +3494,25 @@
                 "Project",
                 "Route",
                 "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/agent-annotation.md",
+            "title": "Agent annotation package",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task",
+                "Task group",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -4455,7 +4517,8 @@
                 "0113",
                 "0114",
                 "0116",
-                "0121"
+                "0121",
+                "0122"
             ]
         },
         {
