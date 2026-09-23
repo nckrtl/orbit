@@ -3377,6 +3377,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store.md",
+            "title": "ADR 0131: Seed task workspace clones from the registered main cache store",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0052",
+                "0054",
+                "0119",
+                "0131"
+            ]
+        },
+        {
             "path": "docs/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question.md",
             "title": "ADR 0132: Pause a task only for its acting thread or a real question",
             "kind": "decision",
@@ -4219,7 +4240,8 @@
                 "0076",
                 "0113",
                 "0114",
-                "0119"
+                "0119",
+                "0131"
             ]
         },
         {

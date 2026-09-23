@@ -69,7 +69,11 @@ def main():
     report = {'schema': 1, 'role': 'builder', 'candidate': head, 'committed': committed, 'tree': tree,
               'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
               'checks': [], 'warnings': [], 'passed': False}
-    subprocess.run([str(root / 'bin/tia-cache'), 'seed', '--repository', str(root)], check=False)
+    # Seed absent quality and test caches first, so a fresh clone does not run every check cold.
+    # A cache miss or a missing seeding script only makes the checks slower.
+    for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
+        if (root / seed[0]).is_file():
+            subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
     for project in PROJECTS:
         for command in COMMANDS:
             log = directory / (project.replace('/', '-') + '-' + command[1] + '.log')
