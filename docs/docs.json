@@ -108,6 +108,7 @@
               "reference/tools",
               "reference/github-app",
               "reference/database-role",
+              "reference/node-agent",
               "reference/metrics",
               "reference/service-metrics",
               "reference/analytics",
@@ -698,7 +699,10 @@
               "decisions/0124-plan-backlog-groups-with-a-t3-planner",
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
               "decisions/0126-limit-browser-api-calls-to-orbit-origins",
-              "decisions/0127-share-one-ssh-connection-per-node"
+              "decisions/0127-share-one-ssh-connection-per-node",
+              "decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
+              "decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
+              "decisions/0130-publish-agent-binaries-as-github-releases"
             ]
           }
         ]

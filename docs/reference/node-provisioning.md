@@ -85,6 +85,10 @@ The Gateway machine itself is not a managed Node for packages. Its own Caddy com
 
 A Node that was never `active` still becomes `failed` at the step that stopped. A private DNS failure uses step `private-dns`.
 
+## Node agent
+
+After the Metrics exporters, provisioning installs or upgrades the [Node agent](/reference/node-agent) on a managed Node, at step `agent`. A failure returns `node.agent_install_failed` and follows the converge rules above: a new Node becomes `failed`, and an existing active Node stays `active`.
+
 ## Public SSH after provisioning
 
 Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](/reference/node-retarget#two-boundaries) describes the same two boundaries.
@@ -103,6 +107,7 @@ The online removal runs these steps in order and reports success only after the 
 | --- | --- |
 | Grafana access | The Gateway revokes the Node's Grafana access. |
 | Metrics exporter | The Gateway retires the Node's Metrics exporter state and converges the remaining fleet. |
+| Node agent | The Gateway stops and deletes `orbit-agent`, its unit, and `/etc/orbit/agent` on the machine. A failure does not stop the removal; the Gateway logs a warning. |
 | Public SSH recovery | The Gateway restores the exact `orbit:public-ssh-recovery` UFW rule on the machine over WireGuard without enabling UFW. |
 | WireGuard peer | The Gateway removes the Node's WireGuard peer. |
 | DNS | The Gateway converges its private DNS records. |
@@ -112,7 +117,7 @@ The Gateway skips the public SSH step for a Node without a WireGuard peer, becau
 
 Use `--offline` only for an unreachable Node. The Gateway probes it first and keeps all normal guards if it answers. The flag skips public SSH recovery even for a reachable Node, so omit it for online removal.
 
-For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
+For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
 A failed step rolls the Gateway back and keeps the Node record active. Each failure names the step that stopped and the state the Gateway leaves behind.
 

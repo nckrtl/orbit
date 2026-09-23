@@ -200,6 +200,7 @@
                 "Herdr session",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -575,6 +576,7 @@
                 "Instance",
                 "Instance routing",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Project type",
@@ -3374,6 +3376,74 @@
             ]
         },
         {
+            "path": "docs/decisions/0128-run-a-visibility-only-agent-on-managed-nodes.md",
+            "title": "ADR 0128: Run a visibility-only agent on managed Nodes",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Task",
+                "Tool",
+                "Tool Manager"
+            ],
+            "governing_adrs": [
+                "0057",
+                "0127",
+                "0128",
+                "0129",
+                "0130"
+            ]
+        },
+        {
+            "path": "docs/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels.md",
+            "title": "ADR 0129: Publish Node presence and Process state on per-Node presence channels",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0087",
+                "0128",
+                "0129"
+            ]
+        },
+        {
+            "path": "docs/decisions/0130-publish-agent-binaries-as-github-releases.md",
+            "title": "ADR 0130: Publish agent binaries as GitHub releases",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": [
+                "0079",
+                "0128",
+                "0130"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4073,13 +4143,16 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
                 "Runtime hibernation",
                 "Schedule"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0129"
+            ]
         },
         {
             "path": "docs/reference/gateway-recovery.md",
@@ -4395,6 +4468,25 @@
             ]
         },
         {
+            "path": "docs/reference/node-agent.md",
+            "title": "Node agent",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0128",
+                "0129",
+                "0130"
+            ]
+        },
+        {
             "path": "docs/reference/node-provisioning.md",
             "title": "Node provisioning",
             "kind": "reference",
@@ -4407,6 +4499,7 @@
                 "Herdr session",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -4733,6 +4826,8 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Node agent",
+                "Process",
                 "Router"
             ],
             "governing_adrs": [

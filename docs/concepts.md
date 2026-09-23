@@ -29,6 +29,7 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Database connection** — A registered MySQL, PostgreSQL, SQLite, or Redis credential record. See [Database connections](/reference/database-connections).
 - **proxycli** — An optional fleet extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at `collector.proxycli.orbit`. See [proxycli](/reference/proxycli).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
+- **Node agent** — `orbit-agent`, a visibility-only program on every managed Linux Node. It publishes presence and Process runtime state for the web app and never runs commands. See [Node agent](/reference/node-agent).
 - **Process** — A systemd service or Docker container that Orbit manages for an Instance or Node. See [Project processes and schedules](/reference/app-processes-and-schedules).
 - **Runtime hibernation** — Pausing idle development processes and removing rebuildable dependencies after longer idle periods. An HTTP request restores dependencies and wakes configured processes. Keep-alive workers stay running. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation).
 - **Herdr session** — A named headless Herdr server on a Node. View its panes through a private, read-only connection with temporary access. See [Herdr sessions](/reference/herdr-sessions).

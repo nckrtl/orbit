@@ -17,6 +17,8 @@ Every broadcast happens synchronously, inside the same request that changed the 
 
 Every event broadcasts on one private channel, `orbit`. A client authorizes access the same way it calls the rest of the API: as an active WireGuard peer Node, identified by its source address, against `POST /api/v1/broadcasting/auth`. Any authenticated Gateway API caller may subscribe; there is no per-Node scoping on this channel. An unauthenticated caller, or a caller whose peer address does not match an active Node, receives `403`.
 
+Node agents publish on separate per-Node presence channels, not on `orbit`. See [Node agent channels](#node-agent-channels).
+
 ## Discovery
 
 A client asks the Gateway where Reverb is instead of carrying hand-edited connection settings. `GET /api/v1/realtime` requires the same active WireGuard peer identity as the rest of the API and returns:
@@ -153,7 +155,7 @@ An idempotent create call, such as adding a Process, Schedule, or firewall rule 
 - A Node's own recorded status only changes as a side effect of provisioning, removal, or a role change, and each of those is already covered by `node.created`, `node.updated`, or `node.deleted`. No Gateway action flips only a Node's status field.
 - Instance dev-runtime hibernation (wake and sleep) tracks "awake" and "asleep" through a marker store outside the Instance and Process rows. It never writes a field either record's list or show endpoint returns, so the Gateway has nothing on the record to broadcast.
 
-`process.status` carries the Process's own persisted lifecycle status and desired state, not the live runtime string its show endpoint also reports (the state a process manager observes right now, such as whether the OS process is currently running). That live string is polled at read time, not recorded anywhere, so a change in it alone cannot be broadcast.
+`process.status` carries the Process's own persisted lifecycle status and desired state, not the live runtime string its show endpoint also reports (the state a process manager observes right now, such as whether the OS process is currently running). That live string is polled at read time, not recorded anywhere, so a change in it alone cannot be broadcast. The Node agent publishes live runtime state to subscribers of its [Node agent channel](#node-agent-channels) instead.
 
 Repairing a Node's DNS resolver (`orbit node:dns-repair` and similar recovery paths) re-pushes already-stored WireGuard and DNS configuration to the peer. It does not change the Node record, so it does not broadcast.
 
@@ -170,3 +172,44 @@ There is no environment variable to set. The Gateway resolves the active connect
 ### Annotation
 
 `annotation.updated` fires after an annotation transaction commits. Its data is `{ id, instanceId, revision }`, a small invalidation notice rather than the full record. Clients fetch the Instance annotation list to recover current state. Screenshot and comment payloads stay out of broadcasts.
+
+## Node agent channels
+
+Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels, and it never receives their events. [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the design.
+
+### Membership
+
+| Member ID | Who | Signed by |
+| --- | --- | --- |
+| `agent.{id}` | The agent of Node `{id}` | `POST /api/v1/agent/broadcasting/auth`, only for a request from Node `{id}`'s own WireGuard address when that Node is managed. |
+| `viewer.{socket id}` | Any other subscriber, such as a browser | `POST /api/v1/broadcasting/auth`, with the same rules as `orbit`. |
+
+A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" }` for the agent and `{ "kind": "viewer", "node_id": 7 }` for a viewer, where a viewer's `node_id` is the Node the viewer connects from. The existing auth endpoint never signs an `agent.*` member. Presence events tell a subscriber when the agent joins (`pusher:member_added`) and leaves (`pusher:member_removed`). A clean agent stop and an agent crash both close the connection, so the agent leaves at once.
+
+### Events
+
+The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber must ignore an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`.
+
+| Event | When | Data |
+| --- | --- | --- |
+| `client-heartbeat` | Every 5 seconds. | `{ sequence, at }` |
+| `client-snapshot` | After the agent joins, when a new member joins, and after the agent reconnects to Docker. | `{ sequence, at, docker, part, parts, units }` |
+| `client-process` | As soon as a unit or container changes, after 250 milliseconds of merging. | `{ sequence, at, unit }` |
+
+| Field | Contract |
+| --- | --- |
+| `sequence` | A counter that increases with every event from one agent run. It restarts at 1 when the agent restarts. |
+| `at` | ISO 8601 UTC time at which the agent sent the event. |
+| `docker` | `available` or `absent`. |
+| `part`, `parts` | This part's number, from 1, and the number of parts. The agent splits a snapshot so that each message stays under Reverb's 10,000-byte limit. The parts arrive in order with consecutive `sequence` values, and a subscriber applies the snapshot once it has every part. |
+| `units` | A list of `unit` entries: every `orbit-process-*` unit and container the agent sees. |
+| `unit` | `{ name, runtime, runtime_status }`, for example `{ "name": "orbit-process-42-web", "runtime": "docker", "runtime_status": "exited" }`. `name` has no `.service` suffix. `runtime` is `systemd` or `docker`. |
+
+A snapshot replaces what a subscriber knows about the Node's units. A unit missing from a complete snapshot, or from a `client-process` event since, has no unit or container. Its Process reads as `inactive` for systemd or `exited` for Docker.
+
+A subscriber applies a `unit` entry to a Process only when the Process runs on Node `{id}`, uses the same runtime, and `name` equals `orbit-process-{process id}-{process name}`. It ignores every other entry.
+
+### Presence
+
+A subscriber treats the Node's agent as online while `agent.{id}` is a member and a heartbeat, snapshot, or change arrived in the last 15 seconds. It treats the agent as lost when the member leaves or the 15 seconds pass without an event. A subscriber that has not seen the agent since it subscribed knows nothing about the Node from this channel and uses another source, such as Prometheus.
+
