@@ -150,7 +150,7 @@ When `project.create` collides on an occupied workspace root, T3's receipt is `A
 
 Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first pending subtask. The next pending subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
-When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. Jev is asked only whether the agent is blocked. A pending input fails on its own.
+When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. Jev is asked only whether the agent is blocked, from the implementer thread and the task and group briefs. A pending input fails on its own.
 
 When every item passes, the Gateway sets the task to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. While that thread is still idle, or its snapshot is still the turn from before the handoff, the Gateway waits. It asks for an outcome only after a newer review turn stops.
 
@@ -166,11 +166,26 @@ A scheduler tick checks every in-progress task in running and reviewing groups. 
 
 AgentThread state is authoritative. A `working` thread (including a starting T3 session) defers its task until a later tick. The Gateway does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
-For each eligible stopped implementer, the tick reads `composer check` from tool activity. The run must name `composer check`, exit 0, and have no edit, write, or patch activity after it. An assistant message does not count. Jev is asked only whether the agent is blocked, and that answer passes only at or above `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`). A pending input fails `waiting_for_input` in code and skips that question. A thread state the rubric does not recognize waits without a model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
+For each eligible stopped implementer, the tick reads `composer check` from tool activity. The run must name `composer check`, exit 0, and have no edit, write, or patch activity after it. An assistant message does not count. Jev is asked only whether the agent is blocked, and that answer passes only when Jev chooses `no` with a confidence at or above `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`).
+
+TypeSafe reports confidence as the margin between the two choices, so `0.75` needs a `no` probability of at least `0.875`. A pending input fails `waiting_for_input` in code and skips that question. A thread state the rubric does not recognize waits without a model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
 A stopped reviewer with `changes_requested` is relayed, and the task returns to `running`. An `approved` comment is checked in code: the commit equals HEAD, the branch is `task-{group id}`, the tree is clean, the commit is new for the subtask, and the final pull request verifies. A missing outcome comment asks Jev only whether the reviewer is blocked. `assistance_requested` and `resolution` still update the assistance flag and keep their history. Status stays the current phase for those two comments.
 
-The Gateway sends one reminder that names every failed item. The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder. A missing Jev answer counts as a communication failure and asks for assistance on the fifth consecutive failure.
+Jev reads one role's evidence for each blocked question: the group title and brief, the task title and brief, and that role's thread state and recent entries. The implementer question does not include the shared reviewer thread, and the reviewer question does not include the implementer thread. Pull request, commit, and CI fields stay with the code checks. Rubric reminder turns are removed before Jev reads the thread. The agent's reply stays. [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence) owns this evidence.
+
+The Gateway sends one reminder that names every failed code item. It starts and ends with fixed sentences:
+
+| Role | Starts with | Ends with |
+| --- | --- | --- |
+| Implementer | "Orbit could not confirm the brief is complete." | "If it is, reply with a short summary of what changed and the composer check result. If something outside the brief stops you, say what it is." |
+| Reviewer | "Orbit could not confirm the review is complete." | "If something outside the review stops you, say what it is." |
+
+The reminder does not say that the thread is blocked and does not ask for an `assistance_requested` comment. A blocker the agent names in its reply fails the next evaluation.
+
+The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
+
+A missing Jev answer, or one without a confidence, counts as a communication failure and asks for assistance on the fifth consecutive failure. The assistance reason names each remaining item, and a Jev item includes its choice and confidence.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
 
@@ -196,6 +211,16 @@ Gateway uses `laravel/ai` Classification with its official TypeSafe provider in 
 Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest pending groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+
+### Calibrate Jev
+
+The default test suite fakes Jev. To measure the blocked question against real Jev, set `TYPESAFE_API_KEY` in the environment and run the calibration suite from `apps/gateway`:
+
+```bash
+composer test:calibration
+```
+
+The suite reads the observations in `apps/gateway/tests/Fixtures/JevCalibration`. Each fixture uses the observation shape from the Coder escalation webhook and names its role and expected choice. The suite fails when Jev picks another choice or when a passing fixture scores below the configured threshold. It prints each choice, confidence, and probability pair. It refuses to run without a key, and CI does not run it.
 
 ## Pull request and settle metrics
 
@@ -234,7 +259,7 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |
 | `nodes.settings.t3.url` | Optional full base URL for that node's T3 server. When absent, the node's WireGuard address and `ORBIT_T3_PORT` are used. |
 | `TYPESAFE_API_KEY` | TypeSafe Jev key for task-session Classification. Missing key fails closed |
-| `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`. Below this, the tick escalates |
+| `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`, measured as the margin between the two choice probabilities. Below this, the tick escalates |
 
 The Gateway skips the webhook when the URL or secret is missing. A refused Coder response does not fail settle.
 
