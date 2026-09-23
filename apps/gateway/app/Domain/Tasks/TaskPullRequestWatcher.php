@@ -10,6 +10,4 @@ interface TaskPullRequestWatcher
 {
     /** @return 'merged'|'closed'|'open'|null */
     public function status(TaskGroup $group): ?string;
-
-    public function verifies(TaskGroup $group, string $url, string $commit): bool;
 }

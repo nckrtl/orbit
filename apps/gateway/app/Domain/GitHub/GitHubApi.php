@@ -39,4 +39,27 @@ interface GitHubApi
         int $installationId,
         GitHubRepository $repository,
     ): string;
+
+    /**
+     * A token that pushes to this one repository and opens its pull requests, and expires after one hour.
+     *
+     * @throws GitHubApiException
+     */
+    public function repositoryPullRequestToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string;
+
+    /**
+     * Opens the pull request, or returns the open one that already has this head.
+     *
+     * @return string the pull request's web URL
+     *
+     * @throws GitHubApiException
+     */
+    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string;
+
+    /** @throws GitHubApiException */
+    public function pullRequestState(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequestState;
 }

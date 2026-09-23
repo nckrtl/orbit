@@ -105,6 +105,18 @@ final class Task extends Model
         return $this->hasMany(TaskComment::class);
     }
 
+    /**
+     * Whether no other subtask of the group is still to be done.
+     */
+    public function isLastSubtask(): bool
+    {
+        return self::query()
+            ->where('task_group_id', $this->task_group_id)
+            ->whereKeyNot($this->id)
+            ->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])
+            ->doesntExist();
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

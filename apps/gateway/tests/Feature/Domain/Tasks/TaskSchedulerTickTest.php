@@ -9,18 +9,27 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
+use App\Domain\Tasks\NullCoderSettleNotifier;
+use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
 use App\Domain\Tasks\TaskJevOutcome;
+use App\Domain\Tasks\TaskPullRequestDescription;
+use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRunInstructions;
+use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
+use App\Domain\Tasks\TaskSettleMetrics;
+use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -37,6 +46,7 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeTaskRunReceipts;
 
 use function Pest\Laravel\mock;
@@ -171,7 +181,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     app(TaskExtensionState::class)->enable();
-    config()->set('orbit.tasks.github_token', 'token');
+    GitHubTestSupport::storeApp();
     mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->withArgs(
         fn (AppInstance $instance, bool $force): bool => $instance->id === $group->taskable_id && $force,
     )->andReturnUsing(function (AppInstance $instance): AppInstanceRemoval {
@@ -180,9 +190,13 @@ it('continues watching a prior settling PR and completes only after it merges', 
         return new AppInstanceRemoval;
     });
     Http::preventStrayRequests();
-    Http::fakeSequence('https://api.github.com/repos/acme/orbit/pulls/42')
-        ->push(['merged' => false, 'state' => 'open'])
-        ->push(['merged' => true, 'state' => 'closed']);
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push(['merged' => false, 'state' => 'open'])
+            ->push(['merged' => true, 'state' => 'closed']),
+    ]);
 
     app(TaskScheduler::class)->tick();
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'pr_url' => $group->pr_url]);
@@ -191,7 +205,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('app_instances', ['id' => $group->taskable_id]);
-    Http::assertSentCount(2);
+    Http::assertSentCount(6);
 });
 
 it('returns no decisions when the tasks extension is disabled', function (): void {
@@ -1128,15 +1142,19 @@ it('keeps check evidence from before the findings invalid after assistance is re
 });
 
 /**
- * A task in review whose reviewer has finished the turn after the handoff.
+ * A task in review whose reviewer has finished the turn after the handoff. Unless it is the last,
+ * a later subtask waits behind it.
  *
  * @param  list<string|null>  $receipts
  * @return array{TaskGroup, Task, FakeTaskRunReceipts, object}
  */
-function tick_review(array $receipts, bool $onBranch = true): array
+function tick_review(array $receipts, bool $onBranch = true, bool $last = false): array
 {
     $group = tick_group();
     $task = $group->tasks->sole();
+    if (! $last) {
+        Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Pending]);
+    }
     $group->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn']);
     app(TaskExtensionState::class)->enable();
@@ -1172,7 +1190,7 @@ function tick_review(array $receipts, bool $onBranch = true): array
 
 it('commits an approved subtask with the title and the reviewer summary, then starts the next subtask', function (): void {
     [$group, $task, $receipts, $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
-    $next = Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Pending]);
+    $next = Task::query()->where('title', 'Routes')->sole();
     $spawner = new class implements AgentSpawner
     {
         /** @var list<int> */
@@ -1322,5 +1340,132 @@ it('starts the reviewer with the first review request when the group has no revi
     expect($spawner->reviewers)->toBe([$task->id])
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'reviewer-thread-2')->sole()->id)
         ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
-        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer']);
+        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
+});
+
+function tick_final_approval(): string
+{
+    return json_encode([
+        'outcome' => 'approved',
+        'summary' => 'Checked the feature.',
+        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []],
+        'nonce' => bin2hex(random_bytes(8)),
+    ], JSON_THROW_ON_ERROR);
+}
+
+/** @param list<list<string>> $missing */
+function tick_publishing(array $missing = [[]], int $failures = 0): object
+{
+    $coverage = new class($missing) implements TaskBriefCoverage
+    {
+        public int $calls = 0;
+
+        /** @param list<list<string>> $missing */
+        public function __construct(private array $missing) {}
+
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        {
+            $this->calls++;
+
+            return array_shift($this->missing) ?? [];
+        }
+    };
+    $publisher = new class($failures) implements TaskPullRequestPublisher
+    {
+        /** @var list<string> */
+        public array $bodies = [];
+
+        public function __construct(private int $failures) {}
+
+        public function publish(TaskGroup $group, string $body): string
+        {
+            $this->bodies[] = $body;
+            if ($this->failures-- > 0) {
+                throw new TaskPullRequestException('The task branch could not be pushed.');
+            }
+
+            return 'https://github.com/acme/orbit/pull/42';
+        }
+    };
+    app()->instance(TaskBriefCoverage::class, $coverage);
+    app()->instance(TaskPullRequestPublisher::class, $publisher);
+    mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
+
+    return (object) ['coverage' => $coverage, 'publisher' => $publisher];
+}
+
+it('commits the last approved subtask, opens the pull request with the reviewer fields, and settles the group', function (): void {
+    [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);
+    $publishing = tick_publishing();
+
+    app(TaskScheduler::class)->tick();
+
+    $approval = $task->comments()->sole();
+    expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
+        ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {
+    [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved')], last: true);
+    $publishing = tick_publishing();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskRunInstructions::reviewer(final: true))
+        ->and($publishing->coverage->calls)->toBe(0)
+        ->and($signer->messages)->toBe([]);
+});
+
+it('names each subtask the change list misses and does not commit', function (): void {
+    [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);
+    $publishing = tick_publishing([['Models']]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The pull request change list does not cover the subtask "Models".')
+        ->and($signer->messages)->toBe([])
+        ->and($publishing->publisher->bodies)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('retries opening the pull request without storing the approval twice', function (): void {
+    [$group, $task] = tick_review([tick_final_approval()], last: true);
+    $publishing = tick_publishing([[], []], failures: 1);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->communication_failures)->toBe(1)
+        ->and($group->fresh()?->pr_url)->toBeNull()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->count())->toBe(1)
+        ->and($publishing->publisher->bodies)->toHaveCount(2)
+        ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling);
+});
+
+it('counts a failed coverage answer as a communication failure', function (): void {
+    [$group, $task, , $signer] = tick_review([tick_final_approval()], last: true);
+    tick_publishing();
+    app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
+    {
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        {
+            throw new TaskSessionClassificationException('TypeSafe Jev request failed (ConnectionException).');
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->communication_failures)->toBe(1)
+        ->and($signer->messages)->toBe([])
+        ->and(app(T3Dispatcher::class)->commands)->toBe([]);
 });

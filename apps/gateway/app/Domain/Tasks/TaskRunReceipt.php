@@ -12,13 +12,18 @@ use JsonException;
  */
 final readonly class TaskRunReceipt
 {
-    private function __construct(public string $hash, public ?TaskRunOutcome $outcome, public string $summary) {}
+    private function __construct(
+        public string $hash,
+        public ?TaskRunOutcome $outcome,
+        public string $summary,
+        public ?TaskRunPullRequest $pullRequest = null,
+    ) {}
 
     public static function parse(string $contents): self
     {
         $hash = hash('sha256', $contents);
         try {
-            $data = json_decode($contents, true, 4, JSON_THROW_ON_ERROR);
+            $data = json_decode($contents, true, 8, JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             return new self($hash, null, '');
         }
@@ -26,7 +31,7 @@ final readonly class TaskRunReceipt
             return new self($hash, null, '');
         }
 
-        return new self($hash, TaskRunOutcome::tryFrom($data['outcome']), trim($data['summary']));
+        return new self($hash, TaskRunOutcome::tryFrom($data['outcome']), trim($data['summary']), TaskRunPullRequest::fromArray($data['pull_request'] ?? null));
     }
 
     public function fits(TaskThreadRole $role): bool

@@ -17,7 +17,6 @@ use Laravel\Ai\Classification\Choice;
 use Laravel\Ai\PendingResponses\PendingClassification;
 use Laravel\Ai\Responses\ClassificationResponse;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
-use Throwable;
 
 final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassifier
 {
@@ -90,16 +89,7 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
      */
     private function answers(PendingClassification $classification): ClassificationResponse
     {
-        try {
-            return $classification->classify();
-        } catch (Throwable $exception) {
-            $key = config('ai.providers.typesafe.key');
-            $reason = ! is_string($key) || trim($key) === ''
-                ? 'TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.'
-                : 'TypeSafe Jev request failed ('.class_basename($exception).').';
-
-            throw new TaskSessionClassificationException($reason, previous: $exception);
-        }
+        return Jev::classify($classification);
     }
 
     private function threshold(): float

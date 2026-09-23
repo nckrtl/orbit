@@ -1,17 +1,17 @@
 ---
 title: "GitHub App"
-description: "How a Gateway registers its own read-only GitHub App, how an operator installs it on a GitHub account, and how Orbit uses it to read private repositories."
+description: "How a Gateway registers its own GitHub App, how an operator installs it on a GitHub account, and how Orbit uses it to read private repositories and publish task pull requests."
 ---
 
 # GitHub App
 
-This reference is for operators whose Projects live in private `github.com` repositories. A Gateway reads those repositories through its own GitHub App. Orbit reads public repositories without it, so the App is optional. [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) owns the decision.
+This reference is for operators whose Projects live in private `github.com` repositories, and for operators who use the [tasks extension](/reference/tasks). A Gateway reads private repositories through its own GitHub App, and the tasks extension publishes its pull requests through it. Orbit reads public repositories without it. [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app) owns the decision.
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has two permissions, `Contents: read` and `Metadata: read`, and it receives no webhooks. It cannot push, open pull requests, or change repository settings.
+Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has three permissions, `Contents: write`, `Metadata: read`, and `Pull requests: write`, and it receives no webhooks. It cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
-The App is public on GitHub. Public means that any GitHub account can install it, which lets you add organizations that do not own the registration. An installation gives your Gateway read access to that account's repositories. It gives the installing account nothing.
+The App is public on GitHub. Public means that any GitHub account can install it, which lets you add organizations that do not own the registration. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
 
 The Gateway stores the App ID, slug, and private key as encrypted settings. No API response, activity record, or [Doctor](/concepts#doctor) result contains the key or a token.
 
@@ -44,9 +44,13 @@ When the Gateway cannot resolve the default branch of a `github.com` repository,
 
 The Gateway needs outbound HTTPS access to `api.github.com` for every read of a covered repository. When GitHub does not answer, Orbit reads the repository without a credential, so a public repository still works.
 
+## How Orbit publishes a task pull request
+
+After the approval of the last subtask, the Gateway asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes the task branch with it. The Gateway then opens the pull request and later reads its state with the same kind of token. Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns this use.
+
 ## What the App does not cover
 
-Git commands that you or an agent run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in. A tool that pushes or opens pull requests brings its own GitHub App or token.
+Git commands that you or an agent run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in. Agents never receive a token.
 
 ## Errors
 

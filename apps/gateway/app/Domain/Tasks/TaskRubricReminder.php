@@ -14,7 +14,7 @@ final readonly class TaskRubricReminder
     private const string ReviewerLead = 'Orbit could not confirm the review is complete.';
 
     /** @param list<TaskRubricItem> $failures */
-    public static function compose(TaskThreadRole $role, array $failures): string
+    public static function compose(TaskThreadRole $role, array $failures, bool $final = false): string
     {
         $sentences = array_values(array_filter(
             array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures),
@@ -23,6 +23,6 @@ final readonly class TaskRubricReminder
 
         return $role === TaskThreadRole::Implementer
             ? implode(' ', [self::ImplementerLead, ...$sentences, TaskRunInstructions::implementer()])
-            : implode(' ', [self::ReviewerLead, ...$sentences, TaskRunInstructions::reviewer()]);
+            : implode(' ', [self::ReviewerLead, ...$sentences, TaskRunInstructions::reviewer($final)]);
     }
 }

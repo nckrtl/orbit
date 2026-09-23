@@ -360,7 +360,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->communication_failures)->toBe(1)
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
-        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'reviewer']);
+        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'reviewer:final']);
 });
 
 it('fails a group and its first task when the implementer spawn returns no thread id', function (): void {

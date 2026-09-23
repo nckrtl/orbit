@@ -42,7 +42,7 @@ The reviewer thread starts at the first handoff, not when the group starts. One 
 
 ### The run receipt
 
-Before each agent turn, the Gateway places the script `.git/orbit/run` in the workspace, writes `.git/orbit/turn.json` with the role of the turn, and removes any earlier receipt. The script reads `turn.json` to check the outcome. `.git/orbit/` is inside the Git directory, so Git never tracks it and no Project needs an ignore rule. The Gateway owns the script and its version.
+Before each agent turn, the Gateway places the script `.git/orbit/run` in the workspace, writes `.git/orbit/turn.json` with the role of the turn and whether it reviews the last subtask, and removes any earlier receipt. The script reads `turn.json` to check the outcome and the pull request fields. `.git/orbit/` is inside the Git directory, so Git never tracks it and no Project needs an ignore rule. The Gateway owns the script and its version.
 
 An agent ends its turn with one command:
 
@@ -76,7 +76,7 @@ The receipt only marks the end of a turn and states the agent's outcome. It is n
 
 Jev no longer asks whether an agent is blocked. An agent that is blocked says so with `blocked`. Jev answers only whether evidence matches the assignment, as task verification proposes.
 
-On the last approval, Jev also checks that every deliverable in the group brief appears in the pull request's change list. Jev cannot read code, so this checks coverage, not correctness; the reviewer keeps that judgment. A missing deliverable fails the check, and the reviewer gets one reminder that names it.
+On the last approval, Jev also checks that the pull request's change list covers the group brief. For each subtask, it answers whether a listed change delivers it, because the subtasks split the brief into deliverables that a reminder can name. Jev cannot read code, so this checks coverage, not correctness; the reviewer keeps that judgment. A missing subtask fails the check, and the reviewer gets one reminder that names it.
 
 ### The commit
 
@@ -84,7 +84,7 @@ The reviewer no longer commits. After an `approved` receipt, Orbit commits the w
 
 ### The pull request
 
-Orbit opens the final pull request itself. The Gateway GitHub App gains write permission for repository contents and pull requests, which amends [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). Orbit pushes the task branch and opens the pull request against the Project's default branch.
+Orbit opens the final pull request itself. The Gateway GitHub App gains write permission for repository contents and pull requests, which amends [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). Each operation still asks for a token with only the permissions it needs. Orbit pushes the task branch and opens the pull request against the Project's default branch. The pull request watch uses the App as well, so the tasks extension needs no separate GitHub token.
 
 On the last subtask, the reviewer's approval also describes the pull request:
 

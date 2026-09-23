@@ -103,7 +103,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return implode("\n\n", [
             'Review subtask #'.$task->id.': '.$task->title,
             $task->brief,
-            TaskRunInstructions::reviewer(),
+            TaskRunInstructions::reviewer($task->isLastSubtask()),
         ]);
     }
 }

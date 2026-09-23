@@ -92,7 +92,7 @@ it('installs the run script outside the tracked tree and reads the receipt it wr
 
     expect($written->getExitCode())->toBe(0)
         ->and(is_executable($checkout.'/.git/orbit/run'))->toBeTrue()
-        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer'])
+        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false])
         ->and($receipt?->outcome)->toBe(TaskRunOutcome::ReadyForReview)
         ->and($receipt?->summary)->toBe('Added the export.')
         ->and($receipt?->hash)->toBe(hash_file('sha256', $checkout.'/.git/orbit/run.json'))
@@ -144,7 +144,9 @@ it('refuses input that does not fit the turn', function (TaskThreadRole $role, a
     'an implementer outcome in a reviewer turn' => [TaskThreadRole::Reviewer, ['--outcome=ready_for_review', '--summary=Done.'], '--outcome must be one of: approved, changes_requested, blocked.'],
     'an unknown outcome' => [TaskThreadRole::Implementer, ['--outcome=done', '--summary=Done.'], '--outcome must be one of: ready_for_review, blocked.'],
     'a missing outcome' => [TaskThreadRole::Implementer, ['--summary=Done.'], '--outcome must be one of: ready_for_review, blocked.'],
-    'an empty summary' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=  '], '--summary is required.'],
+    'an empty summary' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=  '], '--summary cannot be empty.'],
+    'a missing summary' => [TaskThreadRole::Implementer, ['--outcome=blocked'], '--summary is required.'],
+    'pull request fields before the last subtask' => [TaskThreadRole::Reviewer, ['--outcome=approved', '--summary=Good.', '--pr-summary=S', '--pr-change=C', '--pr-breaking=none'], '--pr-summary, --pr-change, and --pr-breaking are only for approving the last subtask.'],
     'a missing summary value' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary'], '--summary needs a value.'],
     'a repeated flag' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--outcome=blocked', '--summary=No.'], 'pass --outcome once.'],
     'an unknown flag' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--force'], 'unknown argument --force.'],
@@ -180,3 +182,52 @@ it('reports an unreachable workspace instead of a missing receipt', function ():
 
     run_receipts($transport)->read(run_receipt_instance('/srv/orbit/apps/orbit/task-13'));
 })->throws(TaskRunReceiptException::class, 'The task workspace could not be reached for the run receipt.');
+
+it('requires the pull request fields when the reviewer approves the last subtask', function (array $arguments, string $error): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, true);
+
+    $process = run_receipt_script($checkout, ['--outcome=approved', '--summary=Checked the feature.', ...$arguments]);
+
+    expect($process->getErrorOutput())->toBe("orbit run: {$error}\n")
+        ->and($receipts->read($instance))->toBeNull();
+})->with([
+    'no fields' => [[], 'approving the last subtask needs --pr-summary.'],
+    'no change' => [['--pr-summary=Adds exports.', '--pr-breaking=none'], 'approving the last subtask needs at least one --pr-change.'],
+    'no breaking answer' => [['--pr-summary=Adds exports.', '--pr-change=Exports orders.'], 'approving the last subtask needs at least one --pr-breaking. Use --pr-breaking=none when nothing breaks.'],
+    'none with a breaking change' => [['--pr-summary=S', '--pr-change=C', '--pr-breaking=none', '--pr-breaking=Renames a command.'], '--pr-breaking=none cannot be combined with other breaking changes.'],
+    'two summaries' => [['--pr-summary=S', '--pr-summary=T', '--pr-change=C', '--pr-breaking=none'], 'pass --pr-summary once.'],
+    'an empty change' => [['--pr-summary=S', '--pr-change=', '--pr-breaking=none'], '--pr-change cannot be empty.'],
+]);
+
+it('records the pull request fields with the approval of the last subtask, with no limit on changes', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, true);
+    $changes = array_map(static fn (int $number): string => '--pr-change=Change '.$number, range(1, 40));
+
+    $process = run_receipt_script($checkout, ['--outcome=approved', '--summary=Checked the feature.', '--pr-summary=Adds exports.', ...$changes, '--pr-breaking=None']);
+    $receipt = $receipts->read($instance);
+
+    expect($process->getExitCode())->toBe(0)
+        ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'reviewer', 'final' => true])
+        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Approved)
+        ->and($receipt?->pullRequest?->summary)->toBe('Adds exports.')
+        ->and($receipt?->pullRequest?->changes)->toHaveCount(40)
+        ->and($receipt?->pullRequest?->breaking)->toBe([]);
+});
+
+it('lets a reviewer request changes on the last subtask without the pull request fields', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, true);
+
+    $process = run_receipt_script($checkout, ['--outcome=changes_requested', '--summary=Add the missing test.']);
+
+    expect($process->getExitCode())->toBe(0)
+        ->and($receipts->read($instance)?->outcome)->toBe(TaskRunOutcome::ChangesRequested);
+});

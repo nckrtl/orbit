@@ -24,26 +24,26 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role): void
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false): void
     {
         $script = file_get_contents(resource_path('tasks/run'));
         if ($script === false) {
             throw new TaskRunReceiptException('The run script is missing from the Gateway.');
         }
-        $this->run($instance, $role->value, "script='".base64_encode($script)."'\n".<<<'BASH'
+        $this->run($instance, [$role->value, $final ? 'true' : 'false'], "script='".base64_encode($script)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
             rm -f -- "$dir/run.json"
             printf '%s' "$script" | base64 -d > "$dir/run.new"
             chmod 0755 "$dir/run.new"
             mv -f -- "$dir/run.new" "$dir/run"
-            printf '{"role":"%s"}\n' "$2" > "$dir/turn.new"
+            printf '{"role":"%s","final":%s}\n' "$2" "$3" > "$dir/turn.new"
             mv -f -- "$dir/turn.new" "$dir/turn.json"
             BASH);
     }
 
     public function read(AppInstance $instance): ?TaskRunReceipt
     {
-        $output = $this->run($instance, '', <<<'BASH'
+        $output = $this->run($instance, [], <<<'BASH'
             if [ -f "$dir/run.json" ]; then
                 printf 'receipt\n'
                 cat -- "$dir/run.json"
@@ -63,14 +63,15 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
     public function clear(AppInstance $instance, TaskRunReceipt $receipt): void
     {
-        $this->run($instance, $receipt->hash, <<<'BASH'
+        $this->run($instance, [$receipt->hash], <<<'BASH'
             if [ -f "$dir/run.json" ] && [ "$(sha256sum -- "$dir/run.json" | cut -d ' ' -f 1)" = "$2" ]; then
                 rm -f -- "$dir/run.json"
             fi
             BASH);
     }
 
-    private function run(AppInstance $instance, string $argument, string $command): string
+    /** @param list<string> $arguments */
+    private function run(AppInstance $instance, array $arguments, string $command): string
     {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
@@ -78,7 +79,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         }
         try {
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $argument],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: "checkout=\$1\n".self::Directory."\n{$command}\n",
             ), 'task-run-receipt', 'tasks.run_receipt_failed');
         } catch (RuntimeConvergenceException $exception) {

@@ -30,9 +30,9 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
         return json_encode(['outcome' => $outcome, 'summary' => $summary, 'nonce' => bin2hex(random_bytes(8))], JSON_THROW_ON_ERROR);
     }
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role): void
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false): void
     {
-        $this->prepared[] = $role->value;
+        $this->prepared[] = $role->value.($final ? ':final' : '');
     }
 
     public function read(AppInstance $instance): ?TaskRunReceipt

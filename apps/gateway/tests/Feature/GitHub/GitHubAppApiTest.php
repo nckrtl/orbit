@@ -65,7 +65,7 @@ describe('GitHub App API', function (): void {
             ->toContain('action="https://github.com/organizations/acme/settings/apps/new?state='.$state.'"')
             ->toContain('&quot;redirect_url&quot;:&quot;https://gateway.orbit/api/v1/github/app/callback&quot;')
             ->toContain('&quot;public&quot;:true')
-            ->toContain('&quot;default_permissions&quot;:{&quot;contents&quot;:&quot;read&quot;,&quot;metadata&quot;:&quot;read&quot;}')
+            ->toContain('&quot;default_permissions&quot;:{&quot;contents&quot;:&quot;write&quot;,&quot;metadata&quot;:&quot;read&quot;,&quot;pull_requests&quot;:&quot;write&quot;}')
             ->not->toContain('hook_attributes');
         expect($manifest)
             ->toBeArray()

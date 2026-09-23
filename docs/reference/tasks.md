@@ -1,11 +1,11 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension stores TaskGroup features, provisions a shared Instance, starts T3 agents, routes idle sessions with Jev, verifies the reviewer's pull request, notifies Coder, and removes the instance on complete."
+description: "How the Gateway tasks extension stores TaskGroup features, provisions a shared Instance, starts agents, reads their run receipts, commits approved work, opens the pull request, notifies Coder, and removes the instance on complete."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. The Gateway stores the group, provisions its shared Instance, starts T3 agents, and routes task sessions with typed comments and Jev. It then verifies and watches the reviewer's pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. The Gateway stores the group, provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 
@@ -226,9 +226,13 @@ The Gateway registers `tasks:tick` every ten seconds when the tasks extension is
 
 ## Pull request and settle metrics
 
-The reviewer creates the final GitHub pull request and supplies its URL in the final `approved` comment. Before advancing the task, the Gateway verifies that exact URL against the Project repository, the instance branch (`task-{group id}`), and the repository's default target branch. The PR head must equal the approved commit and current workspace HEAD; a later unreviewed head is rejected even when it includes the approved commit. The Gateway stores the verified URL as the group's `pr_url`. Invalid references, missing credentials, or an unavailable GitHub API leave the task in review and use the existing reminder and assistance flow.
+Orbit opens the pull request after the approval of the last subtask. That approval describes it with `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. The script accepts these flags only for that approval and refuses the approval without them. There is no limit on the number of changes.
 
-Settling uses the stored PR and watches for its merge. Existing settling groups keep their stored URL. A settling group without a URL requests assistance and remains incomplete. The Gateway does not create a replacement PR.
+Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group. Jev reads the group and subtask briefs and the pull request fields. For each subtask, it answers whether a listed change delivers it. An answer below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) counts as missing. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
+
+After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). The group title is the title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each subtask passed `composer check` and reviewer approval. When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
+
+Settling watches the stored pull request through the GitHub App until it merges. A settling group without a URL requests assistance and remains incomplete.
 
 The Gateway then writes settle metrics. Active groups also refresh these fields when an authorized caller shows the group.
 
@@ -253,7 +257,6 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | --- | --- |
 | `ORBIT_CODER_WEBHOOK_URL` | HTTPS endpoint that receives the settle POST |
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
-| `ORBIT_TASKS_GITHUB_TOKEN` | GitHub token with repository and pull-request read access for final approval verification and merge watching |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
 | `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
