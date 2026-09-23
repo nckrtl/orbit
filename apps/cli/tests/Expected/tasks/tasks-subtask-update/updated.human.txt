@@ -1,0 +1,33 @@
+Updating subtask...
+
+┌  Update subtask
+│
+├  ● Updated subtask
+│
+└  Updated subtask.
+
+
+┌  Subtask: 1
+│
+├  Task group           1
+│
+├  Position             2
+│
+├  Title                Add SDK requests
+│
+├  Status               todo
+│
+├  Type                 implementation
+│
+├  Implementer thread   —
+│
+├  Tokens               —
+│
+├  Line diff            —
+│
+└  Duration             —
+
+Brief
+  One request class per route.
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

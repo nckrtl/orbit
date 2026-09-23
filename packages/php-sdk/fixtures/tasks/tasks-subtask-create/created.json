@@ -1,0 +1,28 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateSubtaskRequest",
+    "route": "POST /api/v1/task-groups/{group}/tasks",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 3,
+            "task_group_id": 1,
+            "position": 3,
+            "title": "Document the commands",
+            "brief": "Add docs/cli/tasks.mdx.",
+            "status": "todo",
+            "implementer_agent_thread_id": null,
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "type": "implementation",
+            "target_thread_id": null,
+            "completion_summary": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

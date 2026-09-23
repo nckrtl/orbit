@@ -7,7 +7,7 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo.
 
-The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
+The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
 [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) defines the `AgentThread` and `AgentDriver` boundary. Orbit stores persistent conversations and delegates runtime communication to a driver. T3 is the first driver.
 
@@ -61,6 +61,9 @@ Use these operations after the extension is enabled. Every operation except list
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Gateway |
 | `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
 | `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
+| `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
+| `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 
 Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
 
@@ -76,7 +79,7 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
-MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-enable`, `tasks-disable`, and `tasks-status`.
+MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
 
 ## Prepare a group in Backlog
 
@@ -331,7 +334,7 @@ These items stay unimplemented here and need a later feature PR.
 
 ## Cancel a stuck group
 
-Call `tasks-cancel` with `{ "group": 123 }` to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
+Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
 
 A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 

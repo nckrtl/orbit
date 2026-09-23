@@ -1,0 +1,9 @@
+Updating task group...
+
+┌  Update task group
+│
+├  ● Updating task group
+│
+└  Operation failed.
+
+This change is allowed only while the task group is in backlog.

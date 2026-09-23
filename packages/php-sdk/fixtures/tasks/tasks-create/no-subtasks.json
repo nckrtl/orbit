@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateTaskGroupRequest",
+    "route": "POST /api/v1/task-groups",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "tasks.no_subtasks",
+            "message": "A task group needs at least one subtask before it moves to todo.",
+            "details": {}
+        }
+    }
+}

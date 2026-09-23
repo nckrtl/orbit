@@ -1,0 +1,15 @@
+Loading task groups...
+
+┌  List task groups
+│
+├  ● Loaded task groups
+│
+└  Loaded task groups.
+
+ ┌────┬───────────────────┬─────────┬───────────┬──────────┐
+ │ ID │ TITLE             │ PROJECT │ STATUS    │ SUBTASKS │
+ ├────┼───────────────────┼─────────┼───────────┼──────────┤
+ │ 2  │ Absorb Commander  │ orbit   │ completed │ 1/1      │
+ │ 1  │ Add the tasks CLI │ orbit   │ backlog   │ 0/2      │
+ └────┴───────────────────┴─────────┴───────────┴──────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844
