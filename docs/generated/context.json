@@ -3256,6 +3256,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0123-serve-the-web-app-from-the-gateway-origin.md",
+            "title": "ADR 0123: Serve the web app from the Gateway origin",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0085",
+                "0123"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3405,7 +3423,8 @@
                 "0117",
                 "0120",
                 "0121",
-                "0122"
+                "0122",
+                "0123"
             ]
         },
         {
@@ -4573,6 +4592,20 @@
                 "0037",
                 "0049",
                 "0056"
+            ]
+        },
+        {
+            "path": "docs/reference/web-app.md",
+            "title": "Web app",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0123"
             ]
         },
         {

@@ -10,6 +10,7 @@ use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
+use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -166,6 +167,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'read_timeout 4500s',
                 'write_timeout 4500s',
                 'flush_interval 1ms',
+                'root * /home/orbit/web/current',
+                'reverse_proxy https://10.44.0.1',
             )
             ->and(fileperms($orbitHome.'/generated/gateway/php-fpm-pool.conf') & 0o777)
             ->toBe(0o644)
@@ -217,6 +220,15 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->and($commands->contains(['sudo', 'chmod', '0710', '/home/orbit', '/home/orbit/orbit-gateway']))
             ->toBeTrue()
             ->and($commands->contains(['sudo', 'chmod', '0600', '/home/orbit/orbit-gateway/.env']))
+            ->toBeTrue()
+            ->and($commands->contains(['sudo', 'bash', '-seu', '--', '/home/orbit/web']))
+            ->toBeTrue()
+            ->and($commands->contains(static fn (array $arguments): bool => (
+                ($arguments[1] ?? null) === 'install'
+                && ($arguments[count($arguments) - 2] ?? null) === $orbitHome.'/ca/root.pem'
+                && str_ends_with((string) end($arguments), '/root-ca.pem')
+                && in_array(needle: '0640', haystack: $arguments, strict: true)
+            )))
             ->toBeTrue()
             ->and($hibernator->calls)
             ->toBe(1);
@@ -756,11 +768,13 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             fpmRenderer: new GatewayFpmConfigRenderer,
             files: new ProtectedFileWriter,
             checkout: new GatewayCheckoutAccessConverger($processes, $checkoutPath),
+            webDirectory: new GatewayWebDirectoryConverger($processes, '/home/orbit/web'),
             certificatePublisher: new NativeGatewayCertificatePublisher($processes, $orbitHome),
             fpm: new NativeGatewayFpmConverger($processes),
             caddy: new NativeGatewayCaddyConverger($processes),
             orbitHome: $orbitHome,
             checkoutPath: $checkoutPath,
+            webRoot: '/home/orbit/web',
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
         ),
         $processes,
