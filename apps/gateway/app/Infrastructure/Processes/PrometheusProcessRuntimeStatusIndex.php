@@ -37,7 +37,15 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     /** How long one fleet-wide answer serves every caller; the scrapes it reads are no fresher. */
     public const int CacheSeconds = 10;
 
+    /**
+     * How long a status observed after a start, stop, or restart outranks Prometheus: one cached
+     * answer plus one scrape, with margin, after which Prometheus has a sample from after the change.
+     */
+    public const int ObservedSeconds = 30;
+
     private const string CACHE_KEY = 'processes.runtime-states';
+
+    private const string OBSERVED_KEY = 'processes.runtime-status.';
 
     /** Current unit states, and every running Orbit container, in one query. */
     private const string RUNTIME_QUERY = '(node_systemd_unit_state{name=~"orbit-process-.*"} == 1)'
@@ -54,15 +62,27 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     public function statuses(Collection $processes): array
     {
         $states = $processes->isEmpty() ? [] : $this->runtimeStates();
+        $observed = $processes->isEmpty()
+            ? []
+            : Cache::many($processes->map(static fn (Process $process): string => self::OBSERVED_KEY.$process->id)->all());
         $statuses = [];
 
         foreach ($processes as $process) {
-            $statuses[(int) $process->id] = $states === null
-                ? $this->fromNode($process)
-                : $this->fromStates($process, $states);
+            $recent = $observed[self::OBSERVED_KEY.$process->id] ?? null;
+            $statuses[(int) $process->id] = match (true) {
+                is_string($recent) => $recent,
+                $states === null => $this->fromNode($process),
+                default => $this->fromStates($process, $states),
+            };
         }
 
         return $statuses;
+    }
+
+    #[\Override]
+    public function remember(Process $process, string $status): void
+    {
+        Cache::put(self::OBSERVED_KEY.$process->id, $status, self::ObservedSeconds);
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Process;
 use SensitiveParameter;
@@ -23,13 +24,17 @@ final readonly class StopProcessAction
 
     private RecordEventBroadcaster $broadcaster;
 
+    private ProcessRuntimeStatusIndex $statuses;
+
     public function __construct(
         private ProcessRuntimeManager $runtime,
         ?ProcessRuntimeLease $lease = null,
         ?RecordEventBroadcaster $broadcaster = null,
+        ?ProcessRuntimeStatusIndex $statuses = null,
     ) {
         $this->lease = $lease ?? app(ProcessRuntimeLease::class);
         $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
+        $this->statuses = $statuses ?? app(ProcessRuntimeStatusIndex::class);
     }
 
     public function execute(#[SensitiveParameter] Process $process): Process
@@ -51,11 +56,13 @@ final readonly class StopProcessAction
             ]);
 
             $result = $fresh->refresh();
+            $status = $this->runtime->status($result);
+            $this->statuses->remember($result, $status);
 
             $this->broadcaster->broadcast(
                 RecordEventType::ProcessStatus,
                 $result->id,
-                ProcessData::fromModel($result, $this->runtime->status($result))->toArray(),
+                ProcessData::fromModel($result, $status)->toArray(),
             );
 
             return $result;

@@ -24,4 +24,11 @@ interface ProcessRuntimeStatusIndex
      * @return array<int, string> Runtime status keyed by Process id, for every Process given.
      */
     public function statuses(Collection $processes): array;
+
+    /**
+     * Keeps a status the Gateway just observed on the Node after it started, stopped, or
+     * restarted a Process, so a list does not report an older reading until the index's own
+     * source has caught up.
+     */
+    public function remember(Process $process, string $status): void;
 }

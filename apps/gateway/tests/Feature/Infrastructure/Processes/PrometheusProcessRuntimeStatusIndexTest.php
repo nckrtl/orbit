@@ -175,6 +175,22 @@ describe(PrometheusProcessRuntimeStatusIndex::class, function (): void {
         Http::assertSentCount(2);
     });
 
+    it('reports the status observed after a start, stop, or restart until Prometheus catches up', function (): void {
+        // Prometheus still holds the reading from before the stop.
+        prometheus_unit_states([], ['orbit-process-3-valkey']);
+        $index = status_index_with_fake_node_reads();
+        $valkey = status_index_process(3, 'valkey', ProcessRuntime::Docker);
+
+        $index->remember($valkey, 'exited');
+
+        expect($index->statuses(new Collection([$valkey])))->toBe([3 => 'exited']);
+
+        $this->travel(PrometheusProcessRuntimeStatusIndex::ObservedSeconds + 1)->seconds();
+        Cache::forget('processes.runtime-states');
+
+        expect($index->statuses(new Collection([$valkey])))->toBe([3 => 'running']);
+    });
+
     it('does not cache a read Prometheus could not answer', function (): void {
         Http::fake(['*' => Http::response([], 503)]);
         $index = status_index_with_fake_node_reads();
