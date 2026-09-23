@@ -47,7 +47,7 @@ On each tick, for a task with a running check, the scheduler reads the check ove
 | The process runs | Nothing. The task shows the check and how long it has run. |
 | `check.json` exists, exit code 0, tree unchanged | The check passes, and the reviewer starts. |
 | `check.json` exists, exit code not 0 | The check fails. The implementer gets its one reminder with the end of `check.log`. |
-| `check.json` exists, the tree changed during the run | The result does not count, and the scheduler starts the check again. |
+| `check.json` exists, the tree changed during the run | The result does not count, and the scheduler starts the check again once. When the tree changes again, the check fails, and the reminder names the changed paths. |
 | The process is gone without `check.json` | The check was lost, for example by a reboot. The scheduler starts it again once, then asks for assistance. |
 
 The scheduler identifies the process by its ID and start time, so a reused process ID does not count as the check.
@@ -71,6 +71,7 @@ The Gateway keeps one record per check run, linked to the `ready_for_review` rec
 - The implementer starts the check through a Gateway action: agents do not call the Gateway ([ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt)).
 - A fixed profile of Orbit projects, as in #591: it works for Orbit only. Root `composer check` already covers every Orbit project.
 - A copy of the workspace for the check: nobody edits during the check. Comparing the tree before and after catches an edit.
+- Starting the check again after every tree change: a check that writes a file Git does not ignore would run forever.
 - A systemd unit per check: a unit on a Node needs a new sudo rule. A detached process group with its ID and start time gives the same state.
 - A temporary commit before the check: work is committed only after approval.
 

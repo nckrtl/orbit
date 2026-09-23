@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
@@ -11,6 +11,10 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\TaskBriefCoverage;
+use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckReading;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
@@ -43,10 +47,12 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
 use function Pest\Laravel\mock;
@@ -241,7 +247,6 @@ it('drains a pending approval chosen by the faked Choice', function (): void {
     expect($decisions)->toBe([])
         ->and($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['message']['text'])->toContain('waiting for input')
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check was not found')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($group->tasks()->first()?->assistance_requested)->toBeFalse();
 
@@ -344,47 +349,43 @@ it('advances the current subtask when Jev marks it done', function (): void {
     });
     app()->instance(AgentSpawner::class, $spawner);
 
+    $started = app(TaskScheduler::class)->tick();
     $decisions = app(TaskScheduler::class)->tick();
 
-    expect($decisions)->toBe([])
+    expect($started)->toBe([])
+        ->and($decisions)->toBe([])
         ->and($dispatcher->commands)->toBe([])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
         ->and($spawner->reviews)->toBe(1);
 });
 
-it('hands off only a composer check that ran the workspace check script', function (bool $definesCheckScript, string $output, TaskStatus $status): void {
+it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status): void {
     $group = tick_group();
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     tick_workspace($definesCheckScript);
     app()->instance(T3Dispatcher::class, tick_dispatcher());
-    app()->instance(T3ThreadReader::class, new readonly class($output) implements T3ThreadReader
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
-        public function __construct(private string $output) {}
-
         public function snapshot(Node $node, string $threadId): ?array
         {
-            $snapshot = tick_checked_thread('done');
-            $snapshot['thread']['activities'][0]['output'] = $this->output;
-
-            return $snapshot;
+            return tick_checked_thread('done');
         }
     });
 
+    app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->status)->toBe($status);
     $commands = app(T3Dispatcher::class)->commands;
     if ($status === TaskStatus::Running) {
-        expect($commands)->toHaveCount(1)
-            ->and($commands[0]['message']['text'])->toContain('does not define a check script')
-            ->not->toContain('composer check did not pass');
+        expect($commands[0]['message']['text'])->toContain('does not define a check script, so Orbit cannot run composer check')
+            ->and(app(TaskCheckRunner::class)->starts)->toBe(0);
     }
 })->with([
-    'project check script' => [true, "composer check\n> pint --test\n> phpstan analyse\n> pest", TaskStatus::Reviewing],
-    'check-platform-reqs without a check script' => [false, "composer check\nChecking platform requirements for packages in the vendor dir\nphp 8.5.0 success", TaskStatus::Running],
-    'missing check script' => [false, 'composer check', TaskStatus::Running],
+    'project check script' => [true, TaskStatus::Reviewing],
+    'missing check script' => [false, TaskStatus::Running],
 ]);
 
 it('records an unreachable workspace as a communication failure without aborting the tick', function (): void {
@@ -427,6 +428,7 @@ it('stores a ready_for_review receipt, removes it, and hands off to the reviewer
     app()->instance(TaskRunReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
     $comment = $task->comments()->sole();
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
@@ -459,6 +461,7 @@ it('stores a receipt that was read again after a crash only once', function (): 
     ]);
     app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([$contents]));
 
+    app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     expect($task->comments()->count())->toBe(1)
@@ -597,8 +600,8 @@ it('dispatches nothing when Jev selects noop', function (): void {
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
-        ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check was not found')
+        ->and($dispatcher->commands)->toBe([])
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running)
         ->and($notifier->called)->toBeFalse();
 });
 
@@ -736,12 +739,14 @@ it('targets the idle in-progress task while another task is working', function (
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
-        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands)->toBe([])
+        ->and(TaskCheck::query()->where('task_id', $idleTask->id)->count())->toBe(1)
+        ->and(TaskCheck::query()->where('task_id', $workingTask->id)->count())->toBe(0)
         ->and($workingTask->fresh()->status)->toBe(TaskStatus::Reviewing)
         ->and($idleTask->fresh()->status)->toBe(TaskStatus::Running);
 })->with([TaskSessionNextAction::ContinueImplementer, TaskSessionNextAction::MarkSubtaskDone]);
 
-it('asks for assistance when implementer checks still fail after one reminder', function (): void {
+it('reminds the implementer with the failing check output once, then asks for assistance', function (): void {
     $group = tick_group();
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
@@ -767,21 +772,28 @@ it('asks for assistance when implementer checks still fail after one reminder', 
             return ['thread' => ['session' => ['status' => 'idle']]];
         }
     });
+    $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED tests/Feature/ExportTest.php\n");
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed]));
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
+        FakeTaskRunReceipts::contents('ready_for_review'), null, FakeTaskRunReceipts::contents('ready_for_review', 'Fixed the export test.'), null,
+    ]));
 
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
 
+    $reminder = $dispatcher->commands[0]['message']['text'];
     expect($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check was not found')
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('composer check did not pass')
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('change to the tree');
+        ->and($reminder)->toContain("Orbit ran composer check, and it failed with exit code 1. The end of its output:\n\n```\nFAILED tests/Feature/ExportTest.php\n```")
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Failed);
 
+    app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toContain('Checks still failed')
-        ->and($notifier->reason)->toContain('composer check was not found')
-        ->and($dispatcher->commands)->toHaveCount(1);
+        ->and($notifier->reason)->toStartWith('Checks still failed after the reminder. Orbit ran composer check, and it failed with exit code 1.')
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and(TaskCheck::query()->count())->toBe(2);
 });
 
 it('retries the reviewer nudge until the handoff send succeeds', function (): void {
@@ -818,6 +830,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
         }
     });
 
+    app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     $task = $group->tasks()->first();
@@ -970,6 +983,7 @@ it('handoff waits while reviewer still reports its old turn', function (): void 
         }
     });
     app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing);
     expect($dispatcher->commands)->toHaveCount(1);
     app(TaskScheduler::class)->tick();
@@ -1023,7 +1037,7 @@ it('an unavailable reviewer cannot advance an approval', function (): void {
         ->and($signer->messages)->toBe([]);
 });
 
-it('relayed findings require a newer implementer turn and a new check before review', function (): void {
+it('relayed findings require a newer implementer turn, a new receipt, and a new check before review', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
     $group->update(['status' => TaskGroupStatus::Reviewing]);
@@ -1062,10 +1076,12 @@ it('relayed findings require a newer implementer turn and a new check before rev
     $reader->turnId = 'after-findings';
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
-    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('latest review findings')
-        ->and(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('No run receipt was found.');
+    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('No run receipt was found.');
 
-    $reader->checkId = 'check-after-findings';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Running)
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running);
+
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
 });
@@ -1076,6 +1092,7 @@ it('retains reminder send failures across successful classifications and clears 
     $group->update(['status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running]);
     $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'old-turn']);
     app(TaskExtensionState::class)->enable();
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([]));
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
         public function snapshot(Node $node, string $threadId): ?array
@@ -1107,39 +1124,6 @@ it('retains reminder send failures across successful classifications and clears 
     expect($task->fresh()->communication_failures)->toBe(0);
     expect($group->fresh()->assistance_requested)->toBeFalse();
 })->with([TaskStatus::Running, TaskStatus::Reviewing]);
-
-it('keeps check evidence from before the findings invalid after assistance is resolved', function (): void {
-    $group = tick_group();
-    $task = $group->tasks->sole();
-    $task->update([
-        'completion_handoff_attempt' => $task->completion_attempt,
-        'completion_handoff_turn_id' => 'before-findings',
-        'completion_handoff_check_id' => 'check-1',
-        'assistance_requested' => true,
-    ]);
-    $group->update(['assistance_requested' => true]);
-    app(TaskExtensionState::class)->enable();
-    app()->instance(T3Dispatcher::class, tick_dispatcher());
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
-    {
-        public function snapshot(Node $node, string $threadId): ?array
-        {
-            $snapshot = tick_checked_thread('done');
-            $snapshot['thread']['latestTurn'] = ['id' => 'after-findings', 'state' => 'completed'];
-
-            return $snapshot;
-        }
-    });
-
-    app(StoreTaskCommentAction::class)->execute($task, [
-        'type' => 'resolution', 'body' => 'Continue with the review findings.', 'author' => 'operator',
-    ]);
-    app(TaskScheduler::class)->tick();
-
-    expect($task->fresh()->status)->toBe(TaskStatus::Running);
-    expect($group->fresh()->assistance_requested)->toBeFalse();
-    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('latest review findings');
-});
 
 /**
  * A task in review whose reviewer has finished the turn after the handoff. Unless it is the last,
@@ -1468,4 +1452,125 @@ it('counts a failed coverage answer as a communication failure', function (): vo
     expect($task->fresh()?->communication_failures)->toBe(1)
         ->and($signer->messages)->toBe([])
         ->and(app(T3Dispatcher::class)->commands)->toBe([]);
+});
+
+/**
+ * A running task whose idle implementer ended its turn with ready_for_review, with the given check readings.
+ *
+ * @param  list<TaskCheckReading>  $readings
+ * @return array{TaskGroup, Task, FakeTaskCheckRunner, object}
+ */
+function tick_checking(array $readings): array
+{
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('done');
+        }
+    });
+    $checks = new FakeTaskCheckRunner($readings);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public ?string $reason = null;
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
+    };
+    app()->instance(CoderSettleNotifier::class, $notifier);
+
+    return [$group, $group->tasks->sole(), $checks, $notifier];
+}
+
+it('waits while the check process runs and starts the reviewer only after it passes', function (): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running(), TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $check = TaskCheck::query()->sole();
+    expect($checks->starts)->toBe(1)
+        ->and($check->status)->toBe(TaskCheckStatus::Running)
+        ->and($check->task_comment_id)->toBe($task->comments()->sole()->id)
+        ->and($check->pid)->toBe(4001)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and(app(T3Dispatcher::class)->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+        ->and($check->fresh()?->exit_code)->toBe(0)
+        ->and($check->fresh()?->finished_at)->not->toBeNull()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('starts the check again when the tree changed during the run, then names the changed paths the second time', function (): void {
+    $changed = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('c', 40), ['storage/check.cache'], "ok\n");
+    [$group, $task, $checks] = tick_checking([$changed, $changed]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(2)
+        ->and(TaskCheck::query()->pluck('status')->all())->toBe([TaskCheckStatus::Changed, TaskCheckStatus::Running])
+        ->and(app(T3Dispatcher::class)->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(2)
+        ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The workspace changed while composer check ran, twice. Changed paths: storage/check.cache.')
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
+});
+
+it('starts a lost check again once, then asks for assistance', function (): void {
+    [$group, $task, $checks, $notifier] = tick_checking([TaskCheckReading::lost(''), TaskCheckReading::lost('')]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(2)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(2)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($notifier->reason)->toBe("Orbit's composer check stopped twice without a result.")
+        ->and(TaskCheck::query()->pluck('status')->all())->toBe([TaskCheckStatus::Lost, TaskCheckStatus::Lost]);
+});
+
+it('reminds the implementer after an operator cancels the check', function (): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    app(TaskScheduler::class)->tick();
+
+    $cancelled = app(CancelTaskCheckAction::class)->execute($group, $task);
+    app(TaskScheduler::class)->tick();
+
+    expect($cancelled->status)->toBe(TaskCheckStatus::Cancelled)
+        ->and($checks->cancels)->toBe(1)
+        ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain("An operator cancelled Orbit's composer check before it finished.")
+        ->and($checks->starts)->toBe(1);
+});
+
+it('keeps a check running when the workspace cannot be read and counts a communication failure', function (): void {
+    [$group, $task] = tick_checking([]);
+    app(TaskScheduler::class)->tick();
+    mock(TaskCheckRunner::class)->shouldReceive('read')->andThrow(new TaskCheckException('The task workspace could not be reached for the check.'));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->communication_failures)->toBe(1)
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
 });

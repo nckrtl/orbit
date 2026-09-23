@@ -11,6 +11,7 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBriefCoverage;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskRunReceipts;
@@ -25,6 +26,7 @@ use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
@@ -53,6 +55,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskWorkspaceDiffReader::class => RemoteTaskWorkspaceDiffReader::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskRunReceipts::class => RemoteTaskRunReceipts::class,
+        TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Run the Builder's quality checks and affected tests on one clean candidate."""
+"""Run the quality checks and affected tests on one candidate: a commit, or a working tree with uncommitted changes."""
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -19,13 +20,29 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 
 
-def candidate_paths(root, head):
+def working_tree(root):
+    """Return the tree hash of the whole working tree, uncommitted and untracked files included, without touching the index."""
+    index = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-path', 'index'))
+    with tempfile.TemporaryDirectory(prefix='review-tree-') as scratch:
+        candidate_index = Path(scratch) / 'index'
+        if index.exists():
+            shutil.copyfile(index, candidate_index)
+        environment = {**os.environ, 'GIT_INDEX_FILE': str(candidate_index)}
+        subprocess.run(['git', '-C', str(root), 'add', '--all'], env=environment, check=True, capture_output=True)
+        return subprocess.check_output(['git', '-C', str(root), 'write-tree'], env=environment, text=True).strip()
+
+
+def candidate_paths(root, head, committed):
     """Return the main merge base and the paths the candidate changes since it; none without a main branch."""
     for base in BASES:
         merge_base = subprocess.run(['git', '-C', str(root), 'merge-base', base, head], capture_output=True, text=True)
         if merge_base.returncode == 0:
             base_sha = merge_base.stdout.strip()
-            return base_sha, git(root, 'diff', '--name-only', base_sha, head).splitlines()
+            if committed:
+                return base_sha, git(root, 'diff', '--name-only', base_sha, head).splitlines()
+            changed = git(root, 'diff', '--name-only', base_sha).splitlines()
+            untracked = git(root, 'ls-files', '--others', '--exclude-standard').splitlines()
+            return base_sha, sorted(set(changed) | set(untracked))
     return None, []
 
 
@@ -42,14 +59,14 @@ def selection_warning(project, command, exit_code, log, paths):
 def main():
     root = Path(__file__).resolve().parent.parent
     head = git(root, 'rev-parse', 'HEAD')
-    if git(root, 'status', '--porcelain'):
-        raise RuntimeError('Candidate checks require a clean candidate. Commit changes first.')
+    committed = not git(root, 'status', '--porcelain')
+    tree = working_tree(root)
     common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
     reports = common / 'orbit-checks' / head
     reports.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
-    base, paths = candidate_paths(root, head)
-    report = {'schema': 1, 'role': 'builder', 'candidate': head, 'tree': git(root, 'rev-parse', 'HEAD^{tree}'),
+    base, paths = candidate_paths(root, head, committed)
+    report = {'schema': 1, 'role': 'builder', 'candidate': head, 'committed': committed, 'tree': tree,
               'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
               'checks': [], 'warnings': [], 'passed': False}
     subprocess.run([str(root / 'bin/tia-cache'), 'seed', '--repository', str(root)], check=False)
@@ -72,7 +89,7 @@ def main():
                 print(f'[{project}] WARNING: {warning["message"]} ({log})', flush=True)
             if result.returncode:
                 print(log.read_text(), flush=True)
-    report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and not git(root, 'status', '--porcelain')
+    report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
     report['passed'] = report['unchanged'] and all(check['exit_code'] == 0 for check in report['checks'])
     report['finished_at'] = time.time()
     path = directory / 'result.json'
@@ -80,7 +97,8 @@ def main():
     if report['warnings']:
         print(f'Selection warnings: {len(report["warnings"])}; the receipt proves no affected tests for those projects.',
               flush=True)
-    print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {head}; receipt: {path}', flush=True)
+    candidate = head if committed else f'{head} with uncommitted changes (tree {tree})'
+    print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {candidate}; receipt: {path}', flush=True)
     if not report['unchanged']:
         print('Candidate changed during checks; approval is not valid.', file=sys.stderr)
     return 0 if report['passed'] else 1

@@ -12,6 +12,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -26,6 +27,7 @@ use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
 use Tests\Support\FakeRouterLanIngressReconciler;
+use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\TestCase;
@@ -46,6 +48,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
+        app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         Classification::fake();
     })
     ->in('Feature');

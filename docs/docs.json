@@ -492,6 +492,7 @@
               "POST /api/v1/task-groups/{group}/tasks",
               "DELETE /api/v1/task-groups/{group}/tasks/{task}",
               "PATCH /api/v1/task-groups/{group}/tasks/{task}",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/tasks/disable",

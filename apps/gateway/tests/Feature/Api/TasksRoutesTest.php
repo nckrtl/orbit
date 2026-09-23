@@ -8,6 +8,8 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -19,8 +21,10 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
 use Illuminate\Routing\Route;
+use Tests\Support\FakeTaskCheckRunner;
 
 function tasks_gateway(): Node
 {
@@ -74,6 +78,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:subtask:create' => ['api/v1/task-groups/{group}/tasks', ['POST']],
         'tasks:subtask:update' => ['api/v1/task-groups/{group}/tasks/{task}', ['PATCH']],
         'tasks:subtask:destroy' => ['api/v1/task-groups/{group}/tasks/{task}', ['DELETE']],
+        'tasks:check:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/check/cancel', ['POST']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
@@ -533,3 +538,36 @@ it('rejects an unregistered configured driver with 409 before storing a group', 
     $this->assertDatabaseCount('task_groups', 0);
     $this->assertDatabaseCount('tasks', 0);
 })->with(['implementer', 'reviewer']);
+
+it('cancels a running check and shows it on the task', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $app = tasks_app('checks');
+    $node = Node::query()->create(['name' => 'check-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.81']);
+    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
+    $receipt = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Done.', 'author' => 'implementer', 'posted_at' => now()]);
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/check/cancel")
+        ->assertStatus(409)
+        ->assertJsonPath('error.code', 'tasks.check_not_running');
+
+    TaskCheck::query()->create([
+        'task_id' => $task->id, 'task_comment_id' => $receipt->id, 'status' => TaskCheckStatus::Running, 'pid' => 4001,
+        'process_started' => 'Wed Sep 23 12:00:01 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+    ]);
+    $this->getJson("/api/v1/task-groups/{$group->id}")
+        ->assertOk()
+        ->assertJsonPath('data.tasks.0.check.status', 'running');
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/check/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled')
+        ->assertJsonPath('data.finished_at', fn (mixed $value): bool => is_string($value));
+    expect($checks->cancels)->toBe(1);
+});

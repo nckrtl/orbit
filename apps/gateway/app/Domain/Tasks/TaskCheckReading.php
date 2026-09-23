@@ -1,0 +1,37 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Tasks;
+
+/**
+ * What one read of a check process found: it runs, it finished with a result, or it is gone without one.
+ */
+final readonly class TaskCheckReading
+{
+    /** @param list<string> $changedPaths */
+    private function __construct(
+        public string $state,
+        public ?int $exitCode = null,
+        public ?string $headAfter = null,
+        public ?string $treeAfter = null,
+        public array $changedPaths = [],
+        public string $output = '',
+    ) {}
+
+    public static function running(): self
+    {
+        return new self('running');
+    }
+
+    /** @param list<string> $changedPaths */
+    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output): self
+    {
+        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output);
+    }
+
+    public static function lost(string $output): self
+    {
+        return new self('lost', output: $output);
+    }
+}

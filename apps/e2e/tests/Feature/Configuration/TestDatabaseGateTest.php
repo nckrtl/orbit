@@ -141,3 +141,29 @@ it('records a database safety refusal as a failed gate and retains normal succes
         static fn (array $receipt): bool => ($receipt['passed'] ?? false) === true,
     ))->toBeTrue();
 });
+
+it('checks a candidate with uncommitted changes as it is and records its working tree', function (): void {
+    $fixture = orb247_gate_fixture();
+    file_put_contents($fixture['root'].'/apps/cli/.gitkeep', "changed\n");
+    file_put_contents($fixture['root'].'/apps/cli/new-file.php', "<?php\n");
+    $status = (new Process(['git', 'status', '--porcelain'], $fixture['root']))->mustRun()->getOutput();
+
+    $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
+        'ORBIT_GATEWAY_GATE_REFUSAL' => '0',
+        'PATH' => $fixture['path'],
+    ]);
+    $process->setTimeout(30);
+    $process->run();
+    $receipts = orb247_gate_receipts($fixture['root'], $fixture['head']);
+    $index = temporaryPath('orbit-gate-index-', 6);
+    $expected = trim((new Process(['sh', '-c', 'cp .git/index "$1" && GIT_INDEX_FILE="$1" git add --all && GIT_INDEX_FILE="$1" git write-tree', 'tree', $index], $fixture['root']))->mustRun()->getOutput());
+
+    expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput())
+        ->and($process->getOutput())->toContain('with uncommitted changes')
+        ->and($receipts)->toHaveCount(1)
+        ->and($receipts[0]['committed'] ?? null)->toBeFalse()
+        ->and($receipts[0]['tree'] ?? null)->toBe($expected)
+        ->and($receipts[0]['changed_paths'] ?? null)->toBe(['apps/cli/.gitkeep', 'apps/cli/new-file.php'])
+        ->and($receipts[0]['passed'] ?? null)->toBeTrue()
+        ->and((new Process(['git', 'status', '--porcelain'], $fixture['root']))->mustRun()->getOutput())->toBe($status);
+});
