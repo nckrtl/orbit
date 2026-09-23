@@ -248,16 +248,23 @@ function SessionViewer({ session }: { session: AgentThread }) {
     const menuRef = useRef<HTMLDivElement>(null);
     const viewport = useRef<HTMLDivElement>(null);
     // Each open stream holds a Gateway PHP worker, so a background tab gives its streams back.
-    // A reopened stream starts with a snapshot, so nothing is lost while it is paused.
+    // A reopened stream resumes after the last cursor, or starts with a snapshot when the
+    // driver cannot resume, so nothing is lost while it is paused.
     const visible = usePageVisible();
+    const cursor = useRef<string | null>(null);
+    useEffect(() => {
+        cursor.current = conversation.cursor;
+    }, [conversation.cursor]);
     useEffect(() => {
         if (session.node_id === null) return;
         if (!visible) {
             setConnection("Paused");
             return;
         }
+        const after =
+            cursor.current === null ? "" : `?after_sequence=${encodeURIComponent(cursor.current)}`;
         const source = new EventSource(
-            `/api/v1/task-groups/${session.task_group_id}/agents/${session.id}/stream`,
+            `/api/v1/task-groups/${session.task_group_id}/agents/${session.id}/stream${after}`,
         );
         setConnection("Connecting…");
         source.addEventListener("agent", (event: MessageEvent<string>) => {

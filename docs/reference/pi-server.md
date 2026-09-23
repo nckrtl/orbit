@@ -105,7 +105,7 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`. A repeated key returns `200` with `duplicate: true` and starts no turn |
 | `POST /sessions/{id}/interrupt` | Aborts the active turn |
 | `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and cumulative token usage |
-| `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot, then `entry` and `state` events, with a `heartbeat` every 15 seconds |
+| `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot or, with `run` and `after`, a resumed start; then `entry` and `state` events, with a `heartbeat` every 15 seconds. See [Stream](#stream) |
 
 | Error code | Status | Meaning |
 | --- | --- | --- |
@@ -117,6 +117,22 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | `turn_active` | 409 | The session is already working on a turn |
 
 The turn ID is the key of the latest accepted send. The Gateway uses a new key for each turn and reuses it when it retries a send.
+
+## Stream
+
+Every stream event carries `run` and `sequence`. The run is a random ID that the server picks each time it loads a session. Sequence numbers start at 0 with each run and grow with each event. A transcript entry is streamed when Pi writes it. Pi writes an assistant message with a tool call when the call starts, and the tool result when the call ends.
+
+Without a cursor, the stream starts with a `snapshot` event, the same as `GET /sessions/{id}`.
+
+To resume, pass the last event the client received as `?run={run}&after={sequence}`. When the run is the session's current run and the sequence is not ahead of it, the stream starts with a `resumed` event:
+
+```json
+{"kind": "resumed", "run": "3f9c…", "sequence": 42, "session": {"id": "…"}, "context": []}
+```
+
+Then it sends the entries streamed after that sequence and the latest `state` event if it came after it, in sequence order. `context` lists the entries at or before the cursor whose tool calls have no result yet, so the client can name the results that follow.
+
+The server sends a snapshot instead when the cursor is missing or malformed, names another run, or is ahead of the run. A cursor from before a restart or an idle unload names another run.
 
 ## Thread states
 

@@ -114,3 +114,76 @@ it("groups tool steps until a text message, then starts a new group", () => {
         { type: "activities", entries: [commit] },
     ]);
 });
+
+it("keeps entries without duplicates when a resumed stream follows a snapshot", () => {
+    const message = (id: string, text: string) => ({
+        id,
+        kind: "message",
+        label: "user",
+        text,
+        at: "",
+    });
+    const snapshot = applyAgentEvent(
+        emptyConversation,
+        { kind: "snapshot", thread_id: 1, cursor: "run-1.7", entries: [message("m1", "One")] },
+        1,
+    );
+    const events = [
+        { kind: "entry", thread_id: 1, cursor: null, entry: message("m2", "Two") },
+        { kind: "entry", thread_id: 1, cursor: "run-1.8", entry: message("m3", "Three") },
+        // The viewer reconnects after run-1.8. The Gateway resumes without a snapshot.
+        { kind: "resumed", thread_id: 1, cursor: null },
+        // A replay can repeat an entry the viewer already has.
+        { kind: "entry", thread_id: 1, cursor: "run-1.9", entry: message("m3", "Three") },
+        { kind: "entry", thread_id: 1, cursor: null, entry: message("m4", "Four") },
+    ];
+    const state = events.reduce((current, event) => applyAgentEvent(current, event, 1), snapshot);
+
+    expect(state.entries.map((entry) => entry.id)).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(state.cursor).toBe("run-1.9");
+});
+
+it("replaces a running tool call with its finished version", () => {
+    const activity = (label: string, text: string): Entry => ({
+        id: "e2:0",
+        kind: "activity",
+        label,
+        text,
+        at: "",
+    });
+    const running = applyAgentEvent(
+        emptyConversation,
+        {
+            kind: "entry",
+            thread_id: 1,
+            cursor: "run-1.8",
+            entry: activity("Running", "Running: $ composer test"),
+        },
+        1,
+    );
+    const later = applyAgentEvent(
+        running,
+        {
+            kind: "entry",
+            thread_id: 1,
+            cursor: "run-1.9",
+            entry: { id: "e3", kind: "message", label: "assistant", text: "Waiting.", at: "" },
+        },
+        1,
+    );
+    const finished = applyAgentEvent(
+        later,
+        {
+            kind: "entry",
+            thread_id: 1,
+            cursor: "run-1.10",
+            entry: activity("bash", "ok\n$ composer test\nexit code 0"),
+        },
+        1,
+    );
+
+    expect(finished.entries).toEqual([
+        activity("bash", "ok\n$ composer test\nexit code 0"),
+        { id: "e3", kind: "message", label: "assistant", text: "Waiting.", at: "" },
+    ]);
+});

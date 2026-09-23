@@ -258,7 +258,9 @@ The task group page shows an Agents section below Subtasks. Vertical tabs select
 
 `GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
 
-Snapshots replace the browser transcript. The browser supplies an opaque `Last-Event-ID` on reconnect. T3 obtains a fresh full snapshot on each connection, then sends entry, state, and metric changes. Viewer connections do not write thread state or observation errors; polling owns persisted observations and rejects concurrent stale writes. Connections rotate periodically and close when the viewer is left. The external runtime owns transcripts; Orbit cannot recover a deleted remote conversation.
+Snapshots replace the browser transcript. Entries merge by ID and kind, so a repeated or updated entry replaces the earlier one in place.
+
+The browser supplies an opaque `Last-Event-ID` on reconnect. A tab that returns from the background reopens its stream with `?after_sequence=` and the last cursor it saw. T3 obtains a fresh full snapshot on each connection, then sends entry, state, and metric changes. Pi resumes after the cursor and sends only what the viewer missed; see [Pi driver](#pi-driver). Viewer connections do not write thread state or observation errors; polling owns persisted observations and rejects concurrent stale writes. Connections rotate periodically and close when the viewer is left. The external runtime owns transcripts; Orbit cannot recover a deleted remote conversation.
 
 ## Agent threads and drivers
 
@@ -317,6 +319,12 @@ The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the No
 The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
 
 Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
+
+A tool call appears as soon as it starts: an activity labeled `Running` with text such as `Running: $ composer test`. Its result replaces that entry, with the same ID and kind. When the turn settles and a call still has no result, such as after a Pi server restart, the entry shows the call with `(stopped without a result)`.
+
+A Pi stream cursor is `{run}.{sequence}`. On reconnect, the Gateway passes it to the Pi server, which resumes when the cursor belongs to its current run of the session. The stream then starts with a `resumed` event and continues with the entries and state after the cursor. The server sends a full snapshot on a first connection, and when the cursor is unknown, ahead of the server, or from another run, such as before a restart.
+
+When one Pi event becomes several entries, only the last carries the cursor, so a viewer that drops between them receives all of them again. [ADR 0134](/decisions/0134-resume-pi-agent-streams-from-a-cursor) records this decision.
 
 ## Session routing
 

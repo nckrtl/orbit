@@ -22,8 +22,8 @@ export interface Harness {
         body?: unknown,
         token?: string,
     ) => Promise<{ status: number; body: any }>;
-    /** Opens a stream and collects its events until `until` returns true. */
-    stream: (id: string, until: (events: any[]) => boolean) => Promise<any[]>;
+    /** Opens a stream and collects its events until `until` returns true. `query` can hold a cursor. */
+    stream: (id: string, until: (events: any[]) => boolean, query?: string) => Promise<any[]>;
     /** Starts a new registry and server over the same files, as after a restart. */
     restart: () => Promise<Harness>;
     close: () => Promise<void>;
@@ -89,9 +89,9 @@ export async function startHarness(
         return { status: response.status, body: await response.json() };
     };
 
-    const stream = async (id: string, until: (events: any[]) => boolean) => {
+    const stream = async (id: string, until: (events: any[]) => boolean, query = "") => {
         const controller = new AbortController();
-        const response = await fetch(`${url}/sessions/${id}/stream`, {
+        const response = await fetch(`${url}/sessions/${id}/stream${query}`, {
             headers: { Authorization: `Bearer ${TOKEN}` },
             signal: controller.signal,
         });
