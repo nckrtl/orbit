@@ -9,6 +9,7 @@ use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Nodes\NodeAgentRoleConverger;
 use App\Models\Node;
 use App\Models\NodeRole;
 use LogicException;
@@ -28,6 +29,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private ?DatabaseRoleBaseline $database = null,
         private ?WebSocketRoleBaseline $websocket = null,
         private ?AnalyticsRoleBaseline $analytics = null,
+        private ?NodeAgentRoleConverger $agentConverger = null,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -48,6 +50,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     {
         if ($assignment->role === RoleName::Ingress) {
             $this->metricsFleet->reconcile();
+            $this->convergeAgent($node);
 
             return;
         }
@@ -58,6 +61,13 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         if ($assignment->role !== RoleName::Metrics) {
             $this->metricsFleet->reconcile();
         }
+
+        $this->convergeAgent($node);
+    }
+
+    private function convergeAgent(Node $node): void
+    {
+        ($this->agentConverger ?? app(NodeAgentRoleConverger::class))->converge($node);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
