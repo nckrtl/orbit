@@ -32,4 +32,14 @@ final readonly class GitHubRepository
 
         return new self($matches[1], $matches[2]);
     }
+
+    /**
+     * The number of a pull request in this repository, from its web URL.
+     */
+    public function pullRequestNumber(string $url): ?int
+    {
+        $prefix = preg_quote('https://github.com/'.$this->owner.'/'.$this->name.'/pull/', '#');
+
+        return preg_match('#\A'.$prefix.'([1-9][0-9]{0,9})\z#D', $url, $matches) === 1 ? (int) $matches[1] : null;
+    }
 }

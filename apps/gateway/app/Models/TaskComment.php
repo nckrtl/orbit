@@ -15,7 +15,7 @@ final class TaskComment extends Model
     #[\Override]
     protected $fillable = [
         'task_group_id', 'task_id', 'agent_thread_id', 'completion_attempt', 'type', 'body', 'author',
-        'review_attempt', 'reviewer_thread_id', 'driver_turn', 'commit_sha', 'pr_url', 'posted_at',
+        'review_attempt', 'commit_sha', 'posted_at', 'receipt_hash', 'pull_request',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */
@@ -38,6 +38,6 @@ final class TaskComment extends Model
 
     protected function casts(): array
     {
-        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'type' => TaskCommentType::class, 'posted_at' => 'immutable_datetime'];
+        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'type' => TaskCommentType::class, 'posted_at' => 'immutable_datetime', 'pull_request' => 'array'];
     }
 }

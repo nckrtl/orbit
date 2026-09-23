@@ -1,11 +1,11 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension holds TaskGroup features in Backlog, runs Todo groups on a shared Instance with T3 agents and Jev routing, verifies the reviewer's pull request, and removes the instance on complete."
+description: "How the Gateway tasks extension holds TaskGroup features in Backlog and runs Todo groups on a shared Instance. Agents end turns with run receipts, and Orbit commits approved work and opens the pull request."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts T3 agents, and routes task sessions with typed comments and Jev. It then verifies and watches the reviewer's pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 
@@ -36,7 +36,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
 | `reviewer_agent_thread_id` | TaskGroup | Long-lived reviewer thread for the group |
 | `implementer_agent_thread_id` | Task | Fresh implementer thread for that subtask |
-| `pr_url` | TaskGroup | Pull request opened after the last sign-off |
+| `pr_url` | TaskGroup | Pull request Orbit opened after the last approval |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
 | `implementer_model` / `reviewer_model` | TaskGroup | `ORBIT_TASKS_IMPLEMENTER_MODEL` and `ORBIT_TASKS_REVIEWER_MODEL` set them for new groups. Unset, they default to `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
 | `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
@@ -124,9 +124,9 @@ The Node ceiling applies once `taskable` points at an Instance on that Node. A g
 
 A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
 
-When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the shared reviewer and first implementer through the selected driver. The Gateway stores their Orbit thread IDs only after creation and the opening turn succeed.
+When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the first implementer through the selected driver. The shared reviewer starts at the first handoff. The Gateway stores an Orbit thread ID only after creation and the opening turn succeed.
 
-A spawn that returns no thread id marks the group `failed` and logs which spawn refused. The failing subtask is marked `failed` too. This applies to both opening spawns and to the implementer of any later subtask, so no group stays `running` with a null thread id. Create answers with the failed group rather than raising, so one group cannot break an unrelated create.
+An implementer spawn that returns no thread id marks the group and the subtask `failed` and logs the refusal. This applies to the first and every later subtask, so no group stays `running` with a null thread id. A reviewer spawn that returns no thread id counts as a communication failure, and the next tick tries again. Create answers with the failed group rather than raising, so one group cannot break an unrelated create.
 
 `tasks:tick` (`php artisan tasks:tick`) then observes those stored reviewer and implementer threads and routes them. It does not poll Nodes for capacity. It observes the current reviewer and active subtask implementer, excluding earlier attempts and unrelated conversations.
 
@@ -175,15 +175,19 @@ Agents run on the T3 server of the Node that owns that Instance. The Gateway pos
 
 When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged at error. The spawn then returns null and stores no thread id.
 
-Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
+Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after the approval completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
-When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. It also reads `composer.json` at the workspace root, which must define a `check` script. Jev is asked only whether the agent is blocked, from the implementer thread and the task and group briefs. A pending input fails on its own.
+When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. It also reads `composer.json` at the workspace root, which must define a `check` script, and the implementer's run receipt. A pending input fails on its own.
 
-When every item passes, the Gateway sets the task to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. While that thread is still idle, or its snapshot is still the turn from before the handoff, the Gateway waits. It asks for an outcome only after a newer review turn stops.
+Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --outcome=OUTCOME --summary="…"`. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`. The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It writes `.git/orbit/run.json` atomically. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the decision.
 
-After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new composer-check run before handing back to the reviewer. The implementer does not post a `ready_for_review` comment.
+When an agent stops, the tick reads the receipt over SSH, stores it as a task comment with its content hash, and removes it. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried on the next tick without the file. `blocked` asks for assistance with the agent's summary. A missing receipt, or one whose outcome does not fit the turn, fails the `run_receipt` item. An unreachable workspace counts as a communication failure, not a missing receipt.
 
-A reviewer posts `changes_requested` or `approved`. The Gateway relays the findings to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. An approval is checked in code before advancing. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
+When every item passes, the Gateway sets the task to `reviewing` and asks for a review. At the first handoff it starts the reviewer with the group brief and the review request. Later handoffs send the request to the same reviewer. If that fails, the next tick tries again before it reads a reviewer receipt. While the reviewer's snapshot is still the turn from before the handoff, the Gateway waits.
+
+After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new composer-check run and a new receipt before handing back to the reviewer.
+
+For `changes_requested`, the Gateway relays the summary to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. For `approved`, the workspace must be on `task-{group id}`. The Gateway then commits every workspace change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval comment. Reviewers do not commit. A failed commit counts as a communication failure and is retried. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
 
 `thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
 
@@ -203,28 +207,26 @@ AgentThread state is authoritative. A `working` thread (including a starting T3 
 
 For each eligible stopped implementer, the tick reads `composer check` from tool activity. The run must name `composer check`, exit 0, and have no edit, write, or patch activity after it. An assistant message does not count. `composer check-platform-reqs` and other commands that start with `check` do not count.
 
-The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, even when the transcript shows a passing run. Jev is asked only whether the agent is blocked, and that answer passes only when Jev chooses `no` with a confidence at or above `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`).
+The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, even when the transcript shows a passing run.
 
-TypeSafe reports confidence as the margin between the two choices, so `0.75` needs a `no` probability of at least `0.875`. A pending input fails `waiting_for_input` in code and skips that question. A thread state the rubric does not recognize waits without a model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
+A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
-A stopped reviewer with `changes_requested` is relayed, and the task returns to `running`. An `approved` comment is checked in code: the commit equals HEAD, the branch is `task-{group id}`, the tree is clean, the commit is new for the subtask, and the final pull request verifies. A missing outcome comment asks Jev only whether the reviewer is blocked. `assistance_requested` and `resolution` still update the assistance flag and keep their history. Status stays the current phase for those two comments.
-
-Jev reads one role's evidence for each blocked question: the group title and brief, the task title and brief, and that role's thread state and recent entries. The implementer question does not include the shared reviewer thread, and the reviewer question does not include the implementer thread. Pull request, commit, and CI fields stay with the code checks. Rubric reminder turns are removed before Jev reads the thread. The agent's reply stays. [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence) owns this evidence.
+`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments.
 
 The Gateway sends one reminder that names every failed code item. It starts and ends with fixed sentences:
 
 | Role | Starts with | Ends with |
 | --- | --- | --- |
-| Implementer | "Orbit could not confirm the brief is complete." | "If it is, reply with a short summary of what changed and the composer check result. If something outside the brief stops you, say what it is." |
-| Reviewer | "Orbit could not confirm the review is complete." | "If something outside the review stops you, say what it is." |
+| Implementer | "Orbit could not confirm the brief is complete." | The run script instructions that also end the implementer prompt |
+| Reviewer | "Orbit could not confirm the review is complete." | The run script instructions that also end each review request |
 
-The reminder does not say that the thread is blocked and does not ask for an `assistance_requested` comment. A blocker the agent names in its reply fails the next evaluation.
+The run script instructions name the commands for that role. The reminder installs the script again before it is sent. It does not say that the thread is blocked. An agent reports a blocker with a `blocked` receipt. A receipt that the scheduler acted on is spent, so the next turn needs a new one.
 
-The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
+The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
 
-A missing Jev answer, one without a confidence, a missing or empty `TYPESAFE_API_KEY`, or a failed or unreachable TypeSafe request counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The recorded reason names the failure but never includes the provider's response. The assistance reason names each remaining item, and a Jev item includes its choice and confidence.
+A failed receipt read, script install, send, or commit counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The assistance reason names each remaining item.
 
-Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
+Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. A stored receipt uses its outcome as the type and the role as the author. Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
 
 Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
@@ -249,21 +251,15 @@ Run the tick with `php artisan tasks:tick` while the extension is enabled. One G
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
-### Calibrate Jev
-
-The default test suite fakes Jev. To measure the blocked question against real Jev, set `TYPESAFE_API_KEY` in the environment and run the calibration suite from `apps/gateway`:
-
-```bash
-composer test:calibration
-```
-
-The suite reads the observations in `apps/gateway/tests/Fixtures/JevCalibration`. Each fixture uses the observation shape from the Coder escalation webhook and names its role and expected choice. The suite fails when Jev picks another choice or when a passing fixture scores below the configured threshold. It prints each choice, confidence, and probability pair. It refuses to run without a key, and CI does not run it.
-
 ## Pull request and settle metrics
 
-The reviewer creates the final GitHub pull request and supplies its URL in the final `approved` comment. Before advancing the task, the Gateway verifies that exact URL against the Project repository, the instance branch (`task-{group id}`), and the repository's default target branch. The PR head must equal the approved commit and current workspace HEAD; a later unreviewed head is rejected even when it includes the approved commit. The Gateway stores the verified URL as the group's `pr_url`. Invalid references, missing credentials, or an unavailable GitHub API leave the task in review and use the existing reminder and assistance flow.
+Orbit opens the pull request after the approval of the last subtask. That approval describes it with `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. The script accepts these flags only for that approval and refuses the approval without them. There is no limit on the number of changes.
 
-Settling uses the stored PR and watches for its merge. Existing settling groups keep their stored URL. A settling group without a URL requests assistance and remains incomplete. The Gateway does not create a replacement PR.
+Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group. Jev reads the group and subtask briefs and the pull request fields. For each subtask, it answers whether a listed change delivers it. An answer below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) counts as missing. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
+
+After the commit, the Gateway pushes the workspace HEAD to `task-{group id}` on `origin` and opens the pull request against the Project's default branch through the [Gateway GitHub App](/reference/github-app). The group title is the title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each subtask passed `composer check` and reviewer approval. When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed push or request counts as a communication failure and is retried.
+
+Settling watches the stored pull request through the GitHub App until it merges. A settling group without a URL requests assistance and remains incomplete.
 
 The Gateway then writes settle metrics. Active groups also refresh these fields when an authorized caller shows the group.
 
@@ -288,7 +284,6 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | --- | --- |
 | `ORBIT_CODER_WEBHOOK_URL` | HTTPS endpoint that receives the settle POST |
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
-| `ORBIT_TASKS_GITHUB_TOKEN` | GitHub token with repository and pull-request read access for final approval verification and merge watching |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
 | `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |

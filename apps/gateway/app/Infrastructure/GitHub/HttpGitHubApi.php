@@ -8,6 +8,8 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubInstallation;
+use App\Domain\GitHub\GitHubPullRequestDraft;
+use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -130,10 +132,72 @@ final readonly class HttpGitHubApi implements GitHubApi
         int $installationId,
         GitHubRepository $repository,
     ): string {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read']);
+    }
+
+    public function repositoryPullRequestToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write']);
+    }
+
+    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string
+    {
+        $path = '/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name).'/pulls';
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->post($path, [
+            'title' => $draft->title,
+            'head' => $draft->head,
+            'base' => $draft->base,
+            'body' => $draft->body,
+        ]));
+        $url = $response->json('html_url');
+        if ($response->successful() && is_string($url) && $url !== '') {
+            return $url;
+        }
+        if ($response->status() !== 422) {
+            throw GitHubApiException::refused();
+        }
+
+        $existing = $this->send(fn (): Response => $this->request()->withToken($token)->get($path, [
+            'state' => 'open',
+            'head' => $repository->owner.':'.$draft->head,
+            'base' => $draft->base,
+        ]));
+        $url = $existing->json('0.html_url');
+        if (! $existing->successful() || ! is_string($url) || $url === '') {
+            throw GitHubApiException::refused();
+        }
+
+        return $url;
+    }
+
+    public function pullRequestState(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequestState
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get('/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name).'/pulls/'.$number));
+        if (! $response->successful()) {
+            throw GitHubApiException::unavailable();
+        }
+        if ($response->json('merged') === true) {
+            return GitHubPullRequestState::Merged;
+        }
+
+        return $response->json('state') === 'closed' ? GitHubPullRequestState::Closed : GitHubPullRequestState::Open;
+    }
+
+    /** @param array<string, string> $permissions */
+    private function repositoryToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+        array $permissions,
+    ): string {
         $response = $this->send(
             fn (): Response => $this->asApp($credentials)->post("/app/installations/{$installationId}/access_tokens", [
                 'repositories' => [$repository->name],
-                'permissions' => ['contents' => 'read'],
+                'permissions' => $permissions,
             ]),
         );
 

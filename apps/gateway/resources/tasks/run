@@ -1,0 +1,100 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
+ * An agent ends its turn with: .git/orbit/run --outcome=OUTCOME --summary="..."
+ * The approval of the last subtask also describes the pull request:
+ * --pr-summary="..." --pr-change="..." (repeat) --pr-breaking="..." (repeat, or none)
+ */
+
+const OUTCOMES = [
+    'implementer' => ['ready_for_review', 'blocked'],
+    'reviewer' => ['approved', 'changes_requested', 'blocked'],
+];
+
+const REPEATABLE = ['pr-change', 'pr-breaking'];
+
+function refuse(string $message): never
+{
+    fwrite(STDERR, "orbit run: {$message}\n");
+    exit(2);
+}
+
+$turn = json_decode((string) @file_get_contents(__DIR__.'/turn.json'), true);
+$role = is_array($turn) ? ($turn['role'] ?? null) : null;
+if (! is_string($role) || ! array_key_exists($role, OUTCOMES)) {
+    refuse('Orbit has not started a turn in this workspace.');
+}
+$final = ($turn['final'] ?? false) === true;
+
+$options = [];
+$arguments = array_slice($argv, 1);
+while ($arguments !== []) {
+    $argument = array_shift($arguments);
+    if (preg_match('/\A--(outcome|summary|pr-summary|pr-change|pr-breaking)(?:=(.*))?\z/s', $argument, $match) !== 1) {
+        refuse("unknown argument {$argument}.");
+    }
+    $name = $match[1];
+    $value = array_key_exists(2, $match) ? $match[2] : array_shift($arguments);
+    if (! is_string($value)) {
+        refuse("--{$name} needs a value.");
+    }
+    if (! in_array($name, REPEATABLE, true) && array_key_exists($name, $options)) {
+        refuse("pass --{$name} once.");
+    }
+    $value = trim($value);
+    if ($value === '') {
+        refuse("--{$name} cannot be empty.");
+    }
+    if (in_array($name, REPEATABLE, true)) {
+        $options[$name][] = $value;
+    } else {
+        $options[$name] = $value;
+    }
+}
+
+$allowed = OUTCOMES[$role];
+$outcome = $options['outcome'] ?? '';
+if (! in_array($outcome, $allowed, true)) {
+    refuse('--outcome must be one of: '.implode(', ', $allowed).'.');
+}
+if (! array_key_exists('summary', $options)) {
+    refuse('--summary is required.');
+}
+
+$receipt = ['outcome' => $outcome, 'summary' => $options['summary']];
+$describesPullRequest = array_key_exists('pr-summary', $options) || array_key_exists('pr-change', $options) || array_key_exists('pr-breaking', $options);
+if ($final && $role === 'reviewer' && $outcome === 'approved') {
+    if (! array_key_exists('pr-summary', $options)) {
+        refuse('approving the last subtask needs --pr-summary.');
+    }
+    if (! array_key_exists('pr-change', $options)) {
+        refuse('approving the last subtask needs at least one --pr-change.');
+    }
+    if (! array_key_exists('pr-breaking', $options)) {
+        refuse('approving the last subtask needs at least one --pr-breaking. Use --pr-breaking=none when nothing breaks.');
+    }
+    $breaking = $options['pr-breaking'];
+    if (in_array('none', array_map(strtolower(...), $breaking), true)) {
+        if (count($breaking) > 1) {
+            refuse('--pr-breaking=none cannot be combined with other breaking changes.');
+        }
+        $breaking = [];
+    }
+    $receipt['pull_request'] = ['summary' => $options['pr-summary'], 'changes' => $options['pr-change'], 'breaking' => $breaking];
+} elseif ($describesPullRequest) {
+    refuse('--pr-summary, --pr-change, and --pr-breaking are only for approving the last subtask.');
+}
+$receipt['nonce'] = bin2hex(random_bytes(16));
+
+$contents = json_encode($receipt, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+$temporary = __DIR__.'/run.json.'.getmypid();
+if (file_put_contents($temporary, $contents."\n") === false || ! rename($temporary, __DIR__.'/run.json')) {
+    @unlink($temporary);
+    refuse('could not write the run receipt.');
+}
+
+fwrite(STDOUT, "Orbit recorded the run receipt ({$outcome}). End your turn now.\n");

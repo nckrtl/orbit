@@ -3212,6 +3212,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0121-end-agent-turns-with-a-run-receipt.md",
+            "title": "ADR 0121: End agent turns with a run receipt",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0098",
+                "0113",
+                "0114",
+                "0117",
+                "0121"
+            ]
+        },
+        {
             "path": "docs/decisions/0122-hold-task-groups-in-backlog-until-ready.md",
             "title": "ADR 0122: Hold task groups in Backlog until they are ready",
             "kind": "decision",
@@ -3382,6 +3404,7 @@
                 "0116",
                 "0117",
                 "0120",
+                "0121",
                 "0122"
             ]
         },
@@ -3975,10 +3998,11 @@
                 "Instance",
                 "Node",
                 "Project",
-                "Tool"
+                "Task"
             ],
             "governing_adrs": [
-                "0098"
+                "0098",
+                "0121"
             ]
         },
         {
@@ -4471,9 +4495,7 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
+            "components": [],
             "concepts": [
                 "Database",
                 "Development node exclusion",
@@ -4495,7 +4517,7 @@
                 "0113",
                 "0114",
                 "0116",
-                "0117",
+                "0121",
                 "0122"
             ]
         },

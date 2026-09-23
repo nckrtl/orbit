@@ -28,7 +28,6 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
 use Laravel\Ai\Classification;
-use Laravel\Ai\Responses\Data\ChoiceAnswer;
 use Tests\Support\FakeAgentDriver;
 
 /** @return array{TaskGroup, Task, FakeAgentDriver, AgentDriverRegistry} */
@@ -45,7 +44,7 @@ function driver_group(): array
     $registry = new AgentDriverRegistry([$driver]);
     app()->instance(AgentDriverRegistry::class, $registry);
     $spawner = app(AgentSpawner::class);
-    $group->update(['reviewer_agent_thread_id' => $spawner->spawnReviewer($group)]);
+    $group->update(['reviewer_agent_thread_id' => $spawner->spawnReviewer($task)]);
     $task->update(['implementer_agent_thread_id' => $spawner->spawnImplementer($task)]);
 
     return [$group, $task, $driver, $registry];
@@ -64,7 +63,7 @@ it('creates the conversation for each role through the driver recorded for that 
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$implementer, $reviewer]));
     $spawner = app(AgentSpawner::class);
 
-    $reviewerThread = AgentThread::query()->findOrFail($spawner->spawnReviewer($group));
+    $reviewerThread = AgentThread::query()->findOrFail($spawner->spawnReviewer($task));
     $implementerThread = AgentThread::query()->findOrFail($spawner->spawnImplementer($task));
 
     expect($reviewerThread->driver)->toBe('reviewer-runtime')
@@ -177,7 +176,6 @@ it('routes an attached conversation without a legacy pointer', function (): void
     [$group, $task, $driver] = driver_group();
     $task->update(['implementer_agent_thread_id' => null]);
     $driver->observation = new AgentObservation(AgentThreadState::Done);
-    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 1.0)]]);
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
@@ -218,7 +216,6 @@ it('alerts once after a continuous observation outage and rearms after recovery'
         public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 1.0)]]);
     $scheduler = app(TaskScheduler::class);
 
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);

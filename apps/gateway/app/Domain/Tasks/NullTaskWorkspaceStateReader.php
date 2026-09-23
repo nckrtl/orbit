@@ -18,11 +18,6 @@ final readonly class NullTaskWorkspaceStateReader implements TaskWorkspaceStateR
         return null;
     }
 
-    public function isClean(AppInstance $instance): bool
-    {
-        return false;
-    }
-
     public function definesComposerCheckScript(AppInstance $instance): bool
     {
         return false;

@@ -3573,10 +3573,7 @@ export interface components {
             author?: string;
             posted_at?: string;
             review_attempt?: number | null;
-            reviewer_thread_id?: string | null;
-            driver_turn?: string | null;
             commit_sha?: string | null;
-            pr_url?: string | null;
         };
         ToolManager: {
             id?: number | null;
@@ -15146,19 +15143,10 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @enum {string} */
-                    type: "ready_for_review" | "changes_requested" | "approved" | "assistance_requested" | "resolution";
+                    type: "assistance_requested" | "resolution";
                     body: string;
                     author: string;
                     agent_thread_id?: number | null;
-                    /** @description Conditionally required. */
-                    review_attempt?: number | null;
-                    /** @description Conditionally required. */
-                    reviewer_thread_id?: string | null;
-                    /** @description Conditionally required. */
-                    driver_turn?: string | null;
-                    commit_sha?: string | null;
-                    /** Format: uri */
-                    pr_url?: string | null;
                 };
             };
         };
