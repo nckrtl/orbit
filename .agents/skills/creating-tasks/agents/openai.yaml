@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creating Tasks"
+  short_description: "Split an agreed Orbit feature into small subtasks"
+  default_prompt: "Use $creating-tasks to split this agreed Orbit feature into subtasks with one goal each, review the breakdown with me, and create them in the task group."
