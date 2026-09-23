@@ -49,6 +49,7 @@ final readonly class CommandVocabulary
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
+        'tasks' => ['cancel', 'complete', 'status'],
         'top' => ['top'],
     ];
 
@@ -58,6 +59,7 @@ final readonly class CommandVocabulary
         'metrics:credentials',
         'node:metrics',
         'node:settings',
+        'tasks:agents',
     ];
 
     /** @var list<string> */

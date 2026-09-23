@@ -194,6 +194,7 @@
               "cli/realtime",
               "cli/top",
               "cli/extension",
+              "cli/tasks",
               "cli/herdr",
               "cli/proxycli",
               "cli/workspace"

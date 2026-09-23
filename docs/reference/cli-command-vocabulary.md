@@ -44,9 +44,12 @@ An operator selects `create` and `destroy` when the Gateway owns the resource li
 | `process` | `create` and `destroy` | A [Process](/reference/app-processes-and-schedules) or a Project Process definition |
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules) or a Project Schedule definition |
+| `tasks` | `create` | A [task group](/reference/tasks); `tasks:cancel` and `tasks:complete` end it |
+| `tasks:comment` | `create` | A typed comment on a subtask |
+| `tasks:subtask` | `create` and `destroy` | A subtask of a task group |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
-`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, `metrics:exporter`, and `proxycli` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
+`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension`, `metrics`, `metrics:exporter`, `proxycli`, and `tasks` use `enable` and `disable`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
 
 ## Family-specific actions
 
@@ -69,13 +72,14 @@ Some families expose actions that are not the pairs above. Those last segments b
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
+| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, or reports whether the tasks extension is on. |
 | `top` | `top` | The CLI shows the fleet as a live screen. |
 
 `doctor`, `profile`, and `top` are one-segment commands. Each family name is the command.
 
 ## Noun-ending commands
 
-Three commands keep a noun as their last segment.
+Five commands keep a noun as their last segment.
 
 | Command | Result |
 | --- | --- |
@@ -83,9 +87,12 @@ Three commands keep a noun as their last segment.
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one synchronous Node metrics snapshot. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
+| `tasks:agents` | The CLI lists the agent threads of a [task group](/reference/tasks). |
 
 ## Gateway route names
 
 `instance:dependencies:show` is a stored-inventory API and SDK operation without a CLI adapter. The CLI exposes `instance:dependencies:scan` for directory, domain, and `--all` fleet scans, and `instance:dependencies:update` for one development instance via directory or `--app`, as described in [Instance dependencies](/reference/instance-dependencies). Update rejects `--all` and `--latest`.
 
 A named Gateway API route whose prefix matches a CLI command family and whose last segment is a vocabulary verb, a family-specific action, or a noun-ending command carries the same name as the CLI command. The Gateway lives in `apps/gateway` and records that route name as the activity command.
+
+`tasks:agent-stream` is a server-sent event stream for the web task board, without an SDK request or a CLI adapter.

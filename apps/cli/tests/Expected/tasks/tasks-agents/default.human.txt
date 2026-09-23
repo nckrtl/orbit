@@ -1,0 +1,16 @@
+Loading agent threads...
+
+┌  List agent threads
+│
+├  ● Loaded agent threads
+│
+└  Loaded agent threads.
+
+ ┌────┬─────────────┬─────────┬────────┬───────────────┬─────────┬────────┬───────────┬──────────────────┐
+ │ ID │ ROLE        │ SUBTASK │ DRIVER │ MODEL         │ STATE   │ TOKENS │ LINE DIFF │ OBSERVED         │
+ ├────┼─────────────┼─────────┼────────┼───────────────┼─────────┼────────┼───────────┼──────────────────┤
+ │ 1  │ implementer │ 1       │ t3     │ gpt-5.6-luna  │ done    │ 48,200 │ +120 -14  │ 2026-09-23 09:59 │
+ │ 2  │ reviewer    │ —       │ t3     │ claude-opus-5 │ working │ —      │ —         │ 2026-09-23 09:59 │
+ └────┴─────────────┴─────────┴────────┴───────────────┴─────────┴────────┴───────────┴──────────────────┘
+Thread 2: T3 did not answer in time.
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

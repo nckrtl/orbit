@@ -2697,7 +2697,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List task agent sessions */
+        /**
+         * List task agent sessions
+         * @description List a task group's agent threads.
+         */
         get: operations["tasks-agents"];
         put?: never;
         post?: never;
@@ -2832,10 +2835,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** tasks:comment:list */
+        /**
+         * tasks:comment:list
+         * @description List a subtask's comments, newest first.
+         */
         get: operations["tasks-comment-list"];
         put?: never;
-        /** tasks:comment:create */
+        /**
+         * tasks:comment:create
+         * @description Ask for assistance on a subtask or resolve a request.
+         */
         post: operations["tasks-comment-create"];
         delete?: never;
         options?: never;
@@ -14481,11 +14490,18 @@ export interface operations {
             content: {
                 "application/json": {
                     app_id: number;
+                    /** @description Short name of the feature */
                     title: string;
+                    /** @description Deliverables and acceptance */
                     brief: string;
-                    /** @enum {string} */
+                    /**
+                     * @description backlog (default) or todo
+                     * @enum {string}
+                     */
                     status?: never;
+                    /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
+                    /** @description Start a T3 planner that shapes the group in Backlog */
                     plan?: boolean;
                     notify_on_settle?: boolean;
                     tasks?: {
@@ -14615,9 +14631,14 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description New title */
                     title?: string;
+                    /** @description New brief */
                     brief?: string;
-                    /** @enum {string} */
+                    /**
+                     * @description backlog or todo
+                     * @enum {string}
+                     */
                     status?: never;
                 };
             };
@@ -14907,7 +14928,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Short name of the step */
                     title: string;
+                    /** @description Deliverables and acceptance of the step */
                     brief: string;
                 };
             };
@@ -15056,8 +15079,11 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description New title */
                     title?: string;
+                    /** @description New brief */
                     brief?: string;
+                    /** @description New position, starting at 1 */
                     position?: number;
                 };
             };
@@ -15200,7 +15226,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["TaskComment"];
+                        data: components["schemas"]["TaskComment"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -15239,9 +15265,14 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
+                    /**
+                     * @description assistance_requested or resolution
+                     * @enum {string}
+                     */
                     type: "assistance_requested" | "resolution";
+                    /** @description Comment text */
                     body: string;
+                    /** @description Who wrote the comment */
                     author: string;
                     agent_thread_id?: number | null;
                 };

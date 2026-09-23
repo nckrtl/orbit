@@ -369,6 +369,7 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Task",
                 "Tool",
                 "proxycli"
             ],
@@ -485,6 +486,23 @@
                 "Process",
                 "Project",
                 "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks.mdx",
+            "title": "tasks",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Task group",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -3851,6 +3869,8 @@
                 "Router",
                 "Schedule",
                 "Setup step",
+                "Task",
+                "Task group",
                 "Teardown step",
                 "Tool",
                 "proxycli"

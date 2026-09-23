@@ -1,0 +1,12 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ListTaskGroupsRequest",
+    "route": "GET /api/v1/task-groups",
+    "status": 200,
+    "body": {
+        "data": [],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

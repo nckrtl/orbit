@@ -1,0 +1,28 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\DestroySubtaskRequest",
+    "route": "DELETE /api/v1/task-groups/{group}/tasks/{task}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "task_group_id": 1,
+            "position": 2,
+            "title": "Add SDK requests",
+            "brief": "One request class per route.",
+            "status": "todo",
+            "implementer_agent_thread_id": null,
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "type": "implementation",
+            "target_thread_id": null,
+            "completion_summary": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
