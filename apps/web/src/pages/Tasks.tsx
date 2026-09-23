@@ -345,7 +345,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
             )}
             {task && detail && (
                 <>
-                    <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:h-[320px] lg:grid-cols-2">
+                    <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:min-h-0 lg:flex-1 lg:basis-0 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
                         <Properties
                             title="Task"
                             className="min-h-0"
@@ -376,8 +376,11 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                         </Frame>
                     </div>
                     {subtaskId === undefined && (
-                        <section aria-label="Subtasks" className="shrink-0">
-                            <div className="kanban-board grid grid-cols-1 lg:grid-cols-3">
+                        <section
+                            aria-label="Subtasks"
+                            className="shrink-0 lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col"
+                        >
+                            <div className="kanban-board grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:grid-rows-[minmax(0,1fr)]">
                                 {subtaskColumns.map((column) => {
                                     const subtasks = task.tasks
                                         .filter((subtask) => taskColumn(subtask.status) === column)
@@ -423,15 +426,17 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                         </section>
                     )}
                     {"tasks" in detail ? (
-                        <AgentSessions
-                            key={`${id}:group`}
-                            groupId={task.id}
-                            projectCode={task.project_code}
-                        />
+                        <div className="flex min-w-0 flex-col md:min-h-0 md:flex-1 lg:basis-0">
+                            <AgentSessions
+                                key={`${id}:group`}
+                                groupId={task.id}
+                                projectCode={task.project_code}
+                            />
+                        </div>
                     ) : (
                         <div
                             key={`${id}:${detail.id}`}
-                            className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:min-h-0 md:flex-1 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(36ch,52ch)] lg:grid-rows-[minmax(0,1fr)]"
+                            className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:min-h-0 md:flex-1 lg:grid lg:basis-0 lg:grid-cols-[minmax(0,1fr)_minmax(36ch,52ch)] lg:grid-rows-[minmax(0,1fr)]"
                         >
                             <AgentSessions
                                 groupId={task.id}
