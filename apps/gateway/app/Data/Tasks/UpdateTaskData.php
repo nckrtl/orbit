@@ -9,10 +9,11 @@ use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
 #[MapOutputName(SnakeCaseMapper::class)]
-final class AddTaskData extends Data
+final class UpdateTaskData extends Data
 {
     public function __construct(
-        public string $title,
-        public string $brief,
+        public ?string $title,
+        public ?string $brief,
+        public ?int $position,
     ) {}
 }

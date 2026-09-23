@@ -46,11 +46,11 @@ final readonly class AnnotationStoreAction
                 'app_id' => $instance->app_id, 'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
                 'execution_mode' => TaskExecutionMode::ExistingThread, 'agent_driver' => 't3',
                 'title' => mb_substr((string) $context['comment'], 0, 200), 'brief' => $context['comment'],
-                'status' => TaskGroupStatus::Queued,
+                'status' => TaskGroupStatus::Todo,
             ]);
             $task = Task::query()->create([
                 'task_group_id' => $group->id, 'type' => TaskType::Annotation, 'position' => 1,
-                'title' => $group->title, 'brief' => $group->brief, 'status' => TaskStatus::Pending,
+                'title' => $group->title, 'brief' => $group->brief, 'status' => TaskStatus::Todo,
                 'target_thread_id' => $thread,
             ]);
             $annotation = Annotation::query()->create([
@@ -102,12 +102,12 @@ final readonly class AnnotationStoreAction
             $annotation->refresh();
             $task = $annotation->task()->lockForUpdate()->firstOrFail();
             if ($threadId !== null && $threadId !== $task->target_thread_id) {
-                if ($annotation->command !== null || $task->status !== TaskStatus::Pending) {
+                if ($annotation->command !== null || $task->status !== TaskStatus::Todo) {
                     throw new ResourceOperationException('annotation.already_dispatched', 'A dispatched annotation cannot be assigned to another thread.', 409);
                 }
                 $task->target_thread_id = $threadId;
             }
-            if ($annotation->delivery !== 'error' || $task->target_thread_id === null || $task->status !== TaskStatus::Pending) {
+            if ($annotation->delivery !== 'error' || $task->target_thread_id === null || $task->status !== TaskStatus::Todo) {
                 throw new ResourceOperationException('annotation.not_retryable', 'This annotation cannot be retried.', 409);
             }
             $task->save();

@@ -20,13 +20,13 @@ final readonly class DispatchAnnotationsAction
     public function execute(): int
     {
         $sent = 0;
-        $candidates = Annotation::query()->with('task.taskGroup')->whereHas('task', static fn ($q) => $q->where('status', TaskStatus::Pending)->whereHas('taskGroup', static fn ($g) => $g->where('execution_mode', TaskExecutionMode::ExistingThread)))->whereIn('delivery', ['queued', 'sending'])
+        $candidates = Annotation::query()->with('task.taskGroup')->whereHas('task', static fn ($q) => $q->where('status', TaskStatus::Todo)->whereHas('taskGroup', static fn ($g) => $g->where('execution_mode', TaskExecutionMode::ExistingThread)))->whereIn('delivery', ['queued', 'sending'])
             ->whereHas('instance', static fn ($q) => $q->where('status', '!=', 'removing'))->whereNotNull('app_instance_id')->where(static fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<', now()))
             ->orderBy('submission_order')->limit(20)->get();
         foreach ($candidates as $candidate) {
             $annotation = DB::transaction(function () use ($candidate): ?Annotation {
                 $candidate->refresh();
-                if (! in_array($candidate->delivery, ['queued', 'sending'], true) || $candidate->task->status !== TaskStatus::Pending || $candidate->lease_until?->isFuture()) {
+                if (! in_array($candidate->delivery, ['queued', 'sending'], true) || $candidate->task->status !== TaskStatus::Todo || $candidate->lease_until?->isFuture()) {
                     return null;
                 }
                 $earlier = Annotation::query()->whereHas('task', static fn ($q) => $q->where('target_thread_id', $candidate->task->target_thread_id)->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Cancelled]))

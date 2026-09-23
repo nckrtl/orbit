@@ -15,6 +15,6 @@ final class TaskSequenceException extends DomainException
 
     public static function notNext(int $taskId, int $groupId): self
     {
-        return new self("Task {$taskId} is not the next pending subtask in group {$groupId}.");
+        return new self("Task {$taskId} is not the next todo subtask in group {$groupId}.");
     }
 }

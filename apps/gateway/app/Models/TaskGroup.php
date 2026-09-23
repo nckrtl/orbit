@@ -52,7 +52,7 @@ final class TaskGroup extends Model
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
-        'status' => 'queued',
+        'status' => 'backlog',
         'execution_mode' => 'managed',
         'implementer_agent_driver' => 't3',
         'reviewer_agent_driver' => 't3',

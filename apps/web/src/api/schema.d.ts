@@ -2657,7 +2657,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.
+         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2683,7 +2683,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a Task group
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`). Moving to `todo` asks the scheduler to claim. Requires Gateway access. Returns `tasks.disabled` while the extension is off.
+         */
+        patch: operations["tasks-update"];
         trace?: never;
     };
     "/api/v1/task-groups/{group}/agents": {
@@ -2731,7 +2735,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a queued, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -2770,14 +2774,38 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Add a Task
-         * @description Appends one Task to a Task group at the next position. Requires Gateway access. Returns `tasks.disabled` while the extension is off.
+         * Create a subtask
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. Requires Gateway access. Returns `tasks.disabled` while the extension is off.
          */
-        post: operations["tasks-add"];
+        post: operations["tasks-subtask-create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/tasks/{task}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Destroy a subtask
+         * @description Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Requires Gateway access. Returns `tasks.disabled` while the extension is off.
+         */
+        delete: operations["tasks-subtask-destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a subtask
+         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). Other subtasks shift so positions stay gapless from 1. Requires Gateway access. Returns `tasks.disabled` while the extension is off.
+         */
+        patch: operations["tasks-subtask-update"];
         trace?: never;
     };
     "/api/v1/task-groups/{group}/tasks/{task}/comments": {
@@ -2809,7 +2837,7 @@ export interface paths {
         put?: never;
         /**
          * Disable Tasks
-         * @description Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, complete, and cancel return `tasks.disabled`.
+         * @description Turns the Gateway tasks extension off. Existing Task groups stay. Further group and subtask operations return `tasks.disabled`.
          */
         post: operations["tasks-disable"];
         delete?: never;
@@ -3482,7 +3510,7 @@ export interface components {
             title?: string;
             brief?: string;
             /** @enum {string} */
-            status?: "queued" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
             notify_coder?: boolean;
@@ -3504,7 +3532,7 @@ export interface components {
             title?: string;
             brief?: string;
             /** @enum {string} */
-            status?: "pending" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
+            status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
             implementer_agent_thread_id?: number | null;
             tokens?: number | null;
             line_diff?: number | null;
@@ -14376,7 +14404,7 @@ export interface operations {
         parameters: {
             query?: {
                 app_id?: number;
-                status?: "queued" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+                status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             };
             header?: never;
             path?: never;
@@ -14429,6 +14457,8 @@ export interface operations {
                     app_id: number;
                     title: string;
                     brief: string;
+                    /** @enum {string} */
+                    status?: never;
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
                     tasks?: {
@@ -14536,6 +14566,77 @@ export interface operations {
             };
             /** @description The tasks extension is disabled (`tasks.disabled`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    brief?: string;
+                    /** @enum {string} */
+                    status?: never;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskGroup"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14766,7 +14867,7 @@ export interface operations {
             };
         };
     };
-    "tasks-add": {
+    "tasks-subtask-create": {
         parameters: {
             query?: never;
             header?: never;
@@ -14799,6 +14900,144 @@ export interface operations {
             };
             /** @description Created. */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-subtask-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-subtask-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    title?: string;
+                    brief?: string;
+                    position?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

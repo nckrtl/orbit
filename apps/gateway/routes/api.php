@@ -558,9 +558,16 @@ Route::prefix('v1')->group(function (): void {
         Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
             ->whereNumber('group')
             ->name('tasks:show');
-        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'addTask'])
+        Route::patch('task-groups/{group}', [TaskGroupsController::class, 'update'])
             ->whereNumber('group')
-            ->name('tasks:add');
+            ->name('tasks:update');
+        Route::post('task-groups/{group}/tasks', [TaskGroupsController::class, 'createTask'])
+            ->whereNumber('group')
+            ->name('tasks:subtask:create');
+        Route::patch('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'updateTask'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:update');
+        Route::delete('task-groups/{group}/tasks/{task}', [TaskGroupsController::class, 'destroyTask'])
+            ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:destroy');
         Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
         Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])

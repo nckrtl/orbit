@@ -55,7 +55,7 @@ final class Task extends Model
     /** @var array<string, mixed> */
     #[\Override]
     protected $attributes = [
-        'status' => 'pending',
+        'status' => 'todo',
         'type' => 'implementation',
     ];
 

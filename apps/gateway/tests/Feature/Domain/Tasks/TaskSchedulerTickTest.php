@@ -703,7 +703,7 @@ it('ignores tasks that are not in progress even when they have a thread', functi
     expect($decisions)->toBe([])
         ->and($task->fresh()->status)->toBe($status);
     Classification::assertNothingClassified();
-})->with([TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled]);
+})->with([TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled]);
 
 it('does not classify an in-progress task without an attached session', function (): void {
     $group = tick_group();

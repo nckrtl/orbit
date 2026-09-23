@@ -6372,42 +6372,6 @@
       }
     },
     {
-      "name": "tasks-add",
-      "title": "Add a Task",
-      "description": "Appends one Task to a Task group at the next position. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
-      "method": "POST",
-      "path": "/api/v1/task-groups/{group}/tasks",
-      "path_inputs": [
-        "group"
-      ],
-      "query_inputs": [],
-      "streams": false,
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "group": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Task group ID."
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 160
-          },
-          "brief": {
-            "type": "string",
-            "maxLength": 8000
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "group",
-          "title",
-          "brief"
-        ]
-      }
-    },
-    {
       "name": "tasks-agents",
       "title": "List task agent sessions",
       "description": "List task agent sessions",
@@ -6436,7 +6400,7 @@
     {
       "name": "tasks-cancel",
       "title": "Cancel a Task group",
-      "description": "Cancels a queued, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.",
+      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group and clears its shared Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for settling or completed groups.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/cancel",
       "path_inputs": [
@@ -6616,7 +6580,7 @@
     {
       "name": "tasks-create",
       "title": "Create a Task group",
-      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off. The Gateway scheduler then claims the oldest queued group that still fits the concurrency ceilings.",
+      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -6636,6 +6600,10 @@
           "brief": {
             "type": "string",
             "maxLength": 8000
+          },
+          "status": {
+            "type": "string",
+            "enum": []
           },
           "notify_coder": {
             "type": "boolean"
@@ -6676,7 +6644,7 @@
     {
       "name": "tasks-disable",
       "title": "Disable Tasks",
-      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further create, add, list, show, complete, and cancel return `tasks.disabled`.",
+      "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further group and subtask operations return `tasks.disabled`.",
       "method": "POST",
       "path": "/api/v1/tasks/disable",
       "path_inputs": [],
@@ -6725,7 +6693,8 @@
           "status": {
             "type": "string",
             "enum": [
-              "queued",
+              "backlog",
+              "todo",
               "reserved",
               "running",
               "reviewing",
@@ -6778,6 +6747,154 @@
         "type": "object",
         "properties": {},
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-subtask-create",
+      "title": "Create a subtask",
+      "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "title",
+          "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-subtask-destroy",
+      "title": "Destroy a subtask",
+      "description": "Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
+      "method": "DELETE",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "tasks-subtask-update",
+      "title": "Update a subtask",
+      "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). Other subtasks shift so positions stay gapless from 1. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
+      "method": "PATCH",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
+      "name": "tasks-update",
+      "title": "Update a Task group",
+      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`). Moving to `todo` asks the scheduler to claim. Requires Gateway access. Returns `tasks.disabled` while the extension is off.",
+      "method": "PATCH",
+      "path": "/api/v1/task-groups/{group}",
+      "path_inputs": [
+        "group"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "status": {
+            "type": "string",
+            "enum": []
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group"
+        ]
       }
     },
     {

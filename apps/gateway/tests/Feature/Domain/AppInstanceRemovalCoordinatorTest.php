@@ -1511,5 +1511,5 @@ it('cancels unfinished annotation tasks on Instance removal and preserves comple
     }
     expect($done->refresh()->task->status)->toBe(TaskStatus::Completed);
     expect($done->task->completion_summary)->toBe('Already completed');
-    expect($unrelated->refresh()->task->status)->toBe(TaskStatus::Pending);
+    expect($unrelated->refresh()->task->status)->toBe(TaskStatus::Todo);
 });
