@@ -2987,7 +2987,8 @@
             "governing_adrs": [
                 "0103",
                 "0110",
-                "0112"
+                "0112",
+                "0132"
             ]
         },
         {
@@ -3094,7 +3095,8 @@
                 "0110",
                 "0113",
                 "0114",
-                "0117"
+                "0117",
+                "0132"
             ]
         },
         {
@@ -3249,7 +3251,8 @@
                 "0113",
                 "0114",
                 "0117",
-                "0121"
+                "0121",
+                "0132"
             ]
         },
         {
@@ -3371,6 +3374,29 @@
             "governing_adrs": [
                 "0033",
                 "0127"
+            ]
+        },
+        {
+            "path": "docs/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question.md",
+            "title": "ADR 0132: Pause a task only for its acting thread or a real question",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Route",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0110",
+                "0114",
+                "0121",
+                "0124",
+                "0132"
             ]
         },
         {
@@ -3528,7 +3554,8 @@
                 "0124",
                 "0125",
                 "0126",
-                "0127"
+                "0127",
+                "0132"
             ]
         },
         {
@@ -4668,7 +4695,8 @@
                 "0121",
                 "0122",
                 "0124",
-                "0125"
+                "0125",
+                "0132"
             ]
         },
         {
