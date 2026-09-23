@@ -135,10 +135,13 @@ def output_tail():
 
 
 def status(pid, started):
+    # Read liveness before the result: the check writes check.json before it exits, so a check that
+    # finishes between the two reads is still running on the first and finished on the second.
+    alive = process_started(pid) == started
     if os.path.exists(RESULT):
         with open(RESULT) as result:
             print(json.dumps({'state': 'finished', 'result': json.load(result), 'output': output_tail()}))
-    elif process_started(pid) == started:
+    elif alive:
         print(json.dumps({'state': 'running'}))
     else:
         print(json.dumps({'state': 'lost', 'output': output_tail()}))
