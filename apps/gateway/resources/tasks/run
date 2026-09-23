@@ -6,6 +6,7 @@ declare(strict_types=1);
 /*
  * Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
  * An agent ends its turn with: .git/orbit/run --outcome=OUTCOME --summary="..."
+ * A blocked turn also asks the operator one specific question: --question="..."
  * The approval of the last subtask also describes the pull request:
  * --pr-summary="..." --pr-change="..." (repeat) --pr-breaking="..." (repeat, or none)
  */
@@ -34,7 +35,7 @@ $options = [];
 $arguments = array_slice($argv, 1);
 while ($arguments !== []) {
     $argument = array_shift($arguments);
-    if (preg_match('/\A--(outcome|summary|pr-summary|pr-change|pr-breaking)(?:=(.*))?\z/s', $argument, $match) !== 1) {
+    if (preg_match('/\A--(outcome|summary|question|pr-summary|pr-change|pr-breaking)(?:=(.*))?\z/s', $argument, $match) !== 1) {
         refuse("unknown argument {$argument}.");
     }
     $name = $match[1];
@@ -64,8 +65,17 @@ if (! in_array($outcome, $allowed, true)) {
 if (! array_key_exists('summary', $options)) {
     refuse('--summary is required.');
 }
+if ($outcome === 'blocked' && ! array_key_exists('question', $options)) {
+    refuse('blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.');
+}
+if ($outcome !== 'blocked' && array_key_exists('question', $options)) {
+    refuse('--question is only for --outcome=blocked.');
+}
 
 $receipt = ['outcome' => $outcome, 'summary' => $options['summary']];
+if ($outcome === 'blocked') {
+    $receipt['question'] = $options['question'];
+}
 $describesPullRequest = array_key_exists('pr-summary', $options) || array_key_exists('pr-change', $options) || array_key_exists('pr-breaking', $options);
 if ($final && $role === 'reviewer' && $outcome === 'approved') {
     if (! array_key_exists('pr-summary', $options)) {

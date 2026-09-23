@@ -28,9 +28,14 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
         $this->receipts ??= [self::contents('ready_for_review')];
     }
 
-    public static function contents(string $outcome, string $summary = 'Done.'): string
+    public static function contents(string $outcome, string $summary = 'Done.', ?string $question = null): string
     {
-        return json_encode(['outcome' => $outcome, 'summary' => $summary, 'nonce' => bin2hex(random_bytes(8))], JSON_THROW_ON_ERROR);
+        $receipt = ['outcome' => $outcome, 'summary' => $summary];
+        if ($question !== null) {
+            $receipt['question'] = $question;
+        }
+
+        return json_encode([...$receipt, 'nonce' => bin2hex(random_bytes(8))], JSON_THROW_ON_ERROR);
     }
 
     public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false): void

@@ -169,9 +169,9 @@ it('reads a pending user-input request id from subscribeThread activities', func
         ->and($implementer?->sessState)->toBe('asking_for_input');
 });
 
-it('defers a task with an active T3 session before inspecting context', function (string $status, string $activeThread): void {
+it('defers a task while the thread that acts in its phase is active, before inspecting context', function (string $status, TaskStatus $taskStatus, string $activeThread): void {
     $group = observer_group();
-    $group->tasks->first()->update(['status' => TaskStatus::Reviewing]);
+    $group->tasks->first()->update(['status' => $taskStatus]);
     $snapshots = [
         'implementer-thread' => ['thread' => ['session' => ['status' => 'idle']]],
         'reviewer-thread' => ['thread' => ['session' => ['status' => 'idle']]],
@@ -208,7 +208,29 @@ it('defers a task with an active T3 session before inspecting context', function
     $observation = new TaskSessionObserver(test_agent_observer(observer_reader($snapshots)), $diff)->observe($group, $group->tasks->first());
 
     expect($observation->threads)->toBe([]);
-})->with(['starting', 'running'])->with(['implementer-thread', 'reviewer-thread']);
+})->with(['starting', 'running'])->with([
+    'a running task and its implementer' => [TaskStatus::Running, 'implementer-thread'],
+    'a task in review and the reviewer' => [TaskStatus::Reviewing, 'reviewer-thread'],
+]);
+
+it('observes the acting thread while the other thread works', function (TaskStatus $taskStatus, TaskThreadRole $acting, TaskThreadRole $working): void {
+    $group = observer_group();
+    $group->tasks->first()->update(['status' => $taskStatus]);
+    $reader = observer_reader([
+        $acting->value.'-thread' => ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'turn-1', 'state' => 'completed']]],
+        $working->value.'-thread' => ['thread' => ['session' => ['status' => 'running']]],
+    ]);
+
+    $observation = new TaskSessionObserver(test_agent_observer($reader), new NullTaskWorkspaceDiffReader)->observe($group, $group->tasks->first());
+
+    expect($observation->threads)->toHaveCount(2)
+        ->and($observation->thread($acting)?->sessState)->toBe('done')
+        ->and($observation->thread($acting)?->turnId)->toBe('turn-1')
+        ->and($observation->thread($working)?->sessState)->toBe('working');
+})->with([
+    'a running task while the shared reviewer works' => [TaskStatus::Running, TaskThreadRole::Implementer, TaskThreadRole::Reviewer],
+    'a task in review while its implementer works' => [TaskStatus::Reviewing, TaskThreadRole::Reviewer, TaskThreadRole::Implementer],
+]);
 
 it('checks sessions attached to every task even after finding an active session', function (): void {
     $group = observer_group();

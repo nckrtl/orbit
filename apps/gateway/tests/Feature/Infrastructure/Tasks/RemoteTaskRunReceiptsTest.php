@@ -104,7 +104,7 @@ it('removes a receipt only while its content is unchanged', function (): void {
     $instance = run_receipt_instance($checkout);
     $receipts = run_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
-    run_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.']);
+    run_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.', '--question=Where do I find the API key?']);
     $first = $receipts->read($instance);
     run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
 
@@ -150,7 +150,26 @@ it('refuses input that does not fit the turn', function (TaskThreadRole $role, a
     'a missing summary value' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary'], '--summary needs a value.'],
     'a repeated flag' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--outcome=blocked', '--summary=No.'], 'pass --outcome once.'],
     'an unknown flag' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--force'], 'unknown argument --force.'],
+    'a blocked implementer turn without a question' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=Gateway implementation not completed.'], 'blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.'],
+    'a blocked reviewer turn without a question' => [TaskThreadRole::Reviewer, ['--outcome=blocked', '--summary=The brief is unclear.'], 'blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.'],
+    'an empty question' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--question= '], '--question cannot be empty.'],
+    'a question on another outcome' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--question=Is this fine?'], '--question is only for --outcome=blocked.'],
 ]);
+
+it('records the question of a blocked turn', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Implementer);
+
+    $process = run_receipt_script($checkout, ['--outcome=blocked', '--summary=Installing intl needs sudo.', '--question', ' May I run sudo apt-get install php8.5-intl? ']);
+    $receipt = $receipts->read($instance);
+
+    expect($process->getExitCode())->toBe(0)
+        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Blocked)
+        ->and($receipt?->question)->toBe('May I run sudo apt-get install php8.5-intl?')
+        ->and($receipt?->body())->toBe("Installing intl needs sudo.\n\nQuestion: May I run sudo apt-get install php8.5-intl?");
+});
 
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
     $checkout = run_receipt_checkout();
@@ -175,6 +194,8 @@ it('treats a hand-written receipt without an outcome and summary as invalid', fu
     'invalid json' => ['{"outcome":'],
     'unknown outcome' => ['{"outcome":"done","summary":"Done."}'],
     'empty summary' => ['{"outcome":"blocked","summary":" "}'],
+    'blocked without a question' => ['{"outcome":"blocked","summary":"Gateway implementation not completed."}'],
+    'blocked with an empty question' => ['{"outcome":"blocked","summary":"Stuck.","question":" "}'],
 ]);
 
 it('reports an unreachable workspace instead of a missing receipt', function (): void {

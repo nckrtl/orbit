@@ -16,6 +16,8 @@ This amends the single outcome Choice in [ADR 0110](/decisions/0110-route-task-s
 
 [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence) amends the evidence Jev reads for the `blocked` item and the reminder wording.
 
+[ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) amends the working-thread rule: only the thread that acts in the task's phase defers the task.
+
 ## Context
 
 [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) requires a passing `composer check` and a `ready_for_review` comment before review, and a verified commit and pull request before an approval advances. The scheduler matches `composer check` plus a passing phrase in recent tool output, and otherwise asks Jev for one of three outcomes: `completed_successfully`, `changes_requested`, or `assistance_required`. One confidence covers that bundle. A missing comment, a stale check, a dirty tree, and a blocked agent then share one assistance reason.

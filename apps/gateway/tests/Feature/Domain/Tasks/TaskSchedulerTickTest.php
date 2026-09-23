@@ -481,13 +481,13 @@ it('asks for assistance with the summary of a blocked receipt', function (): voi
             return ['thread' => ['session' => ['status' => 'idle']]];
         }
     });
-    $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.')]);
+    $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.', 'May the Node user run sudo apt-get install php8.5-intl?')]);
     app()->instance(TaskRunReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe('The implementer is blocked: Installing the extension needs sudo, and sudo was denied.')
+        ->and($task->fresh()?->assistance_reason)->toBe("The implementer is blocked: Installing the extension needs sudo, and sudo was denied.\n\nQuestion: May the Node user run sudo apt-get install php8.5-intl?")
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
         ->and($receipts->cleared)->toHaveCount(1)
@@ -540,7 +540,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     Classification::assertNothingClassified();
 });
 
-it('refuses a receipt with an outcome that does not fit the implementer turn', function (): void {
+it('refuses a receipt with an outcome that does not fit the implementer turn, or a blocked receipt without a question', function (string $contents): void {
     $group = tick_group();
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
@@ -553,16 +553,21 @@ it('refuses a receipt with an outcome that does not fit the implementer turn', f
             return tick_checked_thread('done');
         }
     });
-    $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('approved')]);
+    $receipts = new FakeTaskRunReceipts([$contents]);
     app()->instance(TaskRunReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and($dispatcher->commands[0]['message']['text'])->toContain('The run receipt was not valid for this turn.')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('--question=')
         ->and($task->comments()->count())->toBe(0)
         ->and($receipts->cleared)->toHaveCount(1);
-});
+})->with([
+    'a reviewer outcome' => [FakeTaskRunReceipts::contents('approved')],
+    'blocked without a question' => [FakeTaskRunReceipts::contents('blocked', 'Gateway implementation not completed; required project guidance/bootstrap review and implementation remain.')],
+]);
 
 it('dispatches nothing when Jev selects noop', function (): void {
     tick_group();
@@ -1246,12 +1251,12 @@ it('does not commit an approval while the workspace is on another branch', funct
 });
 
 it('asks for assistance with the summary of a blocked reviewer receipt', function (): void {
-    [$group, $task] = tick_review([FakeTaskRunReceipts::contents('blocked', 'The brief contradicts ADR 0098.')]);
+    [$group, $task] = tick_review([FakeTaskRunReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?')]);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe('The reviewer is blocked: The brief contradicts ADR 0098.')
+        ->and($task->fresh()?->assistance_reason)->toBe("The reviewer is blocked: The brief contradicts ADR 0098.\n\nQuestion: Should the subtask follow the brief or ADR 0098?")
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and(app(T3Dispatcher::class)->commands)->toBe([]);
 });
@@ -1574,4 +1579,176 @@ it('keeps a check running when the workspace cannot be read and counts a communi
     expect($task->fresh()?->communication_failures)->toBe(1)
         ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
+});
+
+/**
+ * Reports each thread in the given session status. Each thread's latest turn is "{thread}-turn".
+ *
+ * @param  array<string, string>  $states
+ */
+function tick_thread_states(array $states): T3ThreadReader
+{
+    return new class($states) implements T3ThreadReader
+    {
+        /** @param array<string, string> $states */
+        public function __construct(public array $states) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => $this->states[$threadId] ?? 'idle'],
+                'latestTurn' => ['id' => $threadId.'-turn', 'state' => 'completed'],
+            ]];
+        }
+    };
+}
+
+describe('a thread that works outside the task phase', function (): void {
+    it('collects a blocked implementer receipt and asks for assistance while the shared reviewer works', function (): void {
+        $group = tick_group();
+        $task = $group->tasks->sole();
+        app(TaskExtensionState::class)->enable();
+        $dispatcher = tick_dispatcher();
+        app()->instance(T3Dispatcher::class, $dispatcher);
+        app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'done', 'reviewer-thread' => 'running']));
+        $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Composer cannot reach the private package mirror.', 'Should I add the mirror credentials to auth.json?')]);
+        app()->instance(TaskRunReceipts::class, $receipts);
+
+        app(TaskScheduler::class)->tick();
+
+        expect($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
+            ->and($receipts->cleared)->toHaveCount(1)
+            ->and($task->fresh()?->assistance_requested)->toBeTrue()
+            ->and($task->fresh()?->assistance_reason)->toBe("The implementer is blocked: Composer cannot reach the private package mirror.\n\nQuestion: Should I add the mirror credentials to auth.json?")
+            ->and($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($dispatcher->commands)->toBe([]);
+    });
+
+    it('leaves a running task alone while its implementer works', function (string $reviewerState): void {
+        $group = tick_group();
+        $task = $group->tasks->sole();
+        app(TaskExtensionState::class)->enable();
+        $dispatcher = tick_dispatcher();
+        app()->instance(T3Dispatcher::class, $dispatcher);
+        app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'running', 'reviewer-thread' => $reviewerState]));
+        $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Stuck.', 'Which API version?')]);
+        app()->instance(TaskRunReceipts::class, $receipts);
+
+        $decisions = app(TaskScheduler::class)->tick();
+
+        expect($decisions)->toBe([])
+            ->and($receipts->cleared)->toBe([])
+            ->and($task->comments()->count())->toBe(0)
+            ->and($task->fresh()?->assistance_requested)->toBeFalse()
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($dispatcher->commands)->toBe([]);
+        Classification::assertNothingClassified();
+    })->with(['idle', 'running']);
+
+    it('moves a passing handoff to review but asks for the review only once the reviewer is idle', function (): void {
+        $group = tick_group();
+        $task = $group->tasks->sole();
+        app(TaskExtensionState::class)->enable();
+        $spawner = new class implements AgentSpawner
+        {
+            public int $reviews = 0;
+
+            public function spawnReviewer(Task $task): ?int
+            {
+                return null;
+            }
+
+            public function spawnImplementer(Task $task): ?int
+            {
+                return null;
+            }
+
+            public function requestReview(Task $task): void
+            {
+                $this->reviews++;
+            }
+        };
+        app()->instance(AgentSpawner::class, $spawner);
+        $reader = tick_thread_states(['implementer-thread' => 'done', 'reviewer-thread' => 'running']);
+        app()->instance(T3ThreadReader::class, $reader);
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
+            ->and($spawner->reviews)->toBe(0)
+            ->and($task->fresh()?->review_notified_attempt)->toBeNull()
+            ->and($task->fresh()?->communication_failures)->toBe(0)
+            ->and(app(TaskRunReceipts::class)->prepared)->toBe([]);
+
+        $reader->states['reviewer-thread'] = 'idle';
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($spawner->reviews)->toBe(1)
+            ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
+            ->and($task->fresh()?->review_notified_turn_id)->toBe('reviewer-thread-turn')
+            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
+    });
+
+    it('relays review findings only once the implementer is idle', function (): void {
+        $group = tick_group();
+        $task = $group->tasks->sole();
+        $group->update(['status' => TaskGroupStatus::Reviewing]);
+        $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn']);
+        app(TaskExtensionState::class)->enable();
+        $dispatcher = tick_dispatcher();
+        app()->instance(T3Dispatcher::class, $dispatcher);
+        $reader = tick_thread_states(['implementer-thread' => 'running', 'reviewer-thread' => 'done']);
+        app()->instance(T3ThreadReader::class, $reader);
+        app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('changes_requested', 'Add the missing test.')]));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($task->comments()->sole()->getRawOriginal('type'))->toBe('changes_requested')
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+            ->and($task->fresh()?->communication_failures)->toBe(0)
+            ->and($dispatcher->commands)->toBe([]);
+
+        $reader->states['implementer-thread'] = 'idle';
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($dispatcher->commands)->toHaveCount(1)
+            ->and($dispatcher->commands[0]['message']['text'])->toContain('Add the missing test.');
+    });
+
+    it('commits an approval only once the implementer stops changing the workspace', function (): void {
+        [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models.')]);
+        $reader = tick_thread_states(['implementer-thread' => 'running', 'reviewer-thread' => 'done']);
+        app()->instance(T3ThreadReader::class, $reader);
+        app()->instance(AgentSpawner::class, new class implements AgentSpawner
+        {
+            public function spawnReviewer(Task $task): ?int
+            {
+                return null;
+            }
+
+            public function spawnImplementer(Task $task): ?int
+            {
+                return test_agent_thread($task->taskGroup, 'implementer-'.$task->id, $task)->id;
+            }
+
+            public function requestReview(Task $task): void {}
+        });
+
+        app(TaskScheduler::class)->tick();
+
+        expect($signer->messages)->toBe([])
+            ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+
+        $reader->states['implementer-thread'] = 'idle';
+        app(TaskScheduler::class)->tick();
+
+        expect($signer->messages)->toBe(["Models\n\nChecked the models."])
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+    });
 });
