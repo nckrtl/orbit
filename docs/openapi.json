@@ -24858,7 +24858,10 @@
           "deliverables": {
             "type": "array",
             "items": {
-              "type": "object"
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
             }
           },
           "status": {

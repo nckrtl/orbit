@@ -664,6 +664,8 @@ def prop_schema(p):
             sch = {'type': 'array', 'items': ref(m.group(1))}
         elif m and m.group(1) in SCALARS:
             sch = {'type': 'array', 'items': {'type': SCALARS[m.group(1)]}}
+        elif re.match(r'^(?:list|array)<array<string,\s*string>>$', doc):
+            sch = {'type': 'array', 'items': {'type': 'object', 'additionalProperties': {'type': 'string'}}}
         elif doc.startswith('array<string'):
             sch = {'type': 'object', 'additionalProperties': True}
         elif doc.startswith(('list<', 'array<int')):
