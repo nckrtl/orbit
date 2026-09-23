@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
     checkDurationMs,
@@ -81,14 +81,53 @@ function CheckCard({ check, now }: { check: TaskCheck; now: number }) {
     );
 }
 
+/** The comment's author as a role: "Implementer" and "Reviewer" for the agents, the operator's name otherwise. */
+function authorLabel(author: string): string {
+    return author === "implementer" || author === "reviewer"
+        ? author.charAt(0).toUpperCase() + author.slice(1)
+        : author;
+}
+
+/**
+ * Whether a clamped element hides text. It is measured again when the card's width changes.
+ */
+function useOverflows(element: RefObject<HTMLElement | null>, expanded: boolean): boolean {
+    const [overflows, setOverflows] = useState(false);
+    useLayoutEffect(() => {
+        const node = element.current;
+        if (!node || expanded) return;
+        const measure = () => setOverflows(node.scrollHeight > node.clientHeight + 1);
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [element, expanded]);
+    return overflows;
+}
+
 function CommentCard({ comment, now }: { comment: TaskComment; now: number }) {
     const label = taskCommentTypeLabel(comment.type);
+    const author = authorLabel(comment.author);
+    const body = useRef<HTMLParagraphElement>(null);
+    const [expanded, setExpanded] = useState(false);
+    const overflows = useOverflows(body, expanded);
+    const collapsible = expanded || overflows;
+    // A click toggles the card, unless it ends a text selection, so the text stays copyable.
+    const toggleFromCard = () => {
+        if (!collapsible || (window.getSelection()?.toString() ?? "") !== "") return;
+        setExpanded((value) => !value);
+    };
     return (
-        <article aria-label={`${label} by ${comment.author}`} className="kanban-card">
+        <article
+            aria-label={`${author} · ${label}`}
+            className={`kanban-card ${collapsible ? "cursor-pointer" : ""}`}
+            onClick={toggleFromCard}
+        >
             <div className={`mb-[6px] flex justify-between gap-[1ch] ${metaClassName}`}>
                 <span className="min-w-0 break-words">
+                    <span>{author}</span>
+                    <span className="text-dim"> · </span>
                     <span className={commentColor(comment.type)}>{label}</span>
-                    <span className="text-dim"> · {comment.author}</span>
                 </span>
                 <time
                     className="shrink-0 text-dim"
@@ -98,7 +137,25 @@ function CommentCard({ comment, now }: { comment: TaskComment; now: number }) {
                     {formatRelativeTime(comment.posted_at, now)}
                 </time>
             </div>
-            <p className="selectable whitespace-pre-wrap break-words">{comment.body}</p>
+            <p
+                ref={body}
+                className={`selectable whitespace-pre-wrap break-words ${expanded ? "" : "line-clamp-3"}`}
+            >
+                {comment.body}
+            </p>
+            {collapsible && (
+                <button
+                    type="button"
+                    className={`link mt-[4px] text-dim ${metaClassName}`}
+                    aria-expanded={expanded}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        setExpanded((value) => !value);
+                    }}
+                >
+                    {expanded ? "Show less" : "Show more"}
+                </button>
+            )}
             {comment.pull_request && <PullRequestProposal proposal={comment.pull_request} />}
             {comment.commit_sha && (
                 <p className={`mt-[6px] text-dim ${metaClassName}`}>
