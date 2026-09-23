@@ -21,6 +21,10 @@ use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskCeilings;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckReading;
+use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -40,8 +44,11 @@ use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskGroup;
+use Tests\Support\FakeTaskCheckRunner;
 
 use function Pest\Laravel\mock;
 
@@ -268,6 +275,8 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
 
     expect($claimed)->not->toBeNull()
         ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -316,6 +325,7 @@ it('fails a group and its first task when the run script cannot be installed', f
     mock(TaskRunReceipts::class)->shouldReceive('prepare')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
 
     app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
         ->and($group->tasks()->first()?->status)->toBe(TaskStatus::Failed)
@@ -352,6 +362,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
     });
 
     app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
     $task = $group->tasks()->sole();
     app(TaskScheduler::class)->settleImplementer($task);
 
@@ -395,6 +406,8 @@ it('fails a group and its first task when the implementer spawn returns no threa
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
@@ -582,6 +595,8 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
 
     expect($claimed?->id)->toBe($group->id)
         ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -604,6 +619,8 @@ it('starts only the first pending subtask when a claimed group has later sibling
     scheduler_bind_claim($instance, $spawner);
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
     $tasks = $claimed?->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -623,6 +640,8 @@ it('rejects starting a later subtask while a sibling is still running', function
     scheduler_bind_claim($instance, $spawner);
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
     $second = $claimed?->tasks
         ->sortBy(fn (Task $task): array => [$task->position, $task->id])
         ->values()
@@ -650,6 +669,8 @@ it('starts the next pending subtask as the sole running task after review is acc
     scheduler_bind_claim($instance, $spawner);
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
     $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
     $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
     $tasks = $advanced->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
@@ -716,6 +737,8 @@ it('starts the reviewer at the first handoff, reuses it for later handoffs, and 
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
     $claimed = app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
     $first = $claimed?->tasks->first();
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -820,4 +843,69 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         ->and($settled->settled_at)->not->toBeNull()
         ->and($notifier->notified?->id)->toBe($settled->id)
         ->and($notifier->notified?->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543');
+});
+
+it('runs the Project setup steps and check on the fresh workspace before the first implementer starts', function (): void {
+    $app = scheduler_app('baseline-app');
+    $instance = scheduler_instance($app, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
+    $group = queued_group($app, 'Baseline', $instance);
+    ProjectLifecycleStep::query()->create(['app_id' => $app->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    $check = TaskCheck::query()->sole();
+    expect($spawner->events)->toBe([])
+        ->and($check->kind)->toBe(TaskCheckKind::Baseline)
+        ->and($check->task_comment_id)->toBeNull()
+        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600]]]);
+
+    test_pass_baseline();
+
+    expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
+        ->and($spawner->events)->toBe(['implementer:1']);
+});
+
+it('asks for assistance, and starts no agent, when the fresh workspace fails its check', function (?string $failedStep, string $reason): void {
+    $app = scheduler_app('broken-main');
+    $instance = scheduler_instance($app, scheduler_node('broken-node', '10.44.0.95'), 'broken');
+    $group = queued_group($app, 'Broken main', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED\n", null, str_repeat('b', 40), $failedStep),
+    ]));
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    expect($spawner->events)->toBe([])
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_reason)->toStartWith($reason)
+        ->and(TaskCheck::query()->sole()->failed_step)->toBe($failedStep);
+})->with([
+    'composer check' => [null, 'composer check failed with exit code 1 on a fresh checkout of task-'],
+    'setup step' => ['Install', 'The Project setup step "Install" failed with exit code 1 on a fresh checkout of task-'],
+]);
+
+it('does not run a baseline for a group whose implementers already started', function (): void {
+    $app = scheduler_app('started-app');
+    $instance = scheduler_instance($app, scheduler_node('started-node', '10.44.0.96'), 'started');
+    $group = queued_group($app, 'Started', $instance);
+    scheduler_pending_task($group, 2, 'Second');
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+    $first = $group->tasks()->orderBy('position')->first();
+    $reviewing = app(TaskScheduler::class)->settleImplementer($first);
+
+    app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
+
+    expect($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2'])
+        ->and(TaskCheck::query()->where('kind', TaskCheckKind::Baseline->value)->count())->toBe(1);
 });

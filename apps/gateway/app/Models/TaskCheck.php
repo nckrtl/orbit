@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckStatus;
 use Illuminate\Database\Eloquent\Model;
@@ -11,11 +12,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One run of the Project check for one `ready_for_review` receipt.
+ * One run of the Project check: the baseline before the first implementer, or the check for one `ready_for_review` receipt.
  *
  * @property int $id
  * @property int $task_id
- * @property int $task_comment_id
+ * @property int|null $task_comment_id
+ * @property TaskCheckKind $kind
+ * @property string|null $failed_step
  * @property TaskCheckStatus $status
  * @property int $pid
  * @property string $process_started
@@ -33,7 +36,7 @@ final class TaskCheck extends Model
 {
     #[\Override]
     protected $fillable = [
-        'task_id', 'task_comment_id', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
+        'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
         'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'started_at', 'finished_at',
     ];
 
@@ -52,6 +55,7 @@ final class TaskCheck extends Model
     protected function casts(): array
     {
         return [
+            'kind' => TaskCheckKind::class,
             'status' => TaskCheckStatus::class,
             'pid' => 'integer',
             'exit_code' => 'integer',

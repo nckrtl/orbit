@@ -52,6 +52,10 @@ On each tick, for a task with a running check, the scheduler reads the check ove
 
 The scheduler identifies the process by its ID and start time, so a reused process ID does not count as the check.
 
+### Baseline check
+
+Before the first implementer of a group starts, Orbit runs a baseline check on the fresh workspace. The check script first runs the Project's setup steps in order, then `composer check`, with the same detached process and states. An agent never starts on a broken checkout. When a setup step or the check fails, the group asks for assistance before any agent runs. The reason names the failed setup step, or says that `composer check` fails on a fresh checkout of the task branch. The operator fixes the Project's default branch, the task branch, or the setup steps, then cancels and creates the group again. A group whose implementer already started skips the baseline.
+
 ### Cancel a check
 
 An operator can cancel a running check through the Gateway API. The Gateway stops the process group and records the check as cancelled. The implementer then gets its reminder, which says that Orbit cancelled the check. A check has no time limit. A check that hangs stays visible with its run time until an operator cancels it.

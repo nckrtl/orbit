@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
 
-check start CHECKOUT            start `composer check` detached; print the process and the tree it checks
-check run CHECKOUT HEAD TREE    run the check and write check.json when it ends (started by `start`)
+check start CHECKOUT [SETUP]    start `composer check` detached; print the process and the tree it checks.
+                                SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
+check run CHECKOUT HEAD TREE [SETUP]   run the setup steps and the check, then write check.json (started by `start`)
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 """
@@ -53,7 +54,7 @@ def process_started(pid):
     return started if result.returncode == 0 and started else None
 
 
-def start(checkout):
+def start(checkout, setup=None):
     head = git(checkout, 'rev-parse', 'HEAD')
     tree = working_tree(checkout)
     for path in (RESULT, LOG):
@@ -65,7 +66,7 @@ def start(checkout):
         null = os.open(os.devnull, os.O_RDWR)
         for descriptor in (0, 1, 2):
             os.dup2(null, descriptor)
-        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree])
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, *([setup] if setup else [])])
     for _ in range(50):
         started = process_started(pid)
         if started:
@@ -74,15 +75,42 @@ def start(checkout):
     print(json.dumps({'pid': pid, 'started': started, 'head': head, 'tree': tree}))
 
 
-def run(checkout, head, tree):
+def run_setup(checkout, setup, log):
+    """Run each setup step in order. Return the name and exit code of the first step that fails."""
+    with open(setup) as steps:
+        for step in json.load(steps):
+            log.write(f"$ {step['command']}\n".encode())
+            log.flush()
+            try:
+                exit_code = subprocess.run(['bash', '-lc', step['command']], cwd=checkout, stdin=subprocess.DEVNULL,
+                                           stdout=log, stderr=subprocess.STDOUT,
+                                           timeout=step.get('timeout_seconds') or None).returncode
+            except subprocess.TimeoutExpired:
+                log.write(f"Setup step {step['name']} timed out after {step['timeout_seconds']} seconds.\n".encode())
+                exit_code = 124
+            if exit_code != 0:
+                return step['name'], exit_code
+    return None, 0
+
+
+def run(checkout, head, tree, setup=None):
     started_at = time.time()
+    failed_step = None
     with open(LOG, 'wb') as log:
-        exit_code = subprocess.run(['bash', '-lc', 'composer check'], cwd=checkout, stdin=subprocess.DEVNULL,
-                                   stdout=log, stderr=subprocess.STDOUT).returncode
+        if setup:
+            failed_step, exit_code = run_setup(checkout, setup, log)
+            # Setup steps install dependencies, so the tree after setup is the tree the check sees.
+            tree = working_tree(checkout)
+        if failed_step is None:
+            log.write(b"$ composer check\n")
+            log.flush()
+            exit_code = subprocess.run(['bash', '-lc', 'composer check'], cwd=checkout, stdin=subprocess.DEVNULL,
+                                       stdout=log, stderr=subprocess.STDOUT).returncode
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
     result = {
         'exit_code': exit_code,
+        'failed_step': failed_step,
         'head_before': head,
         'tree_before': tree,
         'head_after': head_after,
@@ -129,9 +157,9 @@ def cancel(pid, started):
 
 def main(arguments):
     command = arguments[0] if arguments else ''
-    if command == 'start' and len(arguments) == 2:
-        start(arguments[1])
-    elif command == 'run' and len(arguments) == 4:
+    if command == 'start' and len(arguments) in (2, 3):
+        start(*arguments[1:])
+    elif command == 'run' and len(arguments) in (4, 5):
         run(*arguments[1:])
     elif command == 'status' and len(arguments) == 3:
         status(int(arguments[1]), arguments[2])

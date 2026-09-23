@@ -3575,11 +3575,14 @@ export interface components {
         TaskCheck: {
             id?: number;
             /** @enum {string} */
+            kind?: "baseline" | "handoff";
+            /** @enum {string} */
             status?: "running" | "passed" | "failed" | "changed" | "lost" | "cancelled";
             started_at?: string;
             finished_at?: string | null;
             exit_code?: number | null;
             changed_paths?: string[];
+            failed_step?: string | null;
             output?: string | null;
         };
         AgentThread: {

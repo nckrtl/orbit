@@ -24719,6 +24719,13 @@
           "id": {
             "type": "integer"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "handoff"
+            ]
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -24750,6 +24757,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "output": {
             "type": [

@@ -308,6 +308,8 @@ The task stays `running` during the check. On each tick the scheduler reads the 
 | The process is gone without a result | `lost`. The check runs again once. A second loss asks for assistance. |
 | Cancelled by an operator | `cancelled`. The implementer's reminder says so. |
 
+Before the first implementer of a group starts, Orbit runs a baseline check on the fresh workspace: the Project's setup steps in order, then `composer check`. The first implementer starts only when it passes. A failed setup step or check asks for assistance before any agent runs, and the reason names the failed step or says that `composer check` fails on a fresh checkout of `task-{group id}`. Fix the cause, then cancel and create the group again. Define the setup steps that install the Project's dependencies, such as `composer install`, with the Project's lifecycle steps. A task's `check` shows the latest run, with `kind` `baseline` or `handoff` and the `failed_step`.
+
 Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running check. The API operation is `tasks:check:cancel`. A task without a running check answers `409` with `tasks.check_not_running`. A failed or cancelled check spends the reminder of that completion attempt, so a second failure asks for assistance. Each run is stored with its receipt, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output. The task's `check` field shows the latest run.
 
 ## Pull request and settle metrics

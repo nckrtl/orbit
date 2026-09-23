@@ -21,18 +21,24 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function start(AppInstance $instance): TaskCheckProcess
+    public function start(AppInstance $instance, array $setup = []): TaskCheckProcess
     {
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
-        $data = $this->run($instance, [], "script='".base64_encode($script)."'\n".<<<'BASH'
+        $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
             printf '%s' "$script" | base64 -d > "$dir/check.new"
             chmod 0755 "$dir/check.new"
             mv -f -- "$dir/check.new" "$dir/check"
-            python3 "$dir/check" start "$checkout"
+            printf '%s' "$setup" | base64 -d > "$dir/setup.json"
+            if [ "$(cat "$dir/setup.json")" = '[]' ]; then
+                python3 "$dir/check" start "$checkout"
+            else
+                python3 "$dir/check" start "$checkout" "$dir/setup.json"
+            fi
             BASH);
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
@@ -72,8 +78,19 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         $paths = array_values(array_filter($result['changed_paths'], is_string(...)));
 
         $finishedAt = $result['finished_at'] ?? null;
+        $treeBefore = $result['tree_before'] ?? null;
+        $failedStep = $result['failed_step'] ?? null;
 
-        return TaskCheckReading::finished($result['exit_code'], $result['head_after'], $result['tree_after'], $paths, $output, is_int($finishedAt) || is_float($finishedAt) ? (float) $finishedAt : null);
+        return TaskCheckReading::finished(
+            $result['exit_code'],
+            $result['head_after'],
+            $result['tree_after'],
+            $paths,
+            $output,
+            is_int($finishedAt) || is_float($finishedAt) ? (float) $finishedAt : null,
+            is_string($treeBefore) ? $treeBefore : null,
+            is_string($failedStep) ? $failedStep : null,
+        );
     }
 
     /**

@@ -12,8 +12,14 @@ use App\Models\AppInstance;
  */
 interface TaskCheckRunner
 {
-    /** @throws TaskCheckException */
-    public function start(AppInstance $instance): TaskCheckProcess;
+    /**
+     * Starts the check. Setup steps run first, in order, as they do for a baseline check.
+     *
+     * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
+     *
+     * @throws TaskCheckException
+     */
+    public function start(AppInstance $instance, array $setup = []): TaskCheckProcess;
 
     /** @throws TaskCheckException */
     public function read(AppInstance $instance, TaskCheckProcess $process): TaskCheckReading;

@@ -25,9 +25,13 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
         return TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('b', 40), [], "checks passed\n");
     }
 
-    public function start(AppInstance $instance): TaskCheckProcess
+    /** @var list<list<array{name: string, command: string, timeout_seconds: int}>> */
+    public array $setups = [];
+
+    public function start(AppInstance $instance, array $setup = []): TaskCheckProcess
     {
         $this->starts++;
+        $this->setups[] = $setup;
 
         return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
     }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskScheduler;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3Driver;
 use App\Infrastructure\Tasks\T3\T3ThreadCreator;
@@ -54,4 +56,14 @@ function test_t3_registry(?T3Dispatcher $dispatcher = null, ?T3ThreadReader $rea
 function test_agent_observer(T3ThreadReader $reader): AgentThreadObserver
 {
     return new AgentThreadObserver(test_t3_registry(reader: $reader));
+}
+
+/**
+ * Runs one scheduler tick, which reads the baseline check that claiming a group started and, when it passes,
+ * starts the first implementer.
+ */
+function test_pass_baseline(): void
+{
+    app(TaskExtensionState::class)->enable();
+    app(TaskScheduler::class)->tick();
 }

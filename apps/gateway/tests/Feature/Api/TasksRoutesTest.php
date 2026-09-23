@@ -216,7 +216,7 @@ it('returns 409 tasks.disabled for create list and show while the extension is o
     expect(TaskGroup::query()->count())->toBe(0);
 });
 
-it('still returns the created group when the opening spawn fails', function (): void {
+it('still returns the created group, and fails it when the first implementer cannot start after the baseline', function (): void {
     tasks_gateway();
     enable_tasks();
     $app = tasks_app('spawn-failure');
@@ -270,9 +270,11 @@ it('still returns the created group when the opening spawn fails', function (): 
     ])
         ->assertCreated()
         ->assertJsonPath('data.title', 'Spawn failure')
-        ->assertJsonPath('data.status', 'failed');
+        ->assertJsonPath('data.status', 'running');
+    test_pass_baseline();
 
-    expect(TaskGroup::query()->count())->toBe(1);
+    expect(TaskGroup::query()->count())->toBe(1)
+        ->and(TaskGroup::query()->sole()->status)->toBe(TaskGroupStatus::Failed);
 });
 
 it('creates a group with ordered tasks and lists and shows it', function (): void {

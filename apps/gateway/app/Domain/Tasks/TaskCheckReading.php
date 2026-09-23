@@ -18,6 +18,8 @@ final readonly class TaskCheckReading
         public array $changedPaths = [],
         public string $output = '',
         public ?float $finishedAt = null,
+        public ?string $treeBefore = null,
+        public ?string $failedStep = null,
     ) {}
 
     public static function running(): self
@@ -28,10 +30,12 @@ final readonly class TaskCheckReading
     /**
      * @param  list<string>  $changedPaths
      * @param  float|null  $finishedAt  the Unix time at which the check itself ended
+     * @param  string|null  $treeBefore  the tree the check itself saw, after any setup steps
+     * @param  string|null  $failedStep  the setup step that failed, so composer check did not run
      */
-    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null): self
+    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null): self
     {
-        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt);
+        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep);
     }
 
     public static function lost(string $output): self

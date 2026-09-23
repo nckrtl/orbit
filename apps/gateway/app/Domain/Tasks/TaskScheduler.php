@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Domain\Projects\LifecyclePhase;
+use App\Models\AgentThread;
 use App\Models\AppInstance;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -91,6 +94,11 @@ final readonly class TaskScheduler
                 }
 
                 $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
+                    $this->handleBaseline($group, $task);
+
+                    continue;
+                }
                 $observation = $this->observer->observe($group, $task);
 
                 if ($observation->available) {
@@ -271,6 +279,7 @@ final readonly class TaskScheduler
         TaskCheck::query()->create([
             'task_id' => $task->id,
             'task_comment_id' => $receipt->id,
+            'kind' => TaskCheckKind::Handoff,
             'status' => TaskCheckStatus::Running,
             'pid' => $process->pid,
             'process_started' => $process->started,
@@ -286,7 +295,7 @@ final readonly class TaskScheduler
      */
     private function recordReading(TaskCheck $check, TaskCheckReading $reading): void
     {
-        $changed = $reading->headAfter !== $check->head_before || $reading->treeAfter !== $check->tree_before;
+        $changed = $reading->headAfter !== $check->head_before || $reading->treeAfter !== ($reading->treeBefore ?? $check->tree_before);
         $values = $reading->state === 'lost'
             ? ['status' => TaskCheckStatus::Lost->value, 'output' => $reading->output]
             : [
@@ -299,6 +308,7 @@ final readonly class TaskScheduler
                 'tree_after' => $reading->treeAfter,
                 'exit_code' => $reading->exitCode,
                 'changed_paths' => json_encode($reading->changedPaths, JSON_THROW_ON_ERROR),
+                'failed_step' => $reading->failedStep,
                 'output' => $reading->output,
             ];
         $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
@@ -830,7 +840,12 @@ final readonly class TaskScheduler
         $task->taskGroup->requireManagedExecution();
         $started = $this->activateRunningTask($task);
         $this->recordSubtaskStart($started);
-        $this->assignImplementer($started);
+        if ($this->needsBaseline($started)) {
+            $group = $started->taskGroup()->with(['app', 'taskable'])->firstOrFail();
+            $this->startBaseline($group, $started);
+        } else {
+            $this->assignImplementer($started);
+        }
 
         $group = $started->taskGroup;
 
@@ -989,6 +1004,114 @@ final readonly class TaskScheduler
         $task->status = TaskStatus::Running;
         $task->started_at ??= now();
         $task->save();
+    }
+
+    /**
+     * A group checks its fresh workspace once, before any implementer has started in it.
+     */
+    private function needsBaseline(Task $task): bool
+    {
+        $started = Task::query()->where('task_group_id', $task->task_group_id)->whereNotNull('implementer_agent_thread_id')->exists()
+            || AgentThread::query()->where('task_group_id', $task->task_group_id)->where('role', TaskThreadRole::Implementer->value)->exists();
+
+        return ! $started && ! TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)
+            ->where('status', TaskCheckStatus::Passed->value)->exists();
+    }
+
+    private function hasImplementer(Task $task): bool
+    {
+        return $task->implementer_agent_thread_id !== null
+            || AgentThread::query()->where('task_id', $task->id)->where('role', TaskThreadRole::Implementer->value)->exists();
+    }
+
+    /**
+     * Runs the Project's setup steps and check on the fresh workspace. The first implementer starts only
+     * after it passes, so an agent never starts on a broken checkout.
+     */
+    private function handleBaseline(TaskGroup $group, Task $task): void
+    {
+        /** @var TaskCheck|null $check */
+        $check = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->latest('id')->first();
+        $instance = $group->taskable;
+        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $instance instanceof AppInstance) {
+            try {
+                $reading = $this->checks->read($instance, $check->process());
+            } catch (TaskCheckException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return;
+            }
+            if ($reading->state === 'running') {
+                $this->clearCommunicationFailures($task);
+
+                return;
+            }
+            $this->recordReading($check, $reading);
+        }
+
+        $status = $check?->status;
+        if ($status === TaskCheckStatus::Passed) {
+            $this->clearCommunicationFailures($task);
+            $this->assignImplementer($task);
+
+            return;
+        }
+        $repeats = $check instanceof TaskCheck
+            ? TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->where('status', $check->status->value)->count()
+            : 0;
+        $branch = 'task-'.$group->id;
+        $reason = match (true) {
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "composer check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. The Project's default branch or the task branch is broken. Fix it, then cancel and create the group again. The task's check shows the output.",
+            $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
+            $status === TaskCheckStatus::Lost && $repeats >= 2 => 'The baseline check stopped twice without a result.',
+            default => null,
+        };
+        if ($reason !== null) {
+            $this->requestAssistance($task, $group, $reason);
+
+            return;
+        }
+
+        $this->startBaseline($group, $task);
+    }
+
+    private function startBaseline(TaskGroup $group, Task $task): void
+    {
+        $instance = $group->taskable;
+        if (! $instance instanceof AppInstance) {
+            $this->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
+
+            return;
+        }
+        $setup = ProjectLifecycleStep::query()
+            ->where('app_id', $group->app_id)
+            ->where('phase', LifecyclePhase::Setup->value)
+            ->orderBy('position')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
+            ->values()
+            ->all();
+        try {
+            $process = $this->checks->start($instance, $setup);
+        } catch (TaskCheckException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        TaskCheck::query()->create([
+            'task_id' => $task->id,
+            'kind' => TaskCheckKind::Baseline,
+            'status' => TaskCheckStatus::Running,
+            'pid' => $process->pid,
+            'process_started' => $process->started,
+            'head_before' => $process->head,
+            'tree_before' => $process->tree,
+            'started_at' => now(),
+        ]);
+        $this->clearCommunicationFailures($task);
     }
 
     private function assignImplementer(Task $task): void

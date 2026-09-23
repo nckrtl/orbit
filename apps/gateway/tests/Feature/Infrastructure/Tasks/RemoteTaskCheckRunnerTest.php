@@ -157,3 +157,38 @@ it('reports an unreachable workspace and invalid output as check failures', func
     'unreachable' => [new CommandResult(255, '', 'Connection refused', 1, false), 'The task workspace could not be reached for the check.'],
     'invalid output' => [new CommandResult(0, 'not json', '', 1, false), 'The check answered with invalid output.'],
 ]);
+
+it('runs setup steps in order before composer check, and records the tree after setup', function (): void {
+    $checkout = check_runner_checkout('test -f ignored/installed && echo checked');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, [
+        ['name' => 'Install', 'command' => 'mkdir -p ignored && touch ignored/installed', 'timeout_seconds' => 60],
+        ['name' => 'Notes', 'command' => 'echo notes > notes.txt', 'timeout_seconds' => 60],
+    ]));
+
+    expect($reading->exitCode)->toBe(0)
+        ->and($reading->failedStep)->toBeNull()
+        ->and($reading->output)->toContain("$ mkdir -p ignored && touch ignored/installed\n$ echo notes > notes.txt\n$ composer check\n")
+        ->and($reading->output)->toContain('checked')
+        ->and($reading->treeBefore)->toBe($reading->treeAfter)
+        ->and($reading->changedPaths)->toBe([]);
+});
+
+it('stops at the first failing setup step without running composer check', function (): void {
+    $checkout = check_runner_checkout('echo checked');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, [
+        ['name' => 'Install', 'command' => 'echo cannot install && exit 5', 'timeout_seconds' => 60],
+        ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 60],
+    ]));
+
+    expect($reading->exitCode)->toBe(5)
+        ->and($reading->failedStep)->toBe('Install')
+        ->and($reading->output)->toContain('cannot install')
+        ->and($reading->output)->not->toContain('composer check')
+        ->and(file_exists($checkout.'/never-ran'))->toBeFalse();
+});
