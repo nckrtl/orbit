@@ -129,6 +129,44 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 observed: $inspection->wireGuardAddressMatches,
             );
         }
+        if ($this->eligibility->allows($node)) {
+            if ($inspection->agentBinaryExists === false || $inspection->agentUnitExists === false) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::AgentMissing,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    'Node agent binary or systemd unit is missing.',
+                    expected: true,
+                    observed: false,
+                );
+            }
+            if ($inspection->agentUnitExists === true && $inspection->agentActive === false) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::AgentInactive,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    'Node agent systemd unit is not active.',
+                    expected: true,
+                    observed: false,
+                );
+            }
+            if ($inspection->agentBinaryExists === true && $inspection->agentChecksumMatches === false) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::AgentOutdated,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    'Node agent binary does not match the pinned checksum.',
+                    expected: true,
+                    observed: false,
+                );
+            }
+        }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
     }
