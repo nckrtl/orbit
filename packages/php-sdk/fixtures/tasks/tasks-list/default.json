@@ -35,6 +35,7 @@
                         "position": 1,
                         "title": "Persist groups",
                         "brief": "Store groups.",
+                        "deliverables": [],
                         "status": "completed",
                         "implementer_agent_thread_id": null,
                         "tokens": null,
@@ -82,6 +83,23 @@
                         "position": 1,
                         "title": "Add SDK requests",
                         "brief": "One request class per route.",
+                        "deliverables": [
+                            {
+                                "id": "sdk-requests",
+                                "type": "file",
+                                "description": "One request class per tasks route",
+                                "path": "packages/php-sdk/src/Requests/Tasks/*.php",
+                                "change": "created"
+                            },
+                            {
+                                "id": "sdk-test",
+                                "type": "test",
+                                "description": "Every tasks route has a request",
+                                "project": "packages/php-sdk",
+                                "file": "tests/Unit/Requests/Tasks/TaskRequestsTest.php",
+                                "name": "addresses every tasks route"
+                            }
+                        ],
                         "status": "todo",
                         "implementer_agent_thread_id": null,
                         "tokens": null,
@@ -102,6 +120,20 @@
                         "position": 2,
                         "title": "Add CLI commands",
                         "brief": "One command per route.",
+                        "deliverables": [
+                            {
+                                "id": "cli-commands",
+                                "type": "file",
+                                "description": "One command per tasks route",
+                                "path": "apps/cli/app/Commands/Tasks/*.php",
+                                "change": "created"
+                            },
+                            {
+                                "id": "command-names",
+                                "type": "review",
+                                "description": "Each command name equals its route name"
+                            }
+                        ],
                         "status": "todo",
                         "implementer_agent_thread_id": null,
                         "tokens": null,

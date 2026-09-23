@@ -30,4 +30,10 @@ Creating subtask...
 Brief
   Add docs/cli/tasks.mdx.
 
+ ┌─────────────┬─────────┬───────────────────────────────┬───────────────────────────────┐
+ │ DELIVERABLE │ TYPE    │ REQUIRES                      │ DESCRIPTION                   │
+ ├─────────────┼─────────┼───────────────────────────────┼───────────────────────────────┤
+ │ cli-page    │ file    │ docs/cli/tasks.mdx (modified) │ Document every tasks command  │
+ │ docs-lint   │ command │ composer docs-lint in .       │ The documentation lint passes │
+ └─────────────┴─────────┴───────────────────────────────┴───────────────────────────────┘
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

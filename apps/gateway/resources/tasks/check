@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
 
-check start CHECKOUT [SETUP]    start `composer check` detached; print the process and the tree it checks.
+check start CHECKOUT [SETUP|-] [DELIVERABLES]
+                                start `composer check` detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
-check run CHECKOUT HEAD TREE [SETUP]   run the setup steps and the check, then write check.json (started by `start`)
+                                DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
+                                (ADR 0133): {"start", "tests": [{"id", "project", "file"}], "commands": [{"id", "command", "directory"}]}
+check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES]
+                                run the setup steps and the check, then write check.json (started by `start`)
 check status PID STARTED        print running, finished (with the result), or lost
 check cancel PID STARTED        stop the check's process group
 """
@@ -16,11 +20,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ElementTree
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 RESULT = os.path.join(DIRECTORY, 'check.json')
 LOG = os.path.join(DIRECTORY, 'check.log')
 OUTPUT_TAIL = 16384
+COMMAND_OUTPUT_TAIL = 4096
+TEST_RESULTS = os.path.join(DIRECTORY, 'tests')
 
 
 def git(checkout, *arguments, environment=None):
@@ -54,7 +61,12 @@ def process_started(pid):
     return started if result.returncode == 0 and started else None
 
 
-def start(checkout, setup=None):
+def optional(path):
+    return path if path and path != '-' else None
+
+
+def start(checkout, setup=None, deliverables=None):
+    setup, deliverables = optional(setup), optional(deliverables)
     head = git(checkout, 'rev-parse', 'HEAD')
     tree = working_tree(checkout)
     for path in (RESULT, LOG):
@@ -66,7 +78,7 @@ def start(checkout, setup=None):
         null = os.open(os.devnull, os.O_RDWR)
         for descriptor in (0, 1, 2):
             os.dup2(null, descriptor)
-        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, *([setup] if setup else [])])
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, setup or '-', *([deliverables] if deliverables else [])])
     for _ in range(50):
         started = process_started(pid)
         if started:
@@ -93,8 +105,98 @@ def run_setup(checkout, setup, log):
     return None, 0
 
 
-def run(checkout, head, tree, setup=None):
+def inside(checkout, relative):
+    """The absolute path of a directory inside the checkout, or None when it points outside."""
+    root = os.path.realpath(checkout)
+    path = os.path.realpath(os.path.join(root, relative or '.'))
+    return path if path == root or path.startswith(root + os.sep) else None
+
+
+def run_logged(arguments, cwd, log, capture=None):
+    """Run a command into the check log. With capture, keep its own output in that file as well."""
+    if capture is None:
+        return subprocess.run(arguments, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT).returncode
+    with open(capture, 'wb') as output:
+        process = subprocess.Popen(arguments, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for chunk in iter(lambda: process.stdout.read(8192), b''):
+            log.write(chunk)
+            output.write(chunk)
+        return process.wait()
+
+
+def test_cases(junit):
+    """Each test case in a JUnit file with its status: passed, failed, or skipped."""
+    if not os.path.exists(junit):
+        return []
+    try:
+        root = ElementTree.parse(junit).getroot()
+    except ElementTree.ParseError:
+        return []
+    cases = []
+    for case in root.iter('testcase'):
+        status = 'passed'
+        if case.find('failure') is not None or case.find('error') is not None:
+            status = 'failed'
+        elif case.find('skipped') is not None:
+            status = 'skipped'
+        cases.append({'name': case.get('name', ''), 'status': status})
+    return cases
+
+
+def diff(checkout, start_commit, tree):
+    """The subtask's diff from its start commit to the checked tree, as paths with their Git status."""
+    try:
+        lines = git(checkout, 'diff-tree', '-r', '--no-renames', '--name-status', start_commit, tree).splitlines()
+    except subprocess.CalledProcessError:
+        return None
+    entries = []
+    for line in lines:
+        status, _, path = line.partition('\t')
+        if path:
+            entries.append({'status': status[:1], 'path': path})
+    return entries
+
+
+def verify_deliverables(checkout, tree, deliverables, log):
+    """Record the evidence for a subtask's deliverables (ADR 0133). Test files run by path, so Pest never replays them."""
+    with open(deliverables) as source:
+        spec = json.load(source)
+    evidence = {'start': spec.get('start'), 'diff': None, 'tests': {}, 'commands': {}}
+    if spec.get('start'):
+        evidence['diff'] = diff(checkout, spec['start'], tree)
+    shutil.rmtree(TEST_RESULTS, ignore_errors=True)
+    os.makedirs(TEST_RESULTS, exist_ok=True)
+    for test in spec.get('tests', []):
+        directory = inside(checkout, test.get('project'))
+        junit = os.path.join(TEST_RESULTS, test['id'] + '.xml')
+        log.write(f"$ vendor/bin/pest {test['file']} --log-junit={junit}   # {test['id']} in {test.get('project') or '.'}\n".encode())
+        log.flush()
+        if directory is None:
+            evidence['tests'][test['id']] = {'exit_code': 127, 'cases': []}
+            continue
+        exit_code = run_logged(['bash', '-lc', 'exec vendor/bin/pest "$1" --log-junit="$2"', 'pest', test['file'], junit], directory, log)
+        evidence['tests'][test['id']] = {'exit_code': exit_code, 'cases': test_cases(junit)}
+    for command in spec.get('commands', []):
+        directory = inside(checkout, command.get('directory'))
+        log.write(f"$ {command['command']}   # {command['id']} in {command.get('directory') or '.'}\n".encode())
+        log.flush()
+        if directory is None:
+            evidence['commands'][command['id']] = {'exit_code': 127, 'output': 'The directory is outside the workspace.'}
+            continue
+        capture = os.path.join(TEST_RESULTS, command['id'] + '.log')
+        exit_code = run_logged(['bash', '-lc', command['command']], directory, log, capture)
+        with open(capture, 'rb') as output:
+            output.seek(0, os.SEEK_END)
+            output.seek(max(0, output.tell() - COMMAND_OUTPUT_TAIL))
+            tail = output.read().decode('utf-8', errors='replace')
+        evidence['commands'][command['id']] = {'exit_code': exit_code, 'output': tail}
+    return evidence
+
+
+def run(checkout, head, tree, setup=None, deliverables=None):
+    setup, deliverables = optional(setup), optional(deliverables)
     started_at = time.time()
+    evidence = None
     failed_step = None
     with open(LOG, 'wb') as log:
         if setup:
@@ -106,6 +208,8 @@ def run(checkout, head, tree, setup=None):
             log.flush()
             exit_code = subprocess.run(['bash', '-lc', 'composer check'], cwd=checkout, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT).returncode
+            if exit_code == 0 and deliverables:
+                evidence = verify_deliverables(checkout, tree, deliverables, log)
     head_after = git(checkout, 'rev-parse', 'HEAD')
     tree_after = working_tree(checkout)
     result = {
@@ -116,6 +220,7 @@ def run(checkout, head, tree, setup=None):
         'head_after': head_after,
         'tree_after': tree_after,
         'changed_paths': changed_paths(checkout, tree, tree_after),
+        'deliverables': evidence,
         'started_at': started_at,
         'finished_at': time.time(),
     }
@@ -160,9 +265,9 @@ def cancel(pid, started):
 
 def main(arguments):
     command = arguments[0] if arguments else ''
-    if command == 'start' and len(arguments) in (2, 3):
+    if command == 'start' and len(arguments) in (2, 3, 4):
         start(*arguments[1:])
-    elif command == 'run' and len(arguments) in (4, 5):
+    elif command == 'run' and len(arguments) in (4, 5, 6):
         run(*arguments[1:])
     elif command == 'status' and len(arguments) == 3:
         status(int(arguments[1]), arguments[2])

@@ -21,23 +21,30 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function start(AppInstance $instance, array $setup = []): TaskCheckProcess
+    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
         $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\n".<<<'BASH'
+        $verify = $deliverables === null ? '' : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\ndeliverables='".base64_encode($verify)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
             printf '%s' "$script" | base64 -d > "$dir/check.new"
             chmod 0755 "$dir/check.new"
             mv -f -- "$dir/check.new" "$dir/check"
             printf '%s' "$setup" | base64 -d > "$dir/setup.json"
+            steps="$dir/setup.json"
             if [ "$(cat "$dir/setup.json")" = '[]' ]; then
-                python3 "$dir/check" start "$checkout"
+                steps=-
+            fi
+            if [ -n "$deliverables" ]; then
+                printf '%s' "$deliverables" | base64 -d > "$dir/deliverables.json"
+                python3 "$dir/check" start "$checkout" "$steps" "$dir/deliverables.json"
             else
-                python3 "$dir/check" start "$checkout" "$dir/setup.json"
+                rm -f -- "$dir/deliverables.json"
+                python3 "$dir/check" start "$checkout" "$steps"
             fi
             BASH);
         $pid = $data['pid'] ?? null;
@@ -80,6 +87,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         $finishedAt = $result['finished_at'] ?? null;
         $treeBefore = $result['tree_before'] ?? null;
         $failedStep = $result['failed_step'] ?? null;
+        $evidence = $result['deliverables'] ?? null;
 
         return TaskCheckReading::finished(
             $result['exit_code'],
@@ -90,6 +98,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             is_int($finishedAt) || is_float($finishedAt) ? (float) $finishedAt : null,
             is_string($treeBefore) ? $treeBefore : null,
             is_string($failedStep) ? $failedStep : null,
+            is_array($evidence) ? $evidence : null,
         );
     }
 

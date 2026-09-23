@@ -10,6 +10,23 @@
             "position": 2,
             "title": "Add SDK requests",
             "brief": "One request class per route.",
+            "deliverables": [
+                {
+                    "id": "sdk-requests",
+                    "type": "file",
+                    "description": "One request class per tasks route",
+                    "path": "packages/php-sdk/src/Requests/Tasks/*.php",
+                    "change": "created"
+                },
+                {
+                    "id": "sdk-test",
+                    "type": "test",
+                    "description": "Every tasks route has a request",
+                    "project": "packages/php-sdk",
+                    "file": "tests/Unit/Requests/Tasks/TaskRequestsTest.php",
+                    "name": "addresses every tasks route"
+                }
+            ],
             "status": "todo",
             "implementer_agent_thread_id": null,
             "tokens": null,

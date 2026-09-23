@@ -27,12 +27,13 @@ Every group and subtask operation below refuses with `tasks.disabled` and HTTP 4
 
 ## Model
 
-A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each row stores a brief with deliverables and acceptance.
+A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each row stores a brief with its goal and acceptance. A subtask also stores a typed list of [deliverables](#deliverables) that Orbit checks at handoff.
 
 | Field | Record | Meaning |
 | --- | --- | --- |
 | `title` | both | Short name |
-| `brief` | both | Deliverables and acceptance |
+| `brief` | both | Goal and acceptance |
+| `deliverables` | Task | Typed items the subtask must deliver. An empty list for subtasks created before deliverables existed |
 | `status` | both | Lifecycle state |
 | `position` | Task | Order inside the group, starting at 1 |
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
@@ -67,16 +68,20 @@ Use these operations after the extension is enabled. List and show accept any au
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 
-Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, `plan: true` to start a [planner](#plan-a-group-with-a-planner), and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`, so a stalled group shows why it waits. Complete marks a `settling` group `completed` and removes its Instance.
+Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`, `plan: true` to start a [planner](#plan-a-group-with-a-planner), and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`, so a stalled group shows why it waits. Complete marks a `settling` group `completed` and removes its Instance.
 
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
-Subtask create appends one subtask at the next position with status `todo`. It works in any group status. Subtask update changes `title`, `brief`, or `position`, and the other subtasks shift to keep positions gapless from 1. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`.
+Subtask create appends one subtask at the next position with status `todo`. It works in any group status, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and the other subtasks shift to keep positions gapless from 1. A `deliverables` value replaces the whole list. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`, with one exception: the deliverables of a `todo` subtask can change in any group status.
+
+Moving a group to `todo`, by create or update, needs at least one deliverable on every subtask.
 
 | Error | HTTP | When |
 | --- | --- | --- |
 | `tasks.no_subtasks` | 422 | Create with `status: todo`, or update to `todo`, on a group without subtasks |
-| `tasks.not_in_backlog` | 409 | Group title or brief update, or subtask update or destroy, outside `backlog` |
+| `tasks.subtask_deliverables_missing` | 422 | Create with `status: todo`, or update to `todo`, while a subtask has no deliverables; or subtask create without deliverables outside `backlog`. `details` names each subtask |
+| `tasks.not_in_backlog` | 409 | Group title or brief update, or subtask title, brief, or position update or destroy, outside `backlog` |
+| `tasks.deliverables_locked` | 409 | Subtask deliverables update outside `backlog` for a subtask that has started |
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
 | `tasks.plan_requires_backlog` | 422 | Create with `plan: true` and `status: todo` |
 | `tasks.planner_driver_unavailable` | 409 | Create with `plan: true` when the reviewer driver is not T3 |
@@ -88,6 +93,66 @@ A status update and a scheduler claim cannot both succeed. When the claim wins, 
 
 MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
 
+## Deliverables
+
+A deliverable is one item that a subtask must deliver, in a form Orbit can check. The planner or operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit then verifies the mechanical ones before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the decision.
+
+Each deliverable is an object with an `id`, a `type`, a `description`, and the fields of its type:
+
+| Type | Fields | Orbit checks |
+| --- | --- | --- |
+| `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the subtask's diff, added for `created`, modified for `modified`, either for `any` |
+| `test` | `project`: the project directory, such as `apps/gateway`, or `.` for the root. `file`: the Pest test file in that project. `name`: a substring of the test name | The test file is added or modified in the diff, and Orbit's run of that file has at least one test whose name contains `name`, all passing |
+| `command` | `command`: the command to run. `directory`: where to run it, relative to the workspace root; default `.` | Orbit's run of the command exits with 0 |
+| `review` | none | The reviewer confirms it in its approval |
+
+```json
+[
+  {"id": "reference-page", "type": "file", "description": "Document the export in the tasks reference", "path": "docs/reference/tasks.md", "change": "modified"},
+  {"id": "export-test", "type": "test", "description": "A feature test for the export", "project": "apps/gateway", "file": "tests/Feature/ExportTest.php", "name": "exports every subtask"},
+  {"id": "web-tests", "type": "command", "description": "The web app tests pass", "command": "bun test", "directory": "apps/web"},
+  {"id": "error-copy", "type": "review", "description": "Error messages name the failing subtask"}
+]
+```
+
+| Rule | Limit |
+| --- | --- |
+| `id` | A lowercase slug such as `export-test`, at most 64 characters, unique within the subtask |
+| `description` | At most 500 characters |
+| `path`, `file`, `project`, `directory` | Relative paths without `..`. At most 500 characters |
+| `name` | At most 200 characters |
+| `command` | At most 1000 characters |
+| Number | At most 20 per subtask |
+
+A field that belongs to another type is refused. In a `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
+
+The subtask's diff runs from its start commit to the working tree that Orbit's check sees, uncommitted and untracked files included. Orbit records the start commit when the subtask starts. Deleted and ignored files never match.
+
+### Confirm deliverables
+
+The Gateway writes the subtask's deliverables into `.git/orbit/turn.json` before each turn. The agent confirms each one with `--deliverable=ID=evidence`, where the evidence says where or how it is met:
+
+```bash
+.git/orbit/run --outcome=ready_for_review --summary="Added the export" \
+  --deliverable=reference-page="Export section in docs/reference/tasks.md" \
+  --deliverable=export-test="tests/Feature/ExportTest.php covers every subtask"
+```
+
+| Turn | Needs |
+| --- | --- |
+| Implementer `ready_for_review` | A confirmation for every deliverable |
+| Reviewer `approved` | A confirmation for every `review` deliverable. Other IDs are allowed |
+
+The script refuses a missing confirmation, an unknown ID, an ID given twice, empty evidence, and `--deliverable` with any other outcome. The receipt stores the confirmations as `deliverables`, and the Gateway stores them on the receipt's comment. The implementer prompt and each review request list the subtask's deliverables.
+
+### Verify deliverables
+
+When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After `composer check` passes, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
+
+The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. The reviewer starts only when every deliverable passes.
+
+A subtask with no deliverables skips these steps. Groups that left Backlog before deliverables existed keep running that way. To add deliverables to such a group, update its `todo` subtasks.
+
 ## Prepare a group in Backlog
 
 A group in Backlog without a planner has an id but no Instance and no agents. Use that time to shape the feature before any agent runs. To shape it with an agent in T3 instead, [plan the group with a planner](#plan-a-group-with-a-planner).
@@ -96,7 +161,8 @@ A group in Backlog without a planner has an id but no Instance and no agents. Us
 2. In a worktree, create the branch `task-{group id}` from the Project default branch.
 3. Write the feature's ADRs and documentation on that branch, following the [contributor guide](/contributor-guide). Push the branch.
 4. Add, update, reorder, and remove subtasks until each brief is one reviewable step that cites the ADRs and documentation it implements.
-5. Move the group to `todo` with `tasks:update`.
+5. Give each subtask its [deliverables](#deliverables).
+6. Move the group to `todo` with `tasks:update`.
 
 The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The reviewer prompt also says that the implementer has no web access, and asks the reviewer to confirm framework and library usage against current documentation for the Project's versions. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
 
@@ -107,8 +173,9 @@ A planner is a T3 thread that shapes a Backlog group with you. It writes the fea
 1. Create the group with `plan: true`. The Gateway provisions the shared Instance on `task-{group id}` and starts the planner. The thread `Orbit task #{group id} · Planner: {title}` appears in your T3 client.
 2. Shape the feature with the planner in that thread. It follows the repository's instructions for feature design. In Orbit's repository, that is the `grill-with-docs` skill.
 3. The planner keeps the title, brief, and subtasks current through the same operations you use.
-4. When you agree the plan is ready, the planner moves the group to `todo`, or you do.
-5. Orbit commits every workspace change on `task-{group id}` as `orbit <tasks@orbit>` with the message `Plan: {group title}`. The scheduler then claims the group in the same Instance.
+4. The planner gives each subtask at least one [deliverable](#deliverables). Each explicit item of the brief becomes one.
+5. When you agree the plan is ready, the planner moves the group to `todo`, or you do.
+6. Orbit commits every workspace change on `task-{group id}` as `orbit <tasks@orbit>` with the message `Plan: {group title}`. The scheduler then claims the group in the same Instance.
 
 At the first review handoff, the scheduler sends the review request to the planner thread instead of starting a new reviewer. You keep one thread for the feature from the first idea through every review.
 
@@ -223,7 +290,7 @@ Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`,
 
 When an implementer is idle, done, or asking for input, the Gateway reads the implementer's run receipt and `composer.json` at the workspace root, which must define a `check` script. A pending input fails on its own. When these items pass, Orbit runs the Project check itself.
 
-Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --outcome=OUTCOME --summary="…"`. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`. The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It writes `.git/orbit/run.json` atomically. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the decision.
+Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn and the subtask's deliverables, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --outcome=OUTCOME --summary="…"`. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`. The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It also needs a `--deliverable` confirmation for each [deliverable](#confirm-deliverables) the outcome requires. It writes `.git/orbit/run.json` atomically. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the decision.
 
 A `blocked` turn pauses the whole group until the operator answers, so it must ask one specific question: `.git/orbit/run --outcome=blocked --summary="What stops you" --question="The question the operator must answer"`. The script refuses `blocked` without a question. Its error tells the agent to ask one specific question, or to keep working when it can decide or find the answer itself. The script also refuses `--question` with any other outcome. The role prompts and reminders say the same. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 
@@ -261,7 +328,7 @@ The other thread's work does not defer the task. While the operator talks to the
 
 The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
 
-A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item and the Project check pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
+A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item, the Project check, and the [deliverables](#verify-deliverables) pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
 `assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments. The Gateway sends a non-empty resolution to the blocked thread: the group's reviewer when the task is `reviewing`, otherwise the task's implementer. For the reviewer, the resolution counts as its next review request, so the tick does not send another.
 
@@ -314,7 +381,7 @@ The task stays `running` during the check. On each tick the scheduler reads the 
 | Check state | Result |
 | --- | --- |
 | Running | The scheduler waits. The task's `check` shows its start time. |
-| Exit code 0, HEAD and tree unchanged | `passed`. The reviewer starts. |
+| Exit code 0, HEAD and tree unchanged | `passed`. Orbit [verifies the deliverables](#verify-deliverables). When they pass, the reviewer starts. |
 | Exit code not 0 | `failed`. The implementer's reminder holds the exit code and the end of the output. |
 | HEAD or tree changed during the run | `changed`. The check runs again once. A second change fails, and the reminder names the changed paths. |
 | The process is gone without a result | `lost`. The check runs again once. A second loss asks for assistance. |

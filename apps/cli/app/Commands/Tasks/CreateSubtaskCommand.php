@@ -15,7 +15,8 @@ final class CreateSubtaskCommand extends TaskCommand
     protected $signature = 'tasks:subtask:create
         {group? : Numeric task group ID}
         {title? : Short name of the step}
-        {--brief= : Deliverables and acceptance of the step}
+        {--brief= : Goal and acceptance of the step}
+        {--deliverables= : JSON file with an array of typed deliverables for the step}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -41,6 +42,12 @@ final class CreateSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
+        $deliverables = $this->deliverablesFile();
+
+        if ($deliverables === false) {
+            return self::FAILURE;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -56,7 +63,7 @@ final class CreateSubtaskCommand extends TaskCommand
         $title ??= $this->promptText('Title', self::TITLE_MAX);
         $brief ??= $this->promptText('Brief', self::BRIEF_MAX, multiline: true);
 
-        $task = $this->sendWithProgress($connector, new CreateSubtaskRequest($groupId, $title, $brief), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
+        $task = $this->sendWithProgress($connector, new CreateSubtaskRequest($groupId, $title, $brief, $deliverables ?? []), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : self::FAILURE;
     }

@@ -12,12 +12,14 @@ use App\Models\AppInstance;
 interface TaskRunReceipts
 {
     /**
-     * Installs `.git/orbit/run`, records whose turn starts and whether it reviews the last subtask,
-     * and removes any earlier receipt.
+     * Installs `.git/orbit/run`, records whose turn starts, whether it reviews the last subtask, and
+     * the subtask's deliverables, and removes any earlier receipt.
+     *
+     * @param  list<TaskDeliverable>  $deliverables
      *
      * @throws TaskRunReceiptException
      */
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false): void;
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = []): void;
 
     /** @throws TaskRunReceiptException */
     public function read(AppInstance $instance): ?TaskRunReceipt;

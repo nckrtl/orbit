@@ -15,5 +15,7 @@ final class UpdateTaskData extends Data
         public ?string $title,
         public ?string $brief,
         public ?int $position,
+        /** @var list<array<string, string>>|null null leaves the deliverables unchanged */
+        public ?array $deliverables = null,
     ) {}
 }

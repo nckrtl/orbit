@@ -30,4 +30,11 @@ Updating subtask...
 Brief
   One request class per route.
 
+ ┌──────────────┬──────┬───────────────────────────────────────────────────────────┬───────────────────────────────────┐
+ │ DELIVERABLE  │ TYPE │ REQUIRES                                                  │ DESCRIPTION                       │
+ ├──────────────┼──────┼───────────────────────────────────────────────────────────┼───────────────────────────────────┤
+ │ sdk-requests │ file │ packages/php-sdk/src/Requests/Tasks/*.php (created)       │ One request class per tasks route │
+ │ sdk-test     │ test │ packages/php-sdk/tests/Unit/Requests/Tasks/TaskRequestsTe │ Every tasks route has a request   │
+ │              │      │ st.php: addresses every tasks route                       │                                   │
+ └──────────────┴──────┴───────────────────────────────────────────────────────────┴───────────────────────────────────┘
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

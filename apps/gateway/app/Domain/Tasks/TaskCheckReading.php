@@ -9,7 +9,10 @@ namespace App\Domain\Tasks;
  */
 final readonly class TaskCheckReading
 {
-    /** @param list<string> $changedPaths */
+    /**
+     * @param  list<string>  $changedPaths
+     * @param  array<array-key, mixed>|null  $deliverables  the raw deliverable evidence of a passing check
+     */
     private function __construct(
         public string $state,
         public ?int $exitCode = null,
@@ -20,6 +23,7 @@ final readonly class TaskCheckReading
         public ?float $finishedAt = null,
         public ?string $treeBefore = null,
         public ?string $failedStep = null,
+        public ?array $deliverables = null,
     ) {}
 
     public static function running(): self
@@ -32,10 +36,11 @@ final readonly class TaskCheckReading
      * @param  float|null  $finishedAt  the Unix time at which the check itself ended
      * @param  string|null  $treeBefore  the tree the check itself saw, after any setup steps
      * @param  string|null  $failedStep  the setup step that failed, so composer check did not run
+     * @param  array<array-key, mixed>|null  $deliverables  the evidence for the subtask's deliverables (ADR 0133)
      */
-    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null): self
+    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null, ?array $deliverables = null): self
     {
-        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep);
+        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep, $deliverables);
     }
 
     public static function lost(string $output): self

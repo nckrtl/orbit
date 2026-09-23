@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\CreateTaskData;
+use App\Domain\Tasks\TaskGroupGuard;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use App\Models\TaskGroup;
@@ -18,6 +20,10 @@ final readonly class CreateTaskAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
+        if ($data->deliverables === [] && $group->refresh()->status !== TaskGroupStatus::Backlog) {
+            throw TaskGroupGuard::deliverablesRequired();
+        }
+
         $position = ((int) $group->tasks()->max('position')) + 1;
 
         return Task::query()->create([
@@ -25,6 +31,7 @@ final readonly class CreateTaskAction
             'position' => $position,
             'title' => $data->title,
             'brief' => $data->brief,
+            'deliverables' => $data->deliverables,
             'status' => TaskStatus::Todo,
         ]);
     }
