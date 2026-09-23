@@ -59,6 +59,8 @@ def maintenance_environment():
         and not name.startswith(ISOLATED_ENVIRONMENT_PREFIXES)
     }
     environment['COMPOSER_PROCESS_TIMEOUT'] = '0'
+    # An agent session that queues a refresh must not switch its commands to agent output (laravel/pao).
+    environment['PAO_DISABLE'] = '1'
     return environment
 
 

@@ -177,6 +177,7 @@ The background worker removes worktree-setup settings before it starts, and ever
 | Orbit, application, and database settings | Names that start with `ORBIT_`, `APP_`, or `DB_`, plus `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION` |
 | Setup temporary directories | `TMPDIR`, `TMP`, and `TEMP` |
 | Retained process access | Other settings, including `PATH`, the user home and shell, tool configuration, and dependency authentication |
+| Added for maintenance | `PAO_DISABLE=1`, so Pest, PHPStan, and Rector print their normal output even when an agent session starts the refresh. It applies only to the worker's commands. |
 
 Each project loads its own environment and test configuration after this filter. The filter proves only that setup settings cannot select a project runtime; it does not prove that a queued background check ran or passed. Inspect a failed run with `bin/tia-cache status --json --remote`, then read the per-check `log` paths in `results` and `correctness_failures`; use `refresh_log` for worker launch or setup failures.
 
