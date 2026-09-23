@@ -255,6 +255,8 @@ export function QuotaProviderPage() {
         ...proxycliProviderQuery(id),
         enabled: status.data?.enabled === true && tasks.data?.enabled === true,
     });
+    const [toggleError, setToggleError] = useState<string | null>(null);
+    useEffect(() => setToggleError(null), [id]);
     const accountColumns = useMemo<Column<QuotaAccount>[]>(
         () => [
             { header: "Account", width: 22, value: (row) => row.id },
@@ -299,7 +301,12 @@ export function QuotaProviderPage() {
                         className="cursor-pointer text-cyan"
                         onClick={(event) => {
                             event.stopPropagation();
-                            void toggleAccount(row);
+                            setToggleError(null);
+                            toggleAccount(row).catch((error: unknown) => {
+                                setToggleError(
+                                    error instanceof Error ? error.message : String(error),
+                                );
+                            });
                         }}
                     >
                         {row.disabled ? "enable" : "disable"}
@@ -334,8 +341,15 @@ export function QuotaProviderPage() {
     const pool = provider.data;
 
     return (
-        <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)] gap-y-[var(--panel-gap)]">
+        <div
+            className={`grid h-full gap-y-[var(--panel-gap)] ${toggleError ? "grid-rows-[auto_auto_auto_minmax(0,1fr)] md:grid-rows-[auto_auto_minmax(0,1fr)]" : "grid-rows-[auto_auto_minmax(0,1fr)] md:grid-rows-[auto_minmax(0,1fr)]"}`}
+        >
             <PageHeader trail={[{ label: "Quota" }, { label: providerName(pool.provider) }]} />
+            {toggleError && (
+                <div role="alert" className="text-red">
+                    {toggleError}
+                </div>
+            )}
             <Properties
                 properties={[
                     { name: "Provider", value: providerName(pool.provider) },

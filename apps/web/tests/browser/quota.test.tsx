@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 import { openApp, pane, row } from "./app";
 import { screenText } from "./screen";
 
@@ -44,6 +45,25 @@ it("shows account controls and never renders a missing window as zero", async ()
     expect(screenText()).not.toContain(" 0%");
 
     await expect.element(row("Accounts", "disable")).toBeVisible();
+});
+
+it("shows successful and failed account toggle outcomes", async () => {
+    await openApp("/quota/codex", { proxycli: true });
+    const control = row("Accounts", "disable").getByText("disable", { exact: true });
+    await control.click();
+    await expect.element(row("Accounts", "enable")).toBeVisible();
+
+    await openApp("/quota/codex", {
+        proxycli: true,
+        wrapTransport: (inner) => async (method, path, body) => {
+            if (method === "PATCH" && path.includes("/proxycli/accounts/")) {
+                throw new Error("Account toggle failed");
+            }
+            return inner(method, path, body);
+        },
+    });
+    await page.getByText("disable", { exact: true }).click();
+    await expect.element(page.getByRole("alert")).toHaveTextContent("Account toggle failed");
 });
 
 it("positions a red even-pace marker and omits it without a reset", async () => {
