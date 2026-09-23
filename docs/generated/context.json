@@ -97,7 +97,8 @@
                 "0103",
                 "0104",
                 "0109",
-                "0110"
+                "0110",
+                "0127"
             ]
         },
         {
@@ -3355,6 +3356,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0127-share-one-ssh-connection-per-node.md",
+            "title": "ADR 0127: Share one SSH connection per Node",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0033",
+                "0127"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3508,7 +3527,8 @@
                 "0123",
                 "0124",
                 "0125",
-                "0126"
+                "0126",
+                "0127"
             ]
         },
         {
