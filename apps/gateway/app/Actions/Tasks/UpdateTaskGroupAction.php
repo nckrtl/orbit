@@ -62,7 +62,7 @@ final readonly class UpdateTaskGroupAction
     }
 
     /**
-     * ADR 0123: a planning group moving to Todo commits the planner's ADRs and documentation first. A failed
+     * ADR 0124: a planning group moving to Todo commits the planner's ADRs and documentation first. A failed
      * commit leaves the group in Backlog.
      */
     private function commitPlan(TaskGroup $group, UpdateTaskGroupData $data): void

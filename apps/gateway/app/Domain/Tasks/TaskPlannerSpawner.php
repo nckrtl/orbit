@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\TaskGroup;
 
 /**
- * ADR 0123: starts the planner thread of a Backlog group in its shared Instance.
+ * ADR 0124: starts the planner thread of a Backlog group in its shared Instance.
  */
 interface TaskPlannerSpawner
 {

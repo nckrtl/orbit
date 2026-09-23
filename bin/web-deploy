@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Build apps/web from a clean commit and release it to the Gateway web directory, or switch the
+# served release back to a retained one. See docs/reference/web-app.md and ADR 0123.
+
+set -euo pipefail
+
+usage() {
+    printf 'Usage: bin/web-deploy [--switch COMMIT]\n' >&2
+    exit 2
+}
+
+switch=""
+if [[ $# -eq 2 && "$1" == --switch ]]; then
+    switch=$2
+elif [[ $# -ne 0 ]]; then
+    usage
+fi
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+host="${ORBIT_WEB_DEPLOY_HOST:-orbit@gateway}"
+ssh_command="${ORBIT_WEB_DEPLOY_SSH:-ssh}"
+web_dir="${ORBIT_WEB_DIR:-/home/orbit/web}"
+group="${ORBIT_WEB_GROUP:-caddy}"
+keep=5
+
+# ssh joins remote arguments into one shell command, so only plain values may cross it.
+if [[ ! "$web_dir" =~ ^/[A-Za-z0-9._/-]+$ || ! "$group" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'ORBIT_WEB_DIR and ORBIT_WEB_GROUP must be plain paths and names.\n' >&2
+    exit 2
+fi
+
+remote() {
+    # ORBIT_WEB_DEPLOY_SSH may carry options such as `-i KEY`, so it is split on purpose.
+    # shellcheck disable=SC2086
+    $ssh_command "$host" bash -s -- "$@"
+}
+
+# Shared by both modes: point `current` at a release in one rename.
+read -r -d '' switch_script <<'REMOTE' || true
+set -euo pipefail
+web=$1
+release=$2
+test -d "$web/releases/$release" || { printf 'No retained release %s.\n' "$release" >&2; exit 1; }
+ln -sfn "releases/$release" "$web/current.next"
+if mv --version >/dev/null 2>&1; then
+    mv -Tf -- "$web/current.next" "$web/current"
+else
+    mv -hf "$web/current.next" "$web/current"
+fi
+printf 'Serving release %s.\n' "$release"
+REMOTE
+
+if [[ -n "$switch" ]]; then
+    if [[ ! "$switch" =~ ^[0-9a-f]{12}$ ]]; then
+        printf 'A release is named by the first 12 characters of its commit.\n' >&2
+        exit 2
+    fi
+    remote "$web_dir" "$switch" <<<"$switch_script"
+    exit 0
+fi
+
+cd "$repository_root"
+if [[ -n "$(git status --porcelain)" ]]; then
+    printf 'Commit or discard every change first; a release must match its commit.\n' >&2
+    exit 1
+fi
+release="$(git rev-parse HEAD | cut -c1-12)"
+
+# Build the commit in its own worktree with a minimal environment, so ignored files such as
+# apps/web/.env.local and VITE_* shell variables never reach a release.
+build="$(mktemp -d "${TMPDIR:-/tmp}/orbit-web-build.XXXXXX")"
+trap 'git -C "$repository_root" worktree remove --force "$build/checkout" >/dev/null 2>&1 || true; rm -rf "$build"' EXIT
+git worktree add --quiet --detach "$build/checkout" HEAD
+clean_env=(env -i "HOME=$HOME" "PATH=$PATH")
+(cd "$build/checkout/packages/agent-annotation" && "${clean_env[@]}" bun install --frozen-lockfile)
+(cd "$build/checkout/apps/web" && "${clean_env[@]}" bun install --frozen-lockfile && "${clean_env[@]}" bun run build)
+dist="$build/checkout/apps/web/dist"
+test -f "$dist/index.html" || { printf 'The build produced no index.html.\n' >&2; exit 1; }
+
+remote "$web_dir" "$release" <<'REMOTE'
+set -euo pipefail
+web=$1
+release=$2
+test -d "$web/releases" || { printf 'Gateway web directory %s is missing; run orbit:gateway-web.\n' "$web" >&2; exit 1; }
+rm -rf -- "$web/releases/$release.partial"
+mkdir -m 0750 -- "$web/releases/$release.partial"
+REMOTE
+
+rsync -rlt -e "$ssh_command" \
+    "$dist/" "$host:$web_dir/releases/$release.partial/"
+
+remote "$web_dir" "$release" "$group" <<'REMOTE'
+set -euo pipefail
+web=$1
+release=$2
+group=$3
+chgrp -R -- "$group" "$web/releases/$release.partial"
+find "$web/releases/$release.partial" -type d -exec chmod 0750 {} +
+find "$web/releases/$release.partial" -type f -exec chmod 0640 {} +
+if [ -e "$web/releases/$release" ]; then
+    mv -- "$web/releases/$release" "$web/releases/$release.replaced"
+fi
+mv -- "$web/releases/$release.partial" "$web/releases/$release"
+touch -- "$web/releases/$release"
+rm -rf -- "$web/releases/$release.replaced"
+REMOTE
+
+remote "$web_dir" "$release" <<<"$switch_script"
+
+remote "$web_dir" "$keep" <<'REMOTE'
+set -euo pipefail
+web=$1
+keep=$2
+current=$(readlink "$web/current")
+ls -1t "$web/releases" | grep -E '^[0-9a-f]{12}$' | tail -n +"$((keep + 1))" | while read -r old; do
+    if [ "releases/$old" != "$current" ]; then
+        rm -rf -- "$web/releases/$old"
+    fi
+done
+REMOTE

@@ -226,6 +226,7 @@ use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
+use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
 use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -654,6 +655,10 @@ final class AppServiceProvider extends ServiceProvider
                     processes: app(ProcessRunner::class),
                     checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
                 ),
+                webDirectory: new GatewayWebDirectoryConverger(
+                    processes: app(ProcessRunner::class),
+                    webRoot: (string) config('orbit.gateway_web'),
+                ),
                 certificatePublisher: new NativeGatewayCertificatePublisher(
                     processes: app(ProcessRunner::class),
                     orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
@@ -662,6 +667,7 @@ final class AppServiceProvider extends ServiceProvider
                 caddy: new NativeGatewayCaddyConverger(app(ProcessRunner::class)),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
                 checkoutPath: rtrim(string: (string) config('orbit.gateway_checkout'), characters: '/'),
+                webRoot: (string) config('orbit.gateway_web'),
                 hibernator: app(RuntimeHibernatorConverger::class),
             ),
         );

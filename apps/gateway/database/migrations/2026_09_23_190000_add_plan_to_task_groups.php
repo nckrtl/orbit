@@ -6,7 +6,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/** ADR 0123: a group created with a planner keeps that fact for its Todo commit and reviewer handoff. */
+/** ADR 0124: a group created with a planner keeps that fact for its Todo commit and reviewer handoff. */
 return new class extends Migration
 {
     public function up(): void

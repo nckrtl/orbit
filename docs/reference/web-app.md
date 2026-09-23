@@ -1,0 +1,68 @@
+---
+title: "Web app"
+description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how bin/web-deploy releases it, and how to roll a release back."
+---
+
+# Web app
+
+This page tells an operator how the Gateway serves the Orbit web app, how to release a new build, and how to roll a release back. [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) records why the app shares the Gateway origin.
+
+## Open the app
+
+Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The browser must trust the Orbit root certificate, which `orbit gateway:trust` installs. The Gateway identifies the browser by its WireGuard address, so there is no login.
+
+## How the Gateway site routes requests
+
+The Gateway's Caddy site sends each request to one of three places.
+
+| Path | Destination |
+| --- | --- |
+| `/api/*`, `/mcp`, `/mcp/*`, `/up`, `/.well-known/*` | Laravel, as before. |
+| `/grafana/*` | The `metrics.orbit` site, after the same WireGuard authorization. |
+| Everything else | The current web release. |
+
+A web path without a file returns the release's `index.html`, and the app's router shows the page. Files under `/assets/` carry content hashes, so browsers cache them as immutable. Every other web response must be revalidated, so a new release shows on the next load.
+
+`/grafana/*` checks the browser's address through the Metrics authorization endpoint, removes the `/grafana` prefix, and forwards the request to `metrics.orbit` on the same Caddy. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, `/grafana` returns an error and the app shows `—` for Node metrics.
+
+The web app connects to Reverb at the URL that `GET /api/v1/realtime` returns. It needs no Gateway path for realtime.
+
+## Web directory
+
+The web directory is `/home/orbit/web` unless `ORBIT_GATEWAY_WEB` sets another path under `/home/orbit/`. It belongs to the `orbit` user and the `caddy` group.
+
+| Path | Contents |
+| --- | --- |
+| `releases/<commit>` | One built release, named after the 12-character commit it was built from. |
+| `current` | A link to the release that the Gateway serves. |
+
+`orbit:bootstrap` creates the directory and publishes the site. After a Gateway deploy that changes the site, run `php artisan orbit:gateway-web` in the Gateway checkout. It creates the directory, publishes the Gateway certificate with the public root certificate, and publishes the site, without changing roles, VPN settings, or the Gateway Node. Gateway deploys do not change the releases or `current`.
+
+## Release a build
+
+Run `bin/web-deploy` from a clean checkout of the commit to release.
+
+```bash
+bin/web-deploy
+```
+
+The command refuses a working tree with uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` shell variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, then builds `apps/web`. It uploads the build to `releases/<commit>` and switches `current` to it in one rename. It keeps the five newest releases and never removes the current one. Releasing a commit that already exists replaces that release.
+
+These environment variables change the target.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ORBIT_WEB_DEPLOY_HOST` | `orbit@gateway` | SSH destination of the Gateway host. |
+| `ORBIT_WEB_DEPLOY_SSH` | `ssh` | SSH command, including options such as `-i KEY`. |
+| `ORBIT_WEB_DIR` | `/home/orbit/web` | Web directory on the Gateway host. |
+| `ORBIT_WEB_GROUP` | `caddy` | Group that must read the release. |
+
+## Roll back
+
+Switch `current` to a retained release without building.
+
+```bash
+bin/web-deploy --switch <commit>
+```
+
+The command refuses a commit that has no retained release. The Gateway serves the older release on the next request.

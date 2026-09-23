@@ -3256,8 +3256,26 @@
             ]
         },
         {
-            "path": "docs/decisions/0123-plan-backlog-groups-with-a-t3-planner.md",
-            "title": "ADR 0123: Plan Backlog groups with a T3 planner",
+            "path": "docs/decisions/0123-serve-the-web-app-from-the-gateway-origin.md",
+            "title": "ADR 0123: Serve the web app from the Gateway origin",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0085",
+                "0123"
+            ]
+        },
+        {
+            "path": "docs/decisions/0124-plan-backlog-groups-with-a-t3-planner.md",
+            "title": "ADR 0124: Plan Backlog groups with a T3 planner",
             "kind": "decision",
             "components": [
                 "apps/docs",
@@ -3275,7 +3293,7 @@
                 "0112",
                 "0121",
                 "0122",
-                "0123"
+                "0124"
             ]
         },
         {
@@ -3429,7 +3447,8 @@
                 "0120",
                 "0121",
                 "0122",
-                "0123"
+                "0123",
+                "0124"
             ]
         },
         {
@@ -4543,7 +4562,7 @@
                 "0116",
                 "0121",
                 "0122",
-                "0123"
+                "0124"
             ]
         },
         {
@@ -4598,6 +4617,20 @@
                 "0037",
                 "0049",
                 "0056"
+            ]
+        },
+        {
+            "path": "docs/reference/web-app.md",
+            "title": "Web app",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0123"
             ]
         },
         {

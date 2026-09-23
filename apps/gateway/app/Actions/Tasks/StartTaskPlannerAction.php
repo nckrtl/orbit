@@ -12,7 +12,7 @@ use App\Models\AppInstance;
 use App\Models\TaskGroup;
 
 /**
- * ADR 0123: gives a new Backlog group its shared Instance and starts its planner thread.
+ * ADR 0124: gives a new Backlog group its shared Instance and starts its planner thread.
  */
 final readonly class StartTaskPlannerAction
 {

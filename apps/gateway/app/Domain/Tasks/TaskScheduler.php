@@ -626,7 +626,7 @@ final readonly class TaskScheduler
 
             if (! $this->ceilings->canActivate($group)) {
                 $group->status = TaskGroupStatus::Todo;
-                // ADR 0123: a planning group keeps the workspace its planner prepared.
+                // ADR 0124: a planning group keeps the workspace its planner prepared.
                 if (! $group->plan) {
                     $group->taskable()->dissociate();
                 }

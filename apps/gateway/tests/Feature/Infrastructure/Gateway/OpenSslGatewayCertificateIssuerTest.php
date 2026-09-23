@@ -278,7 +278,7 @@ it('keeps an issued generation stable while later certificates are published', f
             ->toBe($firstCertificate);
         expect(file_get_contents($first->privateKeyPath))
             ->toBe($firstPrivateKey);
-        expect($copySources)->toBe([$first->certificatePath, $first->privateKeyPath]);
+        expect($copySources)->toBe([$first->certificatePath, $first->privateKeyPath, $orbitHome.'/ca/root.pem']);
         expect(array_slice($metricsPublication->arguments, 5, 2))
             ->toBe([$first->certificatePath, $first->privateKeyPath]);
     } finally {

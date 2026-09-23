@@ -51,7 +51,7 @@ final readonly class ServingNodeResolver
     }
 
     /**
-     * ADR 0123: a Task group with an Instance is served by that Instance's Node, so a Node with access to itself
+     * ADR 0124: a Task group with an Instance is served by that Instance's Node, so a Node with access to itself
      * can manage the groups whose workspace it holds. A group without an Instance is served by the Gateway.
      *
      * @return list<Node>

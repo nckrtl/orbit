@@ -1,10 +1,10 @@
 ---
-title: "ADR 0123: Plan Backlog groups with a T3 planner"
-sidebarTitle: "0123 Plan Backlog groups with a T3 planner"
+title: "ADR 0124: Plan Backlog groups with a T3 planner"
+sidebarTitle: "0124 Plan Backlog groups with a T3 planner"
 description: "Proposed. A Backlog group can start a planner thread in T3 that shapes the feature, writes its ADRs and documentation, manages the group through Orbit MCP, and moves it to Todo. The planner becomes the group's reviewer."
 ---
 
-# ADR 0123: Plan Backlog groups with a T3 planner
+# ADR 0124: Plan Backlog groups with a T3 planner
 
 A task group can start in Backlog with a planner. The Gateway gives the group its shared Instance and starts a planner thread through the T3 driver. The operator shapes the feature with the planner in T3. The planner writes the ADRs and documentation in the workspace and manages the group's title, brief, and subtasks through Orbit MCP. When the planner or the operator moves the group to Todo, Orbit commits the planner's work and runs the group in the same workspace. The planner thread becomes the group's reviewer.
 

@@ -85,7 +85,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         $group = $task->taskGroup;
         $prompt = $this->reviewPrompt($task);
 
-        // ADR 0123: the planner thread becomes the reviewer with the group's first review request.
+        // ADR 0124: the planner thread becomes the reviewer with the group's first review request.
         if ($group->plan && ! $group->tasks()->whereNotNull('review_notified_attempt')->exists()) {
             $prompt = 'The plan is in Todo and Orbit has started the implementers. From now on you are the reviewer of this group, not its planner. Do not change the plan or the subtasks.'."\n\n".$this->reviewerPrompt($group)."\n\n".$prompt;
         }
