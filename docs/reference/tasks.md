@@ -253,7 +253,7 @@ The tick also reads `composer.json` at the workspace root over SSH. The `check_s
 
 A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item and the Project check pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
-`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments.
+`assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments. The Gateway sends a non-empty resolution to the blocked thread: the group's reviewer when the task is `reviewing`, otherwise the task's implementer. For the reviewer, the resolution counts as its next review request, so the tick does not send another.
 
 The Gateway sends one reminder that names every failed code item. It starts and ends with fixed sentences:
 
