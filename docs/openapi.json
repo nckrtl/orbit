@@ -24565,6 +24565,15 @@
           "plan": {
             "type": "boolean"
           },
+          "assistance_requested": {
+            "type": "boolean"
+          },
+          "assistance_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "implementer_model": {
             "type": "string"
           },
@@ -24709,6 +24718,15 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "assistance_requested": {
+            "type": "boolean"
+          },
+          "assistance_reason": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }

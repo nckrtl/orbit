@@ -59,6 +59,7 @@ final class TaskGroup extends Model
         'reviewer_agent_driver' => 't3',
         'notify_coder' => false,
         'plan' => false,
+        'assistance_requested' => false,
         'implementer_model' => TaskAgentDefaults::ImplementerModel,
         'reviewer_model' => TaskAgentDefaults::ReviewerModel,
     ];

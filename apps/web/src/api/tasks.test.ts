@@ -73,6 +73,8 @@ it("counts completed nested tasks against the group total", () => {
         target_thread_id: null,
         completion_summary: null,
         check: null,
+        assistance_requested: false,
+        assistance_reason: null,
         position: id,
         title: `Step ${id}`,
         brief: "",
