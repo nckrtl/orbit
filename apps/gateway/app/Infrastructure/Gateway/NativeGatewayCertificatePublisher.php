@@ -63,9 +63,11 @@ final readonly class NativeGatewayCertificatePublisher
             );
         }
 
+        // The public root certificate lets Caddy verify its own `metrics.orbit` hop for `/grafana`.
         foreach ([
             $certificate->certificatePath => $candidateDirectory.'/gateway.pem',
             $certificate->privateKeyPath => $candidateDirectory.'/gateway.key',
+            rtrim(string: $this->orbitHome, characters: '/').'/ca/root.pem' => $candidateDirectory.'/root-ca.pem',
         ] as $source => $destination) {
             $this->run(
                 step: 'gateway-certificate-stage',
