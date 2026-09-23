@@ -24,7 +24,7 @@ final class UpdateTaskRequest extends FormRequest
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
-            'deliverables' => ['sometimes', 'array', 'list', 'max:20', new DistinctDeliverableIds],
+            'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,project,file,name,command,directory'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
             'deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],

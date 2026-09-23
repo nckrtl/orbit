@@ -408,7 +408,8 @@ it('starts the planner as the group reviewer thread with the planning brief', fu
         ->and($text)->toContain('on the branch task-'.$group->id.' and leave them uncommitted')
         ->and($text)->toContain('tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy')
         ->and($text)->toContain('move the group to Todo with tasks-update and status todo')
-        ->and($text)->toContain('Give every subtask at least one deliverable in its deliverables list, and turn each explicit item of its brief into one.')
+        ->and($text)->toContain('Give every subtask at least one deliverable and at most five in its deliverables list, and turn each explicit item of its brief into one.')
+        ->and($text)->toContain('Split the feature with the creating-tasks skill (.agents/skills/creating-tasks/SKILL.md)')
         ->and($text)->toContain('refuses to move the group to Todo while a subtask has none');
 });
 

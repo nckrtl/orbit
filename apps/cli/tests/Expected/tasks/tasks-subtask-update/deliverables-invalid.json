@@ -1,1 +1,1 @@
-{"error":{"code":"tasks.deliverables_invalid","message":"The deliverables file must hold a JSON array of at most 20 objects with string fields.","request_id":null}}
+{"error":{"code":"tasks.deliverables_invalid","message":"The deliverables file must hold a JSON array of at most 5 objects with string fields.","request_id":null}}

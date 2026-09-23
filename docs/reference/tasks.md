@@ -122,7 +122,7 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | `path`, `file`, `project`, `directory` | Relative paths without `..`. At most 500 characters |
 | `name` | At most 200 characters |
 | `command` | At most 1000 characters |
-| Number | At most 20 per subtask |
+| Number | At least one and at most five per subtask. Split a subtask that needs more; the [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill explains how. |
 
 A field that belongs to another type is refused. In a `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
 
@@ -160,7 +160,7 @@ A group in Backlog without a planner has an id but no Instance and no agents. Us
 1. Create the group. It starts in `backlog`.
 2. In a worktree, create the branch `task-{group id}` from the Project default branch.
 3. Write the feature's ADRs and documentation on that branch, following the [contributor guide](/contributor-guide). Push the branch.
-4. Add, update, reorder, and remove subtasks until each brief is one reviewable step that cites the ADRs and documentation it implements.
+4. Split the work into subtasks with the [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill. Each subtask has one concise goal and at most five deliverables. Its brief cites the ADRs and documentation it implements.
 5. Give each subtask its [deliverables](#deliverables).
 6. Move the group to `todo` with `tasks:update`.
 
