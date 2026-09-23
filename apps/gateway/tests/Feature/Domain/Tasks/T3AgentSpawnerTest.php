@@ -165,7 +165,7 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
         ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')
         ->and($implementerSelection['instanceId'])->toBe('codex')
-        ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'low']]);
+        ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'high']]);
 });
 
 it('posts T3 model options as id and value JSON objects', function (): void {
