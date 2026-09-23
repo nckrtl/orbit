@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\AppInstances\AppInstanceRemover;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -36,12 +35,9 @@ final readonly class CancelTaskGroupAction
 
         $instance = $group->taskable;
 
+        // Removal also deletes a never-active task workspace's checkout from its Node.
         if ($instance instanceof AppInstance) {
-            if ($instance->status === AppInstanceState::SourceResolved && ! $instance->routes()->exists()) {
-                $instance->delete();
-            } else {
-                $this->remover->execute($instance, true);
-            }
+            $this->remover->execute($instance, true);
         }
 
         $group->taskable()->dissociate();

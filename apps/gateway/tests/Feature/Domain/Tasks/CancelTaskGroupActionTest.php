@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\TaskGroup;
 
@@ -46,20 +48,45 @@ function cancellable_task_group(TaskGroupStatus $status): TaskGroup
     return $group->fresh(['app', 'taskable']) ?? $group;
 }
 
-it('cancels an eligible group and removes its route-free shared Instance', function (): void {
+/** Records each removal and deletes the row, as a completed removal does. */
+function cancel_recording_remover(): object
+{
+    $remover = new class implements AppInstanceRemover
+    {
+        /** @var list<array{0: int, 1: bool}> */
+        public array $calls = [];
+
+        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        {
+            $this->calls[] = [$instance->id, $force];
+            $instance->delete();
+
+            return new AppInstanceRemoval;
+        }
+    };
+    app()->instance(AppInstanceRemover::class, $remover);
+
+    return $remover;
+}
+
+it('cancels an eligible group and removes its shared Instance with its checkout', function (): void {
     app(TaskExtensionState::class)->enable();
+    $remover = cancel_recording_remover();
     $group = cancellable_task_group(TaskGroupStatus::Running);
     $instanceId = $group->taskable_id;
 
     $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
+    // Removal, not a row delete, so the checkout on the Node goes too.
     expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($cancelled->taskable_id)->toBeNull()
+        ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and(AppInstance::query()->find($instanceId))->toBeNull();
 });
 
 it('honors an already cancelled group and cleans up an attached Instance', function (): void {
     app(TaskExtensionState::class)->enable();
+    cancel_recording_remover();
     $group = cancellable_task_group(TaskGroupStatus::Cancelled);
 
     $cancelled = app(CancelTaskGroupAction::class)->execute($group);

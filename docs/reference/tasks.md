@@ -122,7 +122,7 @@ At the first review handoff, the scheduler sends the review request to the plann
 | Failed start | When no Node fits or the planner thread cannot start, create removes any Instance and stores no group |
 | Failed commit | The group stays in Backlog and the update returns `tasks.commit_failed` |
 | Back to Backlog | The group keeps its Instance, planner, and commits |
-| Cancel | Removes the Instance; the conversation stays in T3 |
+| Cancel | Removes the Instance and its checkout; the conversation stays in T3 |
 
 A Node holds planners once it has access to itself, for example after [`node:access:add`](/cli/node#orbit-nodeaccessadd) from the Node to itself. Every agent on that Node can then change the task groups whose workspace it holds.
 
