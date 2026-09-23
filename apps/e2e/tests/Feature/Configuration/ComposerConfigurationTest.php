@@ -170,7 +170,7 @@ describe('Composer configuration', function (): void {
             ->toMatchArray(['run' => 'composer check'])
             ->not->toHaveKey('if');
         expect($steps['Run affected tests'])
-            ->toMatchArray(['run' => 'vendor/bin/pest --parallel --processes=2 --tia --compact'])
+            ->toMatchArray(['run' => 'vendor/bin/pest --parallel --processes=4 --tia --compact'])
             ->not->toHaveKey('if');
     });
 
@@ -196,7 +196,7 @@ describe('Composer configuration', function (): void {
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
             ->toContain('if: success()')
             ->toContain('coverage: pcov')
-            ->toContain('vendor/bin/pest --parallel --processes=2 --tia --compact')
+            ->toContain('vendor/bin/pest --parallel --processes=4 --tia --compact')
             ->not->toContain('bin/tia-cache')
             ->not->toContain('tia-baseline.yml')
             ->not->toContain('vendor/.orbit-guidance-tia')
