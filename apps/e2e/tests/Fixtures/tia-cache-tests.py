@@ -121,6 +121,19 @@ class MainCacheTest(unittest.TestCase):
         self.seed(root)
         self.assertEqual('feature progress', (directory / 'graph.json').read_text())
 
+    def test_separate_clone_seeds_from_transported_main_publications(self):
+        self.publish()
+        clone = Path(self.temporary.name) / 'independent'
+        cache.git(self.root, 'clone', str(self.root), str(clone))
+        directory = clone / self.project / '.orbit-tia'
+        with patch.dict(os.environ, {'ORBIT_MAIN_CACHE_STORE': str(self.store)}), \
+                patch.object(sys, 'argv', ['tia-cache', 'seed', '--repository', str(clone), '--project', self.project]), \
+                patch.object(cache, 'metadata', return_value={**self.info, 'cache': str(directory)}):
+            self.assertEqual(0, cache.main())
+        self.assertEqual(self.graph, json.loads((directory / 'graph.json').read_text()))
+        (directory / 'graph.json').write_text('private clone progress')
+        self.assertEqual(self.graph, json.loads(cache.read_publication(self.store, self.project)['graph']))
+
     def test_failed_run_keeps_last_successful_publication(self):
         self.publish()
         original = cache.publication_path(self.store, self.project).read_bytes()
@@ -271,6 +284,7 @@ blocked = (
 )
 observation = {
     'command': sys.argv[1:],
+    'tia_directory': os.environ.get('ORBIT_TIA_DIRECTORY'),
     'blocked_present': [name for name in blocked if name in os.environ],
     'path_finds_fixture': os.environ.get('PATH', '').split(os.pathsep)[0] == os.environ['TIA_CACHE_FIXTURE_BIN'],
     'composer_auth_available': os.environ.get('COMPOSER_AUTH') == 'disposable-composer-auth',
@@ -311,7 +325,7 @@ elif command == 'test:affected':
             'results': {'example': {'status': 0, 'file': 'tests/ExampleTest.php'}},
         }},
     }
-    destination = Path(os.environ['TIA_CACHE_FIXTURE_CACHE']) / 'graph.json'
+    destination = Path(os.environ['ORBIT_TIA_DIRECTORY']) / 'graph.json'
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(graph))
     sys.exit(int(os.environ['TIA_CACHE_FIXTURE_TEST_EXIT']))
@@ -369,6 +383,7 @@ else:
             **os.environ,
             'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
             'ORBIT_HOME': str(orbit_home),
+            'ORBIT_TIA_DIRECTORY': str(sentinels / 'caller-cache'),
             'APP_CONFIG_CACHE': str(app_config),
             'APP_BASE_PATH': str(app_base),
             'DB_DATABASE': str(database),
@@ -446,6 +461,8 @@ else:
             [observation['command'] for observation in child_environments],
         )
         for observation in child_environments:
+            expected_cache = str(runtime_cache) if observation['command'][0] == 'test:affected' else None
+            self.assertEqual(expected_cache, observation['tia_directory'])
             self.assertEqual([], observation['blocked_present'])
             self.assertTrue(observation['path_finds_fixture'])
             self.assertTrue(observation['composer_auth_available'])
@@ -504,7 +521,7 @@ else:
         with patch.object(cache, 'project_checks', return_value=passed):
             self.assertEqual(0, cache.refresh(self.common, self.store, ['apps/docs']))
 
-    def test_bootstrap_seeds_after_installation_without_running_affected_suites(self):
+    def test_bootstrap_seeds_before_affected_tests_and_quality_checks_and_propagates_failures(self):
         root = Path(self.temporary.name) / 'bootstrap'
         (root / 'bin').mkdir(parents=True)
         (root / 'bin/bootstrap').write_bytes(Path(cache.__file__).with_name('bootstrap').read_bytes())
@@ -512,22 +529,37 @@ else:
             (root / project).mkdir(parents=True)
         calls = root / 'calls'
         for name, script in {
-            'composer': '#!/bin/sh\necho "composer $*" >> "$TIA_TEST_CALLS"\n',
-            'worktree-cache': '#!/bin/sh\nexit 0\n',
-            'tia-cache': '#!/bin/sh\necho "cache $*" >> "$TIA_TEST_CALLS"\nexit 1\n',
+            'composer': '#!/bin/sh\necho "composer $*" >> "$TIA_TEST_CALLS"\nif [ "$1" = "$TIA_TEST_FAIL" ]; then exit 7; fi\nif [ "$1" != install ]; then test -z "$ORBIT_MAIN_CACHE_STORE"; fi\n',
+            'worktree-cache': '#!/bin/sh\ntest "$ORBIT_MAIN_CACHE_STORE" = "$TIA_TEST_STORE"\n',
+            'tia-cache': '#!/bin/sh\necho "cache $*" >> "$TIA_TEST_CALLS"\ntest "$ORBIT_MAIN_CACHE_STORE" = "$TIA_TEST_STORE" || exit 9\nexit 1\n',
         }.items():
             path = root / 'bin' / name
             path.write_text(script)
             path.chmod(0o755)
-        result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True,
-                                env={**os.environ, 'ORBIT_HOME': str(root / 'orbit-home'),
-                                     'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
-                                     'TIA_TEST_CALLS': str(calls)})
+        environment = {**os.environ, 'ORBIT_HOME': str(root / 'orbit-home'),
+                       'ORBIT_MAIN_CACHE_STORE': str(root / 'transported-main'),
+                       'TIA_TEST_STORE': str(root / 'transported-main'),
+                       'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
+                       'TIA_TEST_CALLS': str(calls), 'TIA_TEST_FAIL': ''}
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True, env=environment)
         self.assertEqual(0, result.returncode, result.stderr)
         lines = calls.read_text().splitlines()
         self.assertEqual(5, sum(line.startswith('composer install') for line in lines))
         self.assertEqual('cache seed --repository=' + str(root), lines[5])
+        self.assertEqual(['composer test:affected', 'composer check'] * 5, lines[-10:])
+        calls.unlink()
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks'],
+                                capture_output=True, text=True, env=environment)
+        self.assertEqual(0, result.returncode, result.stderr)
         self.assertNotIn('test:affected', calls.read_text())
+        for failure in ('install', 'guidance:check', 'test:affected', 'check'):
+            with self.subTest(failure=failure):
+                calls.unlink()
+                result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True,
+                                        env={**environment, 'TIA_TEST_FAIL': failure})
+                self.assertNotEqual(0, result.returncode)
+                if failure in ('install', 'guidance:check'):
+                    self.assertNotIn('composer test:affected', calls.read_text())
 
 
 class MaintenanceQueueTest(unittest.TestCase):
