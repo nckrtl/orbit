@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Nodes;
 
 use App\Commands\Projects\Concerns\RendersDevelopmentNodeExclusions;
+use App\Commands\Projects\Concerns\ResolvesDevelopmentNodeExclusions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeExcludedProjectRequest;
@@ -13,10 +14,11 @@ use Orbit\Sdk\Responses\Projects\DevelopmentNodeExclusionResponse;
 final class RemoveExcludedProjectCommand extends NodeCommand
 {
     use RendersDevelopmentNodeExclusions;
+    use ResolvesDevelopmentNodeExclusions;
 
     #[\Override]
     protected $signature = 'node:excluded-project:remove
-        {project : Numeric Project ID}
+        {project? : Numeric Project ID}
         {--node= : Node ID or name}
         {--json : Return machine-readable JSON}';
 
@@ -25,14 +27,22 @@ final class RemoveExcludedProjectCommand extends NodeCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $projectId = $this->positiveId('project', 'Project', 'app.id_invalid');
-        $connector = $projectId === null ? null : $this->gatewayConnector($repository, $connectors);
-
-        if ($projectId === null || $connector === null) {
+        $project = $this->argument('project');
+        if (! $this->validExclusionProjectInput($project)) {
             return self::FAILURE;
         }
 
-        $nodeId = $this->resolveNodeId($connector, $this->option('node'));
+        $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $projectId = $this->resolveExclusionProjectId($connector, $project);
+        if ($projectId === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->resolveExclusionNodeId($connector, $this->option('node'));
 
         if ($nodeId === null) {
             return self::FAILURE;

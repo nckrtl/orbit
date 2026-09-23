@@ -6,6 +6,7 @@ namespace App\Commands\Projects;
 
 use App\Commands\GatewayCommand;
 use App\Commands\Projects\Concerns\RendersDevelopmentNodeExclusions;
+use App\Commands\Projects\Concerns\ResolvesDevelopmentNodeExclusions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
@@ -14,6 +15,7 @@ use Orbit\Sdk\Responses\Projects\DevelopmentNodeExclusionsResponse;
 final class ListExcludedNodesCommand extends GatewayCommand
 {
     use RendersDevelopmentNodeExclusions;
+    use ResolvesDevelopmentNodeExclusions;
 
     #[\Override]
     protected $signature = 'project:excluded-node:list
@@ -25,10 +27,18 @@ final class ListExcludedNodesCommand extends GatewayCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $projectId = $this->positiveProjectId();
-        $connector = $projectId === null ? null : $this->gatewayConnector($repository, $connectors);
+        $project = $this->option('project');
+        if (! $this->validExclusionProjectInput($project)) {
+            return self::FAILURE;
+        }
 
-        if ($projectId === null || $connector === null) {
+        $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $projectId = $this->resolveExclusionProjectId($connector, $project);
+        if ($projectId === null) {
             return self::FAILURE;
         }
 
@@ -42,18 +52,5 @@ final class ListExcludedNodesCommand extends GatewayCommand
         return $response instanceof DevelopmentNodeExclusionsResponse
             ? $this->renderExclusionList($response)
             : self::FAILURE;
-    }
-
-    private function positiveProjectId(): ?int
-    {
-        $id = filter_var($this->option('project'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-
-        if (! is_int($id)) {
-            $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
-
-            return null;
-        }
-
-        return $id;
     }
 }

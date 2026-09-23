@@ -11,7 +11,7 @@ One row records one Project and one Node. The Project commands and the Node comm
 
 ## Record an exclusion
 
-The Node must have an active `app-dev` role. The Node argument is an ID or a name. The Project argument is a numeric Project ID.
+The Node must have an active `app-dev` role. The Node argument is an ID or a name. The Project argument is a numeric Project ID. In an interactive terminal, an omitted Project or Node opens a searchable selector. Canceling or finding no records stops the command before any change. JSON and noninteractive calls must supply both selectors for add and remove, or the owning selector for list.
 
 ```bash
 orbit project:excluded-node:add sabre --project=4
@@ -59,7 +59,7 @@ The [MCP server](/reference/mcp) publishes these operations as tools because the
 | `node-excluded-project-list` | `node:excluded-project:list` |
 | `node-excluded-project-remove` | `node:excluded-project:remove` |
 
-The tool arguments are the route's path parameters and JSON body in one object. `project-excluded-node-add` takes `project` and `node`. `node-excluded-project-add` takes `node` and `project`.
+The tool arguments are the route's path parameters and JSON body in one object. `project-excluded-node-add` takes `app` and `node`. `node-excluded-project-add` takes `node` and `app`. Here, `app` is the numeric Project ID.
 
 ## Errors
 

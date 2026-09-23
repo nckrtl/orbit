@@ -320,7 +320,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(149);
+    expect($orbitCommands)->toHaveCount(155);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -972,7 +972,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node:add' => ['host'],
             'profile' => ['url'],
             'tool:install' => ['package'],
-            'metrics:enable' => ['node'],
+            'metrics:enable', 'project:excluded-node:add', 'project:excluded-node:remove' => ['node'],
+            'node:excluded-project:add', 'node:excluded-project:remove' => ['project'],
             'analytics:update' => ['version'],
             'route:create' => ['app', 'domain'],
             default => [],

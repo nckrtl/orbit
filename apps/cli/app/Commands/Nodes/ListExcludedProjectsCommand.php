@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Nodes;
 
 use App\Commands\Projects\Concerns\RendersDevelopmentNodeExclusions;
+use App\Commands\Projects\Concerns\ResolvesDevelopmentNodeExclusions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\ListNodeExcludedProjectsRequest;
@@ -13,6 +14,7 @@ use Orbit\Sdk\Responses\Projects\DevelopmentNodeExclusionsResponse;
 final class ListExcludedProjectsCommand extends NodeCommand
 {
     use RendersDevelopmentNodeExclusions;
+    use ResolvesDevelopmentNodeExclusions;
 
     #[\Override]
     protected $signature = 'node:excluded-project:list
@@ -30,7 +32,7 @@ final class ListExcludedProjectsCommand extends NodeCommand
             return self::FAILURE;
         }
 
-        $nodeId = $this->resolveNodeId($connector, $this->option('node'));
+        $nodeId = $this->resolveExclusionNodeId($connector, $this->option('node'));
 
         if ($nodeId === null) {
             return self::FAILURE;

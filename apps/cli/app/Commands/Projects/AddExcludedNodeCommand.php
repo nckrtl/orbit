@@ -6,6 +6,7 @@ namespace App\Commands\Projects;
 
 use App\Commands\GatewayCommand;
 use App\Commands\Projects\Concerns\RendersDevelopmentNodeExclusions;
+use App\Commands\Projects\Concerns\ResolvesDevelopmentNodeExclusions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
@@ -14,10 +15,11 @@ use Orbit\Sdk\Responses\Projects\DevelopmentNodeExclusionResponse;
 final class AddExcludedNodeCommand extends GatewayCommand
 {
     use RendersDevelopmentNodeExclusions;
+    use ResolvesDevelopmentNodeExclusions;
 
     #[\Override]
     protected $signature = 'project:excluded-node:add
-        {node : Node ID or name}
+        {node? : Node ID or name}
         {--project= : Numeric Project ID}
         {--json : Return machine-readable JSON}';
 
@@ -26,14 +28,22 @@ final class AddExcludedNodeCommand extends GatewayCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $projectId = $this->positiveProjectId();
-        $connector = $projectId === null ? null : $this->gatewayConnector($repository, $connectors);
-
-        if ($projectId === null || $connector === null) {
+        $project = $this->option('project');
+        if (! $this->validExclusionProjectInput($project)) {
             return self::FAILURE;
         }
 
-        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
+        $connector = $this->gatewayConnector($repository, $connectors);
+        if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $projectId = $this->resolveExclusionProjectId($connector, $project);
+        if ($projectId === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->resolveExclusionNodeId($connector, $this->argument('node'));
 
         if ($nodeId === null) {
             return self::FAILURE;
@@ -49,18 +59,5 @@ final class AddExcludedNodeCommand extends GatewayCommand
         return $response instanceof DevelopmentNodeExclusionResponse
             ? $this->renderExclusion($response, 'add')
             : self::FAILURE;
-    }
-
-    private function positiveProjectId(): ?int
-    {
-        $id = filter_var($this->option('project'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-
-        if (! is_int($id)) {
-            $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
-
-            return null;
-        }
-
-        return $id;
     }
 }
