@@ -5,9 +5,14 @@ type Entry = { member: boolean; seen: boolean; lastEventAt: number | null };
 const TIMEOUT_MS = 15_000;
 const entries = new Map<number, Entry>();
 const listeners = new Set<() => void>();
+let revision = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 
-const notify = () => listeners.forEach((listener) => listener());
+const notify = () => {
+    revision++;
+    listeners.forEach((listener) => listener());
+};
+export const agentPresenceRevision = (): number => revision;
 const scheduleExpiry = () => {
     clearTimeout(expiryTimer);
     const now = Date.now();

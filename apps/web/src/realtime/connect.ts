@@ -11,6 +11,7 @@ import {
     agentSubscriptionSucceeded,
     clearAgentPresence,
 } from "./agent-presence";
+import { applyAgentProcessEvent, clearAgentProcesses } from "./agent-processes";
 
 const RETRY_SECONDS = 30;
 
@@ -98,26 +99,33 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
                     pusher.unsubscribe(`presence-node.${id}`);
                     agentChannels.delete(id);
                     clearAgentPresence(id);
+                    clearAgentProcesses(id);
                 }
             }
             for (const id of activeIds) {
                 if (agentChannels.has(id)) continue;
                 const agentChannel = pusher.subscribe(`presence-node.${id}`);
                 agentChannel.bind("pusher:subscription_succeeded", (data: unknown) => {
+                    clearAgentProcesses(id);
                     agentSubscriptionSucceeded(id, data);
                 });
-                agentChannel.bind("pusher:member_added", (data: { id?: unknown }) =>
-                    agentMemberAdded(id, data?.id),
-                );
-                agentChannel.bind("pusher:member_removed", (data: { id?: unknown }) =>
-                    agentMemberRemoved(id, data?.id),
-                );
-                const onAgentEvent = (data: unknown, metadata: { user_id?: unknown }) => {
-                    acceptAgentEvent(id, metadata?.user_id, data);
-                };
-                agentChannel.bind("client-heartbeat", onAgentEvent);
-                agentChannel.bind("client-snapshot", onAgentEvent);
-                agentChannel.bind("client-process", onAgentEvent);
+                agentChannel.bind("pusher:member_added", (data: { id?: unknown }) => {
+                    if (data?.id === `agent.${id}`) clearAgentProcesses(id);
+                    agentMemberAdded(id, data?.id);
+                });
+                agentChannel.bind("pusher:member_removed", (data: { id?: unknown }) => {
+                    if (data?.id === `agent.${id}`) clearAgentProcesses(id);
+                    agentMemberRemoved(id, data?.id);
+                });
+                const onAgentEvent =
+                    (name: string) => (data: unknown, metadata: { user_id?: unknown }) => {
+                        if (acceptAgentEvent(id, metadata?.user_id, data)) {
+                            applyAgentProcessEvent(id, name, data);
+                        }
+                    };
+                agentChannel.bind("client-heartbeat", onAgentEvent("client-heartbeat"));
+                agentChannel.bind("client-snapshot", onAgentEvent("client-snapshot"));
+                agentChannel.bind("client-process", onAgentEvent("client-process"));
                 agentChannels.set(id, agentChannel);
             }
         };
