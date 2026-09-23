@@ -6,7 +6,9 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
 
-/** ADR 0122: the refusals that keep Backlog preparation apart from scheduled work. */
+/** ADR 0122: the refusals that keep Backlog preparation apart from scheduled work.
+ * Planner live check.
+ */
 final class TaskGroupGuard
 {
     public static function noSubtasks(): ResourceOperationException
