@@ -7,6 +7,7 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -244,4 +245,35 @@ it('filters the list by backlog and rejects the old queued status', function ():
         ->assertJsonCount(0, 'data');
     $this->getJson('/api/v1/task-groups?status=queued')
         ->assertUnprocessable();
+});
+
+it('cancels the unfinished subtasks with their group and keeps finished ones', function (): void {
+    $group = backlog_group($this);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running]);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Completed]);
+    Task::query()->whereKey($group['tasks'][1]['id'])->update(['status' => TaskStatus::Running]);
+
+    $cancelled = $this->postJson("/api/v1/task-groups/{$group['id']}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'cancelled')
+        ->json('data.tasks');
+
+    expect(array_column($cancelled, 'status'))->toBe(['completed', 'cancelled', 'cancelled'])
+        ->and(Task::query()->findOrFail($group['tasks'][1]['id'])->settled_at)->not->toBeNull()
+        ->and(Task::query()->findOrFail($group['tasks'][0]['id'])->settled_at)->toBeNull();
+});
+
+it('shows a requested assistance and its reason on the group and the subtask', function (): void {
+    $group = backlog_group($this, ['One']);
+    TaskGroup::query()->whereKey($group['id'])->update(['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+
+    $this->getJson("/api/v1/task-groups/{$group['id']}")
+        ->assertOk()
+        ->assertJsonPath('data.assistance_requested', true)
+        ->assertJsonPath('data.assistance_reason', 'composer check is blocked.')
+        ->assertJsonPath('data.tasks.0.assistance_requested', true)
+        ->assertJsonPath('data.tasks.0.assistance_reason', 'composer check is blocked.');
+
+    expect(backlog_group($this, ['Two']))->toMatchArray(['assistance_requested' => false, 'assistance_reason' => null]);
 });

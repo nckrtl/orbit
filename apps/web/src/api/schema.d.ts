@@ -3541,6 +3541,8 @@ export interface components {
             pr_url?: string | null;
             notify_coder?: boolean;
             plan?: boolean;
+            assistance_requested?: boolean;
+            assistance_reason?: string | null;
             implementer_model?: string;
             reviewer_model?: string;
             tokens?: number | null;
@@ -3571,6 +3573,8 @@ export interface components {
             target_thread_id?: string | null;
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
+            assistance_requested?: boolean;
+            assistance_reason?: string | null;
         };
         TaskCheck: {
             id?: number;

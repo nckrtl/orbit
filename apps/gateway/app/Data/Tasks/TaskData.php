@@ -32,6 +32,8 @@ final class TaskData extends Data
         public ?string $targetThreadId,
         public ?string $completionSummary,
         public ?TaskCheckData $check,
+        public bool $assistanceRequested,
+        public ?string $assistanceReason,
     ) {}
 
     public static function fromModel(Task $task): self
@@ -43,6 +45,8 @@ final class TaskData extends Data
             targetThreadId: $task->target_thread_id,
             completionSummary: $task->completion_summary,
             check: $check instanceof TaskCheck ? TaskCheckData::fromModel($check) : null,
+            assistanceRequested: $task->assistance_requested,
+            assistanceReason: $task->assistance_reason,
 
             id: $task->id,
             taskGroupId: $task->task_group_id,

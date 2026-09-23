@@ -55,6 +55,7 @@ final class Task extends Model
     #[\Override]
     protected $attributes = [
         'status' => 'todo',
+        'assistance_requested' => false,
         'type' => 'implementation',
     ];
 

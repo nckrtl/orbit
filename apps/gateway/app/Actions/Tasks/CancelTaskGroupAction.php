@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\AppInstance;
 use App\Models\TaskGroup;
 
@@ -46,6 +47,10 @@ final readonly class CancelTaskGroupAction
         $group->taskable()->dissociate();
         $group->status = TaskGroupStatus::Cancelled;
         $group->save();
+
+        $group->tasks()
+            ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
+            ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
 
         return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
     }
