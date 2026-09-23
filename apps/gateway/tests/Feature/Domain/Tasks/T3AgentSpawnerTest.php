@@ -153,6 +153,7 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
             'attachments' => [],
         ])
         ->and($dispatcher->commands[2]['message']['text'])->toContain('You are the reviewer for this feature group.')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('use your web and documentation tools to confirm that framework and library usage matches current documentation')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Review subtask #'.$group->tasks->first()->id)
         ->and($dispatcher->commands[2]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract. Review each subtask against them.')
         ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)

@@ -114,6 +114,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             'Feature: '.$group->title,
             $group->brief,
             $this->contract($group).' Review each subtask against them.',
+            'The implementer works with a minimal toolset and has no web access. You do: use your web and documentation tools to confirm that framework and library usage matches current documentation for the versions this Project uses.',
         ]);
     }
 

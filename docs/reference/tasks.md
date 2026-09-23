@@ -98,7 +98,7 @@ A group in Backlog without a planner has an id but no Instance and no agents. Us
 4. Add, update, reorder, and remove subtasks until each brief is one reviewable step that cites the ADRs and documentation it implements.
 5. Move the group to `todo` with `tasks:update`.
 
-The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
+The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The reviewer prompt also says that the implementer has no web access, and asks the reviewer to confirm framework and library usage against current documentation for the Project's versions. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
 
 ## Plan a group with a planner
 
