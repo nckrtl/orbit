@@ -10,20 +10,12 @@ use Symfony\Component\Yaml\Yaml;
 final readonly class PrometheusConfigRenderer
 {
     /**
-     * How often Prometheus scrapes every node exporter. Every metrics reader, `orbit top` and the
-     * web dashboard, refreshes on the same ten seconds, so no reader polls faster than new samples
-     * arrive; the cost is one cheap `/proc` read per node per interval (measured at 0.08s-0.18s
-     * per scrape).
+     * How often Prometheus scrapes every node exporter and cAdvisor. A scrape only serializes
+     * values each exporter already collects, measured at about 0.03s for cAdvisor and 0.1s for
+     * the node exporter. `orbit top` and the web dashboard refresh on the same ten seconds, so
+     * no reader polls faster than new samples arrive.
      */
     public const string ScrapeInterval = '10s';
-
-    /**
-     * How often Prometheus scrapes cAdvisor. Process CPU and memory do not need `orbit top`'s
-     * ten-second node resolution, and cAdvisor is the expensive job (see
-     * `MetricsFootprint::CadvisorDisabledMetrics`), so it is scraped three times less often than the
-     * node exporter. `PrometheusProcessMetricsQueries::CpuRateWindow` is sized off this interval.
-     */
-    public const string CadvisorScrapeInterval = '30s';
 
     /** @param list<array{name:string,address:string}> $nodes
      * @param  list<ServiceMetricsNode>  $services
@@ -36,7 +28,7 @@ final readonly class PrometheusConfigRenderer
         return
             '# retention.time: '.MetricsRuntimeSpec::RetentionTime." (configured by the container CLI flag)\nglobal:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n"
             .$this->job('orbit-node-exporter', $nodes, MetricsFootprint::ExporterPort, null)
-            .$this->job('orbit-cadvisor', $nodes, MetricsFootprint::CadvisorPort, self::CadvisorScrapeInterval)
+            .$this->job('orbit-cadvisor', $nodes, MetricsFootprint::CadvisorPort, null)
             .$this->serviceJobs($services);
     }
 

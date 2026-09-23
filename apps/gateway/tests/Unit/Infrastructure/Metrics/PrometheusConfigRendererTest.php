@@ -7,7 +7,7 @@ use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\PrometheusProcessMetricsQueries;
 use Symfony\Component\Yaml\Yaml;
 
-it('renders both the node exporter and cadvisor scrape jobs, on their own ports and intervals', function (): void {
+it('renders both the node exporter and cadvisor scrape jobs, on their own ports at the global interval', function (): void {
     $nodes = [
         ['name' => 'zulu', 'address' => '10.0.0.2'],
         ['name' => 'alpha', 'address' => '10.0.0.1'],
@@ -29,8 +29,8 @@ it('renders both the node exporter and cadvisor scrape jobs, on their own ports 
         ->not->toHaveKey('scrape_interval')
         ->and($cadvisorJob['job_name'])
         ->toBe('orbit-cadvisor')
-        ->and($cadvisorJob['scrape_interval'])
-        ->toBe(PrometheusConfigRenderer::CadvisorScrapeInterval);
+        ->and($cadvisorJob)
+        ->not->toHaveKey('scrape_interval');
 
     foreach ([$exporterJob, $cadvisorJob] as $job) {
         expect(array_column($job['static_configs'], 'targets'))
@@ -61,9 +61,9 @@ it('rejects an unsafe target for either job', function (): void {
         ->toThrow(InvalidArgumentException::class);
 });
 
-it('keeps the cadvisor CPU rate window wide enough for its own scrape interval to fill it', function (): void {
+it('keeps the cadvisor CPU rate window wide enough for the scrape interval to fill it', function (): void {
     $window = (int) rtrim(PrometheusProcessMetricsQueries::CpuRateWindow, 's');
-    $scrape = (int) rtrim(PrometheusConfigRenderer::CadvisorScrapeInterval, 's');
+    $scrape = (int) rtrim(PrometheusConfigRenderer::ScrapeInterval, 's');
 
     expect(intdiv($window, $scrape))->toBeGreaterThanOrEqual(4);
 });
