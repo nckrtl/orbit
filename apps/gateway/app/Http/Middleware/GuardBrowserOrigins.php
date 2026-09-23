@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Refuses browser requests to the API and MCP paths from pages outside Orbit before CORS,
  * routing, or WireGuard identity run. Clients that send no browser markers pass unchanged
- * ([ADR 0125](/decisions/0125-limit-browser-api-calls-to-orbit-origins)).
+ * ([ADR 0126](/decisions/0126-limit-browser-api-calls-to-orbit-origins)).
  */
 final readonly class GuardBrowserOrigins
 {

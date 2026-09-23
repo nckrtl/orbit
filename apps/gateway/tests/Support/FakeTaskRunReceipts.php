@@ -21,9 +21,12 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
 
     /**
      * @param  list<string|null>|null  $receipts  receipt contents for each read, with null for a missing receipt;
-     *                                            null writes a new ready_for_review receipt for every read
+     *                                            null writes one ready_for_review receipt, as an agent that ends one turn
      */
-    public function __construct(private ?array $receipts = null) {}
+    public function __construct(private ?array $receipts = null)
+    {
+        $this->receipts ??= [self::contents('ready_for_review')];
+    }
 
     public static function contents(string $outcome, string $summary = 'Done.'): string
     {
@@ -38,9 +41,6 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
     public function read(AppInstance $instance): ?TaskRunReceipt
     {
         $this->reads++;
-        if ($this->receipts === null) {
-            return TaskRunReceipt::parse(self::contents('ready_for_review'));
-        }
         $contents = array_shift($this->receipts);
 
         return $contents === null ? null : TaskRunReceipt::parse($contents);

@@ -15,7 +15,7 @@ use App\Models\Route;
 
 /**
  * Names the browser origins that may call the Gateway API: the Gateway's own site and every
- * active App Route with private publication ([ADR 0125](/decisions/0125-limit-browser-api-calls-to-orbit-origins)).
+ * active App Route with private publication ([ADR 0126](/decisions/0126-limit-browser-api-calls-to-orbit-origins)).
  */
 final readonly class BrowserOriginPolicy
 {

@@ -5,7 +5,7 @@ description: "Which web pages may call the Gateway API and MCP endpoints from a 
 
 # Browser access to the Gateway
 
-This page tells an operator which web pages may call the Gateway API from a browser. The Gateway identifies a caller by its WireGuard address, so any page open on a WireGuard peer would otherwise act with that peer's authority. [ADR 0125](/decisions/0125-limit-browser-api-calls-to-orbit-origins) records the decision.
+This page tells an operator which web pages may call the Gateway API from a browser. The Gateway identifies a caller by its WireGuard address, so any page open on a WireGuard peer would otherwise act with that peer's authority. [ADR 0126](/decisions/0126-limit-browser-api-calls-to-orbit-origins) records the decision.
 
 ## Allowed callers
 

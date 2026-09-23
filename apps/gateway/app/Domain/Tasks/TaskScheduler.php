@@ -7,8 +7,10 @@ namespace App\Domain\Tasks;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Models\AppInstance;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +34,7 @@ final readonly class TaskScheduler
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
         private TaskPullRequestPublisher $publisher,
+        private TaskCheckRunner $checks,
     ) {}
 
     /**
@@ -186,9 +189,8 @@ final readonly class TaskScheduler
         }
 
         $items = $this->implementerItems($group, $task, $implementer, $read, $receipt);
-        if ($this->failedItems($items) === []) {
-            $task->update(['completion_handoff_comment_id' => $receipt?->id]);
-            $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer)?->turnId);
+        if ($this->failedItems($items) === [] && $receipt instanceof TaskComment) {
+            $this->checkHandoff($group, $task, $implementer, $receipt, $observation);
 
             return true;
         }
@@ -198,6 +200,111 @@ final readonly class TaskScheduler
         }
 
         return true;
+    }
+
+    /**
+     * Runs the Project check for a handoff and acts on its state. The process state decides; no timer ends a check.
+     */
+    private function checkHandoff(TaskGroup $group, Task $task, TaskThreadObservation $implementer, TaskComment $receipt, TaskSessionObservation $observation): void
+    {
+        $instance = $group->taskable;
+        if (! $instance instanceof AppInstance) {
+            $this->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
+
+            return;
+        }
+        /** @var TaskCheck|null $check */
+        $check = TaskCheck::query()->where('task_comment_id', $receipt->id)->latest('id')->first();
+        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running) {
+            try {
+                $reading = $this->checks->read($instance, $check->process());
+            } catch (TaskCheckException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                return;
+            }
+            if ($reading->state === 'running') {
+                $this->clearCommunicationFailures($task);
+
+                return;
+            }
+            $this->recordReading($check, $reading);
+        }
+
+        $status = $check?->status;
+        if ($check instanceof TaskCheck && $status === TaskCheckStatus::Passed) {
+            $task->update(['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0]);
+            $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer)?->turnId);
+
+            return;
+        }
+        $repeats = $check instanceof TaskCheck
+            ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
+            : 0;
+        $item = match (true) {
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => new TaskRubricItem('check_passed', false, "Orbit ran composer check, and it failed with exit code {$check->exit_code}. The end of its output:\n\n```\n".rtrim((string) $check->output)."\n```\n"),
+            $status === TaskCheckStatus::Cancelled => new TaskRubricItem('check_passed', false, "An operator cancelled Orbit's composer check before it finished."),
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => new TaskRubricItem('check_passed', false, 'The workspace changed while composer check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'. Make the check leave the tree unchanged, for example by ignoring the files it writes.'),
+            default => null,
+        };
+        if ($item instanceof TaskRubricItem) {
+            if ($this->remindOrAssist($group, $task, $implementer, [$item])) {
+                $task->update(['completion_handoff_comment_id' => $receipt->id]);
+            }
+
+            return;
+        }
+        if ($status === TaskCheckStatus::Lost && $repeats >= 2) {
+            $task->update(['completion_handoff_comment_id' => $receipt->id]);
+            $this->requestAssistance($task, $group, "Orbit's composer check stopped twice without a result.", $observation);
+
+            return;
+        }
+
+        try {
+            $process = $this->checks->start($instance);
+        } catch (TaskCheckException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        TaskCheck::query()->create([
+            'task_id' => $task->id,
+            'task_comment_id' => $receipt->id,
+            'status' => TaskCheckStatus::Running,
+            'pid' => $process->pid,
+            'process_started' => $process->started,
+            'head_before' => $process->head,
+            'tree_before' => $process->tree,
+            'started_at' => now(),
+        ]);
+        $this->clearCommunicationFailures($task);
+    }
+
+    /**
+     * Records a finished or lost check. The write applies only while the check is still running, so a cancel wins.
+     */
+    private function recordReading(TaskCheck $check, TaskCheckReading $reading): void
+    {
+        $changed = $reading->headAfter !== $check->head_before || $reading->treeAfter !== $check->tree_before;
+        $values = $reading->state === 'lost'
+            ? ['status' => TaskCheckStatus::Lost->value, 'output' => $reading->output]
+            : [
+                'status' => match (true) {
+                    $changed => TaskCheckStatus::Changed->value,
+                    $reading->exitCode === 0 => TaskCheckStatus::Passed->value,
+                    default => TaskCheckStatus::Failed->value,
+                },
+                'head_after' => $reading->headAfter,
+                'tree_after' => $reading->treeAfter,
+                'exit_code' => $reading->exitCode,
+                'changed_paths' => json_encode($reading->changedPaths, JSON_THROW_ON_ERROR),
+                'output' => $reading->output,
+            ];
+        $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
+        TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
+            ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
+        $check->refresh();
     }
 
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
@@ -325,7 +432,6 @@ final readonly class TaskScheduler
             'completion_attempt' => $task->completion_attempt + 1,
             'completion_handoff_attempt' => $task->completion_attempt + 1,
             'completion_handoff_turn_id' => $implementer->turnId,
-            'completion_handoff_check_id' => ComposerCheckEvidence::fromMessages($implementer->recentMessages)->runId,
             'communication_failures' => 0,
             'completion_handoff_comment_id' => null,
             'completion_reminder_attempt' => null,
@@ -337,15 +443,9 @@ final readonly class TaskScheduler
     /** @return list<TaskRubricItem> */
     private function implementerItems(TaskGroup $group, Task $task, TaskThreadObservation $thread, ?TaskRunReceipt $read, ?TaskComment $receipt): array
     {
-        $evidence = ComposerCheckEvidence::fromMessages($thread->recentMessages);
-        $freshRun = $task->completion_handoff_attempt === null
-            || ($evidence->runId !== null && $evidence->runId !== $task->completion_handoff_check_id);
         $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so composer check ran a built-in Composer command. Restore the check script and run composer check again.'),
-            new TaskRubricItem('check_invoked', $evidence->invoked, 'composer check was not found in the recent tool output. Run composer check.'),
-            new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
-            new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),
+            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $waiting = $this->waitingItem($thread);

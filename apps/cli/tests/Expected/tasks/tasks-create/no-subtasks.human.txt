@@ -1,0 +1,9 @@
+Creating task group...
+
+┌  Create task group
+│
+├  ● Creating task group
+│
+└  Operation failed.
+
+A task group needs at least one subtask before it moves to todo.

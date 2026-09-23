@@ -1,10 +1,10 @@
 ---
-title: "ADR 0125: Limit browser API calls to Orbit origins"
-sidebarTitle: "0125 Limit browser API calls to Orbit origins"
+title: "ADR 0126: Limit browser API calls to Orbit origins"
+sidebarTitle: "0126 Limit browser API calls to Orbit origins"
 description: "Proposed. The Gateway refuses cross-origin browser requests to its API and MCP paths unless the page comes from the Gateway itself or an active private App Route."
 ---
 
-# ADR 0125: Limit browser API calls to Orbit origins
+# ADR 0126: Limit browser API calls to Orbit origins
 
 The Gateway accepts a browser request to `/api/*`, `/mcp`, or `/mcp/*` only from its own origin or from the origin of an active private App Route. It refuses every other cross-origin or cross-site browser request before any Gateway code runs. Requests from the CLI, the SDK, and other non-browser clients are unchanged.
 

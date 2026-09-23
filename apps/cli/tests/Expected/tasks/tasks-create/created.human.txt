@@ -1,0 +1,48 @@
+Creating task group...
+
+┌  Create task group
+│
+├  ● Created task group
+│
+└  Created task group.
+
+
+┌  Task group: ORB-1
+│
+├  ID                  1
+│
+├  Title               Add the tasks CLI
+│
+├  Project             orbit
+│
+├  Status              backlog
+│
+├  Instance            —
+│
+├  Pull request        —
+│
+├  Notify Coder        no
+│
+├  Plan                no
+│
+├  Implementer model   gpt-5.6-luna
+│
+├  Reviewer model      claude-opus-5
+│
+├  Tokens              —
+│
+├  Line diff           —
+│
+└  Duration            —
+
+Brief
+  Add tasks:* commands.
+  Accept when every route has a command.
+
+ ┌──────────┬────┬──────────────────┬────────┬────────┬───────────┬──────────┐
+ │ POSITION │ ID │ TITLE            │ STATUS │ TOKENS │ LINE DIFF │ DURATION │
+ ├──────────┼────┼──────────────────┼────────┼────────┼───────────┼──────────┤
+ │ 1        │ 1  │ Add SDK requests │ todo   │ —      │ —         │ —        │
+ │ 2        │ 2  │ Add CLI commands │ todo   │ —      │ —         │ —        │
+ └──────────┴────┴──────────────────┴────────┴────────┴───────────┴──────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

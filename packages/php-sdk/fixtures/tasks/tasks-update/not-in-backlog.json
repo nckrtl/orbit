@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\UpdateTaskGroupRequest",
+    "route": "PATCH /api/v1/task-groups/{group}",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.not_in_backlog",
+            "message": "This change is allowed only while the task group is in backlog.",
+            "details": {}
+        }
+    }
+}

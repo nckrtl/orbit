@@ -1,0 +1,33 @@
+Creating subtask...
+
+┌  Create subtask
+│
+├  ● Created subtask
+│
+└  Created subtask.
+
+
+┌  Subtask: 3
+│
+├  Task group           1
+│
+├  Position             3
+│
+├  Title                Document the commands
+│
+├  Status               todo
+│
+├  Type                 implementation
+│
+├  Implementer thread   —
+│
+├  Tokens               —
+│
+├  Line diff            —
+│
+└  Duration             —
+
+Brief
+  Add docs/cli/tasks.mdx.
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

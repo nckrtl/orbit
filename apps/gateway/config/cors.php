@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*
  * Browser access to the Gateway is decided per request by GuardBrowserOrigins, which fills
- * `allowed_origins` with the one origin it admits (ADR 0125). Nothing is allowed by default.
+ * `allowed_origins` with the one origin it admits (ADR 0126). Nothing is allowed by default.
  */
 return [
     'paths' => ['api/*', 'mcp', 'mcp/*'],

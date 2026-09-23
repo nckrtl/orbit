@@ -9,7 +9,7 @@ This page tells an operator how the optional Gateway `tasks` extension runs a Co
 
 [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning.
 
-The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
+The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
 [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) defines the `AgentThread` and `AgentDriver` boundary. Orbit stores persistent conversations and delegates runtime communication to a driver. T3 is the first driver.
 
@@ -63,6 +63,9 @@ Use these operations after the extension is enabled. List and show accept any au
 | `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Group workspace Node |
 | `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
 | `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
+| `tasks:cancel` | `POST /api/v1/task-groups/{group}/cancel` | Gateway |
+| `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 
 Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, `plan: true` to start a [planner](#plan-a-group-with-a-planner), and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
 
@@ -83,7 +86,7 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
-MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-enable`, `tasks-disable`, and `tasks-status`.
+MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-cancel`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-comment-create`, `tasks-comment-list`, `tasks-agents`, `tasks-enable`, `tasks-disable`, and `tasks-status`. Each CLI command carries the operation's route name, such as `orbit tasks:subtask:create`.
 
 ## Prepare a group in Backlog
 
@@ -218,15 +221,15 @@ When `project.create` collides on an occupied workspace root, T3's receipt is `A
 
 Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after the approval completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
-When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. It also reads `composer.json` at the workspace root, which must define a `check` script, and the implementer's run receipt. A pending input fails on its own.
+When an implementer is idle, done, or asking for input, the Gateway reads the implementer's run receipt and `composer.json` at the workspace root, which must define a `check` script. A pending input fails on its own. When these items pass, Orbit runs the Project check itself.
 
 Before each agent turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role of the turn, and removes any earlier receipt. Git never tracks `.git/orbit/`. The agent ends its turn with `.git/orbit/run --outcome=OUTCOME --summary="…"`. An implementer uses `ready_for_review` or `blocked`. A reviewer uses `approved`, `changes_requested`, or `blocked`. The script refuses an outcome for the other role, an empty summary, a repeated flag, and unknown arguments. It writes `.git/orbit/run.json` atomically. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) records the decision.
 
 When an agent stops, the tick reads the receipt over SSH, stores it as a task comment with its content hash, and removes it. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried on the next tick without the file. `blocked` asks for assistance with the agent's summary. A missing receipt, or one whose outcome does not fit the turn, fails the `run_receipt` item. An unreachable workspace counts as a communication failure, not a missing receipt.
 
-When every item passes, the Gateway sets the task to `reviewing` and asks for a review. At the first handoff it starts the reviewer with the group brief and the review request, or sends the request to the planner thread of a [planning group](#plan-a-group-with-a-planner). Later handoffs send the request to the same reviewer. If that fails, the next tick tries again before it reads a reviewer receipt. While the reviewer's snapshot is still the turn from before the handoff, the Gateway waits.
+When every item and the check pass, the Gateway sets the task to `reviewing` and asks for a review. At the first handoff it starts the reviewer with the group brief and the review request, or sends the request to the planner thread of a [planning group](#plan-a-group-with-a-planner). Later handoffs send the request to the same reviewer. If that fails, the next tick tries again before it reads a reviewer receipt. While the reviewer's snapshot is still the turn from before the handoff, the Gateway waits.
 
-After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new composer-check run and a new receipt before handing back to the reviewer.
+After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new receipt and a new passing check before handing back to the reviewer.
 
 For `changes_requested`, the Gateway relays the summary to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. For `approved`, the workspace must be on `task-{group id}`. The Gateway then commits every workspace change as `orbit <tasks@orbit>`, with the subtask title and the reviewer's summary as the message, and stores the commit on the approval comment. Reviewers do not commit. A failed commit counts as a communication failure and is retried. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
 
@@ -238,7 +241,7 @@ The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the No
 
 The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
 
-Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`, so the `composer check` rubric items read Pi threads the same way as T3 threads. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
+Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 
 ## Session routing
 
@@ -246,11 +249,9 @@ A scheduler tick checks every in-progress task in running and reviewing groups. 
 
 AgentThread state is authoritative. A `working` thread (including a starting T3 session) defers its task until a later tick. The Gateway does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
-For each eligible stopped implementer, the tick reads `composer check` from tool activity. The run must name `composer check`, exit 0, and have no edit, write, or patch activity after it. An assistant message does not count. `composer check-platform-reqs` and other commands that start with `check` do not count.
+The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
 
-The tick also reads `composer.json` at the workspace root over SSH. The `check_script` item passes only when `scripts.check` is a non-empty command or list. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, even when the transcript shows a passing run.
-
-A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item passes, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
+A pending input fails `waiting_for_input` in code. A thread state the rubric does not recognize waits. The rubric makes no model call. When every item and the Project check pass, the Gateway sets the task to `reviewing`. [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks) owns this rubric.
 
 `assistance_requested` and `resolution` comments update the assistance flag and keep their history. Status stays the current phase for those two comments.
 
@@ -291,6 +292,23 @@ Gateway uses `laravel/ai` Classification with its official TypeSafe provider in 
 Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+
+### Project check
+
+Orbit runs the Project's `composer check` after each `ready_for_review` receipt whose items pass. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs `composer check` in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) records the decision.
+
+The task stays `running` during the check. On each tick the scheduler reads the check. It identifies the process by its ID and its start time, so a reused process ID does not count. There is no time limit.
+
+| Check state | Result |
+| --- | --- |
+| Running | The scheduler waits. The task's `check` shows its start time. |
+| Exit code 0, HEAD and tree unchanged | `passed`. The reviewer starts. |
+| Exit code not 0 | `failed`. The implementer's reminder holds the exit code and the end of the output. |
+| HEAD or tree changed during the run | `changed`. The check runs again once. A second change fails, and the reminder names the changed paths. |
+| The process is gone without a result | `lost`. The check runs again once. A second loss asks for assistance. |
+| Cancelled by an operator | `cancelled`. The implementer's reminder says so. |
+
+Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running check. The API operation is `tasks:check:cancel`. A task without a running check answers `409` with `tasks.check_not_running`. A failed or cancelled check spends the reminder of that completion attempt, so a second failure asks for assistance. Each run is stored with its receipt, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output. The task's `check` field shows the latest run.
 
 ## Pull request and settle metrics
 
@@ -372,7 +390,7 @@ These items stay unimplemented here and need a later feature PR.
 
 ## Cancel a stuck group
 
-Call `tasks-cancel` with `{ "group": 123 }` to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
+Call `tasks-cancel` with `{ "group": 123 }`, or run `orbit tasks:cancel 123`, to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
 
 A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 

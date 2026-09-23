@@ -195,6 +195,7 @@
               "cli/realtime",
               "cli/top",
               "cli/extension",
+              "cli/tasks",
               "cli/herdr",
               "cli/proxycli",
               "cli/workspace"
@@ -494,6 +495,7 @@
               "POST /api/v1/task-groups/{group}/tasks",
               "DELETE /api/v1/task-groups/{group}/tasks/{task}",
               "PATCH /api/v1/task-groups/{group}/tasks/{task}",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/tasks/disable",
@@ -694,7 +696,8 @@
               "decisions/0122-hold-task-groups-in-backlog-until-ready",
               "decisions/0123-serve-the-web-app-from-the-gateway-origin",
               "decisions/0124-plan-backlog-groups-with-a-t3-planner",
-              "decisions/0125-limit-browser-api-calls-to-orbit-origins"
+              "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
+              "decisions/0126-limit-browser-api-calls-to-orbit-origins"
             ]
           }
         ]

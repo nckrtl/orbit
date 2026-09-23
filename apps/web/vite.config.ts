@@ -77,7 +77,7 @@ function orbitGateway(): Plugin {
 }
 
 /**
- * The Gateway refuses browser requests from origins outside Orbit (ADR 0125). This proxy serves
+ * The Gateway refuses browser requests from origins outside Orbit (ADR 0126). This proxy serves
  * the page on its own origin, so it forwards as a same-origin client: it drops the browser's
  * `Origin` but keeps `Sec-Fetch-Site`, so a cross-site request through it is still refused.
  */

@@ -2697,7 +2697,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List task agent sessions */
+        /**
+         * List task agent sessions
+         * @description List a task group's agent threads.
+         */
         get: operations["tasks-agents"];
         put?: never;
         post?: never;
@@ -2808,6 +2811,23 @@ export interface paths {
         patch: operations["tasks-subtask-update"];
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/tasks/{task}/check/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** tasks:check:cancel */
+        post: operations["tasks-check-cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/tasks/{task}/comments": {
         parameters: {
             query?: never;
@@ -2815,10 +2835,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** tasks:comment:list */
+        /**
+         * tasks:comment:list
+         * @description List a subtask's comments, newest first.
+         */
         get: operations["tasks-comment-list"];
         put?: never;
-        /** tasks:comment:create */
+        /**
+         * tasks:comment:create
+         * @description Ask for assistance on a subtask or resolve a request.
+         */
         post: operations["tasks-comment-create"];
         delete?: never;
         options?: never;
@@ -3544,6 +3570,17 @@ export interface components {
             type?: "implementation" | "annotation";
             target_thread_id?: string | null;
             completion_summary?: string | null;
+            check?: components["schemas"]["TaskCheck"] | null;
+        };
+        TaskCheck: {
+            id?: number;
+            /** @enum {string} */
+            status?: "running" | "passed" | "failed" | "changed" | "lost" | "cancelled";
+            started_at?: string;
+            finished_at?: string | null;
+            exit_code?: number | null;
+            changed_paths?: string[];
+            output?: string | null;
         };
         AgentThread: {
             id?: number;
@@ -14453,11 +14490,18 @@ export interface operations {
             content: {
                 "application/json": {
                     app_id: number;
+                    /** @description Short name of the feature */
                     title: string;
+                    /** @description Deliverables and acceptance */
                     brief: string;
-                    /** @enum {string} */
+                    /**
+                     * @description backlog (default) or todo
+                     * @enum {string}
+                     */
                     status?: never;
+                    /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
+                    /** @description Start a T3 planner that shapes the group in Backlog */
                     plan?: boolean;
                     notify_on_settle?: boolean;
                     tasks?: {
@@ -14587,9 +14631,14 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description New title */
                     title?: string;
+                    /** @description New brief */
                     brief?: string;
-                    /** @enum {string} */
+                    /**
+                     * @description backlog or todo
+                     * @enum {string}
+                     */
                     status?: never;
                 };
             };
@@ -14879,7 +14928,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Short name of the step */
                     title: string;
+                    /** @description Deliverables and acceptance of the step */
                     brief: string;
                 };
             };
@@ -15028,8 +15079,11 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description New title */
                     title?: string;
+                    /** @description New brief */
                     brief?: string;
+                    /** @description New position, starting at 1 */
                     position?: number;
                 };
             };
@@ -15043,6 +15097,73 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-check-cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskCheck"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -15105,7 +15226,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["TaskComment"];
+                        data: components["schemas"]["TaskComment"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -15144,9 +15265,14 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @enum {string} */
+                    /**
+                     * @description assistance_requested or resolution
+                     * @enum {string}
+                     */
                     type: "assistance_requested" | "resolution";
+                    /** @description Comment text */
                     body: string;
+                    /** @description Who wrote the comment */
                     author: string;
                     agent_thread_id?: number | null;
                 };

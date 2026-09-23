@@ -25,7 +25,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $completion_reminder_input_id
  * @property int|null $completion_handoff_attempt
  * @property string|null $completion_handoff_turn_id
- * @property string|null $completion_handoff_check_id
  * @property int $review_attempt
  * @property int|null $review_handled_comment_id
  * @property int|null $review_reminder_attempt
@@ -83,7 +82,6 @@ final class Task extends Model
         'completion_reminder_input_id',
         'completion_handoff_attempt',
         'completion_handoff_turn_id',
-        'completion_handoff_check_id',
         'review_attempt',
         'review_handled_comment_id',
         'review_reminder_attempt',
@@ -103,6 +101,12 @@ final class Task extends Model
     public function implementerThread(): BelongsTo
     {
         return $this->belongsTo(AgentThread::class, 'implementer_agent_thread_id');
+    }
+
+    /** @return HasMany<TaskCheck, $this> */
+    public function checks(): HasMany
+    {
+        return $this->hasMany(TaskCheck::class);
     }
 
     /** @return HasMany<TaskComment, $this> */

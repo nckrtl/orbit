@@ -20259,6 +20259,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?app_id=4&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskGroupsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskGroupsRequest())->dto();\n"
           }
         ]
       },
@@ -20282,21 +20287,26 @@
                   },
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "Short name of the feature"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "Deliverables and acceptance"
                   },
                   "status": {
                     "type": "string",
-                    "enum": []
+                    "enum": [],
+                    "description": "backlog (default) or todo"
                   },
                   "notify_coder": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "description": "Post the Coder settle webhook when the group settles"
                   },
                   "plan": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "description": "Start a T3 planner that shapes the group in Backlog"
                   },
                   "notify_on_settle": {
                     "type": "boolean"
@@ -20414,6 +20424,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app_id\": 4, \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskGroupRequest(appId: 4, title: 'value', brief: 'value'))->dto();\n"
           }
         ]
       }
@@ -20497,6 +20512,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTaskGroupRequest(groupId: 1))->dto();\n"
           }
         ]
       },
@@ -20528,15 +20548,18 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "New title"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "New brief"
                   },
                   "status": {
                     "type": "string",
-                    "enum": []
+                    "enum": [],
+                    "description": "backlog or todo"
                   }
                 },
                 "additionalProperties": false
@@ -20613,6 +20636,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/task-groups/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"status\": \"success\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\UpdateTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateTaskGroupRequest(groupId: 1))->dto();\n"
           }
         ]
       }
@@ -20636,6 +20664,7 @@
             "description": "Numeric Task group ID."
           }
         ],
+        "description": "List a task group's agent threads.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -20688,6 +20717,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/agents\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskAgentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskAgentsRequest(groupId: 1))->dto();\n"
           }
         ]
       }
@@ -20875,6 +20909,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/cancel\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CancelTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CancelTaskGroupRequest(groupId: 1))->dto();\n"
           }
         ]
       }
@@ -20979,6 +21018,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/complete\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CompleteTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CompleteTaskGroupRequest(groupId: 1))->dto();\n"
           }
         ]
       }
@@ -21012,11 +21056,13 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "Short name of the step"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "Deliverables and acceptance of the step"
                   }
                 },
                 "required": [
@@ -21119,6 +21165,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateSubtaskRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateSubtaskRequest(groupId: 1, title: 'value', brief: 'value'))->dto();\n"
           }
         ]
       }
@@ -21232,6 +21283,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/task-groups/1/tasks/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\DestroySubtaskRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroySubtaskRequest(groupId: 1, taskId: 1))->dto();\n"
           }
         ]
       },
@@ -21272,15 +21328,18 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "New title"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "New brief"
                   },
                   "position": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "description": "New position, starting at 1"
                   }
                 },
                 "additionalProperties": false
@@ -21357,6 +21416,123 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/task-groups/1/tasks/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"position\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\UpdateSubtaskRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateSubtaskRequest(groupId: 1, taskId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-groups/{group}/tasks/{task}/check/cancel": {
+      "post": {
+        "operationId": "tasks-check-cancel",
+        "summary": "tasks:check:cancel",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskCheck"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/check/cancel\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
           }
         ]
       }
@@ -21389,6 +21565,7 @@
             "description": ""
           }
         ],
+        "description": "List a subtask's comments, newest first.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21398,7 +21575,10 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/TaskComment"
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaskComment"
+                      }
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -21438,6 +21618,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/comments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskCommentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskCommentsRequest(groupId: 1, taskId: 1))->dto();\n"
           }
         ]
       },
@@ -21468,6 +21653,7 @@
             "description": ""
           }
         ],
+        "description": "Ask for assistance on a subtask or resolve a request.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21480,15 +21666,18 @@
                     "enum": [
                       "assistance_requested",
                       "resolution"
-                    ]
+                    ],
+                    "description": "assistance_requested or resolution"
                   },
                   "body": {
                     "type": "string",
-                    "maxLength": 100000
+                    "maxLength": 100000,
+                    "description": "Comment text"
                   },
                   "author": {
                     "type": "string",
-                    "maxLength": 255
+                    "maxLength": 255,
+                    "description": "Who wrote the comment"
                   },
                   "agent_thread_id": {
                     "type": [
@@ -21598,6 +21787,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/comments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"type\": \"assistance_requested\", \"body\": \"example\", \"author\": \"example\", \"agent_thread_id\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskCommentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskCommentRequest(\n    groupId: 1,\n    taskId: 1,\n    type: 'value',\n    commentBody: 'value',\n    author: 'value',\n))->dto();\n"
           }
         ]
       }
@@ -21680,6 +21874,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tasks/disable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\DisableTasksRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DisableTasksRequest())->dto();\n"
           }
         ]
       }
@@ -21762,6 +21961,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tasks/enable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\EnableTasksRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new EnableTasksRequest())->dto();\n"
           }
         ]
       }
@@ -21813,6 +22017,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/tasks/status\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTasksStatusRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTasksStatusRequest())->dto();\n"
           }
         ]
       }
@@ -24487,6 +24696,62 @@
             ]
           },
           "completion_summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "check": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TaskCheck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "passed",
+              "failed",
+              "changed",
+              "lost",
+              "cancelled"
+            ]
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "changed_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "output": {
             "type": [
               "string",
               "null"

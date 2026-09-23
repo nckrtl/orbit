@@ -6374,7 +6374,7 @@
     {
       "name": "tasks-agents",
       "title": "List task agent sessions",
-      "description": "List task agent sessions",
+      "description": "List a task group's agent threads.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}/agents",
       "path_inputs": [
@@ -6424,9 +6424,40 @@
       }
     },
     {
+      "name": "tasks-check-cancel",
+      "title": "tasks:check:cancel",
+      "description": "tasks:check:cancel",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/check/cancel",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
       "name": "tasks-comment-create",
       "title": "tasks:comment:create",
-      "description": "tasks:comment:create",
+      "description": "Ask for assistance on a subtask or resolve a request.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
       "path_inputs": [
@@ -6451,15 +6482,18 @@
             "enum": [
               "assistance_requested",
               "resolution"
-            ]
+            ],
+            "description": "assistance_requested or resolution"
           },
           "body": {
             "type": "string",
-            "maxLength": 100000
+            "maxLength": 100000,
+            "description": "Comment text"
           },
           "author": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 255,
+            "description": "Who wrote the comment"
           },
           "agent_thread_id": {
             "type": [
@@ -6481,7 +6515,7 @@
     {
       "name": "tasks-comment-list",
       "title": "tasks:comment:list",
-      "description": "tasks:comment:list",
+      "description": "List a subtask's comments, newest first.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
       "path_inputs": [
@@ -6553,21 +6587,26 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Short name of the feature"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "Deliverables and acceptance"
           },
           "status": {
             "type": "string",
-            "enum": []
+            "enum": [],
+            "description": "backlog (default) or todo"
           },
           "notify_coder": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Post the Coder settle webhook when the group settles"
           },
           "plan": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Start a T3 planner that shapes the group in Backlog"
           },
           "notify_on_settle": {
             "type": "boolean"
@@ -6731,11 +6770,13 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Short name of the step"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "Deliverables and acceptance of the step"
           }
         },
         "additionalProperties": false,
@@ -6802,15 +6843,18 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "New title"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "New brief"
           },
           "position": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "New position, starting at 1"
           }
         },
         "additionalProperties": false,
@@ -6841,15 +6885,18 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "New title"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "New brief"
           },
           "status": {
             "type": "string",
-            "enum": []
+            "enum": [],
+            "description": "backlog or todo"
           }
         },
         "additionalProperties": false,

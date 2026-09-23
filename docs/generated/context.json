@@ -369,6 +369,7 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Task",
                 "Tool",
                 "proxycli"
             ],
@@ -485,6 +486,23 @@
                 "Process",
                 "Project",
                 "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/cli/tasks.mdx",
+            "title": "tasks",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Task group",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -3297,8 +3315,30 @@
             ]
         },
         {
-            "path": "docs/decisions/0125-limit-browser-api-calls-to-orbit-origins.md",
-            "title": "ADR 0125: Limit browser API calls to Orbit origins",
+            "path": "docs/decisions/0125-run-the-project-check-when-the-implementer-hands-off.md",
+            "title": "ADR 0125: Run the Project check when the implementer hands off",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0121",
+                "0125"
+            ]
+        },
+        {
+            "path": "docs/decisions/0126-limit-browser-api-calls-to-orbit-origins.md",
+            "title": "ADR 0126: Limit browser API calls to Orbit origins",
             "kind": "decision",
             "components": [
                 "apps/gateway"
@@ -3310,7 +3350,7 @@
             ],
             "governing_adrs": [
                 "0123",
-                "0125"
+                "0126"
             ]
         },
         {
@@ -3466,7 +3506,8 @@
                 "0122",
                 "0123",
                 "0124",
-                "0125"
+                "0125",
+                "0126"
             ]
         },
         {
@@ -3816,7 +3857,7 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0125"
+                "0126"
             ]
         },
         {
@@ -3861,6 +3902,8 @@
                 "Router",
                 "Schedule",
                 "Setup step",
+                "Task",
+                "Task group",
                 "Teardown step",
                 "Tool",
                 "proxycli"
@@ -4595,7 +4638,8 @@
                 "0116",
                 "0121",
                 "0122",
-                "0124"
+                "0124",
+                "0125"
             ]
         },
         {
