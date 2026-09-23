@@ -21,7 +21,7 @@ final readonly class ComposerCheckEvidence
             if ($message['kind'] !== 'activity' || $message['label'] === 'assistant') {
                 continue;
             }
-            if (preg_match('/\bcomposer check\b/', $message['text']) !== 1) {
+            if (preg_match('/\bcomposer\s+check(?![\w:-])/', $message['text']) !== 1) {
                 continue;
             }
             $exit = null;
