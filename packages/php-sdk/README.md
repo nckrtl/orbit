@@ -77,7 +77,7 @@ The SDK exposes typed enable, disable, status, provider list, provider show, and
 
 ## Tasks
 
-The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, and agent thread list requests for the Gateway tasks extension. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Toggle, status, cancel, complete, and destroy requests are bodyless. Group responses keep their subtasks in position order and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
+The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, and agent thread list requests for the Gateway tasks extension. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, planner flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Toggle, status, cancel, complete, and destroy requests are bodyless. Group responses keep their subtasks in position order and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
 
 ## Requirements
 

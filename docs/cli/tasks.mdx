@@ -29,7 +29,7 @@ A task group is one feature. A subtask is one ordered step of it. The [tasks ref
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, or `agents`.
 
-Only `tasks:list` and `tasks:show` accept any authorized peer. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `tasks.disabled`.
+`tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the group's Instance, or to the Gateway for a group without one; a planner in the group's workspace uses them this way. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `tasks.disabled`.
 
 ## Select a group or subtask
 
@@ -90,14 +90,14 @@ Show one task group as a detail tree, followed by its brief and a table of its s
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, tokens, line diff, and duration of each subtask. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, Instance, pull request, Coder notification, planner, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, tokens, line diff, and duration of each subtask. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
 Create a task group. It starts in `backlog` unless you ask for `todo`.
 
 ```bash
-orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--notify-coder] [--json]
+orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--notify-coder] [--plan] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -108,13 +108,14 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--su
 | `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask and asks the scheduler to claim the group. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief`. |
 | `--notify-coder` | off | Post the Coder settle webhook when the group settles. |
+| `--plan` | off | Start a [planner](/reference/tasks#plan-a-group-with-a-planner): a T3 thread in the group's new workspace that shapes the feature with you while the group stays in `backlog`. |
 
 ```bash
 orbit tasks:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)"
 orbit tasks:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)" --subtasks=subtasks.json --status=todo
 ```
 
-The CLI does not prompt for the status, the subtasks, or the notification. After the Gateway answers, the CLI shows the group as `tasks:show` does. A group created in `todo` can already be `failed` when its first agent could not start. The tree then reports that status.
+The CLI does not prompt for the status, the subtasks, the notification, or the planner. After the Gateway answers, the CLI shows the group as `tasks:show` does. A group created in `todo` can already be `failed` when its first agent could not start. The tree then reports that status.
 
 | Error code | Meaning |
 | --- | --- |
@@ -123,6 +124,8 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief. |
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no group. |
+| `tasks.plan_requires_backlog` | `--plan` with `--status=todo`. |
+| `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable` | The Gateway cannot start the planner. The [tasks reference](/reference/tasks#groups-and-subtasks) explains each case. |
 
 ## orbit tasks:update
 
@@ -149,6 +152,7 @@ In a terminal, the group list shows `backlog` and `todo` groups. Without a chang
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
 | `tasks.no_subtasks` | A move to `todo` for a group without subtasks. |
 | `tasks.already_claimed` | The scheduler claimed the group before the status change. |
+| `tasks.commit_failed` | A move to `todo` for a planning group when Orbit cannot commit its workspace. |
 
 ## orbit tasks:cancel
 

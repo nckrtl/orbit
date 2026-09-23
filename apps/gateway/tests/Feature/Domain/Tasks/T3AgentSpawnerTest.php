@@ -389,3 +389,39 @@ it('uses high effort for a reviewer follow-up when a legacy effort is absent', f
     expect($command['type'])->toBe('thread.turn.start')
         ->and($command['modelSelection']['options'])->toBe([['id' => 'effort', 'value' => 'high']]);
 });
+
+it('starts the planner as the group reviewer thread with the planning brief', function (): void {
+    $group = t3_spawner_group();
+    $group->update(['status' => TaskGroupStatus::Backlog, 'plan' => true]);
+    [$spawner, $dispatcher] = t3_spawner_stack();
+
+    $threadId = $spawner->spawnPlanner($group->refresh());
+    $text = $dispatcher->commands[2]['message']['text'];
+
+    expect($threadId)->not->toBeNull()
+        ->and(AgentThread::query()->findOrFail($threadId)->role)->toBe('reviewer')
+        ->and($dispatcher->commands[1]['title'])->toBe('Orbit task #'.$group->id.' · Planner: Wire T3')
+        ->and($dispatcher->commands[1]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort))
+        ->and($text)->toStartWith('You are the planner for this Orbit task group.')
+        ->and($text)->toContain('Orbit task group #'.$group->id.' for Project orbit (app_id '.$group->app_id.')')
+        ->and($text)->toContain('on the branch task-'.$group->id.' and leave them uncommitted')
+        ->and($text)->toContain('tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy')
+        ->and($text)->toContain('move the group to Todo with tasks-update and status todo');
+});
+
+it('tells a planner thread it has become the reviewer with the first review request only', function (): void {
+    $group = t3_spawner_group();
+    $group->update(['plan' => true, 'reviewer_agent_thread_id' => test_agent_thread($group, 'planner-thread')->id]);
+    [$spawner, $dispatcher] = t3_spawner_stack();
+    $task = $group->refresh()->tasks->first();
+
+    $spawner->requestReview($task);
+    $task->update(['review_attempt' => 1, 'review_notified_attempt' => 1]);
+    $spawner->requestReview($task->refresh());
+
+    expect($dispatcher->commands[0]['threadId'])->toBe('planner-thread')
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('The plan is in Todo and Orbit has started the implementers. From now on you are the reviewer of this group, not its planner.')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('You are the reviewer for this feature group.')
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: true))
+        ->and($dispatcher->commands[1]['message']['text'])->toStartWith('Review subtask #'.$task->id);
+});

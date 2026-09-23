@@ -962,7 +962,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tasks:comment:create' => [['group', 'subtask'], ['type' => null, 'body' => null, 'author' => null, 'agent-thread' => null, 'json' => false]],
         'tasks:comment:list' => [['group', 'subtask'], ['json' => false]],
         'tasks:complete' => [['group'], ['yes' => false, 'json' => false]],
-        'tasks:create' => [['title'], ['project' => null, 'brief' => null, 'status' => null, 'subtasks' => null, 'notify-coder' => false, 'json' => false]],
+        'tasks:create' => [['title'], ['project' => null, 'brief' => null, 'status' => null, 'subtasks' => null, 'notify-coder' => false, 'plan' => false, 'json' => false]],
         'tasks:disable' => [[], ['json' => false]],
         'tasks:enable' => [[], ['json' => false]],
         'tasks:list' => [[], ['project' => null, 'status' => null, 'json' => false]],

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementing In Orbit"
+  short_description: "Hand a feature to an Orbit planner in T3"
+  default_prompt: "Use $implementing-in-orbit to hand this feature to Orbit with a planner."

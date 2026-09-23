@@ -26,6 +26,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--status= : backlog (default) or todo}
         {--subtasks= : JSON file with an ordered array of objects that each hold a title and a brief}
         {--notify-coder : Post the Coder settle webhook when the group settles}
+        {--plan : Start a T3 planner that shapes the group in Backlog}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -86,6 +87,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 brief: $brief,
                 status: is_string($status) ? $status : null,
                 notifyCoder: $this->option('notify-coder') === true ? true : null,
+                plan: $this->option('plan') === true ? true : null,
                 tasks: $subtasks,
             ),
             TaskGroupResponse::class,

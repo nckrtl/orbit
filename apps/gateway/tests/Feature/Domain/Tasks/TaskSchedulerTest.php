@@ -488,6 +488,34 @@ it('leaves a provisioned group reserved when the Node is already at the ceiling'
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 
+it('keeps a planning group on its workspace while its Node is at the ceiling', function (): void {
+    $app = scheduler_app('planned-app');
+    $node = scheduler_node('planned-full-node', '10.44.0.93');
+    $instance = scheduler_instance($app, $node, 'planned');
+
+    foreach (range(1, TaskCeilings::PerNode) as $index) {
+        $owner = scheduler_app("planned-fill-{$index}");
+        $placed = scheduler_instance($owner, $node, "planned-fill-{$index}");
+        $group = TaskGroup::query()->create([
+            'app_id' => $owner->id,
+            'title' => "Fill {$index}",
+            'brief' => 'Fills the node',
+            'status' => TaskGroupStatus::Reviewing,
+        ]);
+        $group->taskable()->associate($placed);
+        $group->save();
+    }
+
+    $planned = queued_group($app, 'Planned');
+    $planned->update(['plan' => true]);
+    $planned->taskable()->associate($instance);
+    $planned->save();
+
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+        ->and($planned->fresh()?->status)->toBe(TaskGroupStatus::Todo)
+        ->and($planned->fresh()?->taskable_id)->toBe($instance->id);
+});
+
 it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
     $app = scheduler_app('orbit');
     $app->update(['root' => 'public']);

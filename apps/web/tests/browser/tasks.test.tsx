@@ -21,6 +21,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         reviewer_agent_thread_id: null,
         pr_url: null,
         notify_coder: false,
+        plan: false,
         implementer_model: "implementer",
         reviewer_model: "reviewer",
         tokens: null,

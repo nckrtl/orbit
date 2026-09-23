@@ -16,6 +16,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
 use App\Models\Schedule;
+use App\Models\TaskGroup;
 use App\Models\Tool;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -42,10 +43,31 @@ final readonly class ServingNodeResolver
             ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::ClusterOwning => $this->clusterOwning($request),
             ServingNode::RouteOwning => $this->routeOwning($request),
+            ServingNode::TaskGroupOwning => $this->taskGroupOwning($request),
             ServingNode::RoleMutation => $this->roleMutation($request),
             ServingNode::Collection => [],
             ServingNode::Caller => $this->caller($request),
         };
+    }
+
+    /**
+     * ADR 0124: a Task group with an Instance is served by that Instance's Node, so a Node with access to itself
+     * can manage the groups whose workspace it holds. A group without an Instance is served by the Gateway.
+     *
+     * @return list<Node>
+     */
+    private function taskGroupOwning(Request $request): array
+    {
+        $group = $request->route('group');
+
+        if (! $group instanceof TaskGroup) {
+            $id = $this->positiveInteger($group);
+            $group = $id === null ? null : TaskGroup::query()->find($id);
+        }
+
+        $instance = $group?->taskable;
+
+        return $instance instanceof AppInstance ? [Node::query()->findOrFail($instance->node_id)] : $this->gateway();
     }
 
     /** @return list<Node> */

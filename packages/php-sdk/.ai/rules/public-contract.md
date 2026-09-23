@@ -109,7 +109,7 @@ operations. Keep the public API typed and small.
   The Gateway owns Valkey placement, collection, publication, and pooling.
 - Keep Tasks transport limited to numeric task group and subtask IDs, the
   optional Project ID and status list filters, the group title, brief, status,
-  Coder notification flag, and ordered subtask titles and briefs on create,
+  Coder notification and planner flags, and ordered subtask titles and briefs on create,
   partial title, brief, status, and position updates, and the comment type,
   body, author, and optional agent thread ID. Toggle, status, cancel, complete,
   and destroy requests are bodyless. The Gateway owns the lifecycle, scheduling,

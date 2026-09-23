@@ -129,19 +129,19 @@ it('refuses turn outcomes, which agents report with the run script', function (s
     ])->assertStatus(422);
 })->with(['ready_for_review', 'changes_requested', 'approved', 'blocked', 'unknown']);
 
-it('declares Gateway access for enable disable status create update and subtask changes', function (): void {
+it('declares Gateway access for the extension and group lifecycle and group-owning access for plan changes', function (): void {
     expect(new ReflectionClass(TasksController::class)->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'store')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'update')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
-        ->toBe(ServingNode::Gateway)
+        ->toBe(ServingNode::TaskGroupOwning)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'createTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
-        ->toBe(ServingNode::Gateway)
+        ->toBe(ServingNode::TaskGroupOwning)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'updateTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
-        ->toBe(ServingNode::Gateway)
+        ->toBe(ServingNode::TaskGroupOwning)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'destroyTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
-        ->toBe(ServingNode::Gateway)
+        ->toBe(ServingNode::TaskGroupOwning)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'complete')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'cancel')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
