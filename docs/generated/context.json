@@ -309,7 +309,9 @@
                 "Project",
                 "Repository identity",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Setup step",
+                "Teardown step"
             ],
             "governing_adrs": []
         },
@@ -543,6 +545,7 @@
                 "Cluster",
                 "Database",
                 "Database connection",
+                "Development node exclusion",
                 "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
@@ -563,8 +566,10 @@
                 "Router",
                 "Runtime hibernation",
                 "Schedule",
+                "Setup step",
                 "Task",
                 "Task group",
+                "Teardown step",
                 "Tool",
                 "Tool Manager",
                 "Web root",
@@ -3026,12 +3031,170 @@
                 "0103",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
-            "path": "docs/decisions/0114-extract-agent-annotation-package.md",
-            "title": "ADR 0114: Extract the agent annotation package",
+            "path": "docs/decisions/0114-expand-the-three-node-incus-cluster.md",
+            "title": "ADR 0114: Expand the three-node Incus Cluster",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Cluster",
+                "Database",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0114"
+            ]
+        },
+        {
+            "path": "docs/decisions/0114-judge-task-completion-as-separate-checks.md",
+            "title": "ADR 0114: Judge task completion as separate checks",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0110",
+                "0113",
+                "0114",
+                "0117"
+            ]
+        },
+        {
+            "path": "docs/decisions/0115-run-project-setup-commands-on-development-instances.md",
+            "title": "ADR 0115: Run Project setup commands on development Instances",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0027",
+                "0071",
+                "0073",
+                "0115"
+            ]
+        },
+        {
+            "path": "docs/decisions/0116-run-task-implementers-on-pi.md",
+            "title": "ADR 0116: Run task implementers on Pi",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0112",
+                "0114",
+                "0116"
+            ]
+        },
+        {
+            "path": "docs/decisions/0117-judge-the-blocked-question-on-role-evidence.md",
+            "title": "ADR 0117: Judge the blocked question on the role's own evidence",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0117"
+            ]
+        },
+        {
+            "path": "docs/decisions/0118-exclude-app-dev-nodes-per-project.md",
+            "title": "ADR 0118: Skip selected Nodes for a Project",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0066",
+                "0071",
+                "0086",
+                "0103",
+                "0118"
+            ]
+        },
+        {
+            "path": "docs/decisions/0119-publish-main-caches-from-clean-bootstrap-runs.md",
+            "title": "ADR 0119: Share caches after bootstrap",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0052",
+                "0054",
+                "0119"
+            ]
+        },
+        {
+            "path": "docs/decisions/0120-extract-agent-annotation-package.md",
+            "title": "ADR 0120: Extract the agent annotation package",
             "kind": "decision",
             "components": [
                 "apps/gateway"
@@ -3044,7 +3207,7 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0114"
+                "0120"
             ]
         },
         {
@@ -3192,7 +3355,10 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0116",
+                "0117",
+                "0120"
             ]
         },
         {
@@ -3461,6 +3627,7 @@
                 "0041",
                 "0045",
                 "0046",
+                "0106",
                 "0111"
             ]
         },
@@ -3570,6 +3737,8 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Setup step",
+                "Teardown step",
                 "Tool",
                 "proxycli"
             ],
@@ -3660,6 +3829,24 @@
             "governing_adrs": [
                 "0046",
                 "0073"
+            ]
+        },
+        {
+            "path": "docs/reference/development-node-exclusions.md",
+            "title": "Development node exclusions",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0118"
             ]
         },
         {
@@ -3813,7 +4000,9 @@
                 "0052",
                 "0054",
                 "0076",
-                "0113"
+                "0113",
+                "0114",
+                "0119"
             ]
         },
         {
@@ -3826,15 +4015,19 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Proof topology",
-                "Route"
+                "Route",
+                "Router",
+                "Schedule"
             ],
             "governing_adrs": [
                 "0005",
@@ -3842,7 +4035,8 @@
                 "0037",
                 "0040",
                 "0049",
-                "0056"
+                "0056",
+                "0114"
             ]
         },
         {
@@ -3928,6 +4122,27 @@
                 "Project"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-setup.md",
+            "title": "Instance setup and teardown",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Setup step",
+                "Task",
+                "Teardown step"
+            ],
+            "governing_adrs": [
+                "0115"
+            ]
         },
         {
             "path": "docs/reference/local-resolver-overrides.md",
@@ -4064,6 +4279,22 @@
                 "0021",
                 "0034",
                 "0045"
+            ]
+        },
+        {
+            "path": "docs/reference/pi-server.md",
+            "title": "Pi server",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0116"
             ]
         },
         {
@@ -4216,9 +4447,12 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Database",
+                "Development node exclusion",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -4234,7 +4468,10 @@
                 "0103",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114",
+                "0116",
+                "0117"
             ]
         },
         {
@@ -4267,15 +4504,18 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Cluster",
                 "Database",
                 "Doctor",
                 "Gateway",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
                 "Proof topology",
                 "Route",
+                "Router",
                 "Web root"
             ],
             "governing_adrs": [

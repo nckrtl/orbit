@@ -78,6 +78,7 @@
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
               "reference/agentation",
+              "reference/agent-annotation",
               "reference/php-runtime",
               "reference/appinstance-cloning",
               "reference/deployments",
@@ -682,7 +683,8 @@
               "decisions/0115-run-project-setup-commands-on-development-instances",
               "decisions/0116-run-task-implementers-on-pi",
               "decisions/0117-judge-the-blocked-question-on-role-evidence",
-              "decisions/0118-exclude-app-dev-nodes-per-project"
+              "decisions/0118-exclude-app-dev-nodes-per-project",
+              "decisions/0120-extract-agent-annotation-package"
             ]
           }
         ]
