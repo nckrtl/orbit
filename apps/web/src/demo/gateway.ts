@@ -10,6 +10,7 @@ import type {
     QuotaProvider,
     Schedule,
 } from "../api/types";
+import type { TaskGroup } from "../api/tasks";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
 type Answer = { status: number; payload: unknown };
@@ -73,6 +74,7 @@ export function createDemoGateway() {
     const schedules = list<Schedule>("GET /api/v1/schedules");
     const databases = list<Database>("GET /api/v1/database-connections");
     const instances = list<Instance>("GET /api/v1/instances");
+    const taskGroups = list<TaskGroup>("GET /api/v1/task-groups");
     // The instances that publish a tracking host; none does until a test or a visitor enables one.
     const trackedInstances = new Set<string>();
     const quotaAccounts: QuotaAccount[] = [
@@ -258,7 +260,27 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/processes$/, () => ok(processes)],
             ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],
             ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
-            ["GET", /^\/api\/v1\/task-groups$/, () => ok([])],
+            ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
+            [
+                "GET",
+                /^\/api\/v1\/task-groups\/(\d+)$/,
+                ([group = ""]) => {
+                    const found = taskGroups.find((candidate) => String(candidate.id) === group);
+
+                    return found === undefined ? notFound("Task group") : ok(found);
+                },
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/task-groups\/(\d+)\/agents$/,
+                ([group = ""]) => ok(list("GET /api/v1/task-groups/{group}/agents", group)),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/task-groups\/(\d+)\/tasks\/(\d+)\/comments$/,
+                ([, task = ""]) =>
+                    ok(list("GET /api/v1/task-groups/{group}/tasks/{task}/comments", task)),
+            ],
             ["GET", /^\/api\/v1\/nodes\/(\d+)\/firewall-rules$/, ([node = ""]) => ok(rules(node))],
             [
                 "GET",

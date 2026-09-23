@@ -3,7 +3,7 @@
 │  Nodes │ 3
 │  Projects │ 3
 │  Databases │ 2
-│  Tasks │ 0
+│  Tasks │ 1
 ╰─
 
 ╭─ Worker nodes

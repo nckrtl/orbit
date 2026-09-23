@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import type { components } from "./schema";
 import { get } from "./client";
 import { POLL_SECONDS } from "./queries";
+import type { AgentThread } from "../tasks/agent-stream";
 
 type LineChanges = { lines_added?: number | null; lines_deleted?: number | null };
 export type Task = Omit<Required<components["schemas"]["Task"]>, keyof LineChanges> & LineChanges;
@@ -14,6 +15,8 @@ export type TaskGroup = Omit<
         project_code?: string;
     };
 export type TaskColumn = "Backlog" | "Todo" | "In progress" | "Done";
+export type TaskCheck = components["schemas"]["TaskCheck"];
+export type TaskComment = Required<components["schemas"]["TaskComment"]>;
 
 export function taskIdentity(id: number, projectCode?: string): string {
     return projectCode ? `${projectCode}-${id}` : `#${id}`;
@@ -163,6 +166,64 @@ export const taskGroupQuery = (id: string) =>
         refetchInterval: POLL_SECONDS * 1000,
         retry: false,
     });
+
+/** Agent threads of a task group. The key sits under the group, so a group refresh refreshes them. */
+export const taskAgentsQuery = (groupId: number) =>
+    queryOptions({
+        queryKey: ["task-groups", String(groupId), "agents"],
+        queryFn: () => get<AgentThread[]>(`/api/v1/task-groups/${groupId}/agents`),
+        refetchInterval: POLL_SECONDS * 1000,
+        retry: false,
+    });
+
+/** Comments and run receipts on one task, newest first. */
+export const taskCommentsQuery = (groupId: number, taskId: number) =>
+    queryOptions({
+        queryKey: ["task-groups", String(groupId), "tasks", String(taskId), "comments"],
+        queryFn: () =>
+            get<TaskComment[]>(`/api/v1/task-groups/${groupId}/tasks/${taskId}/comments`),
+        refetchInterval: POLL_SECONDS * 1000,
+        retry: false,
+    });
+
+export const taskCommentTypeLabels: Record<string, string> = {
+    ready_for_review: "Ready for review",
+    changes_requested: "Changes requested",
+    approved: "Approved",
+    blocked: "Blocked",
+    assistance_requested: "Assistance requested",
+    resolution: "Resolution",
+};
+
+/** The short label for a comment type; an unknown type reads as itself. */
+export function taskCommentTypeLabel(type: string): string {
+    return taskCommentTypeLabels[type] ?? type.replaceAll("_", " ");
+}
+
+/** How long ago a moment was, in the largest whole unit: "just now", "5m ago", "3h ago", "2d ago". */
+export function formatRelativeTime(at: string | null | undefined, now: number): string | null {
+    if (!at) return null;
+    const time = Date.parse(at);
+    if (!Number.isFinite(time)) return null;
+    const minutes = Math.floor(Math.max(0, now - time) / 60_000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** A check's run time: until it finished, or until now while it runs. */
+export function checkDurationMs(check: TaskCheck, now: number): number | null {
+    const started = Date.parse(check.started_at ?? "");
+    if (!Number.isFinite(started)) return null;
+    const finished = check.finished_at
+        ? Date.parse(check.finished_at)
+        : check.status === "running"
+          ? now
+          : Number.NaN;
+    return Number.isFinite(finished) ? Math.max(0, finished - started) : null;
+}
 
 export function formatCardDuration(value: number | null | undefined): string | null {
     if (value == null || !Number.isFinite(value) || value < 0) return null;

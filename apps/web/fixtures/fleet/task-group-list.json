@@ -1,0 +1,83 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/task-groups",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 12,
+                "app_id": 3,
+                "app": "charlie-shop",
+                "project_code": "CHS",
+                "taskable_type": null,
+                "taskable_id": null,
+                "title": "Apply discount codes at checkout",
+                "brief": "Let a customer enter a discount code at checkout and see the reduced total before paying.",
+                "status": "reviewing",
+                "reviewer_agent_thread_id": 21,
+                "pr_url": null,
+                "notify_coder": false,
+                "plan": false,
+                "implementer_model": "gpt-5.5-codex",
+                "reviewer_model": "claude-opus-5-5",
+                "tokens": 184200,
+                "line_diff": 96,
+                "lines_added": 142,
+                "lines_deleted": 46,
+                "duration_ms": 2460000,
+                "tasks": [
+                    {
+                        "id": 31,
+                        "task_group_id": 12,
+                        "position": 1,
+                        "title": "Validate discount codes",
+                        "brief": "Reject expired and unknown codes with a clear message.",
+                        "status": "reviewing",
+                        "implementer_agent_thread_id": 22,
+                        "tokens": 184200,
+                        "line_diff": 96,
+                        "lines_added": 142,
+                        "lines_deleted": 46,
+                        "duration_ms": 2460000,
+                        "type": "implementation",
+                        "target_thread_id": null,
+                        "completion_summary": null,
+                        "check": {
+                            "id": 7,
+                            "kind": "handoff",
+                            "status": "failed",
+                            "started_at": "2026-09-23T09:41:05+00:00",
+                            "finished_at": "2026-09-23T09:42:17+00:00",
+                            "exit_code": 1,
+                            "changed_paths": [],
+                            "failed_step": "composer test",
+                            "output": "FAILED  Tests\\Feature\\CheckoutTest > it applies the discount\nExpected 90 but got 100.\n\nTests:  1 failed, 212 passed"
+                        }
+                    },
+                    {
+                        "id": 32,
+                        "task_group_id": 12,
+                        "position": 2,
+                        "title": "Show the reduced total",
+                        "brief": "Show the discount and the new total in the order summary.",
+                        "status": "todo",
+                        "implementer_agent_thread_id": null,
+                        "tokens": null,
+                        "line_diff": null,
+                        "lines_added": null,
+                        "lines_deleted": null,
+                        "duration_ms": null,
+                        "type": "implementation",
+                        "target_thread_id": null,
+                        "completion_summary": null,
+                        "check": null
+                    }
+                ],
+                "execution_mode": "managed"
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

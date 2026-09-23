@@ -1,6 +1,9 @@
 import { expect, it } from "vite-plus/test";
 import {
     accumulatedLineChanges,
+    checkDurationMs,
+    formatRelativeTime,
+    taskCommentTypeLabel,
     completedSubtaskProgress,
     formatCardDuration,
     formatCompactCount,
@@ -112,4 +115,50 @@ it("formats card durations in minutes and hours without counting unknown time", 
     expect(formatCardDuration(32 * 60_000)).toBe("32m");
     expect(formatCardDuration(92 * 60_000)).toBe("1h 32m");
     expect(formatCardDuration(120 * 60_000)).toBe("2h");
+});
+
+it("formats how long ago a comment was posted", () => {
+    const now = Date.parse("2026-09-23T12:00:00Z");
+    expect(formatRelativeTime(null, now)).toBeNull();
+    expect(formatRelativeTime("not a date", now)).toBeNull();
+    expect(formatRelativeTime("2026-09-23T11:59:30Z", now)).toBe("just now");
+    expect(formatRelativeTime("2026-09-23T12:00:30Z", now)).toBe("just now");
+    expect(formatRelativeTime("2026-09-23T11:55:00Z", now)).toBe("5m ago");
+    expect(formatRelativeTime("2026-09-23T09:00:00Z", now)).toBe("3h ago");
+    expect(formatRelativeTime("2026-09-21T11:00:00Z", now)).toBe("2d ago");
+});
+
+it("labels every comment type and keeps an unknown one readable", () => {
+    expect(
+        [
+            "ready_for_review",
+            "changes_requested",
+            "approved",
+            "blocked",
+            "assistance_requested",
+            "resolution",
+            "handed_back",
+        ].map(taskCommentTypeLabel),
+    ).toEqual([
+        "Ready for review",
+        "Changes requested",
+        "Approved",
+        "Blocked",
+        "Assistance requested",
+        "Resolution",
+        "handed back",
+    ]);
+});
+
+it("measures a check until it finished, or until now while it runs", () => {
+    const now = Date.parse("2026-09-23T12:00:00Z");
+    const started_at = "2026-09-23T11:58:00Z";
+    expect(
+        checkDurationMs({ status: "passed", started_at, finished_at: "2026-09-23T11:59:12Z" }, now),
+    ).toBe(72_000);
+    expect(checkDurationMs({ status: "running", started_at, finished_at: null }, now)).toBe(
+        120_000,
+    );
+    expect(checkDurationMs({ status: "lost", started_at, finished_at: null }, now)).toBeNull();
+    expect(checkDurationMs({ status: "passed" }, now)).toBeNull();
 });

@@ -1,11 +1,9 @@
 import { EllipsisHorizontalIcon } from "@heroicons/react/24/outline";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { get } from "../api/client";
 import { useFleet } from "../api/queries";
-import { formatCompactCount, formatTokens } from "../api/tasks";
+import { formatCompactCount, formatTokens, taskAgentsQuery, taskIdentity } from "../api/tasks";
 import { Frame } from "../ui/Frame";
-import { taskIdentity } from "../api/tasks";
 import {
     agentProvider,
     applyAgentEvent,
@@ -19,12 +17,13 @@ import {
 
 const sessionMetaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
 
+/** Only a working agent is green: a finished thread is at rest, like an idle one. */
 function statusColor(status: string): string {
     return status === "Failed"
         ? "text-red"
         : status === "Asking for input"
           ? "text-yellow"
-          : status === "Working" || status === "Done"
+          : status === "Working"
             ? "text-green"
             : "text-dim";
 }
@@ -50,19 +49,10 @@ export function AgentSessions({
     subtaskId?: string;
     projectCode?: string;
 }) {
-    const query = useQuery({
-        queryKey: ["task-agents", groupId],
-        queryFn: () => get<AgentThread[]>(`/api/v1/task-groups/${groupId}/agents`),
-        refetchInterval: 10000,
-        retry: false,
-    });
+    // Every tab's indicator shows its thread's state from this list, which polls. The selected
+    // thread's stream only drives the panel beside the tabs.
+    const query = useQuery(taskAgentsQuery(groupId));
     const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [activity, setActivity] = useState<{ id: number; status: string } | null>(null);
-    const onActivity = useCallback((id: number, status: string) => {
-        setActivity((previous) =>
-            previous?.id === id && previous.status === status ? previous : { id, status },
-        );
-    }, []);
     const sessions = (query.data ?? []).filter(
         (session) =>
             subtaskId === undefined ||
@@ -102,6 +92,7 @@ export function AgentSessions({
                     >
                         {sessions.map((session, index) => {
                             const provider = agentProvider(session.model);
+                            const state = agentStateLabel(session.state);
                             return (
                                 <button
                                     key={session.id}
@@ -150,22 +141,21 @@ export function AgentSessions({
                                     </span>
                                     <strong className="block">
                                         <span
-                                            className={statusColor(
-                                                activity?.id === session.id
-                                                    ? activity.status
-                                                    : agentStateLabel(session.state),
-                                            )}
-                                            aria-hidden
+                                            role="img"
+                                            aria-label={state}
+                                            title={state}
+                                            data-state={session.state ?? "unknown"}
+                                            className={statusColor(state)}
                                         >
-                                            ●{" "}
-                                        </span>
+                                            ●
+                                        </span>{" "}
                                         {session.role === "reviewer" ? "Reviewer" : "Implementer"}
                                     </strong>
                                 </button>
                             );
                         })}
                     </div>
-                    <SessionViewer key={selected.id} session={selected} onActivity={onActivity} />
+                    <SessionViewer key={selected.id} session={selected} />
                 </div>
             )}
         </Frame>
@@ -237,13 +227,7 @@ function ActivityGroup({ entries, active }: { entries: Entry[]; active: boolean 
     );
 }
 
-function SessionViewer({
-    session,
-    onActivity,
-}: {
-    session: AgentThread;
-    onActivity: (id: number, status: string) => void;
-}) {
+function SessionViewer({ session }: { session: AgentThread }) {
     const fleet = useFleet();
     const nodeSlug =
         session.node_id === null
@@ -287,9 +271,13 @@ function SessionViewer({
             );
         return () => source.close();
     }, [session.id, session.node_id, session.task_group_id]);
+    // The stream can end or miss a transition. A new state in the polled list wins over it.
+    const listedStatus = agentStateLabel(session.state);
     useEffect(() => {
-        onActivity(session.id, conversation.status);
-    }, [session.id, conversation.status, onActivity]);
+        setConversation((state) =>
+            state.status === listedStatus ? state : { ...state, status: listedStatus },
+        );
+    }, [listedStatus]);
     useEffect(() => {
         if (following && viewport.current)
             viewport.current.scrollTop = viewport.current.scrollHeight;

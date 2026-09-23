@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { setTransport } from "../../src/api/client";
+import { queryClient } from "../../src/api/queryClient";
 import { openApp, pane } from "./app";
 
 class FakeSource extends EventTarget {
@@ -76,7 +77,13 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
         path.startsWith("/api/v1/task-groups/")
             ? Promise.resolve({
                   status: 200,
-                  payload: { data: path.endsWith("/agents") ? sessions : group },
+                  payload: {
+                      data: path.endsWith("/agents")
+                          ? sessions
+                          : path.endsWith("/comments")
+                            ? []
+                            : group,
+                  },
               })
             : app.gateway.transport(method, path, body),
     );
@@ -187,4 +194,73 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
     await expect
         .poll(() => FakeSource.instances.at(-1)?.url)
         .toBe("/api/v1/task-groups/7/agents/3/stream");
+});
+
+it("shows each thread's polled state in its tab, whatever the selected thread's stream says", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const app = await openApp();
+    const group = {
+        id: 49,
+        title: "Receipts",
+        brief: "Record run receipts",
+        status: "running",
+        app_id: 999,
+        app: "test",
+        taskable_type: null,
+        tasks: [{ id: 50, title: "Only subtask", brief: "Write receipts", status: "running" }],
+    };
+    const thread = (id: number, role: string, state: string) => ({
+        id,
+        task_group_id: 49,
+        task_id: role === "reviewer" ? null : 50,
+        node_id: 2,
+        role,
+        external_id: role,
+        driver: "t3",
+        state,
+    });
+    let sessions = [thread(1, "reviewer", "idle"), thread(2, "implementer", "working")];
+    setTransport((method, path, body) =>
+        path.startsWith("/api/v1/task-groups/")
+            ? Promise.resolve({
+                  status: 200,
+                  payload: {
+                      data: path.endsWith("/agents")
+                          ? sessions
+                          : path.endsWith("/comments")
+                            ? []
+                            : group,
+                  },
+              })
+            : app.gateway.transport(method, path, body),
+    );
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "49" } });
+    const indicator = (role: RegExp) =>
+        pane("Agents").getByRole("tab", { name: role }).getByRole("img");
+    await expect.element(indicator(/Implementer/)).toHaveAccessibleName("Working");
+    await expect.element(indicator(/Reviewer/)).toHaveAccessibleName("Idle");
+    await expect.poll(() => FakeSource.instances.length).toBe(1);
+    const implementer = FakeSource.instances[0]!;
+    implementer.send({
+        kind: "snapshot",
+        thread_id: 2,
+        cursor: "1",
+        state: "working",
+        entries: [],
+    });
+
+    // The implementer hands off; its stream never reports the end of the turn.
+    sessions = [thread(1, "reviewer", "working"), thread(2, "implementer", "done")];
+    await queryClient.invalidateQueries({ queryKey: ["task-groups"] });
+
+    await expect.element(indicator(/Implementer/)).toHaveAccessibleName("Done");
+    await expect.element(indicator(/Reviewer/)).toHaveAccessibleName("Working");
+    await expect.element(indicator(/Implementer/)).not.toHaveClass("text-green");
+    await expect.element(indicator(/Reviewer/)).toHaveClass("text-green");
+    await expect
+        .element(page.getByRole("tabpanel").getByRole("status", { name: "Done", exact: true }))
+        .toBeVisible();
+    await expect
+        .element(pane("Agents").getByRole("tab", { name: /Implementer/ }))
+        .toHaveAttribute("aria-selected", "true");
 });

@@ -1,4 +1,5 @@
 import { AgentSessions } from "../tasks/AgentSessions";
+import { TaskComments } from "../tasks/TaskComments";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useRouter } from "@tanstack/react-router";
 import { GatewayError } from "../api/client";
@@ -398,12 +399,25 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             </div>
                         </section>
                     )}
-                    <AgentSessions
-                        key={`${id}:${subtaskId ?? "group"}`}
-                        groupId={task.id}
-                        subtaskId={subtaskId}
-                        projectCode={task.project_code}
-                    />
+                    {"tasks" in detail ? (
+                        <AgentSessions
+                            key={`${id}:group`}
+                            groupId={task.id}
+                            projectCode={task.project_code}
+                        />
+                    ) : (
+                        <div
+                            key={`${id}:${detail.id}`}
+                            className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:min-h-0 md:flex-1 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(36ch,52ch)] lg:grid-rows-[minmax(0,1fr)]"
+                        >
+                            <AgentSessions
+                                groupId={task.id}
+                                subtaskId={subtaskId}
+                                projectCode={task.project_code}
+                            />
+                            <TaskComments groupId={task.id} task={detail} />
+                        </div>
+                    )}
                 </>
             )}
         </div>

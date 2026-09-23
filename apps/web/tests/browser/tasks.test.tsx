@@ -51,7 +51,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
 async function openTasks(answer: Transport) {
     return openApp("/tasks", {
         wrapTransport: (inner) => (method, path, body) =>
-            path.endsWith("/agents")
+            path.endsWith("/agents") || path.endsWith("/comments")
                 ? Promise.resolve({ status: 200, payload: { data: [] } })
                 : path.startsWith("/api/v1/task-groups")
                   ? answer(method, path, body)

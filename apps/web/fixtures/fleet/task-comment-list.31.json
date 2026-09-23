@@ -1,0 +1,72 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 46,
+                "task_group_id": 12,
+                "task_id": 31,
+                "agent_thread_id": 22,
+                "type": "ready_for_review",
+                "body": "Expired codes now fail validation. The checkout test covers the boundary day.",
+                "author": "implementer",
+                "posted_at": "2026-09-23T09:43:05+00:00",
+                "review_attempt": 2,
+                "commit_sha": "5f2c9e1"
+            },
+            {
+                "id": 45,
+                "task_group_id": 12,
+                "task_id": 31,
+                "agent_thread_id": null,
+                "type": "resolution",
+                "body": "Codes expire at the end of the day in the shop's time zone.",
+                "author": "nick",
+                "posted_at": "2026-09-23T09:30:00+00:00",
+                "review_attempt": null,
+                "commit_sha": null
+            },
+            {
+                "id": 44,
+                "task_group_id": 12,
+                "task_id": 31,
+                "agent_thread_id": 22,
+                "type": "assistance_requested",
+                "body": "Should a code expire at midnight UTC or in the shop's time zone?",
+                "author": "implementer",
+                "posted_at": "2026-09-23T09:24:40+00:00",
+                "review_attempt": null,
+                "commit_sha": null
+            },
+            {
+                "id": 43,
+                "task_group_id": 12,
+                "task_id": 31,
+                "agent_thread_id": 21,
+                "type": "changes_requested",
+                "body": "An expired code still applies on its last day. Compare dates in the shop's time zone.",
+                "author": "reviewer",
+                "posted_at": "2026-09-23T09:18:12+00:00",
+                "review_attempt": 1,
+                "commit_sha": "a41d07b"
+            },
+            {
+                "id": 42,
+                "task_group_id": 12,
+                "task_id": 31,
+                "agent_thread_id": 22,
+                "type": "ready_for_review",
+                "body": "Added DiscountCode validation and wired it into the checkout form.",
+                "author": "implementer",
+                "posted_at": "2026-09-23T09:05:51+00:00",
+                "review_attempt": 1,
+                "commit_sha": "a41d07b"
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -1,0 +1,48 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/task-groups/{group}/agents",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 21,
+                "task_group_id": 12,
+                "task_id": null,
+                "node_id": 2,
+                "role": "reviewer",
+                "model": "claude-opus-5-5",
+                "effort": "high",
+                "driver": "t3",
+                "external_id": "thread-review-12",
+                "state": "working",
+                "observed_at": "2026-09-23T09:44:00+00:00",
+                "observation_error": null,
+                "error": null,
+                "tokens": 38100,
+                "lines_added": null,
+                "lines_deleted": null
+            },
+            {
+                "id": 22,
+                "task_group_id": 12,
+                "task_id": 31,
+                "node_id": 2,
+                "role": "implementer",
+                "model": "gpt-5.5-codex",
+                "effort": "medium",
+                "driver": "t3",
+                "external_id": "thread-implement-31",
+                "state": "done",
+                "observed_at": "2026-09-23T09:43:10+00:00",
+                "observation_error": null,
+                "error": null,
+                "tokens": 146100,
+                "lines_added": 142,
+                "lines_deleted": 46
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
