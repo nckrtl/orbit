@@ -46,11 +46,13 @@ final readonly class CancelTaskGroupAction
 
         $group->taskable()->dissociate();
         $group->status = TaskGroupStatus::Cancelled;
+        $group->assistance_requested = false;
         $group->save();
 
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
             ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
+        $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
 
         return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
     }

@@ -147,3 +147,27 @@ it('refuses to publish without an App, for another host, or when the push fails'
     'another host' => [true, 'git@gitlab.com:acme/shop.git', 0, 'The Project repository is not on github.com.'],
     'rejected push' => [true, 'git@github.com:acme/shop.git', 1, 'The task branch could not be pushed.'],
 ]);
+
+it('names the permissions GitHub has not granted instead of an unreachable GitHub', function (): void {
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['message' => 'The permissions requested are not granted to this installation.'], 422),
+    ]);
+    $transport = new AppDevFakeSshExecutor;
+
+    expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body'))
+        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub refused the App token request (422): The permissions requested are not granted to this installation.');
+    expect($transport->commands)->toBe([]);
+});
+
+it('still reports an unreachable GitHub when the token request fails on the server side', function (): void {
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['message' => 'Server Error'], 502),
+    ]);
+
+    expect(fn () => publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body'))
+        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub could not be reached or refused the App credential.');
+});
