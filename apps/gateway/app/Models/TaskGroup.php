@@ -17,7 +17,8 @@ use Illuminate\Support\Carbon;
  * @property-read AgentThread|null $reviewerThread
  * @property Carbon|null $agent_unavailable_since
  * @property Carbon|null $agent_unavailable_notified_at
- * @property string $agent_driver
+ * @property string $implementer_agent_driver
+ * @property string $reviewer_agent_driver
  * @property int $id
  * @property int $app_id
  * @property string|null $taskable_type
@@ -49,7 +50,8 @@ final class TaskGroup extends Model
     #[\Override]
     protected $attributes = [
         'status' => 'queued',
-        'agent_driver' => 't3',
+        'implementer_agent_driver' => 't3',
+        'reviewer_agent_driver' => 't3',
         'notify_coder' => false,
         'implementer_model' => TaskAgentDefaults::ImplementerModel,
         'reviewer_model' => TaskAgentDefaults::ReviewerModel,
@@ -58,7 +60,8 @@ final class TaskGroup extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'agent_driver',
+        'implementer_agent_driver',
+        'reviewer_agent_driver',
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'app_id',

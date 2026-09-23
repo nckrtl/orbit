@@ -3103,6 +3103,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0116-run-task-implementers-on-pi.md",
+            "title": "ADR 0116: Run task implementers on Pi",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0112",
+                "0114",
+                "0116"
+            ]
+        },
+        {
             "path": "docs/decisions/0117-judge-the-blocked-question-on-role-evidence.md",
             "title": "ADR 0117: Judge the blocked question on the role's own evidence",
             "kind": "decision",
@@ -3345,6 +3369,7 @@
                 "0112",
                 "0113",
                 "0114",
+                "0116",
                 "0117",
                 "0120"
             ]
@@ -4278,6 +4303,22 @@
             ]
         },
         {
+            "path": "docs/reference/pi-server.md",
+            "title": "Pi server",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0116"
+            ]
+        },
+        {
             "path": "docs/reference/private-dns.md",
             "title": "Private DNS",
             "kind": "reference",
@@ -4450,6 +4491,7 @@
                 "0112",
                 "0113",
                 "0114",
+                "0116",
                 "0117",
                 "0120"
             ]

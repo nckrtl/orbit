@@ -11,7 +11,7 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 7;
+    public const int VERSION = 8;
 
     /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
     private const array OBSERVABLE_PHP_DIRECTORIES = [
@@ -86,6 +86,7 @@ final readonly class StaticProofInputPolicy
             || str_starts_with($path, 'apps/docs/')
             || str_starts_with($path, 'apps/desktop/')
             || str_starts_with($path, 'apps/web/')
+            || str_starts_with($path, 'apps/pi-server/')
             || str_starts_with($path, '.github/')
         ) {
             return ProofInputClassification::NonRuntime;

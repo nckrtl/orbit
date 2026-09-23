@@ -21,9 +21,11 @@ final class FakeAgentDriver implements AgentDriver
 
     public bool $eligible = true;
 
+    public function __construct(private readonly string $key = 'example') {}
+
     public function key(): string
     {
-        return 'example';
+        return $this->key;
     }
 
     public function allows(Node $node): bool
