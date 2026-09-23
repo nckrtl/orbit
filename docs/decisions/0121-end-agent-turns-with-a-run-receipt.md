@@ -1,18 +1,18 @@
 ---
 title: "ADR 0121: End agent turns with a run receipt"
 sidebarTitle: "0121 Run receipts"
-description: "Proposed. An agent ends its turn by running a Gateway-shipped script that writes a run receipt in the workspace. The scheduler reads the receipt, applies mechanical checks, records the result, and starts the next agent. Agents no longer post comments, and Orbit makes the commit after approval."
+description: "Proposed. An agent ends its turn by running a Gateway-shipped script that writes a run receipt in the workspace. The scheduler reads the receipt, applies mechanical checks, records the result, and starts the next agent. Agents no longer post comments. Orbit commits after approval and opens the final pull request."
 ---
 
 # ADR 0121: End agent turns with a run receipt
 
-An agent ends its turn by running `.git/orbit/run`, a script the Gateway places in the workspace. The script writes a run receipt, `.git/orbit/run.json`. The scheduler reads the receipt, applies the mechanical checks, records the result, removes the receipt, and starts the next agent. Agents never call the Gateway. Orbit commits the work after the reviewer approves.
+An agent ends its turn by running `.git/orbit/run`, a script the Gateway places in the workspace. The script writes a run receipt, `.git/orbit/run.json`. The scheduler reads the receipt, applies the mechanical checks, records the result, removes the receipt, and starts the next agent. Agents never call the Gateway. Orbit commits the work after the reviewer approves and opens the final pull request.
 
 ## Status
 
 Proposed.
 
-This amends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), and [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence). The mechanical checks in ADR 0114 and the `check_script` item stay. Task verification (ADR 0120, proposed in #591) supplies stronger evidence when it lands.
+This amends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence), and [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). The mechanical checks in ADR 0114 and the `check_script` item stay. Task verification (ADR 0120, proposed in #591) supplies stronger evidence when it lands.
 
 ## Context
 
@@ -32,7 +32,7 @@ An end-to-end run of a Pi implementer and a T3 reviewer showed these problems. T
 
 ## Decision
 
-The scheduler moves every task from turn to turn. Agents report the end of a turn with a run receipt through one Gateway-shipped script. Mechanical checks decide whether work moves on, and Orbit commits after approval.
+The scheduler moves every task from turn to turn. Agents report the end of a turn with a run receipt through one Gateway-shipped script. Mechanical checks decide whether work moves on. Orbit commits after approval and opens the final pull request.
 
 ### The loop
 
@@ -68,21 +68,36 @@ When the current agent is idle, the scheduler reads the receipt over SSH, as it 
 - **`blocked`:** the task asks for assistance with the agent's summary.
 - **`ready_for_review`:** the mechanical checks decide. If they pass, the reviewer starts. If they fail, the implementer gets one reminder that names the failed checks.
 - **`changes_requested`:** the summary is relayed to the implementer, as findings are today.
-- **`approved`:** Orbit commits the workspace changes on the task branch, then starts the next subtask or settles the group.
+- **`approved`:** Orbit commits the workspace changes on the task branch, then starts the next subtask. On the last subtask, it opens the pull request and settles the group.
 
 The receipt only marks the end of a turn and states the agent's outcome. It is not evidence. Mechanical checks always win over the receipt and over Jev.
 
 ### Jev
 
-Jev no longer asks whether an agent is blocked. An agent that is blocked says so with `blocked`. Jev answers only whether the evidence matches the assignment, as task verification proposes.
+Jev no longer asks whether an agent is blocked. An agent that is blocked says so with `blocked`. Jev answers only whether evidence matches the assignment, as task verification proposes.
+
+On the last approval, Jev also checks that every deliverable in the group brief appears in the pull request's change list. Jev cannot read code, so this checks coverage, not correctness; the reviewer keeps that judgment. A missing deliverable fails the check, and the reviewer gets one reminder that names it.
 
 ### The commit
 
 The reviewer no longer commits. After an `approved` receipt, Orbit commits the workspace changes on `task-{group id}` with a message built from the subtask title and the reviewer's summary. No commit exists before approval.
 
-### Open question
+### The pull request
 
-**Pull request.** Today the reviewer pushes the branch, opens the final pull request, and reports its URL. Orbit's GitHub access is read-only ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)), so Orbit cannot open it. Either the reviewer keeps this duty and the final receipt carries the URL, or Orbit gains write access. This must be decided before implementation.
+Orbit opens the final pull request itself. The Gateway GitHub App gains write permission for repository contents and pull requests, which amends [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). Orbit pushes the task branch and opens the pull request against the Project's default branch.
+
+On the last subtask, the reviewer's approval also describes the pull request:
+
+```bash
+.git/orbit/run --outcome=approved --summary="…" \
+  --pr-summary="One or two sentences" \
+  --pr-change="A new feature or behavior change" \
+  --pr-breaking="A breaking change, or none"
+```
+
+`--pr-summary` is required once. `--pr-change` is required at least once and can repeat. `--pr-breaking` is required at least once; `none` states that nothing breaks, so the question is never skipped. The script accepts these flags only on the last subtask and refuses the approval without them. There is no limit on the number of changes. A long list suggests the group was too large, which is a separate concern.
+
+Orbit renders the description from these fields in that order, adds one line with the check results, and uses the group title as the pull request title.
 
 ### What this removes
 
@@ -91,6 +106,7 @@ The reviewer no longer commits. After an `approved` receipt, Orbit commits the w
 - The Jev `blocked` question and its transcript evidence ([ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence)).
 - The reviewer's opening turn at group start.
 - The reviewer's sign-off commit and the checks that the approved commit equals the workspace HEAD and is new for the subtask.
+- The reviewer pushing the branch and opening the pull request, and the check of the pull request URL it reported.
 
 Operator comments stay: `assistance_requested` from Orbit and `resolution` from an operator.
 
@@ -101,6 +117,9 @@ Operator comments stay: `assistance_requested` from Orbit and `resolution` from 
 - A dynamic field request written by the Gateway before each turn: the fields are few and stable. The Gateway already controls them through the script it ships.
 - An installed `orbit` command: task Nodes do not have the Orbit CLI installed.
 - Accepting a turn without a receipt: the scheduler would again infer the outcome from transcripts.
+- The reviewer keeps opening the pull request: it needs GitHub access and its reported URL needs verification. Orbit already holds the branch and the receipts.
+- The reviewer writes the whole description: each approval covers one subtask, and free text grows long. Structured fields give a short, consistent description.
+- A limit on the number of changes: a long list signals a group that is too large. A limit would hide that signal.
 
 ## Consequences
 
@@ -112,6 +131,6 @@ Operator comments stay: `assistance_requested` from Orbit and `resolution` from 
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence)
+- ADRs: [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app), [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence)
 - Detail: [Tasks](/reference/tasks)
-- Verify: scheduler tests for each receipt outcome, the missing-receipt reminder and assistance, duplicate-receipt handling, and the approval commit; a script test for accepted and refused input; and an Incus run of one group with an implementer and a reviewer that completes review without agent-posted comments
+- Verify: scheduler tests for each receipt outcome, the missing-receipt reminder and assistance, duplicate-receipt handling, the approval commit, and opening the pull request; the brief-coverage check; a script test for accepted and refused input, including the pull request fields; and an Incus run of one group with an implementer and a reviewer that completes review without agent-posted comments
