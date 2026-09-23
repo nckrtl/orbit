@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\TerminalText;
 use DateTimeImmutable;
+use JsonException;
 use Laravel\Prompts\MultiSelectPrompt;
 use Laravel\Prompts\SelectPrompt;
 use Laravel\Prompts\TextareaPrompt;
@@ -39,6 +40,9 @@ abstract class TaskCommand extends GatewayCommand
     public const int COMMENT_BODY_MAX = 100_000;
 
     public const int AUTHOR_MAX = 255;
+
+    /** The Gateway stores at most this many deliverables on a subtask. */
+    public const int DELIVERABLES_MAX = 20;
 
     /** @var list<string> */
     public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'completed', 'failed', 'cancelled'];
@@ -254,13 +258,14 @@ abstract class TaskCommand extends GatewayCommand
             $task->id,
             $task->title,
             $task->status,
+            count($task->deliverables),
             self::tokens($task->tokens),
             self::lineDiff($task->lineDiff, $task->linesAdded, $task->linesDeleted),
             self::duration($task->durationMs),
         ], $group->tasks);
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Position', 'ID', 'Title', 'Status', 'Tokens', 'Line diff', 'Duration'],
+            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration'],
             $rows,
             'No subtasks.',
         ));
@@ -289,9 +294,105 @@ abstract class TaskCommand extends GatewayCommand
             'Duration' => self::duration($task->durationMs),
         ]));
         $this->writeText('Brief', $task->brief);
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Deliverable', 'Type', 'Requires', 'Description'],
+            array_map(static fn (array $deliverable): array => [
+                $deliverable['id'] ?? '',
+                $deliverable['type'] ?? '',
+                self::requirement($deliverable),
+                $deliverable['description'] ?? '',
+            ], $task->deliverables),
+            'No deliverables.',
+        ));
         $this->writeHumanMessage("Request ID: {$task->requestId}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Reads a JSON file with a list of deliverables. Returns null when the option is absent and false after the
+     * refusal. The Gateway validates each deliverable's fields.
+     *
+     * @return list<array<string, string>>|false|null
+     */
+    protected function deliverablesFile(string $option = 'deliverables'): array|false|null
+    {
+        $path = $this->option($option);
+
+        if ($path === null) {
+            return null;
+        }
+
+        $contents = is_string($path) && $path !== '' && is_file($path) && is_readable($path) ? file_get_contents($path) : false;
+
+        if ($contents === false) {
+            $this->renderGatewayFailure('tasks.deliverables_invalid', 'The deliverables file cannot be read.');
+
+            return false;
+        }
+
+        try {
+            $entries = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $entries = null;
+        }
+
+        $deliverables = self::deliverables($entries);
+
+        if ($deliverables === null) {
+            $this->renderGatewayFailure('tasks.deliverables_invalid', 'The deliverables file must hold a JSON array of at most '.self::DELIVERABLES_MAX.' objects with string fields.');
+
+            return false;
+        }
+
+        return $deliverables;
+    }
+
+    /**
+     * A list of at most DELIVERABLES_MAX objects with string fields, or null for any other value.
+     *
+     * @return list<array<string, string>>|null
+     */
+    protected static function deliverables(mixed $entries): ?array
+    {
+        if (! is_array($entries) || ! array_is_list($entries) || count($entries) > self::DELIVERABLES_MAX) {
+            return null;
+        }
+
+        $deliverables = [];
+
+        foreach ($entries as $entry) {
+            if (! is_array($entry) || $entry === [] || array_is_list($entry)) {
+                return null;
+            }
+
+            $fields = [];
+
+            foreach ($entry as $field => $value) {
+                if (! is_string($field) || ! is_string($value)) {
+                    return null;
+                }
+
+                $fields[$field] = $value;
+            }
+
+            $deliverables[] = $fields;
+        }
+
+        return $deliverables;
+    }
+
+    /** @param array<string, string> $deliverable */
+    private static function requirement(array $deliverable): string
+    {
+        $field = static fn (string $key): string => $deliverable[$key] ?? '';
+
+        return match ($field('type')) {
+            'file' => $field('path').' ('.$field('change').')',
+            'test' => rtrim($field('project'), '/').'/'.$field('file').': '.$field('name'),
+            'command' => $field('command').' in '.($field('directory') === '' ? '.' : $field('directory')),
+            default => 'reviewer confirms',
+        };
     }
 
     /** Writes one comment as a header line and its body indented by two spaces. */

@@ -1,0 +1,1 @@
+The deliverables file must hold a JSON array of at most 20 objects with string fields.

@@ -241,6 +241,15 @@ final readonly class TaskScheduler
 
         $status = $check?->status;
         if ($check instanceof TaskCheck && $status === TaskCheckStatus::Passed) {
+            $failures = TaskDeliverableVerifier::failures($task->deliverableList(), TaskDeliverableEvidence::fromArray($check->deliverable_evidence));
+            if ($failures !== []) {
+                $item = new TaskRubricItem('deliverables', false, "Orbit could not verify these deliverables:\n".implode("\n", array_map(static fn (string $failure): string => '- '.$failure, $failures))."\n");
+                if ($this->remindOrAssist($group, $task, $implementer, [$item])) {
+                    $task->update(['completion_handoff_comment_id' => $receipt->id]);
+                }
+
+                return;
+            }
             $task->update(['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0]);
             $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer));
 
@@ -270,7 +279,7 @@ final readonly class TaskScheduler
         }
 
         try {
-            $process = $this->checks->start($instance);
+            $process = $this->checks->start($instance, [], $this->deliverableCheck($task));
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -310,6 +319,7 @@ final readonly class TaskScheduler
                 'changed_paths' => json_encode($reading->changedPaths, JSON_THROW_ON_ERROR),
                 'failed_step' => $reading->failedStep,
                 'output' => $reading->output,
+                'deliverable_evidence' => $reading->deliverables === null ? null : json_encode($reading->deliverables, JSON_THROW_ON_ERROR),
             ];
         $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
         TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
@@ -369,6 +379,10 @@ final readonly class TaskScheduler
         if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved) {
             $onBranch = $instance instanceof AppInstance && $this->workspace->currentBranch($instance) === 'task-'.$group->id;
             $items[] = new TaskRubricItem('branch', $onBranch, 'The workspace branch is not task-'.$group->id.'. Switch back to it.');
+            $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Reviewer);
+            if ($confirmation instanceof TaskRubricItem) {
+                $items[] = $confirmation;
+            }
             if ($task->isLastSubtask()) {
                 $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
                 $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskRunPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
@@ -465,12 +479,55 @@ final readonly class TaskScheduler
             new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
+        $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
+        if ($confirmation instanceof TaskRubricItem) {
+            $items[] = $confirmation;
+        }
         $waiting = $this->waitingItem($thread);
         if ($waiting instanceof TaskRubricItem) {
             $items[] = $waiting;
         }
 
         return $items;
+    }
+
+    /**
+     * ADR 0133: a receipt confirms every deliverable it must, as the run script requires. A hand-written
+     * receipt that misses one fails the `deliverables` item.
+     */
+    private function confirmationItem(Task $task, ?TaskComment $receipt, TaskThreadRole $role): ?TaskRubricItem
+    {
+        $deliverables = $task->deliverableList();
+        if ($deliverables === [] || ! $receipt instanceof TaskComment) {
+            return null;
+        }
+        $missing = TaskDeliverableVerifier::unconfirmed($deliverables, $receipt->deliverables ?? [], $role);
+
+        return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The run receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
+    }
+
+    /**
+     * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
+     *
+     * @return array{start: string|null, tests: list<array{id: string, project: string, file: string}>, commands: list<array{id: string, command: string, directory: string}>}|null
+     */
+    private function deliverableCheck(Task $task): ?array
+    {
+        $deliverables = $task->deliverableList();
+        if ($deliverables === []) {
+            return null;
+        }
+        $tests = [];
+        $commands = [];
+        foreach ($deliverables as $deliverable) {
+            if ($deliverable->type === TaskDeliverableType::Test) {
+                $tests[] = ['id' => $deliverable->id, 'project' => TaskDeliverable::relative($deliverable->project) ?: '.', 'file' => TaskDeliverable::relative($deliverable->file)];
+            } elseif ($deliverable->type === TaskDeliverableType::Command) {
+                $commands[] = ['id' => $deliverable->id, 'command' => $deliverable->command, 'directory' => TaskDeliverable::relative($deliverable->directory) ?: '.'];
+            }
+        }
+
+        return ['start' => $task->subtask_start_commit, 'tests' => $tests, 'commands' => $commands];
     }
 
     private function receiptItem(?TaskRunReceipt $read, ?TaskComment $receipt): TaskRubricItem
@@ -507,6 +564,7 @@ final readonly class TaskScheduler
                 'type' => $receipt->outcome->commentType(),
                 'body' => $receipt->body(),
                 'pull_request' => $receipt->pullRequest?->toArray(),
+                'deliverables' => $receipt->deliverables === [] ? null : $receipt->deliverables,
                 'author' => $role->value,
                 'posted_at' => now(),
             ]);
@@ -546,7 +604,7 @@ final readonly class TaskScheduler
         if (! $instance instanceof AppInstance) {
             throw new TaskRunReceiptException('The task workspace is unavailable.');
         }
-        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->isLastSubtask());
+        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->isLastSubtask(), $task->deliverableList());
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
@@ -583,7 +641,7 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask()));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->isLastSubtask(), $task->deliverableList()));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 

@@ -192,3 +192,92 @@ it('stops at the first failing setup step without running composer check', funct
         ->and($reading->output)->not->toContain('composer check')
         ->and(file_exists($checkout.'/never-ran'))->toBeFalse();
 });
+
+/**
+ * A checkout with one committed project, then uncommitted work on top. Its `vendor/bin/pest` stands in for Pest:
+ * it records its arguments and writes a JUnit file with the cases in CASES, so the test sees what the check runs.
+ *
+ * @return array{0: string, 1: string} the checkout and its start commit
+ */
+function check_runner_deliverables_checkout(string $cases, string $check = 'echo checks passed'): array
+{
+    $checkout = check_runner_checkout($check);
+    file_put_contents($checkout.'/.gitignore', "ignored/\nvendor/\n");
+    File::ensureDirectoryExists($checkout.'/app/tests');
+    File::ensureDirectoryExists($checkout.'/app/vendor/bin');
+    file_put_contents($checkout.'/app/tests/OldTest.php', "<?php\n");
+    file_put_contents($checkout.'/README.md', "# Shop\n");
+    file_put_contents($checkout.'/app/vendor/bin/pest', <<<BASH
+        #!/usr/bin/env bash
+        mkdir -p ../ignored
+        printf '%s\\n' "\$@" > ../ignored/pest-arguments
+        junit="\${2#--log-junit=}"
+        printf '<?xml version="1.0"?><testsuites><testsuite name="t">%s</testsuite></testsuites>' '{$cases}' > "\$junit"
+        BASH);
+    chmod($checkout.'/app/vendor/bin/pest', 0755);
+    (new Process(['git', 'add', '--all'], $checkout))->mustRun();
+    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'project'], $checkout))->mustRun();
+    $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    file_put_contents($checkout.'/app/tests/ExportTest.php', "<?php\n");
+    file_put_contents($checkout.'/README.md', "# Shop\n\nExports.\n");
+    unlink($checkout.'/app/tests/OldTest.php');
+
+    return [$checkout, $start];
+}
+
+describe('deliverable evidence', function (): void {
+    it('records the diff, runs each test file by its path, and runs each command after a passing check', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('<testcase name="it exports every subtask"/><testcase name="it refuses a draft"><failure>no</failure></testcase><testcase name="it skips"><skipped/></testcase>');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, [], [
+            'start' => $start,
+            'tests' => [['id' => 'export-test', 'project' => 'app', 'file' => 'tests/ExportTest.php']],
+            'commands' => [
+                ['id' => 'lint', 'command' => 'echo linted && exit 3', 'directory' => 'app'],
+                ['id' => 'pwd', 'command' => 'basename "$PWD"', 'directory' => '.'],
+            ],
+        ]));
+
+        expect($reading->exitCode)->toBe(0)
+            ->and($reading->changedPaths)->toBe([])
+            ->and($reading->deliverables['diff'])->toEqualCanonicalizing([
+                ['status' => 'M', 'path' => 'README.md'],
+                ['status' => 'A', 'path' => 'app/tests/ExportTest.php'],
+                ['status' => 'D', 'path' => 'app/tests/OldTest.php'],
+            ])
+            ->and($reading->deliverables['tests'])->toBe(['export-test' => ['exit_code' => 0, 'cases' => [
+                ['name' => 'it exports every subtask', 'status' => 'passed'],
+                ['name' => 'it refuses a draft', 'status' => 'failed'],
+                ['name' => 'it skips', 'status' => 'skipped'],
+            ]]])
+            ->and(file($checkout.'/ignored/pest-arguments', FILE_IGNORE_NEW_LINES))->toBe(['tests/ExportTest.php', '--log-junit='.realpath($checkout).'/.git/orbit/tests/export-test.xml'])
+            ->and($reading->deliverables['commands'])->toBe([
+                'lint' => ['exit_code' => 3, 'output' => "linted\n"],
+                'pwd' => ['exit_code' => 0, 'output' => basename($checkout)."\n"],
+            ]);
+    });
+
+    it('records no evidence when composer check fails', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('', 'exit 1');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, [], ['start' => $start, 'tests' => [], 'commands' => [['id' => 'lint', 'command' => 'touch ran', 'directory' => '.']]]));
+
+        expect($reading->exitCode)->toBe(1)
+            ->and($reading->deliverables)->toBeNull()
+            ->and(file_exists($checkout.'/ran'))->toBeFalse();
+    });
+
+    it('refuses a command directory outside the workspace', function (): void {
+        [$checkout, $start] = check_runner_deliverables_checkout('');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, [], ['start' => $start, 'tests' => [], 'commands' => [['id' => 'escape', 'command' => 'touch escaped', 'directory' => '../..']]]));
+
+        expect($reading->deliverables['commands'])->toBe(['escape' => ['exit_code' => 127, 'output' => 'The directory is outside the workspace.']]);
+    });
+});

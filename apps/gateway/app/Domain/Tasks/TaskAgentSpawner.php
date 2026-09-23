@@ -102,6 +102,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             $group->brief,
             'Follow this repository\'s instructions for designing a feature. Write the ADRs and documentation in this workspace on the branch task-'.$group->id.' and leave them uncommitted. Orbit commits them when the group moves to Todo.',
             'Keep the group current through Orbit MCP: tasks-update for the title and brief, and tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy for the subtasks. Make each subtask brief one reviewable step that names the ADRs and documentation it implements.',
+            'Give every subtask at least one deliverable in its deliverables list, and turn each explicit item of its brief into one. A deliverable has an id (a lowercase slug, unique in the subtask), a type, and a description. Use type file with path and change (created, modified, or any) for a file the step must create or change; type test with project, file, and name for a Pest test it must add or change and that must pass; type command with command and directory for a check in another ecosystem that must exit 0; and type review for an item only the reviewer can judge. Orbit verifies file, test, and command deliverables before each review, and refuses to move the group to Todo while a subtask has none.',
             'When the operator agrees the plan is ready, move the group to Todo with tasks-update and status todo. Orbit then runs the implementers, and this thread becomes the group\'s reviewer.',
         ]);
     }
@@ -120,15 +121,18 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
 
     private function implementerPrompt(TaskGroup $group, Task $task): string
     {
-        return implode("\n\n", [
-            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer(),
+        $deliverables = $task->deliverableList();
+
+        return implode("\n\n", array_filter([
+            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer($deliverables),
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             'Orbit subtask #'.$task->id,
             'Subtask: '.$task->title,
             $task->brief,
+            TaskRunInstructions::deliverables($deliverables),
             $this->contract($group).' Build to them.',
-        ]);
+        ], static fn (string $part): bool => $part !== ''));
     }
 
     /** ADR 0122: the ADRs and documentation prepared on the branch while the group was in Backlog. */
@@ -142,10 +146,13 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
 
     private function reviewPrompt(Task $task): string
     {
-        return implode("\n\n", [
+        $deliverables = $task->deliverableList();
+
+        return implode("\n\n", array_filter([
             'Review subtask #'.$task->id.': '.$task->title,
             $task->brief,
-            TaskRunInstructions::reviewer($task->isLastSubtask()),
-        ]);
+            TaskRunInstructions::deliverables($deliverables),
+            TaskRunInstructions::reviewer($task->isLastSubtask(), $deliverables),
+        ], static fn (string $part): bool => $part !== ''));
     }
 }

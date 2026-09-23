@@ -8,6 +8,7 @@ use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
@@ -24,13 +25,30 @@ final readonly class UpdateTaskAction
 
         return DB::transaction(static function () use ($group, $task, $data): Task {
             $locked = TaskGroup::query()->lockForUpdate()->findOrFail($group->id);
+            $task = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $backlog = $locked->status === TaskGroupStatus::Backlog;
 
-            if ($locked->status !== TaskGroupStatus::Backlog) {
+            if (! $backlog && ($data->title !== null || $data->brief !== null || $data->position !== null)) {
+                throw TaskGroupGuard::notInBacklog();
+            }
+
+            // ADR 0133: the deliverables of a todo subtask change in any group status, but never to none outside backlog.
+            if (! $backlog && $data->deliverables !== null) {
+                if ($task->status !== TaskStatus::Todo) {
+                    throw TaskGroupGuard::deliverablesLocked();
+                }
+                if ($data->deliverables === []) {
+                    throw TaskGroupGuard::deliverablesRequired();
+                }
+            }
+
+            if (! $backlog && $data->deliverables === null) {
                 throw TaskGroupGuard::notInBacklog();
             }
 
             $task->title = $data->title ?? $task->title;
             $task->brief = $data->brief ?? $task->brief;
+            $task->deliverables = $data->deliverables ?? $task->deliverables;
             $task->save();
 
             if ($data->position !== null && $data->position !== $task->position) {

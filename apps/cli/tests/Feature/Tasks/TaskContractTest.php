@@ -76,10 +76,32 @@ describe('tasks contract', function (): void {
     });
 
     it('renders subtask create, update, and destroy', function (): void {
-        run_task_contract('tasks-subtask-create/created', 'tasks:subtask:create', ['group' => '1', 'title' => 'Document the commands', '--brief' => 'Add docs/cli/tasks.mdx.'], 0);
+        $deliverables = $this->orbitHome.'/deliverables.json';
+        file_put_contents($deliverables, json_encode([
+            ['id' => 'cli-page', 'type' => 'file', 'description' => 'Document every tasks command', 'path' => 'docs/cli/tasks.mdx', 'change' => 'modified'],
+            ['id' => 'docs-lint', 'type' => 'command', 'description' => 'The documentation lint passes', 'command' => 'composer docs-lint'],
+        ], JSON_THROW_ON_ERROR));
+
+        run_task_contract('tasks-subtask-create/created', 'tasks:subtask:create', ['group' => '1', 'title' => 'Document the commands', '--brief' => 'Add docs/cli/tasks.mdx.', '--deliverables' => $deliverables], 0);
+        run_task_contract('tasks-subtask-update/deliverables-locked', 'tasks:subtask:update', ['group' => '1', 'subtask' => '1', '--deliverables' => $deliverables], 1);
         run_task_contract('tasks-subtask-update/updated', 'tasks:subtask:update', ['group' => '1', 'subtask' => '1', '--position' => '2'], 0);
         run_task_contract('tasks-subtask-destroy/destroyed', 'tasks:subtask:destroy', ['group' => '1', 'subtask' => '1', '--yes' => true], 0);
     });
+
+    it('refuses a deliverables file that is not a list of objects with string fields', function (string $contents): void {
+        $deliverables = $this->orbitHome.'/deliverables.json';
+        file_put_contents($deliverables, $contents);
+
+        foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+            expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '1', '--deliverables' => $deliverables, ...$mode]))->toBe(1);
+            expect_output(Artisan::output(), "tasks/tasks-subtask-update/deliverables-invalid.{$extension}");
+        }
+    })->with([
+        'an object' => ['{"id":"docs"}'],
+        'a list of strings' => ['["docs"]'],
+        'a number field' => ['[{"id":"docs","type":"review","description":1}]'],
+        'invalid JSON' => ['[{'],
+    ]);
 
     it('renders comments and agent threads', function (): void {
         run_task_contract('tasks-comment-create/created', 'tasks:comment:create', ['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);

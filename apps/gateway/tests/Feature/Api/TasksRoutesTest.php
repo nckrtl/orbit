@@ -265,7 +265,7 @@ it('still returns the created group, and fails it when the first implementer can
         'brief' => 'Fail the group. Accept when create still answers.',
         'status' => 'todo',
         'tasks' => [
-            ['title' => 'Only', 'brief' => 'One subtask. Accept when it is recorded.'],
+            ['title' => 'Only', 'brief' => 'One subtask. Accept when it is recorded.', 'deliverables' => [['id' => 'recorded', 'type' => 'review', 'description' => 'The subtask is recorded.']]],
         ],
     ])
         ->assertCreated()
@@ -345,7 +345,7 @@ it('creates a fourth group when the App already has three active groups', functi
             'title' => $title,
             'brief' => "{$title} brief",
             'status' => 'todo',
-            'tasks' => [['title' => 'Only', 'brief' => 'One subtask.']],
+            'tasks' => [['title' => 'Only', 'brief' => 'One subtask.', 'deliverables' => [['id' => 'recorded', 'type' => 'review', 'description' => 'The subtask is recorded.']]]],
         ])->assertCreated()->assertJsonPath('data.status', 'todo');
     }
 
@@ -354,7 +354,7 @@ it('creates a fourth group when the App already has three active groups', functi
         'title' => 'Four',
         'brief' => 'No per-Project ceiling holds this group.',
         'status' => 'todo',
-        'tasks' => [['title' => 'Only', 'brief' => 'One subtask.']],
+        'tasks' => [['title' => 'Only', 'brief' => 'One subtask.', 'deliverables' => [['id' => 'recorded', 'type' => 'review', 'description' => 'The subtask is recorded.']]]],
     ])
         ->assertCreated()
         ->assertJsonPath('data.status', 'todo')

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use Illuminate\Database\Eloquent\Model;
@@ -46,6 +47,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $duration_ms
  * @property Carbon|null $started_at
  * @property string|null $subtask_start_commit
+ * @property list<array<string, string>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read TaskGroup $taskGroup
  */
@@ -76,6 +78,7 @@ final class Task extends Model
         'duration_ms',
         'started_at',
         'subtask_start_commit',
+        'deliverables',
         'settled_at',
         'completion_attempt',
         'completion_handoff_comment_id',
@@ -128,6 +131,16 @@ final class Task extends Model
             ->doesntExist();
     }
 
+    /**
+     * ADR 0133: the typed items this subtask must deliver. Empty for subtasks created before deliverables existed.
+     *
+     * @return list<TaskDeliverable>
+     */
+    public function deliverableList(): array
+    {
+        return TaskDeliverable::listFrom($this->deliverables);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -142,6 +155,7 @@ final class Task extends Model
             'duration_ms' => 'integer',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
+            'deliverables' => 'array',
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',

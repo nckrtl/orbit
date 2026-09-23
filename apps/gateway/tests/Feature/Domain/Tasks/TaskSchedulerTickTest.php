@@ -1752,3 +1752,196 @@ describe('a thread that works outside the task phase', function (): void {
             ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
     });
 });
+
+/**
+ * A running subtask with deliverables whose implementer hands off with the given confirmations, and a check that
+ * passes with the given evidence.
+ *
+ * @param  list<array<string, string>>  $deliverables
+ * @param  array<string, string>  $confirmations
+ * @param  array<string, mixed>|null  $evidence
+ * @param  list<TaskCheckReading>|null  $readings  the check readings; null passes once with the evidence
+ * @return array{0: TaskGroup, 1: Task, 2: FakeTaskCheckRunner, 3: CoderSettleNotifier, 4: FakeTaskRunReceipts}
+ */
+function tick_deliverables(array $deliverables, array $confirmations, ?array $evidence, ?array $readings = null, ?array $receipts = null): array
+{
+    [$group, $task, $checks, $notifier] = tick_checking($readings ?? [FakeTaskCheckRunner::passed($evidence)]);
+    $task->update(['deliverables' => $deliverables, 'subtask_start_commit' => str_repeat('5', 40)]);
+    $fake = new FakeTaskRunReceipts($receipts ?? [FakeTaskRunReceipts::contents('ready_for_review', 'Done.', null, $confirmations)]);
+    app()->instance(TaskRunReceipts::class, $fake);
+
+    return [$group, $task->fresh() ?? $task, $checks, $notifier, $fake];
+}
+
+/** @return list<array<string, string>> */
+function tick_all_deliverables(): array
+{
+    return [
+        ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/*.md', 'change' => 'modified'],
+        ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+        ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'],
+        ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
+    ];
+}
+
+/** @return array<string, string> */
+function tick_all_confirmations(): array
+{
+    return ['reference-page' => 'Export section', 'export-test' => 'ExportTest', 'web-tests' => 'bun test passes', 'error-copy' => 'Named in each error'];
+}
+
+/**
+ * Evidence where every deliverable of tick_all_deliverables() passes, changed by the given overrides.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function tick_evidence(array $overrides = []): array
+{
+    return [...[
+        'start' => str_repeat('5', 40),
+        'diff' => [
+            ['status' => 'M', 'path' => 'docs/reference/tasks.md'],
+            ['status' => 'A', 'path' => 'apps/gateway/tests/Feature/ExportTest.php'],
+        ],
+        'tests' => ['export-test' => ['exit_code' => 0, 'cases' => [['name' => 'it exports every subtask', 'status' => 'passed']]]],
+        'commands' => ['web-tests' => ['exit_code' => 0, 'output' => "12 pass\n"]],
+    ], ...$overrides];
+}
+
+/** The implementer's reminder after two ticks: the handoff check starts, then passes. */
+function tick_deliverable_reminder(): string
+{
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    return app(T3Dispatcher::class)->commands[0]['message']['text'] ?? '';
+}
+
+describe('subtask deliverables at handoff', function (): void {
+    it('asks the check for the diff, the test files, and the commands, then starts the reviewer when every deliverable passes', function (): void {
+        [$group, $task, $checks, , $receipts] = tick_deliverables(tick_all_deliverables(), tick_all_confirmations(), tick_evidence());
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->deliverables)->toBe([[
+            'start' => str_repeat('5', 40),
+            'tests' => [['id' => 'export-test', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php']],
+            'commands' => [['id' => 'web-tests', 'command' => 'bun test', 'directory' => 'apps/web']],
+        ]])
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+            ->and($task->comments()->sole()->deliverables)->toBe(tick_all_confirmations())
+            ->and(TaskCheck::query()->sole()->deliverable_evidence)->toBe(tick_evidence())
+            ->and($receipts->turnDeliverables)->toBe([['reference-page', 'export-test', 'web-tests', 'error-copy']]);
+    });
+
+    it('skips deliverables for a subtask without any', function (): void {
+        [$group, $task, $checks] = tick_deliverables([], [], null);
+
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->deliverables)->toBe([null])
+            ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+    });
+
+    it('returns a failing file deliverable to the implementer with the reason', function (array $diff, string $change, string $reason): void {
+        $deliverable = ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/*.md', 'change' => $change];
+        [$group, $task] = tick_deliverables([$deliverable], ['reference-page' => 'Done'], ['start' => str_repeat('5', 40), 'diff' => $diff, 'tests' => [], 'commands' => []]);
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain("Orbit could not verify these deliverables:\n- reference-page (file): {$reason}")
+            ->and($reminder)->toContain('--deliverable=ID=evidence for each deliverable of this subtask (reference-page)');
+    })->with([
+        'a missing path' => [[['status' => 'M', 'path' => 'docs/guides/tasks.md']], 'any', "no path in the subtask's diff matches docs/reference/*.md."],
+        'a nested path the glob does not reach' => [[['status' => 'M', 'path' => 'docs/reference/cli/tasks.md']], 'modified', "no path in the subtask's diff matches docs/reference/*.md."],
+        'a modified file that should be created' => [[['status' => 'M', 'path' => 'docs/reference/tasks.md']], 'created', 'the diff modifies docs/reference/tasks.md, but the deliverable needs docs/reference/*.md created.'],
+        'a created file that should be modified' => [[['status' => 'A', 'path' => 'docs/reference/export.md']], 'modified', 'the diff adds docs/reference/export.md, but the deliverable needs docs/reference/*.md modified.'],
+        'a deleted file' => [[['status' => 'D', 'path' => 'docs/reference/tasks.md']], 'any', 'the diff deletes docs/reference/tasks.md, but the deliverable needs docs/reference/*.md modified.'],
+    ]);
+
+    it('returns a failing test deliverable to the implementer with the reason', function (array $overrides, string $reason): void {
+        $deliverable = ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'];
+        [$group, $task] = tick_deliverables([$deliverable], ['export-test' => 'ExportTest'], tick_evidence([...['commands' => []], ...$overrides]));
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain("- export-test (test): {$reason}");
+    })->with([
+        'absent from the diff' => [['diff' => [['status' => 'M', 'path' => 'apps/gateway/tests/Feature/OtherTest.php']]], "apps/gateway/tests/Feature/ExportTest.php is not added or modified in the subtask's diff."],
+        'failed' => [['tests' => ['export-test' => ['exit_code' => 1, 'cases' => [['name' => 'it exports every subtask', 'status' => 'failed']]]]], 'Orbit ran apps/gateway/tests/Feature/ExportTest.php, and "it exports every subtask" failed.'],
+        'only replayed, so never run by the check' => [['tests' => []], "Orbit's check did not run apps/gateway/tests/Feature/ExportTest.php, so the test has no executed result. A replayed or cached result does not count."],
+        'without a test of that name' => [['tests' => ['export-test' => ['exit_code' => 0, 'cases' => [['name' => 'it renders', 'status' => 'passed']]]]], 'Orbit ran apps/gateway/tests/Feature/ExportTest.php (exit code 0), and no test name contains "exports every subtask". The run reported "it renders".'],
+        'skipped' => [['tests' => ['export-test' => ['exit_code' => 0, 'cases' => [['name' => 'it exports every subtask', 'status' => 'skipped']]]]], 'Orbit ran apps/gateway/tests/Feature/ExportTest.php, and "it exports every subtask" skipped.'],
+    ]);
+
+    it('returns a command that exits non-zero to the implementer with the end of its output', function (): void {
+        $deliverable = ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'];
+        [$group, $task] = tick_deliverables([$deliverable], ['web-tests' => 'Passes'], tick_evidence(['commands' => ['web-tests' => ['exit_code' => 1, 'output' => "1 fail\n"]]]));
+
+        $reminder = tick_deliverable_reminder();
+
+        expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($reminder)->toContain("- web-tests (command): `bun test` in apps/web exited with 1. The end of its output:\n\n```\n1 fail\n```");
+    });
+
+    it('fails every mechanical deliverable when the check recorded no evidence', function (): void {
+        [$group, $task] = tick_deliverables(tick_all_deliverables(), tick_all_confirmations(), null);
+
+        expect(tick_deliverable_reminder())->toContain("Orbit's check recorded no evidence for the deliverables reference-page, export-test, web-tests.");
+    });
+
+    it('refuses a hand-written receipt that does not confirm every deliverable before the check runs', function (): void {
+        [$group, $task, $checks] = tick_deliverables(tick_all_deliverables(), ['reference-page' => 'Export section'], tick_evidence());
+
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->starts)->toBe(0)
+            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The run receipt does not confirm the deliverables export-test, web-tests, error-copy. Pass --deliverable=ID=evidence for each one.');
+    });
+
+    it('asks for assistance when a deliverable still fails after the reminder', function (): void {
+        $failing = FakeTaskCheckRunner::passed(tick_evidence(['commands' => ['web-tests' => ['exit_code' => 2, 'output' => "boom\n"]]]));
+        [$group, $task, $checks, $notifier] = tick_deliverables(
+            tick_all_deliverables(),
+            tick_all_confirmations(),
+            null,
+            [$failing, $failing],
+            [FakeTaskRunReceipts::contents('ready_for_review', 'Done.', null, tick_all_confirmations()), null, FakeTaskRunReceipts::contents('ready_for_review', 'Fixed it.', null, tick_all_confirmations()), null],
+        );
+
+        tick_deliverable_reminder();
+        app(TaskScheduler::class)->tick();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->assistance_requested)->toBeTrue()
+            ->and($notifier->reason)->toStartWith("Checks still failed after the reminder. Orbit could not verify these deliverables:\n- web-tests (command): `bun test` in apps/web exited with 2.")
+            ->and($checks->starts)->toBe(2)
+            ->and(app(T3Dispatcher::class)->commands)->toHaveCount(1);
+    });
+
+    it('reminds a reviewer whose approval does not confirm each review deliverable', function (): void {
+        [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked.', null, ['reference-page' => 'Read it'])]);
+        $task->update(['deliverables' => tick_all_deliverables()]);
+
+        app(TaskScheduler::class)->tick();
+
+        expect($signer->messages)->toBe([])
+            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The run receipt does not confirm the deliverables error-copy.')
+            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence');
+    });
+
+    it('commits an approval that confirms each review deliverable', function (): void {
+        [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked.', null, ['error-copy' => 'Each error names the subtask'])]);
+        $task->update(['deliverables' => tick_all_deliverables()]);
+
+        app(TaskScheduler::class)->tick();
+
+        expect($signer->messages)->toBe(["Models\n\nChecked."])
+            ->and($task->comments()->sole()->deliverables)->toBe(['error-copy' => 'Each error names the subtask']);
+    });
+});

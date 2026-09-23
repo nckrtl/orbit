@@ -1,0 +1,9 @@
+Updating subtask...
+
+┌  Update subtask
+│
+├  ● Updating subtask
+│
+└  Operation failed.
+
+Deliverables change only while the group is in backlog or the subtask is todo.

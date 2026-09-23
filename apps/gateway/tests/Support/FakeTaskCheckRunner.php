@@ -20,18 +20,23 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
      */
     public function __construct(private ?array $readings = null) {}
 
-    public static function passed(): TaskCheckReading
+    /** @param array<array-key, mixed>|null $deliverables the deliverable evidence the check records */
+    public static function passed(?array $deliverables = null): TaskCheckReading
     {
-        return TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('b', 40), [], "checks passed\n");
+        return TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('b', 40), [], "checks passed\n", deliverables: $deliverables);
     }
 
     /** @var list<list<array{name: string, command: string, timeout_seconds: int}>> */
     public array $setups = [];
 
-    public function start(AppInstance $instance, array $setup = []): TaskCheckProcess
+    /** @var list<array<string, mixed>|null> the deliverables each started check was asked to verify */
+    public array $deliverables = [];
+
+    public function start(AppInstance $instance, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $this->starts++;
         $this->setups[] = $setup;
+        $this->deliverables[] = $deliverables;
 
         return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
     }

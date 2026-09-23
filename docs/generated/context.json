@@ -3421,6 +3421,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0133-verify-typed-subtask-deliverables-at-handoff.md",
+            "title": "ADR 0133: Verify typed subtask deliverables at handoff",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Project",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0121",
+                "0124",
+                "0125",
+                "0133"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3577,7 +3601,8 @@
                 "0126",
                 "0127",
                 "0131",
-                "0132"
+                "0132",
+                "0133"
             ]
         },
         {
@@ -4692,7 +4717,9 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Database",
                 "Development node exclusion",
@@ -4719,7 +4746,8 @@
                 "0122",
                 "0124",
                 "0125",
-                "0132"
+                "0132",
+                "0133"
             ]
         },
         {

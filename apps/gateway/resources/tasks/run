@@ -9,6 +9,8 @@ declare(strict_types=1);
  * A blocked turn also asks the operator one specific question: --question="..."
  * The approval of the last subtask also describes the pull request:
  * --pr-summary="..." --pr-change="..." (repeat) --pr-breaking="..." (repeat, or none)
+ * Each subtask deliverable in turn.json is confirmed with --deliverable=ID=evidence (repeat):
+ * every deliverable for ready_for_review, and every review deliverable for approved.
  */
 
 const OUTCOMES = [
@@ -16,7 +18,7 @@ const OUTCOMES = [
     'reviewer' => ['approved', 'changes_requested', 'blocked'],
 ];
 
-const REPEATABLE = ['pr-change', 'pr-breaking'];
+const REPEATABLE = ['pr-change', 'pr-breaking', 'deliverable'];
 
 function refuse(string $message): never
 {
@@ -30,12 +32,18 @@ if (! is_string($role) || ! array_key_exists($role, OUTCOMES)) {
     refuse('Orbit has not started a turn in this workspace.');
 }
 $final = ($turn['final'] ?? false) === true;
+$deliverables = [];
+foreach (is_array($turn['deliverables'] ?? null) ? $turn['deliverables'] : [] as $deliverable) {
+    if (is_array($deliverable) && is_string($deliverable['id'] ?? null)) {
+        $deliverables[$deliverable['id']] = is_string($deliverable['type'] ?? null) ? $deliverable['type'] : '';
+    }
+}
 
 $options = [];
 $arguments = array_slice($argv, 1);
 while ($arguments !== []) {
     $argument = array_shift($arguments);
-    if (preg_match('/\A--(outcome|summary|question|pr-summary|pr-change|pr-breaking)(?:=(.*))?\z/s', $argument, $match) !== 1) {
+    if (preg_match('/\A--(outcome|summary|question|pr-summary|pr-change|pr-breaking|deliverable)(?:=(.*))?\z/s', $argument, $match) !== 1) {
         refuse("unknown argument {$argument}.");
     }
     $name = $match[1];
@@ -72,7 +80,41 @@ if ($outcome !== 'blocked' && array_key_exists('question', $options)) {
     refuse('--question is only for --outcome=blocked.');
 }
 
+$confirmations = [];
+foreach ($options['deliverable'] ?? [] as $confirmation) {
+    if (preg_match('/\A([a-z0-9]+(?:-[a-z0-9]+)*)=(.*)\z/s', $confirmation, $match) !== 1) {
+        refuse("--deliverable needs the form ID=evidence, such as --deliverable=export-test=\"tests/Feature/ExportTest.php\".");
+    }
+    [, $id, $evidence] = $match;
+    if (! array_key_exists($id, $deliverables)) {
+        refuse("unknown deliverable {$id}. This subtask's deliverables are: ".($deliverables === [] ? 'none' : implode(', ', array_keys($deliverables))).'.');
+    }
+    if (array_key_exists($id, $confirmations)) {
+        refuse("confirm deliverable {$id} once.");
+    }
+    if (trim($evidence) === '') {
+        refuse("--deliverable={$id} needs evidence after the equals sign.");
+    }
+    $confirmations[$id] = trim($evidence);
+}
+$confirms = $role === 'implementer' ? $outcome === 'ready_for_review' : $outcome === 'approved';
+if (! $confirms && $confirmations !== []) {
+    refuse('--deliverable is only for --outcome='.($role === 'implementer' ? 'ready_for_review' : 'approved').'.');
+}
+if ($confirms) {
+    $required = $role === 'implementer'
+        ? array_keys($deliverables)
+        : array_keys(array_filter($deliverables, static fn (string $type): bool => $type === 'review'));
+    $missing = array_values(array_diff($required, array_keys($confirmations)));
+    if ($missing !== []) {
+        refuse(($role === 'implementer' ? 'ready_for_review' : 'approved')." needs --deliverable=ID=evidence for: ".implode(', ', $missing).'. Say where or how each one is met.');
+    }
+}
+
 $receipt = ['outcome' => $outcome, 'summary' => $options['summary']];
+if ($confirmations !== []) {
+    $receipt['deliverables'] = $confirmations;
+}
 if ($outcome === 'blocked') {
     $receipt['question'] = $options['question'];
 }

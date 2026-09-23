@@ -40,7 +40,7 @@ A successful call returns the API's JSON document as text, usually `{"data": ...
 
 Four operations are machine callbacks and have no tool: the realtime channel signature, the Grafana access check, the Instance wake page, and the schedule completion report.
 
-The `tasks-*` tools belong to the enable-gated [tasks](/reference/tasks) extension. `tasks-create`, `tasks-update`, and the `tasks-subtask-*` tools require Gateway access. Create, update, subtask, list, and show tools return `tasks.disabled` until an authorized caller enables the extension.
+The `tasks-*` tools belong to the enable-gated [tasks](/reference/tasks) extension. `tasks-create` requires Gateway access. `tasks-update` and the `tasks-subtask-*` tools need access to the Node that holds the group's Instance, or to the Gateway for a group without one. `tasks-create`, `tasks-subtask-create`, and `tasks-subtask-update` take each subtask's typed [deliverables](/reference/tasks#deliverables) as a `deliverables` array, and `tasks-show` returns them. Create, update, subtask, list, and show tools return `tasks.disabled` until an authorized caller enables the extension.
 
 ## Connect a client
 
