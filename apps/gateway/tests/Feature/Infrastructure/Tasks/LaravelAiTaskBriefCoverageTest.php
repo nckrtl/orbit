@@ -43,15 +43,14 @@ it('names each subtask that no listed change delivers', function (): void {
         && array_column($prompt->state['subtasks'], 'title') === ['Export', 'Route']);
 });
 
-it('treats an answer below the threshold as missing', function (): void {
+it('counts a subtask as covered from a probability of one half', function (): void {
     [$group, $export, $route] = coverage_group();
-    config()->set('orbit.tasks.jev_confidence_threshold', 0.9);
     Classification::fake([[
-        'subtask_'.$export->id => new BooleanAnswer(0.85),
-        'subtask_'.$route->id => new BooleanAnswer(0.95),
+        'subtask_'.$export->id => new BooleanAnswer(0.69),
+        'subtask_'.$route->id => new BooleanAnswer(0.4),
     ]]);
 
-    expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Export']);
+    expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Route']);
 });
 
 it('reports a failed or incomplete Jev answer as a classification failure', function (): void {

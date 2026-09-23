@@ -15,6 +15,7 @@ use Laravel\Ai\Responses\Data\BooleanAnswer;
 
 /**
  * Jev reads the briefs and the change list only. It cannot read code, so it checks coverage, not correctness.
+ * A subtask counts as covered when Jev gives "true" a probability of at least one half.
  */
 final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
 {
@@ -41,18 +42,11 @@ final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
             if (! $answer instanceof BooleanAnswer) {
                 throw new TaskSessionClassificationException('TypeSafe Jev did not answer the coverage of subtask '.$task->id.'.');
             }
-            if (! $answer->isTrue($this->threshold())) {
+            if (! $answer->isTrue()) {
                 $missing[] = $task->title;
             }
         }
 
         return $missing;
-    }
-
-    private function threshold(): float
-    {
-        $threshold = config('orbit.tasks.jev_confidence_threshold', 0.75);
-
-        return is_numeric($threshold) ? (float) $threshold : 0.75;
     }
 }
