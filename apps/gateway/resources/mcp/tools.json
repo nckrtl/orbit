@@ -6424,6 +6424,37 @@
       }
     },
     {
+      "name": "tasks-check-cancel",
+      "title": "tasks:check:cancel",
+      "description": "tasks:check:cancel",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/check/cancel",
+      "path_inputs": [
+        "group",
+        "task"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task"
+        ]
+      }
+    },
+    {
       "name": "tasks-comment-create",
       "title": "tasks:comment:create",
       "description": "tasks:comment:create",

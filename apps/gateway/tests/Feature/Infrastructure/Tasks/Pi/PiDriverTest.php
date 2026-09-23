@@ -10,7 +10,6 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
-use App\Domain\Tasks\ComposerCheckEvidence;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Models\AgentThread;
@@ -205,25 +204,23 @@ describe('observe', function (): void {
             ->and($observation->entries[2])->toMatchArray(['label' => 'bash', 'text' => "All checks passed\n\n$ composer check\nexit code 0"]);
     });
 
-    it('gives the scheduler a passing composer check from a successful bash result', function (): void {
+    it('shows a successful bash result as one activity that ends with the command and its exit code', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', pi_check_transcript('ok')))]);
 
-        $evidence = ComposerCheckEvidence::fromMessages(pi_driver()->observe(pi_thread(pi_node()))->entries);
+        $observation = pi_driver()->observe(pi_thread(pi_node()));
 
-        expect($evidence->invoked)->toBeTrue()->and($evidence->passed)->toBeTrue()->and($evidence->current)->toBeTrue();
+        expect($observation->entries[2]['text'])->toEndWith("$ composer check\nexit code 0");
     });
 
-    it('gives the scheduler the exit code of a failed bash result', function (): void {
+    it('shows the exit code of a failed bash result', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', pi_check_transcript("PHPStan found 2 errors\n\nCommand exited with code 2", failed: true)))]);
 
         $observation = pi_driver()->observe(pi_thread(pi_node()));
-        $evidence = ComposerCheckEvidence::fromMessages($observation->entries);
 
-        expect($observation->entries[2]['text'])->toEndWith("$ composer check\nexit code 2")
-            ->and($evidence->invoked)->toBeTrue()->and($evidence->passed)->toBeFalse();
+        expect($observation->entries[2]['text'])->toEndWith("$ composer check\nexit code 2");
     });
 
-    it('marks a check stale after a later edit', function (): void {
+    it('shows a later edit by its tool name and target', function (): void {
         $entries = [...pi_check_transcript('ok'),
             ['id' => 'e5', 'timestamp' => '2026-09-22T10:00:04.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
                 ['type' => 'toolCall', 'id' => 'call-2', 'name' => 'edit', 'arguments' => ['path' => 'app/Service.php']],
@@ -234,8 +231,7 @@ describe('observe', function (): void {
 
         $observation = pi_driver()->observe(pi_thread(pi_node()));
 
-        expect(array_last($observation->entries)['text'])->toBe('edit app/Service.php')
-            ->and(ComposerCheckEvidence::fromMessages($observation->entries)->current)->toBeFalse();
+        expect(array_last($observation->entries)['text'])->toBe('edit app/Service.php');
     });
 
     it('keeps the leading spaces of bash output, such as git status lines', function (): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\CreateTaskAction;
@@ -14,6 +15,7 @@ use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Actions\Tasks\UpdateTaskGroupAction;
+use App\Data\Tasks\TaskCheckData;
 use App\Data\Tasks\TaskCommentData;
 use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
@@ -84,6 +86,17 @@ final class TaskGroupsController extends Controller
 
         return response()->json([
             'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function cancelCheck(EmptyTasksRequest $request, TaskGroup $group, Task $task, CancelTaskCheckAction $action): JsonResponse
+    {
+        abort_unless($task->task_group_id === $group->id, 404);
+
+        return response()->json([
+            'data' => TaskCheckData::fromModel($action->execute($group, $task))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

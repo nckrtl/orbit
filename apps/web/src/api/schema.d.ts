@@ -2808,6 +2808,23 @@ export interface paths {
         patch: operations["tasks-subtask-update"];
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/tasks/{task}/check/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** tasks:check:cancel */
+        post: operations["tasks-check-cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/tasks/{task}/comments": {
         parameters: {
             query?: never;
@@ -3544,6 +3561,17 @@ export interface components {
             type?: "implementation" | "annotation";
             target_thread_id?: string | null;
             completion_summary?: string | null;
+            check?: components["schemas"]["TaskCheck"] | null;
+        };
+        TaskCheck: {
+            id?: number;
+            /** @enum {string} */
+            status?: "running" | "passed" | "failed" | "changed" | "lost" | "cancelled";
+            started_at?: string;
+            finished_at?: string | null;
+            exit_code?: number | null;
+            changed_paths?: string[];
+            output?: string | null;
         };
         AgentThread: {
             id?: number;
@@ -15043,6 +15071,73 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Task"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-check-cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                task: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskCheck"];
                         meta: components["schemas"]["Meta"];
                     };
                 };

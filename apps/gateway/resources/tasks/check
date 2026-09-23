@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
+
+check start CHECKOUT            start `composer check` detached; print the process and the tree it checks
+check run CHECKOUT HEAD TREE    run the check and write check.json when it ends (started by `start`)
+check status PID STARTED        print running, finished (with the result), or lost
+check cancel PID STARTED        stop the check's process group
+"""
+
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+RESULT = os.path.join(DIRECTORY, 'check.json')
+LOG = os.path.join(DIRECTORY, 'check.log')
+OUTPUT_TAIL = 16384
+
+
+def git(checkout, *arguments, environment=None):
+    return subprocess.check_output(['git', '-C', checkout, *arguments], env=environment, text=True,
+                                   stderr=subprocess.DEVNULL).strip()
+
+
+def working_tree(checkout):
+    """The tree of the whole working tree, uncommitted and untracked files included, without touching the index."""
+    index = git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
+    with tempfile.TemporaryDirectory(prefix='orbit-check-') as scratch:
+        candidate = os.path.join(scratch, 'index')
+        if os.path.exists(index):
+            shutil.copyfile(index, candidate)
+        environment = {**os.environ, 'GIT_INDEX_FILE': candidate}
+        subprocess.run(['git', '-C', checkout, 'add', '--all'], env=environment, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return git(checkout, 'write-tree', environment=environment)
+
+
+def changed_paths(checkout, before, after):
+    if before == after:
+        return []
+    return git(checkout, 'diff-tree', '-r', '--name-only', before, after).splitlines()
+
+
+def process_started(pid):
+    """The process start time as ps reports it, or None when the process does not exist."""
+    result = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], capture_output=True, text=True)
+    started = result.stdout.strip()
+    return started if result.returncode == 0 and started else None
+
+
+def start(checkout):
+    head = git(checkout, 'rev-parse', 'HEAD')
+    tree = working_tree(checkout)
+    for path in (RESULT, LOG):
+        if os.path.exists(path):
+            os.remove(path)
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        null = os.open(os.devnull, os.O_RDWR)
+        for descriptor in (0, 1, 2):
+            os.dup2(null, descriptor)
+        os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree])
+    for _ in range(50):
+        started = process_started(pid)
+        if started:
+            break
+        time.sleep(0.02)
+    print(json.dumps({'pid': pid, 'started': started, 'head': head, 'tree': tree}))
+
+
+def run(checkout, head, tree):
+    started_at = time.time()
+    with open(LOG, 'wb') as log:
+        exit_code = subprocess.run(['bash', '-lc', 'composer check'], cwd=checkout, stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=subprocess.STDOUT).returncode
+    head_after = git(checkout, 'rev-parse', 'HEAD')
+    tree_after = working_tree(checkout)
+    result = {
+        'exit_code': exit_code,
+        'head_before': head,
+        'tree_before': tree,
+        'head_after': head_after,
+        'tree_after': tree_after,
+        'changed_paths': changed_paths(checkout, tree, tree_after),
+        'started_at': started_at,
+        'finished_at': time.time(),
+    }
+    temporary = RESULT + '.' + str(os.getpid())
+    with open(temporary, 'w') as output:
+        json.dump(result, output)
+    os.replace(temporary, RESULT)
+
+
+def output_tail():
+    if not os.path.exists(LOG):
+        return ''
+    with open(LOG, 'rb') as log:
+        log.seek(0, os.SEEK_END)
+        log.seek(max(0, log.tell() - OUTPUT_TAIL))
+        return log.read().decode('utf-8', errors='replace')
+
+
+def status(pid, started):
+    if os.path.exists(RESULT):
+        with open(RESULT) as result:
+            print(json.dumps({'state': 'finished', 'result': json.load(result), 'output': output_tail()}))
+    elif process_started(pid) == started:
+        print(json.dumps({'state': 'running'}))
+    else:
+        print(json.dumps({'state': 'lost', 'output': output_tail()}))
+
+
+def cancel(pid, started):
+    if process_started(pid) != started:
+        print(json.dumps({'cancelled': False}))
+        return
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    print(json.dumps({'cancelled': True}))
+
+
+def main(arguments):
+    command = arguments[0] if arguments else ''
+    if command == 'start' and len(arguments) == 2:
+        start(arguments[1])
+    elif command == 'run' and len(arguments) == 4:
+        run(*arguments[1:])
+    elif command == 'status' and len(arguments) == 3:
+        status(int(arguments[1]), arguments[2])
+    elif command == 'cancel' and len(arguments) == 3:
+        cancel(int(arguments[1]), arguments[2])
+    else:
+        print(__doc__, file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
