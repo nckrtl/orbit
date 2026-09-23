@@ -81,6 +81,16 @@ Route::prefix('v1')->group(function (): void {
     ])->match(['get', 'post'], 'broadcasting/auth', [RealtimeAuthController::class, 'authenticate'])
         ->name('realtime:auth');
 
+    Route::middleware(RequireActiveWireGuardPeer::class)
+        ->get('agent/realtime', [RealtimeConfigController::class, 'agent'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('agent:realtime');
+
+    Route::middleware(RequireActiveWireGuardPeer::class)
+        ->post('agent/broadcasting/auth', [RealtimeAuthController::class, 'authenticateAgent'])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('agent:realtime:auth');
+
     Route::middleware([
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,

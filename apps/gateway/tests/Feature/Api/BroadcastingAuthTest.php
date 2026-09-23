@@ -30,6 +30,30 @@ describe('POST /api/v1/broadcasting/auth', function (): void {
         );
     });
 
+    it('signs presence-node subscriptions as viewers and refuses agent member ids', function (): void {
+        [, $credentials] = activate_websocket_role();
+        $node = $this->markAsGateway(Node::query()->create([
+            'name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        ]));
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+        $channel = 'presence-node.12';
+        $response = $this->postJson('/api/v1/broadcasting/auth', [
+            'socket_id' => '1.1', 'channel_name' => $channel,
+        ])->assertOk();
+        $channelData = $response->json('channel_data');
+
+        expect($response->json('auth'))->toBe($credentials->appKey.':'.hash_hmac('sha256', '1.1:'.$channel.':'.$channelData, $credentials->appSecret))
+            ->and(json_decode($channelData, true))->toBe([
+                'user_id' => 'viewer.1.1',
+                'user_info' => ['kind' => 'viewer', 'node_id' => '12'],
+            ]);
+
+        $this->postJson('/api/v1/broadcasting/auth', [
+            'socket_id' => '1.1', 'channel_name' => 'presence-node.12', 'user_id' => 'agent.12',
+        ])->assertOk()->assertJsonMissingPath('channel_data.user_id');
+    });
+
     it('answers 404 when no websocket role is active', function (): void {
         $node = $this->markAsGateway(Node::query()->create([
             'name' => 'gateway',
