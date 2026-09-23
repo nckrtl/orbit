@@ -209,6 +209,12 @@ class MainCacheTest(unittest.TestCase):
         self.assertTrue(current.is_dir())
         self.assertFalse(stale.exists())
 
+    def test_maintenance_commands_run_without_agent_output_only_for_the_worker(self):
+        with patch.dict(os.environ, {'CLAUDECODE': '1', 'AI_AGENT': 'claude', 'PAO_DISABLE': '0'}):
+            environment = cache.maintenance_environment()
+            self.assertEqual('1', environment['PAO_DISABLE'])
+            self.assertEqual('0', os.environ['PAO_DISABLE'])
+
     def test_failed_run_keeps_last_successful_publication(self):
         self.publish()
         original = cache.publication_path(self.store, self.project).read_bytes()
