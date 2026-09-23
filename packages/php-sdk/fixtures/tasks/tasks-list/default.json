@@ -42,7 +42,8 @@
                         "duration_ms": null,
                         "type": "implementation",
                         "target_thread_id": null,
-                        "completion_summary": null
+                        "completion_summary": null,
+                        "check": null
                     }
                 ],
                 "execution_mode": "managed"
@@ -84,7 +85,8 @@
                         "duration_ms": null,
                         "type": "implementation",
                         "target_thread_id": null,
-                        "completion_summary": null
+                        "completion_summary": null,
+                        "check": null
                     },
                     {
                         "id": 2,
@@ -101,7 +103,8 @@
                         "duration_ms": null,
                         "type": "implementation",
                         "target_thread_id": null,
-                        "completion_summary": null
+                        "completion_summary": null,
+                        "check": null
                     }
                 ],
                 "execution_mode": "managed"
