@@ -82,6 +82,11 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
         posted_at: new Date().toISOString(),
         review_attempt: 2,
         commit_sha: "5f2c9e1",
+        pull_request: {
+            summary: "Count the boundary day in quota windows.",
+            changes: ["Include the last day of the window."],
+            breaking: [],
+        },
     };
     queryClient.setQueryData<TaskComment[]>(
         ["task-groups", "12", "tasks", "31", "comments"],
@@ -89,6 +94,12 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     );
     await expect.element(comments.getByRole("article").nth(1)).toHaveTextContent("Approved");
     await expect.element(comments.getByRole("article").nth(1)).toHaveTextContent("just now");
+    await expect
+        .element(comments.getByRole("region", { name: "Proposed pull request" }))
+        .toHaveTextContent("Count the boundary day in quota windows.");
+    await expect
+        .element(comments.getByRole("region", { name: "Proposed pull request" }))
+        .toHaveTextContent("No breaking changes");
     expect(
         app.gateway.requests.some(
             (request) => request.path === "/api/v1/task-groups/12/tasks/31/comments",

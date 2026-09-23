@@ -24924,6 +24924,36 @@
               "string",
               "null"
             ]
+          },
+          "pull_request": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskCommentPullRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TaskCommentPullRequest": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "breaking": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
