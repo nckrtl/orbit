@@ -466,6 +466,17 @@
             ]
           },
           {
+            "group": "Annotations",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/instances/{instance}/annotations",
+              "POST /api/v1/instances/{instance}/annotations",
+              "GET /api/v1/instances/{instance}/annotations/events",
+              "POST /api/v1/instances/{instance}/annotations/{annotation}/retry",
+              "POST /api/v1/instances/{instance}/annotations/{annotation}/status"
+            ]
+          },
+          {
             "group": "Tasks",
             "openapi": "/openapi.json",
             "pages": [

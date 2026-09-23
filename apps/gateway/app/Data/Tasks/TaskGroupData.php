@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\AppInstance;
 use App\Models\Task;
@@ -39,6 +40,7 @@ final class TaskGroupData extends Data
         public ?int $linesDeleted,
         public ?int $durationMs,
         public array $tasks,
+        public TaskExecutionMode $executionMode,
     ) {}
 
     public static function fromModel(TaskGroup $group): self
@@ -47,6 +49,8 @@ final class TaskGroupData extends Data
         $taskable = $group->taskable;
 
         return new self(
+            executionMode: $group->execution_mode,
+
             id: $group->id,
             appId: $group->app_id,
             app: $group->app->slug,
