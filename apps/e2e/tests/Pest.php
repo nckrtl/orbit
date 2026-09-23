@@ -39,9 +39,7 @@ pest()
 
 $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
 
-if (is_string($tiaDirectory) && $tiaDirectory !== '') {
-    pest()->tia()->directory($tiaDirectory);
-}
+pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : dirname(__DIR__).'/.orbit-tia');
 
 $scenarioTiaDirectory = getenv('ORBIT_SCENARIO_TIA_DIRECTORY');
 $scenarioPrimary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');
