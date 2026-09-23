@@ -25,6 +25,7 @@ use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
@@ -254,6 +255,19 @@ it('returns null when destination occupation refuses the checkout', function ():
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
         ->toBeNull();
+});
+
+it('skips an excluded app-dev Node before choosing the least loaded node', function (): void {
+    $app = provisioner_app('orbit');
+    $excluded = provisioner_node('sabre', '10.44.0.120');
+    $allowed = provisioner_node('shark', '10.44.0.121');
+    ProjectNodeExclusion::query()->create(['app_id' => $app->id, 'node_id' => $excluded->id]);
+    $group = provisioner_group($app);
+    bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->node_id)->toBe($allowed->id);
 });
 
 it('skips a non-T3 app-dev Node even when it has the lower id', function (): void {

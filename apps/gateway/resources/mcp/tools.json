@@ -3844,6 +3844,98 @@
       }
     },
     {
+      "name": "node-excluded-project-add",
+      "title": "node:excluded-project:add",
+      "description": "Exclude a Project from development placement on an app-dev Node.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/excluded-projects/{app}",
+      "path_inputs": [
+        "node",
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "node-excluded-project-list",
+      "title": "node:excluded-project:list",
+      "description": "List the Projects that cannot use an app-dev Node for development.",
+      "method": "GET",
+      "path": "/api/v1/nodes/{node}/excluded-projects",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "node-excluded-project-remove",
+      "title": "node:excluded-project:remove",
+      "description": "Remove a Project from the development exclusions of an app-dev Node.",
+      "method": "DELETE",
+      "path": "/api/v1/nodes/{node}/excluded-projects/{app}",
+      "path_inputs": [
+        "node",
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node",
+          "app"
+        ]
+      }
+    },
+    {
       "name": "node-list",
       "title": "List Nodes",
       "description": "List nodes registered with the active gateway.",
@@ -4598,6 +4690,98 @@
         "additionalProperties": false,
         "required": [
           "app"
+        ]
+      }
+    },
+    {
+      "name": "project-excluded-node-add",
+      "title": "project:excluded-node:add",
+      "description": "Exclude an app-dev Node from development placement for a Project.",
+      "method": "POST",
+      "path": "/api/v1/projects/{app}/excluded-nodes/{node}",
+      "path_inputs": [
+        "app",
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "node"
+        ]
+      }
+    },
+    {
+      "name": "project-excluded-node-list",
+      "title": "project:excluded-node:list",
+      "description": "List the app-dev Nodes a Project cannot use for development.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/excluded-nodes",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "project-excluded-node-remove",
+      "title": "project:excluded-node:remove",
+      "description": "Remove a development Node exclusion from a Project.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{app}/excluded-nodes/{node}",
+      "path_inputs": [
+        "app",
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "node"
         ]
       }
     },

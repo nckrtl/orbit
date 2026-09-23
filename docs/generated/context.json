@@ -545,6 +545,7 @@
                 "Cluster",
                 "Database",
                 "Database connection",
+                "Development node exclusion",
                 "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
@@ -3145,6 +3146,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0118-exclude-app-dev-nodes-per-project.md",
+            "title": "ADR 0118: Skip selected Nodes for a Project",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0066",
+                "0071",
+                "0086",
+                "0103",
+                "0118"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3742,6 +3769,24 @@
             "governing_adrs": [
                 "0046",
                 "0073"
+            ]
+        },
+        {
+            "path": "docs/reference/development-node-exclusions.md",
+            "title": "Development node exclusions",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0118"
             ]
         },
         {
@@ -4345,6 +4390,7 @@
             ],
             "concepts": [
                 "Database",
+                "Development node exclusion",
                 "Gateway",
                 "Instance",
                 "Node",

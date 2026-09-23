@@ -12,6 +12,8 @@ use App\Actions\Nodes\ShowNodeAction;
 use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
+use App\Data\Projects\DevelopmentNodeExclusionData;
+use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -20,6 +22,7 @@ use App\Http\Requests\Nodes\RemoveNodeRequest;
 use App\Http\Requests\Nodes\RenameNodeRequest;
 use App\Http\Requests\Nodes\UpdateNodeSettingsRequest;
 use App\Models\Node;
+use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -51,6 +54,10 @@ final class NodesController extends Controller
             'data' => [
                 ...NodeData::fromModel($node)->toArray(),
                 'access' => NodeAccessData::fromModel($node)->toArray(),
+                'excluded_projects' => app(DevelopmentNodeExclusion::class)->forNode($node)
+                    ->map(static fn (ProjectNodeExclusion $exclusion): array => DevelopmentNodeExclusionData::fromModel($exclusion)->toArray())
+                    ->values()
+                    ->all(),
             ],
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);

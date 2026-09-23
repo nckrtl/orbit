@@ -23,6 +23,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
@@ -87,6 +88,7 @@ final readonly class CreateAppInstanceAction
             $created = false;
         } else {
             $this->assertPlacement($requestedNode);
+            app(DevelopmentNodeExclusion::class)->assertAvailable($app, $requestedNode);
             $account = $this->accounts->resolve($requestedNode);
             $roots = $this->storageRoots->resolveApps(
                 $this->nodeSettings->fromStored($requestedNode->settings),

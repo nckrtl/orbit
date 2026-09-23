@@ -54,9 +54,15 @@ use Orbit\Sdk\Requests\Instances\DestroyProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
 use Orbit\Sdk\Requests\Instances\SetupAppInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
+use Orbit\Sdk\Requests\Nodes\AddNodeExcludedProjectRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodeExcludedProjectsRequest;
 use Orbit\Sdk\Requests\Nodes\RelocateNodeRoleRequest;
+use Orbit\Sdk\Requests\Nodes\RemoveNodeExcludedProjectRequest;
 use Orbit\Sdk\Requests\Nodes\RenameNodeRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
+use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
+use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\ProxyCli\DisableProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\EnableProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
@@ -226,7 +232,15 @@ describe('repository guidance bootstrap', function (): void {
             SetupAppInstanceRequest::class,
             UpdateProjectLifecycleStepRequest::class,
         ];
-        $expectedOperationCount = count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests);
+        $exclusionRequests = [
+            AddNodeExcludedProjectRequest::class,
+            ListNodeExcludedProjectsRequest::class,
+            RemoveNodeExcludedProjectRequest::class,
+            AddProjectExcludedNodeRequest::class,
+            ListProjectExcludedNodesRequest::class,
+            RemoveProjectExcludedNodeRequest::class,
+        ];
+        $expectedOperationCount = count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($herdrRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -321,6 +335,7 @@ describe('repository guidance bootstrap', function (): void {
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
             ->toContain(...$lifecycleRequests)
+            ->toContain(...$exclusionRequests)
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(TransferAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)
@@ -384,12 +399,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($proxycliRequests);
     });
 
-    it('documents the 139-operation SDK surface including proxycli transport', function (): void {
+    it('documents the 154-operation SDK surface including proxycli transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 139 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 154 concrete public Gateway API operations:')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- proxycli: enable, disable, status, provider list, provider show, and account update.')
             ->toContain(
@@ -464,7 +479,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 139 public Gateway operations.',
+                'The SDK exposes exactly 154 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',

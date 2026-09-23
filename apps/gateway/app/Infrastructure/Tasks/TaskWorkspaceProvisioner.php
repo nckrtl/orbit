@@ -62,7 +62,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode([$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver]);
+        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver]);
 
         if (! $node instanceof Node) {
             return null;
@@ -254,7 +254,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     }
 
     /** @param list<string> $drivers Every driver the group uses must allow the Node. */
-    private function selectNode(array $drivers): ?Node
+    private function selectNode(OrbitApp $app, array $drivers): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -264,6 +264,10 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 static fn ($query) => $query
                     ->where('role', RoleName::AppDev)
                     ->where('status', LifecycleStatus::Active),
+            )
+            ->whereDoesntHave(
+                'projectNodeExclusions',
+                static fn ($query) => $query->where('app_id', $app->id),
             )
             ->orderBy('id')
             ->get();
