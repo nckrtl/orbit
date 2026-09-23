@@ -36,7 +36,10 @@ use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Prompts\ClassificationPrompt;
@@ -502,6 +505,32 @@ it('hands off only a composer check that ran the workspace check script', functi
     'check-platform-reqs without a check script' => [false, "composer check\nChecking platform requirements for packages in the vendor dir\nphp 8.5.0 success", TaskStatus::Running],
     'missing check script' => [false, 'composer check', TaskStatus::Running],
 ]);
+
+it('records a Jev provider failure as a communication failure without aborting the tick', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    tick_workspace(true);
+    config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['activities'][0]['output'] = "composer check\n> pest";
+
+            return $snapshot;
+        }
+    });
+    Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"provider body"}'))));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->communication_failures)->toBe(1)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and(app(T3Dispatcher::class)->commands)->toBe([]);
+});
 
 it('notifies Coder when classification fails closed', function (): void {
     $group = tick_group();
