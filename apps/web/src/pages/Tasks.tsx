@@ -15,6 +15,7 @@ import {
     taskColumn,
     taskGroupQuery,
     taskGroupsQuery,
+    tasksForInstance,
     taskIdentity,
     taskStatusLabels,
     type Task,
@@ -73,6 +74,19 @@ function taskProperties(
 ) {
     return [
         { name: "Title", value: detail.title },
+        ...(group.execution_mode === "existing_thread"
+            ? [
+                  { name: "Type", value: "Annotation" },
+                  { name: "Execution", value: "Existing T3 thread" },
+                  {
+                      name: "Thread",
+                      value:
+                          ("target_thread_id" in detail
+                              ? detail.target_thread_id
+                              : group.tasks[0]?.target_thread_id) ?? "Unassigned",
+                  },
+              ]
+            : []),
         {
             name: "Status",
             value: taskColumn(detail.status),
@@ -204,17 +218,19 @@ function KanbanCardBody({
 const kanbanCardClassName =
     "kanban-card block rounded-[2px] focus-visible:outline-2 focus-visible:outline-cyan";
 
-export function TasksBoard() {
+export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
     const groups = useQuery(taskGroupsQuery);
+    const visibleGroups =
+        instanceId === undefined ? groups.data : tasksForInstance(groups.data ?? [], instanceId);
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
-            <PageHeader trail={[{ label: "Tasks" }]} />
+            {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
             {groups.data && !groups.error && (
                 <div className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-4">
                     {columns.map((column) => {
-                        const tasks = groups.data.filter(
+                        const tasks = (visibleGroups ?? []).filter(
                             (group) => taskColumn(group.status) === column,
                         );
                         return (

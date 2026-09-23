@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\AppInstances;
 
+use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Actions\Processes\CascadeAppInstanceProcessesAction;
 use App\Actions\Schedules\CascadeAppInstanceSchedulesAction;
 use App\Data\AppInstances\AppInstanceData;
@@ -361,6 +362,9 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                 AppInstance::query()
                     ->whereKey($members->pluck('id'))
                     ->update(['status' => AppInstanceState::Removing->value]);
+                foreach ($members as $member) {
+                    app(CancelInstanceAnnotationTasksAction::class)->execute($member->id);
+                }
 
                 return $operation->load('members');
             }),
@@ -428,6 +432,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     'source_digest' => $inventory->digest,
                 ]);
             $locked->update(['status' => AppInstanceState::Removing]);
+            app(CancelInstanceAnnotationTasksAction::class)->execute($locked->id);
 
             return $operation->load('members');
         }));
@@ -901,6 +906,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                 ->where('app_instance_id', $member->app_instance_id)
                 ->where('status', 'completed')
                 ->update(['app_instance_id' => null]);
+            app(CancelInstanceAnnotationTasksAction::class)->execute($member->app_instance_id);
             AppInstance::query()->lockForUpdate()->findOrFail($member->app_instance_id)->delete();
             $lockedMember->update(['row_deleted_at' => now()]);
 

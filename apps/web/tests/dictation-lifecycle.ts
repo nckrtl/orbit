@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { dictate, releaseMicrophone, warmMicrophone } from "../src/annotation/dictation";
+import { dictate, releaseMicrophone, warmMicrophone } from "@nckrtl/annotate/dictation";
 
 function fakeStream() {
     const stop = vi.fn();

@@ -1,0 +1,54 @@
+{
+    "name": "@nckrtl/annotate",
+    "version": "0.1.0",
+    "bin": {
+        "annotate": "bin/serve.mjs"
+    },
+    "files": [
+        "dist",
+        "bin",
+        "README.md"
+    ],
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./inject": "./dist/inject.js",
+        "./vite": "./bin/vite.mjs"
+    },
+    "scripts": {
+        "build": "vp build && ANNOTATION_INJECT=1 vp build && tsc --emitDeclarationOnly",
+        "test": "node tests/smoke.mjs && node tests/service.mjs && node tests/orbit.mjs && node tests/local-server.mjs && node tests/proxy.mjs",
+        "check": "vp check"
+    },
+    "dependencies": {
+        "@heroicons/react": "2",
+        "html-to-image": "^1.11.13",
+        "pusher-js": "^8.6.0",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.3.3",
+        "@types/node": "^26.6.2",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "playwright": "1.62.1",
+        "tailwindcss": "^4.3.3",
+        "typescript": "~6.0.2",
+        "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
+        "vite-plus": "0.2.6",
+        "ws": "^8.21.3"
+    },
+    "devEngines": {
+        "packageManager": {
+            "name": "bun",
+            "version": "1.4.2",
+            "onFail": "download"
+        }
+    }
+}

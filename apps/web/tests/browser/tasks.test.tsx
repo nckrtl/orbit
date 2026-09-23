@@ -1,3 +1,4 @@
+import { queryClient } from "../../src/api/queryClient";
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import type { Transport } from "../../src/api/client";
@@ -9,6 +10,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
     return {
         id,
         app_id: 999,
+        execution_mode: "managed",
         app: "example-project",
         project_code: "EXA",
         title: `Feature ${id}`,
@@ -28,6 +30,9 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
             {
                 id: 1,
                 task_group_id: id,
+                type: "implementation",
+                target_thread_id: null,
+                completion_summary: null,
                 position: 1,
                 title: "First step",
                 brief: "Acceptance details",
@@ -292,4 +297,54 @@ it("loads a subtask URL directly and refuses an unknown subtask", async () => {
     });
     await expect.element(page.getByRole("alert")).toHaveTextContent("Subtask not found");
     expect(document.querySelector('[aria-label="Description"]')).toBeNull();
+});
+
+it("shows Instance overview and an Instance-scoped Tasks board with keyboard tabs", async () => {
+    const owned = {
+        ...group(80, "running"),
+        title: "Fix this Instance",
+        taskable_type: "instance",
+        taskable_id: 1,
+    };
+    const other = {
+        ...group(81, "todo"),
+        title: "Another Instance task",
+        taskable_type: "instance",
+        taskable_id: 2,
+    };
+    const unassigned = { ...group(82, "todo"), title: "Unassigned task" };
+    await openApp("/instances/1", {
+        wrapTransport: (inner) => (method, path, body) =>
+            path === "/api/v1/task-groups"
+                ? Promise.resolve({ status: 200, payload: { data: [owned, other, unassigned] } })
+                : inner(method, path, body),
+    });
+    await expect
+        .element(page.getByRole("tab", { name: "Overview", exact: true }))
+        .toHaveAttribute("aria-selected", "true");
+    await expect.element(pane("Application log")).toBeVisible();
+    await expect.element(pane("Annotations")).not.toBeInTheDocument();
+    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toHaveTextContent(/Tasks\s*1/);
+    await page.getByRole("tab", { name: /^Tasks/ }).click();
+    await expect
+        .element(page.getByRole("link", { name: "Open task: Fix this Instance" }))
+        .toBeVisible();
+    await expect
+        .element(page.getByRole("link", { name: "Open task: Another Instance task" }))
+        .not.toBeInTheDocument();
+    await expect
+        .element(page.getByRole("link", { name: "Open task: Unassigned task" }))
+        .not.toBeInTheDocument();
+    await expect.element(pane("Application log")).not.toBeInTheDocument();
+    await userEvent.keyboard("{ArrowUp}");
+    await expect
+        .element(page.getByRole("tab", { name: "Overview", exact: true }))
+        .toHaveAttribute("aria-selected", "true");
+    await expect.element(pane("Application log")).toBeVisible();
+    queryClient.setQueryData(["task-groups"], [other, unassigned]);
+    await expect
+        .element(page.getByRole("tab", { name: "Tasks", exact: true }))
+        .toHaveTextContent("Tasks");
+    queryClient.setQueryData(["task-groups"], [owned, other, unassigned]);
+    await expect.element(page.getByRole("tab", { name: /^Tasks/ })).toHaveTextContent(/Tasks\s*1/);
 });

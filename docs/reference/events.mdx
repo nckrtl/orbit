@@ -46,9 +46,9 @@ Every event shares the same shape. The broadcast name equals `type`.
 | Field | Contract |
 | --- | --- |
 | `type` | `<family>.<verb>`, for example `node.created`. Also the broadcast name a client subscribes to. |
-| `id` | The changed record's id. A numeric id for every family except deploy steps, which use the step's name. |
+| `id` | The changed record's id. A string annotation ID for annotations; a numeric id for every family except deploy steps, which use the step's name. |
 | `at` | ISO 8601 timestamp of the broadcast, in the Gateway's timezone. |
-| `data` | The record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
+| `data` | For annotation notices, `{ id, instanceId, revision }`. For other changes, the record exactly as its list or show endpoint returns it: the same Spatie Data object, unchanged. A `deleted` event carries a minimal snapshot instead, usually just `id` and a name or slug, because the action deletes the record before the broadcast and leaves nothing else to serialize. |
 
 ```json
 {
@@ -166,3 +166,7 @@ orbit node:role:add gateway websocket --converge
 ```
 
 There is no environment variable to set. The Gateway resolves the active connection (host, port, scheme, and the Reverb application credentials it generated for the role) from the role assignment itself, lazily and once per request, and configures its `reverb` broadcast connection from it before every broadcast. The Gateway connects to the role's Node by its WireGuard address while still presenting and verifying the name `reverb.orbit`, because the Gateway host does not resolve names through Orbit's private DNS. Removing the role removes the connection, the certificate, the Caddy site, the private DNS record, and the stored credentials; `GET /api/v1/realtime` then reports `url` and `key` as `null` again.
+
+### Annotation
+
+`annotation.updated` fires after an annotation transaction commits. Its data is `{ id, instanceId, revision }`, a small invalidation notice rather than the full record. Clients fetch the Instance annotation list to recover current state. Screenshot and comment payloads stay out of broadcasts.

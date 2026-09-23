@@ -158,6 +158,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install annotation package dependencies
+        working-directory: packages/agent-annotation
+        run: bun install --frozen-lockfile
+
       - name: Check that the API types match the API reference
         run: bun run types && git diff --exit-code src/api/schema.d.ts
 
@@ -202,15 +206,48 @@ jobs:
       - name: Build
         run: bun run build
 
+  agent-annotation:
+    name: Agent annotation
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: packages/agent-annotation
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check formatting and lint
+        run: bun run check
+
+      - name: Build
+        run: bun run build
+
+      - name: Install the test browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run tests
+        run: bun run test
+
   required:
     name: Required checks
     if: always()
-    needs: [project, web, pi-server]
+    needs: [project, web, agent-annotation, pi-server]
     runs-on: ubuntu-latest
     steps:
       - name: Require every project to pass
         env:
           PROJECT_RESULT: ${{ needs.project.result }}
           WEB_RESULT: ${{ needs.web.result }}
+          ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
-        run: test "$PROJECT_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success
+        run: test "$PROJECT_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success

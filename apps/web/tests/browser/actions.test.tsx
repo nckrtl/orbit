@@ -100,7 +100,7 @@ it("shows no queue panel for an instance without Horizon", async () => {
     await openApp("/instances/2");
     await expect.element(pane("Application log")).toBeVisible();
 
-    await expect.element(page.getByRole("tablist")).not.toBeInTheDocument();
+    await expect.element(pane("Jobs")).not.toBeInTheDocument();
 });
 
 it("lists live UFW on a node and keeps Orbit's own rules without actions", async () => {

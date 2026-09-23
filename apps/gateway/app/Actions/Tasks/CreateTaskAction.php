@@ -15,6 +15,7 @@ final readonly class CreateTaskAction
 
     public function execute(TaskGroup $group, CreateTaskData $data): Task
     {
+        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $position = ((int) $group->tasks()->max('position')) + 1;

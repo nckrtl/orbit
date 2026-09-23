@@ -218,6 +218,7 @@ TAGS = [
     ('database', 'Database connections', 'The registry of mysql, pgsql, and sqlite connections.'),
     ('process', 'Processes', 'systemd services and Docker containers owned by an Instance, a Node, or a Project definition.'),
     ('schedule', 'Schedules', 'Recurring commands run by native systemd timers.'),
+    ('annotation', 'Annotations', 'Instance annotations, T3 delivery, and replayable status events.'),
     ('tasks', 'Tasks', 'Enable-gated Commander feature groups and ordered subtasks.'),
     ('doctor', 'Doctor', 'Verify-only drift checks across the fleet.'),
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),
@@ -1035,6 +1036,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             if route['name'] == 'instance:rollback':
                 body = {'type': 'object', 'properties': {'release': {'type': 'string', 'description': 'Retained release name to select.'}}, 'required': ['release'], 'additionalProperties': False}
             op['requestBody'] = {'required': True, 'content': {'application/json': {'schema': body}}}
+    elif route['name'] == 'annotation:events':
+        responses['200'] = {'description': 'Instance annotation snapshots and status updates. Reconnect with a numeric Last-Event-ID or after query cursor.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'tasks:agent-stream':
         responses['200'] = {'description': 'Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.', 'content': {'text/event-stream': {'schema': {'type': 'string'}}}}
     elif route['name'] == 'schedule:complete':
@@ -1087,6 +1090,15 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     nav_pages[tag].append(f'{route["method"]} {path}')
 
 spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
+annotation_create = spec['paths']['/api/v1/instances/{instance}/annotations']['post']['requestBody']['content']['application/json']['schema']
+annotation_create['properties']['boundingBox'] = {'type': 'object', 'properties': {key: {'type': 'number'} for key in ('x', 'y', 'width', 'height')}, 'additionalProperties': False}
+spec['components']['schemas']['Annotation'] = {'type': 'object', 'properties': {
+    **annotation_create['properties'], 'instanceId': {'type': 'integer'}, 'taskId': {'type': 'integer'}, 'taskGroupId': {'type': 'integer'},
+    'revision': {'type': 'integer'}, 'status': {'type': 'string', 'enum': ['pending', 'in_progress', 'resolved', 'cancelled']},
+    'delivery': {'type': 'string', 'enum': ['queued', 'sending', 'sent', 'error', 'cancelled']},
+    'syncError': {'type': ['string', 'null']}, 'summary': {'type': ['string', 'null']},
+}}
+
 OUTPUT.write_text(json.dumps(spec, indent=2) + '\n')
 
 # keep docs.json navigation in sync with the operations

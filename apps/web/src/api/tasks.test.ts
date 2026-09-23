@@ -69,6 +69,9 @@ it("counts completed nested tasks against the group total", () => {
     const task = (id: number, status: Task["status"]): Task => ({
         id,
         task_group_id: 1,
+        type: "implementation",
+        target_thread_id: null,
+        completion_summary: null,
         position: id,
         title: `Step ${id}`,
         brief: "",

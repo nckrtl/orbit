@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,6 +13,9 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property-read AgentThread|null $implementerThread
+ * @property TaskType $type
+ * @property string|null $target_thread_id
+ * @property string|null $completion_summary
  * @property int $id
  * @property int $task_group_id
  * @property int $position
@@ -52,11 +56,13 @@ final class Task extends Model
     #[\Override]
     protected $attributes = [
         'status' => 'todo',
+        'type' => 'implementation',
     ];
 
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'type', 'target_thread_id', 'completion_summary',
         'task_group_id',
         'position',
         'title',
@@ -109,6 +115,7 @@ final class Task extends Model
     protected function casts(): array
     {
         return [
+            'type' => TaskType::class,
             'position' => 'integer',
             'status' => TaskStatus::class,
             'tokens' => 'integer',
