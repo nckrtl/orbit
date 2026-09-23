@@ -48,6 +48,8 @@ The Gateway needs outbound HTTPS access to `api.github.com` for every read of a 
 
 After the approval of the last subtask, the Gateway asks GitHub for a token with `Contents: write` and `Pull requests: write` for the Project repository. The token reaches the Node the same way as a read token, and `git` pushes the task branch with it. The Gateway then opens the pull request and later reads its state with the same kind of token. Unlike a read, publishing has no path without the App: without an App or an installation that covers the repository, the task counts a communication failure and then asks for assistance. [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) owns this use.
 
+An installation made before the App gained `Contents: write` and `Pull requests: write` keeps its old permissions until the account owner accepts the new ones in the installation settings on GitHub. Until then, GitHub refuses the publish token with 422, and the assistance reason quotes GitHub's message: "The permissions requested are not granted to this installation."
+
 ## What the App does not cover
 
 Git commands that you or an agent run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in. Agents never receive a token.

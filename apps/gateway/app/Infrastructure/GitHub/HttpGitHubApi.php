@@ -203,6 +203,12 @@ final readonly class HttpGitHubApi implements GitHubApi
 
         $token = $response->json('token');
 
+        if ($response->clientError()) {
+            $message = $response->json('message');
+
+            throw GitHubApiException::tokenRefused($response->status(), is_string($message) ? rtrim($message, '.') : '');
+        }
+
         if (! $response->successful() || ! is_string($token) || $token === '') {
             throw GitHubApiException::unavailable();
         }

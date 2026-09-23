@@ -277,3 +277,15 @@ it('shows a requested assistance and its reason on the group and the subtask', f
 
     expect(backlog_group($this, ['Two']))->toMatchArray(['assistance_requested' => false, 'assistance_reason' => null]);
 });
+
+it('clears a requested assistance when the group is cancelled', function (): void {
+    $group = backlog_group($this, ['One']);
+    TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+    Task::query()->whereKey($group['tasks'][0]['id'])->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'composer check is blocked.']);
+
+    $this->postJson("/api/v1/task-groups/{$group['id']}/cancel")
+        ->assertOk()
+        ->assertJsonPath('data.assistance_requested', false)
+        ->assertJsonPath('data.assistance_reason', 'composer check is blocked.')
+        ->assertJsonPath('data.tasks.0.assistance_requested', false);
+});
