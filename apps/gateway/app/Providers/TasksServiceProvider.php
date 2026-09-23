@@ -12,6 +12,7 @@ use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
@@ -28,6 +29,7 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\RemoteTaskPlannerMcp;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
@@ -51,6 +53,7 @@ final class TasksServiceProvider extends ServiceProvider
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskPlannerSpawner::class => TaskAgentSpawner::class,
+        TaskPlannerMcp::class => RemoteTaskPlannerMcp::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,
         T3ThreadReader::class => HttpT3ThreadReader::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,

@@ -9,6 +9,7 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\App as OrbitApp;
@@ -97,6 +98,21 @@ beforeEach(function (): void {
             return $this->refuse ? null : str_repeat('a', 40);
         }
     };
+    $this->mcp = new class implements TaskPlannerMcp
+    {
+        /** @var list<int> */
+        public array $instances = [];
+
+        public bool $refuse = false;
+
+        public function install(AppInstance $instance): bool
+        {
+            $this->instances[] = $instance->id;
+
+            return ! $this->refuse;
+        }
+    };
+    app()->instance(TaskPlannerMcp::class, $this->mcp);
     app()->instance(InstanceProvisioning::class, $this->provisioning);
     app()->instance(TaskPlannerSpawner::class, $this->planners);
     app()->instance(TaskWorkspaceSigner::class, $this->signer);
@@ -125,6 +141,7 @@ it('provisions the workspace on a self-access Node and starts the planner as the
         ->and($group['taskable_id'])->not->toBeNull()
         ->and($group['reviewer_agent_thread_id'])->not->toBeNull()
         ->and($this->planners->groups)->toBe([$group['id']])
+        ->and($this->mcp->instances)->toBe([$group['taskable_id']])
         ->and($this->provisioning->intents)->toHaveCount(1)
         ->and($this->provisioning->intents[0]->selfAccess)->toBeTrue()
         ->and($this->provisioning->intents[0]->visitable)->toBeTrue();
@@ -265,4 +282,16 @@ it('keeps Gateway access for create and for groups without a workspace', functio
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
     planner_create($this)->assertForbidden();
+});
+
+it('removes the workspace and stores no group when Orbit MCP cannot be given to the planner', function (): void {
+    $this->mcp->refuse = true;
+
+    planner_create($this)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.planner_unavailable');
+
+    expect(TaskGroup::query()->count())->toBe(0)
+        ->and(AppInstance::query()->count())->toBe(0)
+        ->and($this->planners->groups)->toBe([]);
 });
