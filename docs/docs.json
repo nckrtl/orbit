@@ -671,7 +671,8 @@
               "decisions/0115-run-project-setup-commands-on-development-instances",
               "decisions/0116-run-task-implementers-on-pi",
               "decisions/0117-judge-the-blocked-question-on-role-evidence",
-              "decisions/0118-exclude-app-dev-nodes-per-project"
+              "decisions/0118-exclude-app-dev-nodes-per-project",
+              "decisions/0121-end-agent-turns-with-a-run-receipt"
             ]
           }
         ]
