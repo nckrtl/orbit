@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Tasks;
 
-use App\Data\Tasks\AddTaskData;
+use App\Data\Tasks\CreateTaskData;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
-final class AddTaskRequest extends FormRequest
+final class CreateTaskRequest extends FormRequest
 {
     /** @return array<string, list<string>> */
     public function rules(): array
@@ -31,9 +31,9 @@ final class AddTaskRequest extends FormRequest
         }
     }
 
-    public function payload(): AddTaskData
+    public function payload(): CreateTaskData
     {
-        return new AddTaskData(
+        return new CreateTaskData(
             title: (string) $this->validated('title'),
             brief: (string) $this->validated('brief'),
         );

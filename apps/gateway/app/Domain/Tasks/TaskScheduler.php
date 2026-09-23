@@ -432,7 +432,7 @@ final readonly class TaskScheduler
 
     private function isFinalSubtask(TaskGroup $group, Task $task): bool
     {
-        return ! $group->tasks()->whereIn('status', [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
+        return ! $group->tasks()->whereIn('status', [TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Running])->where('id', '!=', $task->id)->exists();
     }
 
     private function jevThreshold(): float
@@ -535,7 +535,7 @@ final readonly class TaskScheduler
         $reserved = DB::transaction(function (): ?TaskGroup {
             $candidates = TaskGroup::query()
                 ->with(['tasks', 'taskable'])
-                ->where('status', TaskGroupStatus::Queued)
+                ->where('status', TaskGroupStatus::Todo)
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
@@ -564,7 +564,7 @@ final readonly class TaskScheduler
         ));
 
         if (! $instance instanceof AppInstance) {
-            $reserved->update(['status' => TaskGroupStatus::Queued]);
+            $reserved->update(['status' => TaskGroupStatus::Todo]);
 
             return null;
         }
@@ -579,7 +579,7 @@ final readonly class TaskScheduler
             $group->load('taskable');
 
             if (! $this->ceilings->canActivate($group)) {
-                $group->status = TaskGroupStatus::Queued;
+                $group->status = TaskGroupStatus::Todo;
                 $group->taskable()->dissociate();
                 $group->save();
 
@@ -693,7 +693,7 @@ final readonly class TaskScheduler
             $locked->save();
 
             $tasks = $this->lockedTasks($group);
-            $next = $this->lowestPending($tasks);
+            $next = $this->lowestTodo($tasks);
 
             if ($next instanceof Task) {
                 try {
@@ -784,7 +784,7 @@ final readonly class TaskScheduler
 
         $first = $this->orderedTasks($group->tasks)->first();
 
-        if (! $first instanceof Task || $first->status !== TaskStatus::Pending) {
+        if (! $first instanceof Task || $first->status !== TaskStatus::Todo) {
             return;
         }
 
@@ -825,7 +825,7 @@ final readonly class TaskScheduler
             throw TaskSequenceException::siblingRunning($task->task_group_id, $running->id);
         }
 
-        $next = $this->lowestPending($tasks);
+        $next = $this->lowestTodo($tasks);
 
         if (! $next instanceof Task || $next->id !== $task->id || ! $this->predecessorsCompleted($task, $tasks)) {
             throw TaskSequenceException::notNext($task->id, $task->task_group_id);
@@ -891,10 +891,10 @@ final readonly class TaskScheduler
     }
 
     /** @param  Collection<int, Task>  $tasks */
-    private function lowestPending(Collection $tasks): ?Task
+    private function lowestTodo(Collection $tasks): ?Task
     {
         return $this->orderedTasks($tasks)->first(
-            static fn (Task $task): bool => $task->status === TaskStatus::Pending,
+            static fn (Task $task): bool => $task->status === TaskStatus::Todo,
         );
     }
 

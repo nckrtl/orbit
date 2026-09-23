@@ -66,7 +66,7 @@ Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks
 
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
-Subtask create appends one subtask at the next position with status `todo`. It works while the group is active. Subtask update changes `title`, `brief`, or `position`, and the other subtasks shift to keep positions gapless from 1. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`.
+Subtask create appends one subtask at the next position with status `todo`. It works in any group status. Subtask update changes `title`, `brief`, or `position`, and the other subtasks shift to keep positions gapless from 1. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`.
 
 | Error | HTTP | When |
 | --- | --- | --- |

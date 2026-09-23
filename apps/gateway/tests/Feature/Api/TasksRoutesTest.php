@@ -70,7 +70,10 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:list' => ['api/v1/task-groups', ['GET', 'HEAD']],
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
-        'tasks:add' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:update' => ['api/v1/task-groups/{group}', ['PATCH']],
+        'tasks:subtask:create' => ['api/v1/task-groups/{group}/tasks', ['POST']],
+        'tasks:subtask:update' => ['api/v1/task-groups/{group}/tasks/{task}', ['PATCH']],
+        'tasks:subtask:destroy' => ['api/v1/task-groups/{group}/tasks/{task}', ['DELETE']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
@@ -146,12 +149,18 @@ it('rejects invalid comment types and incomplete reviewer outcomes', function ()
     ])->assertStatus(422);
 });
 
-it('declares Gateway access for enable disable status create and add', function (): void {
+it('declares Gateway access for enable disable status create update and subtask changes', function (): void {
     expect(new ReflectionClass(TasksController::class)->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'store')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
-        ->and(new ReflectionMethod(TaskGroupsController::class, 'addTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
+        ->and(new ReflectionMethod(TaskGroupsController::class, 'update')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
+        ->toBe(ServingNode::Gateway)
+        ->and(new ReflectionMethod(TaskGroupsController::class, 'createTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
+        ->toBe(ServingNode::Gateway)
+        ->and(new ReflectionMethod(TaskGroupsController::class, 'updateTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
+        ->toBe(ServingNode::Gateway)
+        ->and(new ReflectionMethod(TaskGroupsController::class, 'destroyTask')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
         ->and(new ReflectionMethod(TaskGroupsController::class, 'complete')->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
         ->toBe(ServingNode::Gateway)
@@ -274,6 +283,7 @@ it('still returns the created group when the opening spawn fails', function (): 
         'app_id' => $app->id,
         'title' => 'Spawn failure',
         'brief' => 'Fail the group. Accept when create still answers.',
+        'status' => 'todo',
         'tasks' => [
             ['title' => 'Only', 'brief' => 'One subtask. Accept when it is recorded.'],
         ],
@@ -305,7 +315,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertCreated()
         ->assertJsonPath('data.title', 'Absorb Commander')
         ->assertJsonPath('data.app', 'commander-demo')
-        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.status', 'backlog')
         ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.reviewer_model', 'claude-opus-5')
@@ -336,10 +346,10 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
     $added
         ->assertCreated()
         ->assertJsonPath('data.position', 3)
-        ->assertJsonPath('data.status', 'pending');
+        ->assertJsonPath('data.status', 'todo');
 
     expect(Task::query()->where('task_group_id', $id)->count())->toBe(3)
-        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Queued);
+        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Backlog);
 });
 
 it('creates a fourth group when the App already has three active groups', function (): void {
@@ -352,16 +362,20 @@ it('creates a fourth group when the App already has three active groups', functi
             'app_id' => $app->id,
             'title' => $title,
             'brief' => "{$title} brief",
-        ])->assertCreated()->assertJsonPath('data.status', 'queued');
+            'status' => 'todo',
+            'tasks' => [['title' => 'Only', 'brief' => 'One subtask.']],
+        ])->assertCreated()->assertJsonPath('data.status', 'todo');
     }
 
     $this->postJson('/api/v1/task-groups', [
         'app_id' => $app->id,
         'title' => 'Four',
         'brief' => 'No per-Project ceiling holds this group.',
+        'status' => 'todo',
+        'tasks' => [['title' => 'Only', 'brief' => 'One subtask.']],
     ])
         ->assertCreated()
-        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.status', 'todo')
         ->assertJsonPath('data.title', 'Four');
 });
 

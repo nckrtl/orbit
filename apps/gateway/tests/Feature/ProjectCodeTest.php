@@ -29,7 +29,7 @@ it('persists an editable code and returns the new code on task cards', function 
     $project = projectForCode('orbit');
     expect($project->code)->toBe('ORB');
     $group = $project->taskGroups()->create([
-        'title' => 'Code on card', 'brief' => 'Brief', 'status' => 'queued',
+        'title' => 'Code on card', 'brief' => 'Brief', 'status' => 'todo',
         'implementer_model' => 'model', 'reviewer_model' => 'model',
     ]);
     $this->patchJson("/api/v1/projects/{$project->id}", ['code' => 'NEW'])

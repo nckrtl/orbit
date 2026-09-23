@@ -13,8 +13,8 @@ import {
 } from "./tasks";
 
 it.each([
-    ["queued", "Todo"],
-    ["pending", "Todo"],
+    ["backlog", "Backlog"],
+    ["todo", "Todo"],
     ["reserved", "In progress"],
     ["running", "In progress"],
     ["reviewing", "In progress"],
@@ -22,7 +22,7 @@ it.each([
     ["completed", "Done"],
     ["failed", "Done"],
     ["cancelled", "Done"],
-] as const)("places %s in %s", (status: Task["status"] | "queued" | "settling", column) => {
+] as const)("places %s in %s", (status: Task["status"] | "backlog" | "settling", column) => {
     expect(taskColumn(status)).toBe(column);
 });
 
@@ -84,7 +84,7 @@ it("counts completed nested tasks against the group total", () => {
             task(1, "completed"),
             task(2, "completed"),
             task(3, "running"),
-            task(4, "pending"),
+            task(4, "todo"),
             task(5, "failed"),
         ]),
     ).toEqual({ completed: 2, total: 5 });

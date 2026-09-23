@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Data\Tasks\AddTaskData;
+use App\Data\Tasks\CreateTaskData;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
-final readonly class AddTaskAction
+final readonly class CreateTaskAction
 {
     public function __construct(private RequireTasksExtensionAction $requireExtension) {}
 
-    public function execute(TaskGroup $group, AddTaskData $data): Task
+    public function execute(TaskGroup $group, CreateTaskData $data): Task
     {
         $this->requireExtension->execute();
 
@@ -24,7 +24,7 @@ final readonly class AddTaskAction
             'position' => $position,
             'title' => $data->title,
             'brief' => $data->brief,
-            'status' => TaskStatus::Pending,
+            'status' => TaskStatus::Todo,
         ]);
     }
 }
