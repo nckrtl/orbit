@@ -13,7 +13,8 @@
             "repository_url": "git@github.com:charlie/shop.git",
             "default_branch": "release",
             "root": "web/public",
-            "defaults": null
+            "defaults": null,
+            "excluded_nodes": []
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

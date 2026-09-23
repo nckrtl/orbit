@@ -109,6 +109,7 @@ The Gateway returns these transfer conflicts before or during the operation.
 | `instance.same_node` | The destination is the current Node. |
 | `instance.node_inactive` | The source or destination Node is not an active Linux Node. |
 | `instance.node_not_app_dev` | The source or destination Node has no active app-dev role. |
+| `instance.node_excluded` | The destination Node is excluded for this Project. [Development node exclusions](/reference/development-node-exclusions) owns that list. |
 | `instance.standalone_unsupported` | The source or destination Node is not in an active Cluster. |
 | `instance.identity_conflict` | The destination name is already owned on the Project. |
 | `instance.destination_exists` | The destination path is occupied, overlapping, or unsafe. |

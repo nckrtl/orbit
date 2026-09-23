@@ -10,6 +10,8 @@ use App\Actions\Apps\RemoveAppAction;
 use App\Actions\Apps\ShowAppAction;
 use App\Actions\Apps\UpdateAppAction;
 use App\Data\Apps\AppData;
+use App\Data\Projects\DevelopmentNodeExclusionData;
+use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -17,6 +19,7 @@ use App\Http\Requests\Apps\StoreAppRequest;
 use App\Http\Requests\Apps\UpdateAppRequest;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -56,7 +59,13 @@ final class AppsController extends Controller
     public function show(Request $request, OrbitApp $app, ShowAppAction $action): JsonResponse
     {
         return response()->json([
-            'data' => AppData::fromModel($action->handle($app))->toArray(),
+            'data' => [
+                ...AppData::fromModel($action->handle($app))->toArray(),
+                'excluded_nodes' => app(DevelopmentNodeExclusion::class)->forProject($app)
+                    ->map(static fn (ProjectNodeExclusion $exclusion): array => DevelopmentNodeExclusionData::fromModel($exclusion)->toArray())
+                    ->values()
+                    ->all(),
+            ],
             'meta' => $this->meta($request),
         ]);
     }
