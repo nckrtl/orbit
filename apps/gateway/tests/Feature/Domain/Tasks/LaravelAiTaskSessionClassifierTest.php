@@ -10,6 +10,10 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
+use GuzzleHttp\Psr7\Response as Psr7Response;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Prompts\ClassificationPrompt;
@@ -262,4 +266,35 @@ it('does not treat an assistant claim as composer check evidence', function (): 
     );
 
     expect($decision->outcome)->toBe(TaskJevOutcome::AssistanceRequired);
+});
+
+describe('provider failures', function (): void {
+    it('reports a provider error as a classification failure without the response body', function (): void {
+        config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(500, [], '{"detail":"provider body"}'))));
+
+        expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(classifier_observation(), TaskThreadRole::Implementer))
+            ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (RequestException).');
+        try {
+            app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(classifier_observation(), TaskThreadRole::Implementer);
+        } catch (TaskSessionClassificationException $exception) {
+            expect($exception->getMessage())->not->toContain('provider body');
+        }
+    });
+
+    it('reports an unreachable provider as a classification failure', function (): void {
+        config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+        Classification::fake(fn () => throw new ConnectionException('Connection refused'));
+
+        expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
+            ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');
+    });
+
+    it('names the missing key when a request fails without one', function (?string $key): void {
+        config()->set('ai.providers.typesafe.key', $key);
+        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"Must supply an API key!"}'))));
+
+        expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(classifier_observation(), TaskThreadRole::Implementer))
+            ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.');
+    })->with(['missing' => [null], 'empty' => ['']]);
 });

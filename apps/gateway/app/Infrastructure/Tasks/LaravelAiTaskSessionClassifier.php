@@ -15,7 +15,10 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTranscriptCheck;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Classification\Choice;
+use Laravel\Ai\PendingResponses\PendingClassification;
+use Laravel\Ai\Responses\ClassificationResponse;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
+use Throwable;
 
 final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassifier
 {
@@ -29,8 +32,8 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
             ->question('outcome', new Choice(
                 'Which single Jev outcome applies to this stopped task thread?',
                 TaskJevOutcome::choiceCriteria(),
-            ))
-            ->classify();
+            ));
+        $answers = $this->answers($answers);
 
         $answer = $answers['outcome'] ?? null;
         if (! $answer instanceof ChoiceAnswer) {
@@ -66,7 +69,7 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
             $classification = $classification->question($key, new Choice($prompt, ['yes' => $yes, 'no' => $no]));
         }
 
-        $answers = $classification->classify();
+        $answers = $this->answers($classification);
         $checks = [];
         foreach (array_keys($definitions) as $key) {
             $answer = $answers[$key] ?? null;
@@ -85,8 +88,8 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
             ->question('next_action', new Choice(
                 'Which single next action should the Gateway task scheduler execute for these agent threads?',
                 TaskSessionNextAction::choiceCriteria(),
-            ))
-            ->classify();
+            ));
+        $answers = $this->answers($answers);
 
         $answer = $answers['next_action'] ?? null;
 
@@ -109,6 +112,26 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
             $answer->confidence,
             'Jev selected '.$action->value.'.',
         );
+    }
+
+    /**
+     * Sends the questions to Jev. Every provider or transport failure, including a missing or empty
+     * key, becomes a TaskSessionClassificationException. The scheduler handles that as a
+     * communication failure for the task instead of aborting the tick. The provider's message and
+     * response body stay out of the exception, because they can carry request data.
+     */
+    private function answers(PendingClassification $classification): ClassificationResponse
+    {
+        try {
+            return $classification->classify();
+        } catch (Throwable $exception) {
+            $key = config('ai.providers.typesafe.key');
+            $reason = ! is_string($key) || trim($key) === ''
+                ? 'TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.'
+                : 'TypeSafe Jev request failed ('.class_basename($exception).').';
+
+            throw new TaskSessionClassificationException($reason, previous: $exception);
+        }
     }
 
     private function threshold(): float
