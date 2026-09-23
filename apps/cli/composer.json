@@ -24,7 +24,7 @@
         "laravel/pao": "^1.1",
         "laravel/pint": "^1.32",
         "mockery/mockery": "^1.6.12",
-        "nckrtl/pestphp-monorepo": "^1.0",
+        "nckrtl/pestphp-monorepo": "dev-main#9f0929325bb0ed29274bc51b420726ba681e347c",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
         "spatie/guidelines-skills": "^1.1"

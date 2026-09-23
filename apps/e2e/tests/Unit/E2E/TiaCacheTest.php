@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('selects the published graph directory while isolating background checks and failures', function (): void {
+it('shares real Pest results across worktrees and isolates cache maintenance', function (): void {
     $repository = dirname(__DIR__, 5);
     $environment = ['PYTHONDONTWRITEBYTECODE' => '1'];
+    // The fixture starts its own Pest runner, outside this suite's worker state.
+    foreach (array_keys($_SERVER + $_ENV) as $name) {
+        if (is_string($name) && (str_starts_with($name, 'PEST_') || in_array($name, ['PARATEST', 'TEST_TOKEN', 'UNIQUE_TEST_TOKEN'], true))) {
+            $environment[$name] = false;
+        }
+    }
     $evidenceDirectory = getenv('TIA_CACHE_EVIDENCE_DIR');
 
     if (is_string($evidenceDirectory) && $evidenceDirectory !== '') {

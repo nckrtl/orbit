@@ -20,7 +20,7 @@ Extend the existing bootstrap and cache scripts. After all checks pass, bootstra
 
 Reuse the existing cache format, validation, maintenance lock, and atomic writes. Convert the task branch's Pest results into a main baseline using Pest's fallback rules. Preserve the graph's recorded commit. Refuse older results that would replace newer shared caches. Cache errors are reported and leave application checks successful.
 
-Worktree creation fetches main for the new task without advancing the primary checkout or starting duplicate background checks. Deployment owns updates to the running checkout. Background maintenance remains available separately.
+The primary checkout does not need to be clean or on main. Worktree creation fetches main for the new task without advancing the primary checkout or starting duplicate background checks. Deployment owns updates to the running checkout. Background maintenance remains available separately.
 
 ## Rejected alternatives
 
@@ -30,7 +30,7 @@ Worktree creation fetches main for the new task without advancing the primary ch
 
 ## Consequences
 
-Subsequent local worktrees reuse successful bootstrap results. Caches remain private during feature development. This change relies on the existing Pest graph validation and does not add a second test-report validation system.
+Subsequent local worktrees reuse successful bootstrap results. Caches remain private during feature development. This change relies on the existing Pest graph validation and does not add a second test-report validation system. Pest must preserve binary dataset values in both worker results and graphs; Orbit pins the merged runner fix until a release includes it. Independent clones created by task workspace provisioning do not share this store or invoke bootstrap automatically.
 
 ## Affects
 

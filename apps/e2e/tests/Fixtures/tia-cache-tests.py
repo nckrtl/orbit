@@ -7,6 +7,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import time
 from pathlib import Path
 import subprocess
@@ -254,6 +255,7 @@ class MainCacheTest(unittest.TestCase):
         self.assertTrue(options['start_new_session'])
         self.assertEqual(subprocess.DEVNULL, options['stdin'])
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux /proc process environments")
     def test_native_background_checks_isolate_setup_settings_and_keep_dependency_access(self):
         project = self.root / self.project
         (project / 'tests').mkdir(parents=True)
@@ -529,7 +531,7 @@ else:
             (root / project).mkdir(parents=True)
         calls = root / 'calls'
         for name, script in {
-            'composer': '#!/bin/sh\necho "composer $*" >> "$TIA_TEST_CALLS"\nif [ "$1" = "$TIA_TEST_FAIL" ]; then exit 7; fi\nif [ "$1" != install ]; then test -z "$ORBIT_MAIN_CACHE_STORE"; fi\n',
+            'composer': '#!/bin/sh\nif [ "$1" = install ]; then test "$COMPOSER_CACHE_DIR" = "$TIA_TEST_COMPOSER_CACHE" || exit 8; fi\necho "composer $*" >> "$TIA_TEST_CALLS"\nif [ "$1" = "$TIA_TEST_FAIL" ]; then exit 7; fi\nif [ "$1" != install ]; then test -z "$ORBIT_MAIN_CACHE_STORE"; fi\n',
             'worktree-cache': '#!/bin/sh\ntest "$ORBIT_MAIN_CACHE_STORE" = "$TIA_TEST_STORE"\n',
             'tia-cache': '#!/bin/sh\necho "cache $*" >> "$TIA_TEST_CALLS"\ntest "$ORBIT_MAIN_CACHE_STORE" = "$TIA_TEST_STORE" || exit 9\nexit 1\n',
         }.items():
@@ -540,7 +542,9 @@ else:
                        'ORBIT_MAIN_CACHE_STORE': str(root / 'transported-main'),
                        'TIA_TEST_STORE': str(root / 'transported-main'),
                        'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH'],
-                       'TIA_TEST_CALLS': str(calls), 'TIA_TEST_FAIL': ''}
+                       'TIA_TEST_CALLS': str(calls), 'TIA_TEST_FAIL': '',
+                       'COMPOSER_CACHE_DIR': str(root / 'downloads'),
+                       'TIA_TEST_COMPOSER_CACHE': str(root / 'downloads')}
         result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True, env=environment)
         self.assertEqual(0, result.returncode, result.stderr)
         lines = calls.read_text().splitlines()
@@ -684,6 +688,102 @@ class BootstrapCacheTest(unittest.TestCase):
             self.write_graph()
             self.share(first)
             self.assertEqual(original, cache.read_publication(self.store, self.project))
+
+
+class RealPestCacheTest(unittest.TestCase):
+    def test_real_pest_refreshes_binary_results_for_the_next_worktree(self):
+        repository = Path(cache.__file__).resolve().parent.parent
+        sdk = repository / 'packages/php-sdk'
+        self.assertTrue((sdk / 'vendor/autoload.php').is_file(), 'Run bin/bootstrap --skip-checks first.')
+        with tempfile.TemporaryDirectory(prefix='orbit-real-tia-') as temporary:
+            root = Path(temporary).resolve() / 'primary'
+            project = 'apps/docs'
+            directory = root / project
+            (directory / 'src').mkdir(parents=True)
+            (directory / 'tests').mkdir()
+            (root / '.gitignore').write_text('**/vendor/\n**/.orbit-tia/\n**/.executed*\n')
+            manifest = json.loads((sdk / 'composer.json').read_text())
+            manifest['scripts'] = {
+                'test:affected': 'vendor/bin/pest --parallel --processes=2 --tia --compact',
+                'format:check': 'vendor/bin/pint --test',
+                'analyse': 'vendor/bin/phpstan analyse --no-progress',
+                'check': ['@format:check', '@analyse'],
+            }
+            (directory / 'composer.json').write_text(json.dumps(manifest))
+            shutil.copyfile(sdk / 'composer.lock', directory / 'composer.lock')
+            (directory / 'pint.json').write_text('{"preset":"laravel","cache-file":"vendor/pint.cache"}')
+            (directory / 'phpstan.neon').write_text(
+                'parameters:\n    level: 6\n    paths:\n        - src\n    tmpDir: vendor/phpstan/cache\n')
+            (directory / 'phpunit.xml').write_text(
+                '<phpunit bootstrap="vendor/autoload.php"><testsuites><testsuite name="unit">'
+                '<directory>tests</directory></testsuite></testsuites><source><include>'
+                '<directory>src</directory></include></source></phpunit>')
+            (directory / 'tests/Pest.php').write_text(
+                "<?php\n\npest()->tia()->locally()->filtered()->directory(dirname(__DIR__).'/.orbit-tia');\n"
+                "require_once dirname(__DIR__).'/src/Value.php';\n")
+            value = directory / 'src/Value.php'
+            value.write_text("<?php\n\nfunction cacheValue(string $value): string\n{\n    return $value;\n}\n")
+            (directory / 'tests/ValueTest.php').write_text(
+                "<?php\n\nit('keeps dataset bytes', function (string $value): void {\n"
+                "    file_put_contents(dirname(__DIR__).'/.executed', 'run\\n', FILE_APPEND);\n"
+                "    expect(cacheValue($value))->toBe($value);\n})->with(['text', \"\\xff\"]);\n")
+            (directory / 'tests/OtherTest.php').write_text(
+                "<?php\n\nit('keeps another result', function (): void {\n"
+                "    file_put_contents(dirname(__DIR__).'/.executed-other', 'run');\n"
+                "    expect(1 + 1)->toBe(2);\n});\n")
+            for args in (('init', '-b', 'main'), ('config', 'user.name', 'Orbit'),
+                         ('config', 'user.email', 'orbit@example.test'), ('remote', 'add', 'origin', str(root))):
+                cache.git(root, *args)
+
+            def commit(message):
+                cache.git(root, 'add', '.')
+                cache.git(root, 'commit', '-m', message)
+                sha = cache.git(root, 'rev-parse', 'HEAD')
+                cache.git(root, 'update-ref', 'refs/remotes/origin/main', sha)
+                return sha
+
+            def check(checkout):
+                target = checkout / project
+                shutil.copytree(sdk / 'vendor', target / 'vendor',
+                                ignore=shutil.ignore_patterns('cache', 'pint.cache'))
+                cache.run(target, 'composer', 'test:affected')
+                cache.run(target, 'composer', 'check')
+
+            old = commit('older main')
+            check(root)
+            store = cache.cache_store(cache.common_directory(root))
+            cache.publish_bootstrap(root, store, [project], old)
+            snapshot = cache.read_publication(store, project)
+            self.assertEqual(3, len(json.loads(snapshot['graph'])['baselines']['main']['results']))
+            value.write_text(value.read_text().replace('return $value;', 'return substr($value, 0);'))
+            current = commit('newer main')
+            first = Path(temporary).resolve() / 'first'
+            cache.git(root, 'worktree', 'add', '-b', 'first-task', str(first), current)
+            cache.git(root, 'reset', '--hard', old)
+            (root / 'unrelated').write_text('preserve')
+
+            # Seed only after installing the runner, just as bootstrap does.
+            for checkout, branch in ((first, 'first-task'), (Path(temporary).resolve() / 'second', 'second-task')):
+                if branch == 'second-task':
+                    cache.git(root, 'worktree', 'add', '-b', branch, str(checkout), current)
+                target = checkout / project
+                shutil.copytree(sdk / 'vendor', target / 'vendor',
+                                ignore=shutil.ignore_patterns('cache', 'pint.cache'))
+                cache.seed(checkout, store, [project])
+                self.assertEqual(snapshot['graph'], (target / '.orbit-tia/graph.json').read_text())
+                output = cache.run(target, 'composer', 'test:affected')
+                cache.run(target, 'composer', 'check')
+                cache.publish_bootstrap(checkout, store, [project], current)
+                if branch == 'first-task':
+                    self.assertEqual('run\\nrun\\n', (target / '.executed').read_text())
+                else:
+                    self.assertFalse((target / '.executed').exists(), output)
+                self.assertFalse((target / '.executed-other').exists(), output)
+                snapshot = cache.read_publication(store, project)
+                self.assertEqual(current, snapshot['tested_commit'])
+                self.assertEqual(3, len(json.loads(snapshot['graph'])['baselines']['main']['results']))
+            self.assertEqual(old, cache.git(root, 'rev-parse', 'HEAD'))
+            self.assertEqual('preserve', (root / 'unrelated').read_text())
 
 
 class MaintenanceQueueTest(unittest.TestCase):

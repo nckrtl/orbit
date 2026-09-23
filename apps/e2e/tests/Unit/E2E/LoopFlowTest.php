@@ -115,15 +115,25 @@ it('creates from fetched main without updating primary or queuing duplicate chec
     expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
 });
 
-it('preserves dirty primary main before attempting new worktree setup', function (): void {
+it('creates from main while preserving a dirty primary on another branch', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $root]);
+    $run->path($root)->run(['git', 'checkout', '-b', 'running-checkout']);
+    $primaryHead = $run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output();
     file_put_contents($root.'/shared.txt', 'active migration');
+    $run->path($root)->run(['git', 'add', 'shared.txt']);
+    $index = $run->path($root)->run(['git', 'write-tree'])->output();
+    file_put_contents($root.'/untracked.txt', 'unrelated work');
 
     $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-47']);
 
-    expect($result->successful())->toBeFalse();
+    expect($result->successful())->toBeTrue($result->errorOutput());
     expect(file_get_contents($root.'/shared.txt'))->toBe('active migration');
-    expect(file_exists($root.'-worktrees/tst-47'))->toBeFalse();
+    expect(file_get_contents($root.'/untracked.txt'))->toBe('unrelated work');
+    expect($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output())->toBe($primaryHead);
+    expect($run->path($root)->run(['git', 'write-tree'])->output())->toBe($index);
+    expect(trim($run->path($root)->run(['git', 'branch', '--show-current'])->output()))->toBe('running-checkout');
+    expect(file_get_contents($root.'-worktrees/tst-47/shared.txt'))->toBe("base\n");
     expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });
 

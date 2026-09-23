@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "191631a3d28ac3a1173dd44801454d42",
+    "content-hash": "d3d12bf28ed8e40c2e4113064524c64d",
     "packages": [
         {
             "name": "guzzlehttp/guzzle",
@@ -1353,16 +1353,16 @@
         },
         {
             "name": "nckrtl/pestphp-monorepo",
-            "version": "v1.0.0",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nckrtl/pestphp-monorepo.git",
-                "reference": "a513b02f2b44b109b535bd122fa248e1b0a784af"
+                "reference": "9f0929325bb0ed29274bc51b420726ba681e347c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/a513b02f2b44b109b535bd122fa248e1b0a784af",
-                "reference": "a513b02f2b44b109b535bd122fa248e1b0a784af",
+                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/9f0929325bb0ed29274bc51b420726ba681e347c",
+                "reference": "9f0929325bb0ed29274bc51b420726ba681e347c",
                 "shasum": ""
             },
             "require": {
@@ -1395,6 +1395,7 @@
                 "pestphp/pest-plugin-type-coverage": "^5.0.2",
                 "psy/psysh": "^0.12.24"
             },
+            "default-branch": true,
             "bin": [
                 "bin/pest"
             ],
@@ -1473,7 +1474,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-09-15T13:23:23+00:00"
+            "time": "2026-09-23T06:28:36+00:00"
         },
         {
             "name": "nikic/php-parser",
@@ -5320,7 +5321,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "nckrtl/pestphp-monorepo": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

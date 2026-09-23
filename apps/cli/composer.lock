@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "7bcedaf2a6c6371f4c0d6c7635ed4794",
+    "content-hash": "9a2fae052eb4bc8ebd412afcdc87bd4c",
     "packages": [
         {
             "name": "brick/math",
@@ -2557,7 +2557,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "dac4c5cdd1d9263c82b5c6a3dd9d862a5689c8df"
+                "reference": "921632b07a61dfa20a724cf43da9005dee20b00e"
             },
             "require": {
                 "guzzlehttp/psr7": "^2.13 || ^3.1",
@@ -2568,7 +2568,7 @@
             "require-dev": {
                 "laravel/pao": "^1.1",
                 "laravel/pint": "^1.32",
-                "nckrtl/pestphp-monorepo": "^1.0",
+                "nckrtl/pestphp-monorepo": "dev-main#9f0929325bb0ed29274bc51b420726ba681e347c",
                 "phpstan/phpstan": "^2.2.13",
                 "phpunit/phpunit": "^13.0",
                 "rector/rector": "^2.3"
@@ -7878,16 +7878,16 @@
         },
         {
             "name": "nckrtl/pestphp-monorepo",
-            "version": "v1.0.0",
+            "version": "dev-main",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nckrtl/pestphp-monorepo.git",
-                "reference": "a513b02f2b44b109b535bd122fa248e1b0a784af"
+                "reference": "9f0929325bb0ed29274bc51b420726ba681e347c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/a513b02f2b44b109b535bd122fa248e1b0a784af",
-                "reference": "a513b02f2b44b109b535bd122fa248e1b0a784af",
+                "url": "https://api.github.com/repos/nckrtl/pestphp-monorepo/zipball/9f0929325bb0ed29274bc51b420726ba681e347c",
+                "reference": "9f0929325bb0ed29274bc51b420726ba681e347c",
                 "shasum": ""
             },
             "require": {
@@ -7920,6 +7920,7 @@
                 "pestphp/pest-plugin-type-coverage": "^5.0.2",
                 "psy/psysh": "^0.12.24"
             },
+            "default-branch": true,
             "bin": [
                 "bin/pest"
             ],
@@ -7998,7 +7999,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-09-15T13:23:23+00:00"
+            "time": "2026-09-23T06:28:36+00:00"
         },
         {
             "name": "nikic/php-parser",
@@ -10829,7 +10830,8 @@
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": {
-        "nckrtl/orbit-php-sdk": 20
+        "nckrtl/orbit-php-sdk": 20,
+        "nckrtl/pestphp-monorepo": 20
     },
     "prefer-stable": true,
     "prefer-lowest": false,

@@ -26,7 +26,7 @@ if [[ "$worktree_root" != /* ]]; then
     printf 'orbit.worktreeRoot must be an absolute path.\n' >&2
     exit 1
 fi
-worktree_root="$(realpath -m -- "$worktree_root")"
+worktree_root="$(python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).resolve())' "$worktree_root")"
 case "$worktree_root/" in
     "$primary_root/"*)
         printf 'orbit.worktreeRoot must be outside the primary checkout.\n' >&2
@@ -36,16 +36,6 @@ esac
 # Reusing a registered branch preserves existing worktrees at their original path.
 worktree="$(git worktree list --porcelain | awk -v ref="branch refs/heads/$branch" '/^worktree / { path=substr($0, 10) } $0 == ref && !found { print path; found=1 }')"
 [[ -n "$worktree" ]] || worktree="$worktree_root/${linear_id,,}"
-
-if [[ -n "$(git -C "$primary_root" status --porcelain)" ]]; then
-    printf 'The primary worktree must be clean.\n' >&2
-    exit 1
-fi
-
-if [[ "$(git -C "$primary_root" symbolic-ref --quiet --short HEAD || true)" != main ]]; then
-    printf 'The primary checkout must be on main.\n' >&2
-    exit 1
-fi
 
 git fetch --prune origin
 

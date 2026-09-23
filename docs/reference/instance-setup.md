@@ -45,6 +45,20 @@ The Gateway refuses a duplicate name, a placement that names an unknown step, bo
 
 An empty list skips that phase.
 
+## Bootstrap Orbit Instances
+
+For the Orbit monorepo, record `bin/bootstrap` as a setup step on the Orbit Project. Replace `PROJECT_ID` with its numeric ID:
+
+```bash
+orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=900
+```
+
+If the step already exists, use `instance:setup-step:update` with the same options. `instance:create` runs this step for a new Instance. Use `instance:register --setup` to run it after adopting a checkout, or `instance:setup INSTANCE_ID` to run the setup list on an existing development Instance. Plain `instance:register` does not run setup.
+
+Bootstrap installs the locked dependencies, seeds compatible caches, and runs `composer test:affected` and `composer check` in all five Composer projects. Successful clean main runs refresh the shared caches. It does not deploy Orbit, run service database migrations, or restart services. The setup deadline still applies; a cold bootstrap may exceed it.
+
+Linked worktrees share the Git cache store. Independent clones do not automatically share it. Automatic task provisioning also bypasses these setup hooks. See the cache rules in [Implementation loop](/reference/implementation-loop).
+
 ## Run setup
 
 `instance:create` runs the setup list after the source, PHP selection, Laravel URL configuration, and Route are ready. Each command runs from the instance directory on the Instance Node, through the fixed non-interactive shell used for deploy steps, as the Node's managed runtime user. Orbit runs the list from the first step. Commands travel through protected standard input. Their output is discarded; errors name the failed step. A timeout stops the command process group before Orbit continues. Commands must not detach background processes.
