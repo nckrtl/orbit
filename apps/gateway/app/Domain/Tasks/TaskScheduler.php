@@ -707,10 +707,7 @@ final readonly class TaskScheduler
             return null;
         }
 
-        $instance = $this->provisioning->provision(new InstanceProvisionIntent(
-            group: $reserved,
-            visitable: $this->visitable($reserved),
-        ));
+        $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
 
         if (! $instance instanceof AppInstance) {
             $reserved->update(['status' => TaskGroupStatus::Todo]);
@@ -729,7 +726,10 @@ final readonly class TaskScheduler
 
             if (! $this->ceilings->canActivate($group)) {
                 $group->status = TaskGroupStatus::Todo;
-                $group->taskable()->dissociate();
+                // ADR 0124: a planning group keeps the workspace its planner prepared.
+                if (! $group->plan) {
+                    $group->taskable()->dissociate();
+                }
                 $group->save();
 
                 return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
@@ -1095,12 +1095,5 @@ final readonly class TaskScheduler
             'task_id' => $task?->id,
             'agent' => $agent,
         ]);
-    }
-
-    private function visitable(TaskGroup $group): bool
-    {
-        $group->loadMissing('app');
-
-        return $group->app->slug !== 'orbit';
     }
 }

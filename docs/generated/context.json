@@ -3274,8 +3274,31 @@
             ]
         },
         {
-            "path": "docs/decisions/0124-run-the-project-check-when-the-implementer-hands-off.md",
-            "title": "ADR 0124: Run the Project check when the implementer hands off",
+            "path": "docs/decisions/0124-plan-backlog-groups-with-a-t3-planner.md",
+            "title": "ADR 0124: Plan Backlog groups with a T3 planner",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0086",
+                "0112",
+                "0121",
+                "0122",
+                "0124"
+            ]
+        },
+        {
+            "path": "docs/decisions/0125-run-the-project-check-when-the-implementer-hands-off.md",
+            "title": "ADR 0125: Run the Project check when the implementer hands off",
             "kind": "decision",
             "components": [
                 "apps/docs",
@@ -3292,7 +3315,7 @@
             "governing_adrs": [
                 "0114",
                 "0121",
-                "0124"
+                "0125"
             ]
         },
         {
@@ -3447,7 +3470,8 @@
                 "0121",
                 "0122",
                 "0123",
-                "0124"
+                "0124",
+                "0125"
             ]
         },
         {
@@ -4561,7 +4585,8 @@
                 "0116",
                 "0121",
                 "0122",
-                "0124"
+                "0124",
+                "0125"
             ]
         },
         {

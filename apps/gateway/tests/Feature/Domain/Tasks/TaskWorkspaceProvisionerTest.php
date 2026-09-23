@@ -367,3 +367,42 @@ it('returns null when the app-dev Node has no usable T3 process', function (stri
         ->and($fakes->source->calls)->toBe([]);
     $this->assertDatabaseCount('app_instances', 0);
 })->with(['missing', 'unrelated', 'failed', 'stopped', 'no-address', 'empty-address']);
+
+it('places a planning group only on an app-dev Node with access to itself', function (): void {
+    $app = provisioner_app('planner');
+    $withoutAccess = provisioner_node('sabre', '10.44.0.130');
+    $selfAccess = provisioner_node('shark', '10.44.0.131');
+    $selfAccess->accessibleNodes()->attach($selfAccess->id);
+    bind_task_workspace_fakes();
+
+    $planning = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($app, 'Planning'), true, selfAccess: true));
+    $managed = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($app, 'Managed'), true));
+
+    expect($planning?->node_id)->toBe($selfAccess->id)
+        ->and($managed?->node_id)->toBe($withoutAccess->id);
+});
+
+it('accepts a Node with access to the Gateway for a planning group', function (): void {
+    $app = provisioner_app('planner-gateway');
+    provisioner_node('sabre', '10.44.0.130');
+    $withGatewayAccess = provisioner_node('beast', '10.44.0.131');
+    $gateway = $this->markAsGateway(Node::query()->create([
+        'name' => 'gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2',
+    ]));
+    $withGatewayAccess->accessibleNodes()->attach($gateway->id);
+    bind_task_workspace_fakes();
+
+    $planning = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($app), true, selfAccess: true));
+
+    expect($planning?->node_id)->toBe($withGatewayAccess->id);
+});
+
+it('returns null for a planning group when no app-dev Node has access to itself', function (): void {
+    $app = provisioner_app('planner-none');
+    provisioner_node('sabre', '10.44.0.130');
+    bind_task_workspace_fakes();
+
+    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($app), true, selfAccess: true)))->toBeNull();
+    $this->assertDatabaseCount('app_instances', 0);
+});

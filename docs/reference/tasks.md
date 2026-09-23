@@ -5,7 +5,9 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the instance after completion.
+
+[ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 
@@ -49,20 +51,20 @@ v1 attaches the group to one Instance. A new decision is required before another
 
 ## Groups and subtasks
 
-Use these operations after the extension is enabled. Every operation except list and show requires Gateway access. List and show accept any authorized peer.
+Use these operations after the extension is enabled. List and show accept any authorized peer. Update and the subtask operations are served by the Node that holds the group's Instance, or by the Gateway for a group without one. The other operations require Gateway access.
 
 | Operation | Route | Access |
 | --- | --- | --- |
 | `tasks:create` | `POST /api/v1/task-groups` | Gateway |
-| `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Gateway |
+| `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Group workspace Node |
 | `tasks:list` | `GET /api/v1/task-groups` | Collection |
 | `tasks:show` | `GET /api/v1/task-groups/{group}` | Collection |
 | `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
-| `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Gateway |
-| `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
-| `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
+| `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Group workspace Node |
+| `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
+| `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Group workspace Node |
 
-Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
+Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, `plan: true` to start a [planner](#plan-a-group-with-a-planner), and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
 
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
@@ -73,6 +75,11 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 | `tasks.no_subtasks` | 422 | Create with `status: todo`, or update to `todo`, on a group without subtasks |
 | `tasks.not_in_backlog` | 409 | Group title or brief update, or subtask update or destroy, outside `backlog` |
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
+| `tasks.plan_requires_backlog` | 422 | Create with `plan: true` and `status: todo` |
+| `tasks.planner_driver_unavailable` | 409 | Create with `plan: true` when the reviewer driver is not T3 |
+| `tasks.planner_node_unavailable` | 409 | Create with `plan: true` when no app-dev Node with access to itself fits |
+| `tasks.planner_unavailable` | 409 | Create with `plan: true` when the T3 driver refuses the planner thread |
+| `tasks.commit_failed` | 409 | Update to `todo` on a planning group when Orbit cannot commit its workspace |
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -80,7 +87,7 @@ MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-upda
 
 ## Prepare a group in Backlog
 
-A group in Backlog has an id but no Instance and no agents. Use that time to shape the feature before any agent runs.
+A group in Backlog without a planner has an id but no Instance and no agents. Use that time to shape the feature before any agent runs. To shape it with an agent in T3 instead, [plan the group with a planner](#plan-a-group-with-a-planner).
 
 1. Create the group. It starts in `backlog`.
 2. In a worktree, create the branch `task-{group id}` from the Project default branch.
@@ -89,6 +96,40 @@ A group in Backlog has an id but no Instance and no agents. Use that time to sha
 5. Move the group to `todo` with `tasks:update`.
 
 The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
+
+## Plan a group with a planner
+
+A planner is a T3 thread that shapes a Backlog group with you. It writes the feature's ADRs and documentation in the group's workspace and manages the group through Orbit MCP. When the plan is ready, it becomes the group's reviewer.
+
+1. Create the group with `plan: true`. The Gateway provisions the shared Instance on `task-{group id}` and starts the planner. The thread `Orbit task #{group id} · Planner: {title}` appears in your T3 client.
+2. Shape the feature with the planner in that thread. It follows the repository's instructions for feature design. In Orbit's repository, that is the `grill-with-docs` skill.
+3. The planner keeps the title, brief, and subtasks current through the same operations you use.
+4. When you agree the plan is ready, the planner moves the group to `todo`, or you do.
+5. Orbit commits every workspace change on `task-{group id}` as `orbit <tasks@orbit>` with the message `Plan: {group title}`. The scheduler then claims the group in the same Instance.
+
+At the first review handoff, the scheduler sends the review request to the planner thread instead of starting a new reviewer. You keep one thread for the feature from the first idea through every review.
+
+| Rule | Behavior |
+| --- | --- |
+| Driver | The planner uses the reviewer's T3 driver, model, and effort |
+| Placement | App-dev Nodes with access to themselves or to the Gateway; the one with the fewest active groups wins |
+| MCP | The planner's T3 agent needs Orbit MCP configured on its Node; Orbit does not configure it |
+| Node ceiling | A Backlog group does not count, with or without an Instance |
+| Uncommitted work | The ADRs and documentation stay uncommitted until the move to `todo`; an empty workspace produces no commit |
+| Failed start | When no Node fits or the planner thread cannot start, create removes any Instance and stores no group |
+| Failed commit | The group stays in Backlog and the update returns `tasks.commit_failed` |
+| Back to Backlog | The group keeps its Instance, planner, and commits |
+| Cancel | Removes the Instance; the conversation stays in T3 |
+
+A Node holds planners once it has access to itself, for example after [`node:access:add`](/cli/node#orbit-nodeaccessadd) from the Node to itself. Every agent on that Node can then change the task groups whose workspace it holds.
+
+### Start planning from a conversation
+
+Agents implement work in their own session unless you ask for Orbit. Give a repository's agents that rule with a skill or an explicit instruction, such as:
+
+> Implement work inline in this session by default. When the operator asks to implement something in Orbit, call `tasks-create` through Orbit MCP with this Project's `app_id`, a short title, a brief that summarizes the conversation, and `plan: true`. Then tell the operator the group ID and the planner thread title, and stop working on the feature here.
+
+Orbit's repository carries this rule as the `implementing-in-orbit` skill.
 
 ## Web task board
 
@@ -183,7 +224,7 @@ Before each agent turn, the Gateway installs the run script at `.git/orbit/run`,
 
 When an agent stops, the tick reads the receipt over SSH, stores it as a task comment with its content hash, and removes it. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried on the next tick without the file. `blocked` asks for assistance with the agent's summary. A missing receipt, or one whose outcome does not fit the turn, fails the `run_receipt` item. An unreachable workspace counts as a communication failure, not a missing receipt.
 
-When every item and the check pass, the Gateway sets the task to `reviewing` and asks for a review. At the first handoff it starts the reviewer with the group brief and the review request. Later handoffs send the request to the same reviewer. If that fails, the next tick tries again before it reads a reviewer receipt. While the reviewer's snapshot is still the turn from before the handoff, the Gateway waits.
+When every item and the check pass, the Gateway sets the task to `reviewing` and asks for a review. At the first handoff it starts the reviewer with the group brief and the review request, or sends the request to the planner thread of a [planning group](#plan-a-group-with-a-planner). Later handoffs send the request to the same reviewer. If that fails, the next tick tries again before it reads a reviewer receipt. While the reviewer's snapshot is still the turn from before the handoff, the Gateway waits.
 
 After review findings are relayed, the Gateway waits for a newer implementer turn to stop and requires a new receipt and a new passing check before handing back to the reviewer.
 
@@ -251,7 +292,7 @@ The Gateway registers `tasks:tick` every ten seconds when the tasks extension is
 
 ### Project check
 
-Orbit runs the Project's `composer check` after each `ready_for_review` receipt whose items pass. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs `composer check` in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0124](/decisions/0124-run-the-project-check-when-the-implementer-hands-off) records the decision.
+Orbit runs the Project's `composer check` after each `ready_for_review` receipt whose items pass. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs `composer check` in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) records the decision.
 
 The task stays `running` during the check. On each tick the scheduler reads the check. It identifies the process by its ID and its start time, so a reused process ID does not count. There is no time limit.
 

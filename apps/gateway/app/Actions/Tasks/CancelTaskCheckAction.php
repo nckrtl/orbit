@@ -15,7 +15,7 @@ use App\Models\TaskGroup;
 
 /**
  * Stops a running Project check. The next tick gives the implementer its reminder
- * ([ADR 0124](/decisions/0124-run-the-project-check-when-the-implementer-hands-off)).
+ * ([ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)).
  */
 final readonly class CancelTaskCheckAction
 {

@@ -48,7 +48,7 @@ final class TaskGroupsController extends Controller
         ], 201);
     }
 
-    #[RequiresNodeAccess(ServingNode::Gateway)]
+    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function update(UpdateTaskGroupRequest $request, TaskGroup $group, UpdateTaskGroupAction $action): JsonResponse
     {
         return response()->json([
@@ -57,7 +57,7 @@ final class TaskGroupsController extends Controller
         ]);
     }
 
-    #[RequiresNodeAccess(ServingNode::Gateway)]
+    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function createTask(CreateTaskRequest $request, TaskGroup $group, CreateTaskAction $action): JsonResponse
     {
         $task = $action->execute($group, $request->payload());
@@ -68,7 +68,7 @@ final class TaskGroupsController extends Controller
         ], 201);
     }
 
-    #[RequiresNodeAccess(ServingNode::Gateway)]
+    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function updateTask(UpdateTaskRequest $request, TaskGroup $group, Task $task, UpdateTaskAction $action): JsonResponse
     {
         abort_unless($task->task_group_id === $group->id, 404);
@@ -79,7 +79,7 @@ final class TaskGroupsController extends Controller
         ]);
     }
 
-    #[RequiresNodeAccess(ServingNode::Gateway)]
+    #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function destroyTask(EmptyTasksRequest $request, TaskGroup $group, Task $task, DestroyTaskAction $action): JsonResponse
     {
         abort_unless($task->task_group_id === $group->id, 404);

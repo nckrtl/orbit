@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Orbit task check (ADR 0124). The Gateway installs this script in .git/orbit/ and runs it over SSH.
+"""Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
 
 check start CHECKOUT            start `composer check` detached; print the process and the tree it checks
 check run CHECKOUT HEAD TREE    run the check and write check.json when it ends (started by `start`)

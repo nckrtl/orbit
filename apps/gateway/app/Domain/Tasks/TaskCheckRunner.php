@@ -8,7 +8,7 @@ use App\Models\AppInstance;
 
 /**
  * Runs the Project's `composer check` in a task workspace as a detached process
- * ([ADR 0124](/decisions/0124-run-the-project-check-when-the-implementer-hands-off)).
+ * ([ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)).
  */
 interface TaskCheckRunner
 {
