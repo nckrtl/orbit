@@ -43,6 +43,7 @@ use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use App\Models\Tool;
@@ -98,6 +99,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AgentThread::class,
         TaskGroup::class,
         TaskComment::class,
+        TaskCheck::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {
