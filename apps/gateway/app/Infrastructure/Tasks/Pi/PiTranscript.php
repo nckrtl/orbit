@@ -16,6 +16,9 @@ final class PiTranscript
 {
     private const int OUTPUT_LIMIT = 8000;
 
+    /** File tools show a verb and the file name, such as "Reading Task.php". */
+    private const array FILE_VERBS = ['read' => 'Reading', 'edit' => 'Editing', 'write' => 'Writing'];
+
     /** @var array<string, array{name: string, arguments: array<string, mixed>}> */
     private array $calls = [];
 
@@ -80,7 +83,9 @@ final class PiTranscript
             $text = mb_substr($output, -self::OUTPUT_LIMIT)."\n$ ".$command.($exit === null ? '' : "\nexit code ".$exit);
         } else {
             $target = $this->string($arguments['path'] ?? $arguments['file_path'] ?? $arguments['pattern'] ?? null);
-            $text = trim($name.' '.$target).($failed ? ' failed: '.mb_substr($output, 0, 500) : '');
+            $verb = self::FILE_VERBS[$name] ?? null;
+            $text = ($verb !== null && $target !== '' ? $verb.' '.basename($target) : trim($name.' '.$target))
+                .($failed ? ' failed: '.mb_substr($output, 0, 500) : '');
         }
 
         return ['id' => $id, 'kind' => 'activity', 'label' => $name, 'text' => ltrim($text, "\n"), 'at' => $at];

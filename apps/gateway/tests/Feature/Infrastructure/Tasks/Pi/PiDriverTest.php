@@ -231,7 +231,7 @@ describe('observe', function (): void {
 
         $observation = pi_driver()->observe(pi_thread(pi_node()));
 
-        expect(array_last($observation->entries)['text'])->toBe('edit app/Service.php');
+        expect(array_last($observation->entries)['text'])->toBe('Editing Service.php');
     });
 
     it('keeps the leading spaces of bash output, such as git status lines', function (): void {
@@ -255,7 +255,7 @@ describe('observe', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('idle', $entries))]);
 
         expect(pi_driver()->observe(pi_thread(pi_node()))->entries)->toBe([
-            ['id' => 'e2', 'kind' => 'activity', 'label' => 'read', 'text' => 'read README.md', 'at' => '2026-09-22T10:00:01.000Z'],
+            ['id' => 'e2', 'kind' => 'activity', 'label' => 'read', 'text' => 'Reading README.md', 'at' => '2026-09-22T10:00:01.000Z'],
         ]);
     });
 
