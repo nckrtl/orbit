@@ -3,6 +3,10 @@
 set -euo pipefail
 
 run_checks=1
+publish_caches=1
+if [[ -n "${ORBIT_MAIN_CACHE_STORE:-}" || "${ORBIT_TIA_DIRECTORY:-.orbit-tia}" != .orbit-tia ]]; then
+    publish_caches=0
+fi
 if [[ $# -eq 1 && "$1" == --skip-checks ]]; then
     run_checks=0
 elif [[ $# -ne 0 ]]; then
@@ -140,6 +144,11 @@ if ((failed != 0)); then
 fi
 
 if ((run_checks)); then
+    checked_commit=""
+    if ((publish_caches)) && [[ -z "$(git -C "$repository_root" status --porcelain)" ]] \
+        && [[ "$(git -C "$repository_root" rev-parse HEAD)" == "$(git -C "$repository_root" rev-parse --verify refs/remotes/origin/main 2>/dev/null)" ]]; then
+        checked_commit="$(git -C "$repository_root" rev-parse HEAD)"
+    fi
     for project in "${projects[@]}"; do
         printf '\n[%s] affected tests and quality checks\n' "$project"
         (
@@ -149,4 +158,8 @@ if ((run_checks)); then
             composer check
         )
     done
+    if [[ -n "$checked_commit" ]]; then
+        "$repository_root/bin/tia-cache" publish --repository="$repository_root" --commit="$checked_commit" \
+            || printf 'Bootstrap cache publication unavailable.\n' >&2
+    fi
 fi
