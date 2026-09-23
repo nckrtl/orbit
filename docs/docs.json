@@ -688,7 +688,8 @@
               "decisions/0117-judge-the-blocked-question-on-role-evidence",
               "decisions/0118-exclude-app-dev-nodes-per-project",
               "decisions/0120-extract-agent-annotation-package",
-              "decisions/0121-end-agent-turns-with-a-run-receipt"
+              "decisions/0121-end-agent-turns-with-a-run-receipt",
+              "decisions/0123-run-the-project-check-when-the-implementer-hands-off"
             ]
           }
         ]
