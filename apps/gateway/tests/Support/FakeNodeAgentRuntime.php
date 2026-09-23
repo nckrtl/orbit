@@ -13,11 +13,23 @@ final class FakeNodeAgentRuntime implements NodeAgentRuntime
     /** @var list<int> */
     public array $nodeIds = [];
 
+    /** @var list<int> */
+    public array $removedNodeIds = [];
+
     public ?Closure $failure = null;
 
     public function converge(Node $node): void
     {
         $this->nodeIds[] = (int) $node->id;
+
+        if ($this->failure instanceof Closure) {
+            ($this->failure)($node);
+        }
+    }
+
+    public function remove(Node $node): void
+    {
+        $this->removedNodeIds[] = (int) $node->id;
 
         if ($this->failure instanceof Closure) {
             ($this->failure)($node);

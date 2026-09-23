@@ -27,6 +27,11 @@ it('keeps the role converge going when the agent install fails', function (): vo
         {
             throw new RuntimeException('agent unavailable');
         }
+
+        public function remove(Node $node): void
+        {
+            throw new RuntimeException('agent unavailable');
+        }
     };
     $node = nodeAgentNode();
     $node->status = 'active';
@@ -111,6 +116,62 @@ it('writes the hardened agent unit and files and restarts after a change', funct
     );
 });
 
+it('stops, disables, and deletes all agent files during removal', function (): void {
+    $ssh = new AgentInstallSsh(null, unitExists: true);
+
+    nodeAgentExecutor($ssh)->remove(nodeAgentNode());
+
+    expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+        ->toBe([
+            ['sudo', 'test', '-f', '/etc/systemd/system/orbit-agent.service'],
+            ['sudo', 'systemctl', 'stop', 'orbit-agent'],
+            ['sudo', 'systemctl', 'disable', 'orbit-agent'],
+            ['sudo', 'rm', '-f', '--', '/etc/systemd/system/orbit-agent.service', '/usr/local/bin/orbit-agent'],
+            ['sudo', 'rm', '-rf', '--', '/etc/orbit/agent'],
+            ['sudo', 'systemctl', 'daemon-reload'],
+        ]);
+});
+
+it('removes the files when the agent unit is missing', function (): void {
+    $ssh = new AgentInstallSsh(null);
+
+    nodeAgentExecutor($ssh)->remove(nodeAgentNode());
+
+    $arguments = array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands);
+
+    expect($arguments)
+        ->toContain(
+            ['sudo', 'rm', '-f', '--', '/etc/systemd/system/orbit-agent.service', '/usr/local/bin/orbit-agent'],
+            ['sudo', 'rm', '-rf', '--', '/etc/orbit/agent'],
+        )
+        ->not->toContain(
+            ['sudo', 'systemctl', 'stop', 'orbit-agent'],
+            ['sudo', 'systemctl', 'disable', 'orbit-agent'],
+        );
+});
+
+it('removes a partially installed binary when no agent unit exists', function (): void {
+    $ssh = new AgentInstallSsh(null);
+
+    nodeAgentExecutor($ssh)->remove(nodeAgentNode());
+
+    expect(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+        ->toContain(['sudo', 'rm', '-f', '--', '/etc/systemd/system/orbit-agent.service', '/usr/local/bin/orbit-agent']);
+});
+
+it('fails agent removal when a remote cleanup command fails', function (): void {
+    $ssh = new class implements SshExecutor
+    {
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            return new CommandResult(1, '', '', 1, false);
+        }
+    };
+
+    expect(fn () => nodeAgentExecutor($ssh)->remove(nodeAgentNode()))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'agent.remove_failed');
+});
+
 it('fails with agent.checksum_mismatch', function (): void {
     $ssh = new AgentInstallSsh(null, '0000000000000000000000000000000000000000000000000000000000000000');
     $agent = nodeAgentExecutor($ssh);
@@ -154,7 +215,11 @@ final class AgentInstallSsh implements SshExecutor
     /** @var list<SshConnection> */
     public array $connections = [];
 
-    public function __construct(private ?string $installedChecksum, private string $candidateChecksum = NodeAgentFootprint::X8664Checksum) {}
+    public function __construct(
+        private ?string $installedChecksum,
+        private string $candidateChecksum = NodeAgentFootprint::X8664Checksum,
+        private bool $unitExists = false,
+    ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
@@ -172,7 +237,9 @@ final class AgentInstallSsh implements SshExecutor
         }
 
         if (($arguments[1] ?? null) === 'test') {
-            return new CommandResult(1, '', '', 1, false);
+            return $this->unitExists
+                ? new CommandResult(0, '', '', 1, false)
+                : new CommandResult(1, '', '', 1, false);
         }
 
         return new CommandResult(0, '', '', 1, false);

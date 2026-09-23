@@ -107,7 +107,7 @@ The online removal runs these steps in order and reports success only after the 
 | --- | --- |
 | Grafana access | The Gateway revokes the Node's Grafana access. |
 | Metrics exporter | The Gateway retires the Node's Metrics exporter state and converges the remaining fleet. |
-| Node agent | The Gateway stops and deletes `orbit-agent`, its unit, and `/etc/orbit/agent` on the machine. A failure does not stop the removal; the Gateway logs a warning. |
+| Node agent | The Gateway stops and disables `orbit-agent.service`, then deletes the unit, `/usr/local/bin/orbit-agent`, and `/etc/orbit/agent` on the machine. A failure does not stop the removal; the Gateway logs a warning. |
 | Public SSH recovery | The Gateway restores the exact `orbit:public-ssh-recovery` UFW rule on the machine over WireGuard without enabling UFW. |
 | WireGuard peer | The Gateway removes the Node's WireGuard peer. |
 | DNS | The Gateway converges its private DNS records. |

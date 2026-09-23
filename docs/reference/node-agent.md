@@ -113,7 +113,7 @@ The agent logs to the systemd journal. Logs contain no Reverb key or signature.
 
 Online `orbit node:remove` stops and disables `orbit-agent.service` and deletes the unit, the binary, and `/etc/orbit/agent`. This step is best-effort: a failure does not stop the removal, and the Gateway logs a warning. [Remove a Node](/reference/node-provisioning#remove-a-node) lists every removal step.
 
-Offline removal changes nothing on the machine. The agent stays installed, and the response lists it under `retained_on_node`. Once its Node record is gone, the Gateway refuses its requests with `peer.identity_unknown`, and the agent keeps retrying at the 30-second backoff limit.
+`--offline` on a Node that still answers the probe removes the agent as online removal does. Removing an unreachable Node with `--offline --force` changes nothing on the machine. The agent stays installed, and the response lists it under `retained_on_node`. Once its Node record is gone, the Gateway refuses its requests with `peer.identity_unknown`, and the agent keeps retrying at the 30-second backoff limit.
 
 ## Doctor
 

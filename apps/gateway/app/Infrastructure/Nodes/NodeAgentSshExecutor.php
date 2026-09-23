@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use Throwable;
 
 final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 {
@@ -74,6 +75,47 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
         if ($changed) {
             $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]), 'agent.install_failed');
+        }
+    }
+
+    public function remove(Node $node): void
+    {
+        $failure = null;
+
+        try {
+            $unit = $this->raw($node, new RemoteCommand(['sudo', 'test', '-f', NodeAgentFootprint::UnitPath]));
+
+            if ($unit->succeeded()) {
+                $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'stop', NodeAgentFootprint::Service]), $failure);
+                $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'disable', NodeAgentFootprint::Service]), $failure);
+            } elseif ($unit->exitCode !== 1) {
+                $failure = new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502);
+            }
+        } catch (Throwable $exception) {
+            $failure = $exception;
+        }
+
+        $this->attemptRemovalCommand($node, new RemoteCommand([
+            'sudo', 'rm', '-f', '--',
+            NodeAgentFootprint::UnitPath,
+            NodeAgentFootprint::BinaryPath,
+        ]), $failure);
+        $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'rm', '-rf', '--', '/etc/orbit/agent']), $failure);
+        $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), $failure);
+
+        if ($failure instanceof Throwable) {
+            throw new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502, $failure);
+        }
+    }
+
+    private function attemptRemovalCommand(Node $node, RemoteCommand $command, ?Throwable &$failure): void
+    {
+        try {
+            if (! $this->raw($node, $command)->succeeded()) {
+                $failure ??= new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502);
+            }
+        } catch (Throwable $exception) {
+            $failure ??= $exception;
         }
     }
 
