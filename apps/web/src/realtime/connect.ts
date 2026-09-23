@@ -4,6 +4,13 @@ import Pusher from "pusher-js";
 import { get } from "../api/client";
 import { applyEvent, type RealtimeEvent } from "./apply";
 import { setLiveness } from "./liveness";
+import {
+    acceptAgentEvent,
+    agentMemberAdded,
+    agentMemberRemoved,
+    agentSubscriptionSucceeded,
+    clearAgentPresence,
+} from "./agent-presence";
 
 const RETRY_SECONDS = 30;
 
@@ -78,6 +85,46 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
 
         let wasLive = false;
         const channel = pusher.subscribe(`private-${config.channel}`);
+        const agentChannels = new Map<number, ReturnType<typeof pusher.subscribe>>();
+        const syncAgentChannels = () => {
+            const nodes =
+                client.getQueryData<Array<{ id: number; status?: string }>>(["nodes"]) ?? [];
+            const activeIds = new Set(
+                nodes.filter((node) => node.status === "active").map((node) => node.id),
+            );
+            for (const [id, agentChannel] of agentChannels) {
+                if (!activeIds.has(id)) {
+                    agentChannel.unbind_all();
+                    pusher.unsubscribe(`presence-node.${id}`);
+                    agentChannels.delete(id);
+                    clearAgentPresence(id);
+                }
+            }
+            for (const id of activeIds) {
+                if (agentChannels.has(id)) continue;
+                const agentChannel = pusher.subscribe(`presence-node.${id}`);
+                agentChannel.bind("pusher:subscription_succeeded", (data: unknown) => {
+                    agentSubscriptionSucceeded(id, data);
+                });
+                agentChannel.bind("pusher:member_added", (data: { id?: unknown }) =>
+                    agentMemberAdded(id, data?.id),
+                );
+                agentChannel.bind("pusher:member_removed", (data: { id?: unknown }) =>
+                    agentMemberRemoved(id, data?.id),
+                );
+                const onAgentEvent = (data: unknown, metadata: { user_id?: unknown }) => {
+                    acceptAgentEvent(id, metadata?.user_id, data);
+                };
+                agentChannel.bind("client-heartbeat", onAgentEvent);
+                agentChannel.bind("client-snapshot", onAgentEvent);
+                agentChannel.bind("client-process", onAgentEvent);
+                agentChannels.set(id, agentChannel);
+            }
+        };
+        syncAgentChannels();
+        const unsubscribeCache = client.getQueryCache().subscribe((event) => {
+            if (event.query.queryKey[0] === "nodes") syncAgentChannels();
+        });
 
         channel.bind("pusher:subscription_succeeded", () => {
             if (signal.aborted) {
@@ -130,7 +177,13 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
         pusher.connection.bind("state_change", onStateChange);
 
         disconnect = () => {
+            unsubscribeCache();
             channel.unbind_all();
+            for (const [id, agentChannel] of agentChannels) {
+                agentChannel.unbind_all();
+                clearAgentPresence(id);
+            }
+            agentChannels.clear();
             pusher.connection.unbind("state_change", onStateChange);
             pusher.disconnect();
         };
