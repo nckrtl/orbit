@@ -36,6 +36,8 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
                 tokens: null,
                 line_diff: null,
                 duration_ms: null,
+                verification_required: false,
+                verification: [],
             },
         ],
     };

@@ -2641,6 +2641,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/tasks/{task}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read task verification
+         * @description Returns the newest verification result, or null before the first run. Complete means the attempt finished; it does not mean every check and question passed. Current source identity is checked again before review.
+         */
+        get: operations["tasks-verification"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/tasks/{task}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify task evidence
+         * @description Runs the fixed Orbit check profile in an isolated source copy and evaluates required Noul questions. Requires an enrolled running task, a calibrated threshold, a unique run_key, and one test reference per criterion. Exact retries reuse the result; a provider retry reuses passing checks. The scheduler consumes the newest result before review.
+         */
+        post: operations["tasks-verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/disable": {
         parameters: {
             query?: never;
@@ -3299,6 +3339,8 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            verification_required?: boolean;
+            verification?: Record<string, never>[];
         };
         AgentThread: {
             id?: number;
@@ -3333,6 +3375,26 @@ export interface components {
             driver_turn?: string | null;
             commit_sha?: string | null;
             pr_url?: string | null;
+        };
+        TaskVerification: {
+            id?: number;
+            run_key?: string;
+            attempt?: number;
+            status?: string;
+            checks?: Record<string, never>[];
+            answers?: {
+                [key: string]: unknown;
+            } | null;
+            threshold?: number;
+            error?: string | null;
+            semantic_input_tokens?: number | null;
+            semantic_duration_ms?: number | null;
+            fingerprint?: string | null;
+            criteria_digest?: string;
+            model?: string;
+            evidence?: Record<string, never>[];
+            checks_passed?: boolean | null;
+            seconds?: number | null;
         };
         ToolManager: {
             id?: number | null;
@@ -13548,6 +13610,15 @@ export interface operations {
                     tasks?: {
                         title: string;
                         brief: string;
+                        verification?: {
+                            id: string;
+                            requirement: string;
+                            question: string;
+                            true: string;
+                            false: string;
+                            /** @enum {string} */
+                            environment: "local";
+                        }[];
                     }[];
                 };
             };
@@ -13895,6 +13966,15 @@ export interface operations {
                 "application/json": {
                     title: string;
                     brief: string;
+                    verification?: {
+                        id: string;
+                        requirement: string;
+                        question: string;
+                        true: string;
+                        false: string;
+                        /** @enum {string} */
+                        environment: "local";
+                    }[];
                 };
             };
         };
@@ -13968,7 +14048,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric Task ID within this group. */
+                task: number;
             };
             cookie?: never;
         };
@@ -14013,7 +14094,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric Task ID within this group. */
+                task: number;
             };
             cookie?: never;
         };
@@ -14058,6 +14140,130 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["TaskComment"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric Task ID within this group. */
+                task: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskVerification"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric Task ID within this group. */
+                task: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    run_key: string;
+                    evidence: {
+                        criterion_id: string;
+                        /** @enum {string} */
+                        project: "apps/cli" | "apps/docs" | "apps/gateway" | "apps/e2e" | "packages/php-sdk";
+                        path: string;
+                        test: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskVerification"];
                         meta: components["schemas"]["Meta"];
                     };
                 };

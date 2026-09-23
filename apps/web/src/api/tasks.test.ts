@@ -77,6 +77,8 @@ it("counts completed nested tasks against the group total", () => {
         tokens: null,
         line_diff: null,
         duration_ms: null,
+        verification_required: false,
+        verification: [],
     });
 
     expect(
