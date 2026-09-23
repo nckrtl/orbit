@@ -44,7 +44,7 @@ final readonly class AnnotationStoreAction
             $thread = $context['threadId'] ?? null;
             $group = TaskGroup::query()->create([
                 'app_id' => $instance->app_id, 'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
-                'execution_mode' => TaskExecutionMode::ExistingThread, 'agent_driver' => 't3',
+                'execution_mode' => TaskExecutionMode::ExistingThread, 'implementer_agent_driver' => 't3', 'reviewer_agent_driver' => 't3',
                 'title' => mb_substr((string) $context['comment'], 0, 200), 'brief' => $context['comment'],
                 'status' => TaskGroupStatus::Todo,
             ]);
