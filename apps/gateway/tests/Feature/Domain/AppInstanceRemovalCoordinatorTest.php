@@ -891,6 +891,10 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->toBe('none')
         ->and($member->source_finalized_at)
         ->not->toBeNull()
+        ->and($member->runtime_published)
+        ->toBeFalse()
+        ->and($this->orb181Projector->calls)
+        ->toBe([])
         ->and(AppInstance::query()->whereKey($instance->id)->exists())
         ->toBeFalse();
 });

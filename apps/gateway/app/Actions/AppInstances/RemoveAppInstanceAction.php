@@ -356,6 +356,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                             'source_identity' => $inventory->sourceIdentity,
                             'linked_worktree_paths' => $inventory->linkedWorktreePaths,
                             'source_digest' => $inventory->digest,
+                            'runtime_published' => $lockedMembers->get($member->id)?->status === AppInstanceState::Active,
                         ]);
                 }
 
@@ -908,7 +909,11 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
     {
         ($this->schedules ?? app(CascadeAppInstanceSchedulesAction::class))->execute($member->app_instance_id);
         $this->processes->execute($member->app_instance_id);
-        $this->routes->cleanupRuntime($member);
+
+        // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
+        if ($member->runtime_published) {
+            $this->routes->cleanupRuntime($member);
+        }
         $member->update(['runtime_cleaned_at' => now()]);
     }
 
