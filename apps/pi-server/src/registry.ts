@@ -10,6 +10,7 @@ import {
     SessionManager,
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { createSearchDocsTool } from "./search-docs.ts";
 import { deriveState, type DerivedState } from "./state.ts";
 import { isValidSessionId, type SessionConfig, type SessionRecord, SessionStore } from "./store.ts";
 
@@ -297,6 +298,7 @@ export class SessionRegistry {
             settingsManager: this.settings,
             resourceLoader,
             sessionManager,
+            customTools: [createSearchDocsTool({ cwd })],
         });
 
         const live: LiveSession = {

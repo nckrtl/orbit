@@ -1,6 +1,6 @@
 ---
 title: "Pi server"
-description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, API, thread states, and restart behavior."
+description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, agent tools, API, thread states, and restart behavior."
 ---
 
 # Pi server
@@ -71,6 +71,28 @@ orbit process:create pi-server --node=NODE --command=/home/orbit/.local/bin/pi-s
 ```
 
 Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
+
+## Agent tools
+
+A Pi session has Pi's `read`, `bash`, `edit`, and `write` tools and one Orbit tool, `search_docs`. `search_docs` searches the Laravel ecosystem documentation through [Laravel Boost](https://github.com/laravel/boost). Results match the package versions installed in the Project, so the agent uses framework features that exist in those versions. Pi has no MCP client; the tool sends only the MCP messages this search needs.
+
+| Input | Required | Meaning |
+| --- | --- | --- |
+| `queries` | yes | Search queries, such as `["queue middleware", "rate limit"]` |
+| `packages` | no | Limit the search to these packages, such as `laravel/framework` or `pestphp/pest` |
+| `project` | no | Laravel app directory relative to the session workspace, such as `apps/gateway` |
+
+The tool chooses the Laravel app in this order:
+
+1. The `project` directory, when the agent passes it.
+2. The session workspace, when it has an `artisan` file.
+3. The only `apps/*` directory with an `artisan` file and `vendor/laravel/boost`.
+
+When several `apps/*` directories match, the tool asks for `project`.
+
+The app needs `laravel/boost` installed, so run `composer install` in it first. The tool runs `php artisan boost:mcp` in the app with `php` from the server's `PATH`. It calls Boost's `search-docs` tool over MCP on standard input and output and returns the text. Boost runs only in a local or debug app, so the tool sets `APP_DEBUG=true` when the server's environment does not set it. The server's `PI_SERVER_*` variables stay out of that process. Boost fetches the documentation from `boost.laravel.com`, so the Node needs outbound HTTPS.
+
+The tool stops Boost after the answer, after 60 seconds, or when the turn is interrupted. A failed search returns an error result to the agent. The error names the cause, such as no Laravel app, Boost not installed or not enabled, or a timeout.
 
 ## API
 

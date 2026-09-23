@@ -228,6 +228,30 @@ describe("turns", () => {
         expect(systemPrompt).toContain("Workspace instruction marker.");
         expect(systemPrompt).toContain("Role prompt marker.");
     });
+
+    it("gives the model search_docs, which explains when no Laravel app is found", async () => {
+        const h = await created();
+        let context = "";
+        h.faux.setResponses([
+            (request) => {
+                context = JSON.stringify(request);
+                return fauxAssistantMessage(
+                    [fauxToolCall("search_docs", { queries: ["validation"] })],
+                    { stopReason: "toolUse" },
+                );
+            },
+            fauxAssistantMessage("finished"),
+        ]);
+        await h.request("POST", "/sessions/thread-1/messages", { key: "k1", text: "go" });
+        const snapshot = await settled(h);
+
+        for (const tool of ["read", "bash", "edit", "write", "search_docs"]) {
+            expect(context).toContain(`"name":"${tool}"`);
+        }
+        const result = snapshot.entries.find((e: any) => e.message.role === "toolResult").message;
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("No Laravel app with Laravel Boost found");
+    });
 });
 
 describe("restart", () => {

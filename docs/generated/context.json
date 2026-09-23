@@ -4453,13 +4453,17 @@
             "path": "docs/reference/pi-server.md",
             "title": "Pi server",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Gateway",
                 "Node",
                 "Process",
+                "Project",
                 "Route",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": [
                 "0116"

@@ -88,7 +88,7 @@ Implementer models use Pi's `provider/model` form. `ORBIT_PI_PROVIDER` maps plai
 
 Pi threads use Pi's read, write, edit, and bash tools. The server adds one Orbit tool that calls the ADR 0115 task verification action through the Gateway API. It replaces the MCP call that T3 agents make. The tool accepts only the fields that action accepts.
 
-The server loads the repository `AGENTS.md` and its agent skills. Documentation lookup uses command-line tools, not MCP: the Context7 CLI for general libraries, and Laravel Boost's documentation search through `php artisan boost:execute-tool` for version-matched Laravel docs. `boost:execute-tool` is a hidden internal Boost command. A Boost upgrade must pass a check that this command still works.
+The server loads the repository `AGENTS.md` and its agent skills. The Context7 CLI covers general libraries through the shell. For version-matched Laravel docs, the server also adds a `search_docs` tool. It starts `php artisan boost:mcp` in the Project's Laravel app, calls Boost's `search-docs` tool over MCP stdio, and ends the process. The tool sends only the messages that call needs, so Pi gets no general MCP client. The [Pi server reference](/reference/pi-server#agent-tools) describes the tool.
 
 ### Evaluation
 
@@ -102,7 +102,7 @@ This decision does not choose other models for Pi. A model such as Grok runs thr
 
 - Start Pi in RPC mode over SSH from the Gateway: the process lifetime would depend on one SSH connection, and a reconnect would lose the live event stream.
 - Read Pi session files over SSH for observation: this gives history without live events and adds polling load.
-- Add an MCP adapter to Pi for Orbit and Boost tools: it adds a third-party dependency on each Node. A native Orbit tool covers the verification action. Documentation lookup works through commands that the agent runs in its shell.
+- Add an MCP adapter to Pi for Orbit and Boost tools: it adds a third-party dependency on each Node. A native Orbit tool covers the verification action. The `search_docs` tool covers Laravel documentation with a minimal MCP exchange and no new dependency.
 - Build the coding agent with Laravel AI: Laravel AI supports API keys only and has no coding tools, edit logic, or context compaction. [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) keeps it for scheduler classification.
 - Run the reviewer on Pi with a Claude subscription: Anthropic's terms do not permit it.
 
@@ -113,7 +113,7 @@ This decision does not choose other models for Pi. A model such as Grok runs thr
 - Pi threads lose T3 checkpoints, per-thread line counts, and approval requests.
 - Transcripts live in Pi session files on the Node. As with T3, removing the Node loses them.
 - Other subscription models depend on each provider's terms. The context table records the terms found for Codex, Grok, and Claude.
-- Boost's documentation command is internal and can change without notice.
+- `search_docs` depends on the name and input of Boost's `search-docs` tool. A Boost upgrade must keep one real search working.
 
 ## Affects
 
