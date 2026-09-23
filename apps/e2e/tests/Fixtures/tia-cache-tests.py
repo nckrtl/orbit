@@ -1172,13 +1172,19 @@ fi
         for path in (self.common / 'orbit-checks').glob('*/*/result.json'):
             self.assertFalse(json.loads(path.read_text())['passed'])
 
-    def test_gate_refuses_dirty_input_without_running_checks(self):
+    def test_gate_checks_uncommitted_input_as_it_is(self):
         runner = self.gate_fixture()
         (self.root / 'source.php').write_text('uncommitted')
+        status = cache.git(self.root, 'status', '--porcelain')
         result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
-        self.assertEqual(1, result.returncode)
-        self.assertIn('clean candidate', result.stderr)
-        self.assertFalse((self.common / 'calls').exists())
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        self.assertIn('with uncommitted changes', result.stdout)
+        report = json.loads(next((self.common / 'orbit-checks').glob('*/*/result.json')).read_text())
+        self.assertTrue(report['passed'])
+        self.assertFalse(report['committed'])
+        self.assertNotEqual(cache.git(self.root, 'rev-parse', 'HEAD^{tree}'), report['tree'])
+        self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
+        self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
 
 
 class TiaRecoveryTest(unittest.TestCase):
