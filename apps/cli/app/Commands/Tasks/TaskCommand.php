@@ -42,7 +42,7 @@ abstract class TaskCommand extends GatewayCommand
     public const int AUTHOR_MAX = 255;
 
     /** The Gateway stores at most this many deliverables on a subtask. */
-    public const int DELIVERABLES_MAX = 20;
+    public const int DELIVERABLES_MAX = 5;
 
     /** @var list<string> */
     public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'completed', 'failed', 'cancelled'];

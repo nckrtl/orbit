@@ -35,7 +35,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
-            'tasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:20', new DistinctDeliverableIds],
+            'tasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'tasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,project,file,name,command,directory'],
             'tasks.*.deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
             'tasks.*.deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],

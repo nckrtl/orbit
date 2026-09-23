@@ -353,13 +353,13 @@ describe('subtask deliverables', function (): void {
         ]])->assertCreated();
     });
 
-    it('refuses more than 20 deliverables on a subtask', function (): void {
+    it('refuses more than five deliverables on a subtask', function (): void {
         $group = backlog_group($this, []);
-        $deliverables = array_map(static fn (int $index): array => ['id' => "item-{$index}", 'type' => 'review', 'description' => 'Item.'], range(1, 21));
+        $deliverables = array_map(static fn (int $index): array => ['id' => "item-{$index}", 'type' => 'review', 'description' => 'Item.'], range(1, 6));
 
         $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Many', 'brief' => 'Many.', 'deliverables' => $deliverables])
             ->assertUnprocessable()
-            ->assertJsonPath('error.details.deliverables', ['The deliverables field must not have more than 20 items.']);
+            ->assertJsonPath('error.details.deliverables', ['The deliverables field must not have more than 5 items.']);
     });
 
     it('refuses to move a group to todo while a subtask has no deliverables', function (): void {
