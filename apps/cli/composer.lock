@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9a2fae052eb4bc8ebd412afcdc87bd4c",
+    "content-hash": "941d6b2c89a68f166a22474ad0c35f5a",
     "packages": [
         {
             "name": "brick/math",
@@ -2557,7 +2557,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/php-sdk",
-                "reference": "921632b07a61dfa20a724cf43da9005dee20b00e"
+                "reference": "01a45438cabf53329536aad832d8ea64ac32a2b9"
             },
             "require": {
                 "guzzlehttp/psr7": "^2.13 || ^3.1",
@@ -2568,7 +2568,7 @@
             "require-dev": {
                 "laravel/pao": "^1.1",
                 "laravel/pint": "^1.32",
-                "nckrtl/pestphp-monorepo": "dev-main#9f0929325bb0ed29274bc51b420726ba681e347c",
+                "nckrtl/pestphp-monorepo": "dev-main",
                 "phpstan/phpstan": "^2.2.13",
                 "phpunit/phpunit": "^13.0",
                 "rector/rector": "^2.3"
