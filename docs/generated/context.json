@@ -3767,7 +3767,9 @@
                 "Repository identity",
                 "Route",
                 "Router",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task group"
             ],
             "governing_adrs": [
                 "0027",
