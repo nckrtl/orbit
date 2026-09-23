@@ -3619,6 +3619,12 @@ export interface components {
             posted_at?: string;
             review_attempt?: number | null;
             commit_sha?: string | null;
+            pull_request?: components["schemas"]["TaskCommentPullRequest"] | null;
+        };
+        TaskCommentPullRequest: {
+            summary?: string;
+            changes?: string[];
+            breaking?: string[];
         };
         ToolManager: {
             id?: number | null;

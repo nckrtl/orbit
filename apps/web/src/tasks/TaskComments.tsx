@@ -99,7 +99,42 @@ function CommentCard({ comment, now }: { comment: TaskComment; now: number }) {
                 </time>
             </div>
             <p className="selectable whitespace-pre-wrap break-words">{comment.body}</p>
+            {comment.pull_request && <PullRequestProposal proposal={comment.pull_request} />}
+            {comment.commit_sha && (
+                <p className={`mt-[6px] text-dim ${metaClassName}`}>
+                    Commit {comment.commit_sha.slice(0, 12)}
+                </p>
+            )}
         </article>
+    );
+}
+
+/** The pull request description a final approval proposed. */
+function PullRequestProposal({ proposal }: { proposal: NonNullable<TaskComment["pull_request"]> }) {
+    const changes = proposal.changes ?? [];
+    const breaking = proposal.breaking ?? [];
+    return (
+        <section
+            aria-label="Proposed pull request"
+            className="mt-[6px] border-l border-dim pl-[1ch]"
+        >
+            <p className={`text-dim ${metaClassName}`}>Pull request</p>
+            <p className="selectable mt-[2px] whitespace-pre-wrap break-words">
+                {proposal.summary}
+            </p>
+            {changes.length > 0 && (
+                <ul className="selectable mt-[4px] list-disc pl-[2ch]">
+                    {changes.map((change) => (
+                        <li key={change} className="break-words">
+                            {change}
+                        </li>
+                    ))}
+                </ul>
+            )}
+            <p className={`mt-[4px] ${breaking.length > 0 ? "text-red" : "text-dim"}`}>
+                {breaking.length > 0 ? `Breaking: ${breaking.join("; ")}` : "No breaking changes"}
+            </p>
+        </section>
     );
 }
 
