@@ -5,6 +5,11 @@ declare(strict_types=1);
 use App\Actions\Annotations\DispatchAnnotationsAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\DestroyTaskAction;
+use App\Actions\Tasks\UpdateTaskAction;
+use App\Actions\Tasks\UpdateTaskGroupAction;
+use App\Data\Tasks\UpdateTaskData;
+use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Shared\ResourceOperationException;
@@ -189,6 +194,22 @@ it('creates task-backed annotations and keeps their lifecycle outside the manage
     expect($task->completion_summary)->toBe('Implemented and verified');
     expect($task->taskGroup->status)->toBe(TaskGroupStatus::Completed);
     expect($instance->fresh())->not->toBeNull();
+});
+
+it('refuses managed edits and removal on an annotation task group', function (): void {
+    $instance = annotationFixture();
+    $taskId = $this->postJson("/api/v1/instances/{$instance->id}/annotations", annotationInput())->assertCreated()->json('data.taskId');
+    $task = Task::query()->findOrFail($taskId);
+    $group = $task->taskGroup;
+
+    expect(fn () => app(UpdateTaskGroupAction::class)->execute($group, new UpdateTaskGroupData('Renamed', null, null)))
+        ->toThrow(ResourceOperationException::class, 'This task uses an existing thread.');
+    expect(fn () => app(UpdateTaskAction::class)->execute($group, $task, new UpdateTaskData('Renamed', null, null)))
+        ->toThrow(ResourceOperationException::class, 'This task uses an existing thread.');
+    expect(fn () => app(DestroyTaskAction::class)->execute($group, $task))
+        ->toThrow(ResourceOperationException::class, 'This task uses an existing thread.');
+    expect($task->refresh()->title)->toBe($group->refresh()->title)
+        ->and($group->title)->not->toBe('Renamed');
 });
 
 it('keeps an unassigned task pending until retry assigns its thread and rejects retargeting a dispatched task', function (): void {
