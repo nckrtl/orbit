@@ -96,7 +96,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     private function implementerPrompt(TaskGroup $group, Task $task): string
     {
         return implode("\n\n", [
-            'Implement this subtask in the shared workspace, then stop so the reviewer can inspect it.',
+            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer(),
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             'Orbit subtask #'.$task->id,

@@ -15,7 +15,7 @@ final class TaskComment extends Model
     #[\Override]
     protected $fillable = [
         'task_group_id', 'task_id', 'agent_thread_id', 'completion_attempt', 'type', 'body', 'author',
-        'review_attempt', 'reviewer_thread_id', 'driver_turn', 'commit_sha', 'pr_url', 'posted_at',
+        'review_attempt', 'reviewer_thread_id', 'driver_turn', 'commit_sha', 'pr_url', 'posted_at', 'receipt_hash',
     ];
 
     /** @return BelongsTo<TaskGroup, $this> */

@@ -11,8 +11,6 @@ final readonly class TaskRubricReminder
 {
     private const string ImplementerLead = 'Orbit could not confirm the brief is complete.';
 
-    private const string ImplementerClosing = 'If it is, reply with a short summary of what changed and the composer check result. If something outside the brief stops you, say what it is.';
-
     private const string ReviewerLead = 'Orbit could not confirm the review is complete.';
 
     private const string ReviewerClosing = 'If something outside the review stops you, say what it is.';
@@ -26,7 +24,7 @@ final readonly class TaskRubricReminder
         ));
 
         return $role === TaskThreadRole::Implementer
-            ? implode(' ', [self::ImplementerLead, ...$sentences, self::ImplementerClosing])
+            ? implode(' ', [self::ImplementerLead, ...$sentences, TaskRunInstructions::implementer()])
             : implode(' ', [self::ReviewerLead, ...$sentences, self::ReviewerClosing]);
     }
 

@@ -30,6 +30,7 @@ final readonly class TaskScheduler
         private TaskSessionObserver $observer,
         private TaskSessionClassifier $classifier,
         private TaskSessionActor $actor,
+        private TaskRunReceipts $receipts,
     ) {}
 
     /**
@@ -168,17 +169,30 @@ final readonly class TaskScheduler
             return true;
         }
 
+        $instance = $group->taskable;
+        if (! $instance instanceof AppInstance) {
+            $this->requestAssistance($task, $group, 'The task workspace is unavailable.', $observation);
+
+            return true;
+        }
         try {
-            $waiting = $this->waitingItem($implementer);
-            $checks = $waiting instanceof TaskRubricItem
-                ? []
-                : $this->classifier->classifyTranscript($observation, TaskThreadRole::Implementer);
-            $items = $this->implementerItems($group, $task, $implementer, $checks);
-        } catch (TaskSessionClassificationException $exception) {
+            $receipt = $this->receipts->read($instance);
+            if ($receipt instanceof TaskRunReceipt) {
+                $this->recordReceipt($group, $task, TaskThreadRole::Implementer, $receipt);
+                $this->receipts->clear($instance, $receipt);
+            }
+        } catch (TaskRunReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return true;
         }
+        if ($receipt?->outcome === TaskRunOutcome::Blocked) {
+            $this->requestAssistance($task, $group, 'The implementer is blocked: '.$receipt->summary, $observation);
+
+            return true;
+        }
+
+        $items = $this->implementerItems($group, $task, $implementer, $receipt);
         if ($this->failedItems($items) === []) {
             $this->settleImplementer($task, $observation->thread(TaskThreadRole::Reviewer)?->turnId);
 
@@ -223,8 +237,9 @@ final readonly class TaskScheduler
                 return true;
             }
             try {
+                $this->prepareImplementerTurn($group);
                 $this->actor->relayReviewBody($group, $implementer, $comment->body);
-            } catch (AgentDriverException $exception) {
+            } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
                 return true;
@@ -304,10 +319,8 @@ final readonly class TaskScheduler
         return true;
     }
 
-    /** @param array<string, TaskTranscriptCheck> $checks
-     * @return list<TaskRubricItem>
-     */
-    private function implementerItems(TaskGroup $group, Task $task, TaskThreadObservation $thread, array $checks): array
+    /** @return list<TaskRubricItem> */
+    private function implementerItems(TaskGroup $group, Task $task, TaskThreadObservation $thread, ?TaskRunReceipt $receipt): array
     {
         $evidence = ComposerCheckEvidence::fromMessages($thread->recentMessages);
         $freshRun = $task->completion_handoff_attempt === null
@@ -318,19 +331,46 @@ final readonly class TaskScheduler
             new TaskRubricItem('check_invoked', $evidence->invoked, 'composer check was not found in the recent tool output. Run composer check.'),
             new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
             new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),
+            $receipt instanceof TaskRunReceipt
+                ? new TaskRubricItem('run_receipt', $receipt->fits(TaskThreadRole::Implementer), 'The run receipt was not valid for this turn.')
+                : new TaskRubricItem('run_receipt', false, 'No run receipt was found.'),
         ];
         $waiting = $this->waitingItem($thread);
         if ($waiting instanceof TaskRubricItem) {
             $items[] = $waiting;
-
-            return $items;
         }
-        if (! isset($checks['blocked'])) {
-            throw new TaskSessionClassificationException('TypeSafe Jev did not return the blocked check.');
-        }
-        $items[] = $this->jevItem($checks['blocked'], 'no');
 
         return $items;
+    }
+
+    /**
+     * Stores the receipt once. A crash before the receipt is removed reads it again, and its hash matches.
+     */
+    private function recordReceipt(TaskGroup $group, Task $task, TaskThreadRole $role, TaskRunReceipt $receipt): void
+    {
+        if (! $receipt->outcome instanceof TaskRunOutcome || ! $receipt->fits($role)) {
+            return;
+        }
+        TaskComment::query()->firstOrCreate(['task_id' => $task->id, 'receipt_hash' => $receipt->hash], [
+            'task_group_id' => $group->id,
+            'agent_thread_id' => $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id,
+            'completion_attempt' => $task->completion_attempt,
+            'review_attempt' => $role === TaskThreadRole::Reviewer ? $task->review_attempt : null,
+            'type' => $receipt->outcome->commentType(),
+            'body' => $receipt->summary,
+            'author' => $role->value,
+            'posted_at' => now(),
+        ]);
+    }
+
+    /** @throws TaskRunReceiptException */
+    private function prepareImplementerTurn(TaskGroup $group): void
+    {
+        $instance = $group->taskable;
+        if (! $instance instanceof AppInstance) {
+            throw new TaskRunReceiptException('The task workspace is unavailable.');
+        }
+        $this->receipts->prepare($instance, TaskThreadRole::Implementer);
     }
 
     /** @return list<TaskRubricItem> */
@@ -401,8 +441,11 @@ final readonly class TaskScheduler
         }
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
+                if ($implementer) {
+                    $this->prepareImplementerTurn($group);
+                }
                 $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures));
-            } catch (AgentDriverException $exception) {
+            } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
                 return;
@@ -842,12 +885,19 @@ final readonly class TaskScheduler
             return;
         }
 
-        $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
+        $group = $task->taskGroup()->with('taskable')->first();
+        $threadId = null;
+        try {
+            if ($group instanceof TaskGroup) {
+                $this->prepareImplementerTurn($group);
+                $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
+            }
+        } catch (TaskRunReceiptException $exception) {
+            Log::error('The run script could not be installed for the implementer.', ['task_id' => $task->id, 'reason' => $exception->getMessage()]);
+        }
 
         if ($threadId === null) {
-            $group = $task->taskGroup()->first();
-
-            $this->failSpawn($group instanceof TaskGroup ? $group : null, $task, 'implementer');
+            $this->failSpawn($group, $task, 'implementer');
 
             return;
         }

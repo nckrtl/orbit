@@ -13,8 +13,10 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
 use App\Domain\Tasks\TaskJevOutcome;
+use App\Domain\Tasks\TaskRunInstructions;
+use App\Domain\Tasks\TaskRunReceiptException;
+use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
@@ -36,14 +38,11 @@ use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
-use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
-use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
+use Tests\Support\FakeTaskRunReceipts;
 
 use function Pest\Laravel\mock;
 
@@ -90,17 +89,6 @@ function tick_group(): TaskGroup
     test_link_agent_threads($group);
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
-}
-
-/** @return list<array<string, ChoiceAnswer>> */
-function tick_transcript(string $invoked = 'yes', string $passed = 'yes', string $current = 'yes', string $blocked = 'no', float $confidence = 0.95): array
-{
-    return [[
-        'check_invoked' => new ChoiceAnswer($invoked, [], $confidence),
-        'check_passed' => new ChoiceAnswer($passed, [], $confidence),
-        'check_current' => new ChoiceAnswer($current, [], $confidence),
-        'blocked' => new ChoiceAnswer($blocked, [], $confidence),
-    ]];
 }
 
 /** @return array{thread: array<string, mixed>} */
@@ -346,8 +334,6 @@ it('drains a pending approval chosen by the faked Choice', function (): void {
             ];
         }
     });
-    $answers = tick_transcript(invoked: 'no', passed: 'no', current: 'no', blocked: 'yes')[0];
-    Classification::fake([$answers, $answers]);
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -413,7 +399,6 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake(tick_transcript());
 
     app(TaskScheduler::class)->tick();
 
@@ -460,7 +445,6 @@ it('advances the current subtask when Jev marks it done', function (): void {
         }
     });
     app()->instance(AgentSpawner::class, $spawner);
-    Classification::fake(tick_transcript());
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -489,7 +473,6 @@ it('hands off only a composer check that ran the workspace check script', functi
             return $snapshot;
         }
     });
-    Classification::fake(tick_transcript());
 
     app(TaskScheduler::class)->tick();
 
@@ -506,52 +489,89 @@ it('hands off only a composer check that ran the workspace check script', functi
     'missing check script' => [false, 'composer check', TaskStatus::Running],
 ]);
 
-it('records a Jev provider failure as a communication failure without aborting the tick', function (): void {
+it('records an unreachable workspace as a communication failure without aborting the tick', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
-    tick_workspace(true);
-    config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
     app()->instance(T3Dispatcher::class, tick_dispatcher());
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            $snapshot = tick_checked_thread('done');
-            $snapshot['thread']['activities'][0]['output'] = "composer check\n> pest";
-
-            return $snapshot;
+            return tick_checked_thread('done');
         }
     });
-    Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"provider body"}'))));
+    mock(TaskRunReceipts::class)->shouldReceive('read')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->communication_failures)->toBe(1)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and(app(T3Dispatcher::class)->commands)->toBe([]);
+    Classification::assertNothingClassified();
 });
 
-it('notifies Coder when classification fails closed', function (): void {
+it('stores a ready_for_review receipt, removes it, and hands off to the reviewer', function (): void {
     $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('done');
+        }
+    });
+    $contents = FakeTaskRunReceipts::contents('ready_for_review', 'Added the models.');
+    $receipts = new FakeTaskRunReceipts([$contents]);
+    app()->instance(TaskRunReceipts::class, $receipts);
+
+    app(TaskScheduler::class)->tick();
+
+    $comment = $task->comments()->sole();
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($comment->getRawOriginal('type'))->toBe('ready_for_review')
+        ->and($comment->body)->toBe('Added the models.')
+        ->and($comment->author)->toBe('implementer')
+        ->and($comment->agent_thread_id)->toBe($task->implementer_agent_thread_id)
+        ->and($comment->completion_attempt)->toBe($task->fresh()?->completion_attempt)
+        ->and($comment->receipt_hash)->toBe(hash('sha256', $contents))
+        ->and($receipts->cleared)->toBe([hash('sha256', $contents)]);
+    Classification::assertNothingClassified();
+});
+
+it('stores a receipt that was read again after a crash only once', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('done');
+        }
+    });
+    $contents = FakeTaskRunReceipts::contents('ready_for_review');
+    $task->comments()->create([
+        'task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Done.', 'author' => 'implementer',
+        'receipt_hash' => hash('sha256', $contents), 'posted_at' => now(),
+    ]);
+    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([$contents]));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->count())->toBe(1)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('asks for assistance with the summary of a blocked receipt', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     $dispatcher = tick_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?string $reason = null;
-
-        public function notify(TaskGroup $group): void {}
-
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
-        {
-            $this->reason = $decision->reason;
-        }
-
-        public function assistance(TaskGroup $group, string $reason): void
-        {
-            $this->reason = $reason;
-        }
-    };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
@@ -560,36 +580,87 @@ it('notifies Coder when classification fails closed', function (): void {
             return ['thread' => ['session' => ['status' => 'idle']]];
         }
     });
-    app()->instance(CoderSettleNotifier::class, $notifier);
-    app()->instance(TaskSessionClassifier::class, new class implements TaskSessionClassifier
-    {
-        public function classify(TaskSessionObservation $observation): TaskSessionDecision
-        {
-            throw new TaskSessionClassificationException(
-                'TYPESAFE_API_KEY is missing. Task session routing will not invent a next action.',
-            );
-        }
-
-        public function classifyOutcome(TaskSessionObservation $observation, TaskThreadRole $role): TaskJevDecision
-        {
-            throw new LogicException('Not expected.');
-        }
-
-        public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
-        {
-            throw new TaskSessionClassificationException(
-                'TYPESAFE_API_KEY is missing. Task session routing will not invent a next action.',
-            );
-        }
-    });
+    $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.')]);
+    app()->instance(TaskRunReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
-    expect($group->tasks()->first()?->communication_failures)->toBe(1)
-        ->and($notifier->reason)->toBeNull()
-        ->and($dispatcher->commands)->toBe([])
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_reason)->toBe('The implementer is blocked: Installing the extension needs sudo, and sudo was denied.')
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
+        ->and($receipts->cleared)->toHaveCount(1)
+        ->and($dispatcher->commands)->toBe([]);
+});
+
+it('reminds an implementer that ends a turn without a receipt once, then asks for assistance', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public ?string $reason = null;
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('idle');
+        }
+    });
+    $receipts = new FakeTaskRunReceipts([null, null]);
+    app()->instance(TaskRunReceipts::class, $receipts);
+
+    app(TaskScheduler::class)->tick();
+
+    $reminder = $dispatcher->commands[0]['message']['text'];
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer())
+        ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($notifier->reason)->toBe('Checks still failed after the reminder. No run receipt was found.')
+        ->and($task->comments()->count())->toBe(0);
+    Classification::assertNothingClassified();
+});
+
+it('refuses a receipt with an outcome that does not fit the implementer turn', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return tick_checked_thread('done');
+        }
+    });
+    $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('approved')]);
+    app()->instance(TaskRunReceipts::class, $receipts);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('The run receipt was not valid for this turn.')
+        ->and($task->comments()->count())->toBe(0)
+        ->and($receipts->cleared)->toHaveCount(1);
 });
 
 it('dispatches nothing when Jev selects noop', function (): void {
@@ -624,7 +695,6 @@ it('dispatches nothing when Jev selects noop', function (): void {
         }
     });
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake(tick_transcript(invoked: 'no', passed: 'no', current: 'no'));
 
     $decisions = app(TaskScheduler::class)->tick();
 
@@ -814,8 +884,6 @@ it('asks for assistance when implementer checks still fail after one reminder', 
             return ['thread' => ['session' => ['status' => 'idle']]];
         }
     });
-    $answers = tick_transcript(invoked: 'no')[0];
-    Classification::fake([$answers, $answers]);
 
     app(TaskScheduler::class)->tick();
 
@@ -831,69 +899,6 @@ it('asks for assistance when implementer checks still fail after one reminder', 
         ->and($notifier->reason)->toContain('Checks still failed')
         ->and($notifier->reason)->toContain('composer check was not found')
         ->and($dispatcher->commands)->toHaveCount(1);
-});
-
-it('reminds a finished implementer without claiming a blocker and hides the reminder from Jev', function (): void {
-    $group = tick_group();
-    app(TaskExtensionState::class)->enable();
-    $dispatcher = tick_dispatcher();
-    $notifier = new class implements CoderSettleNotifier
-    {
-        public ?string $reason = null;
-
-        public function notify(TaskGroup $group): void {}
-
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
-
-        public function assistance(TaskGroup $group, string $reason): void
-        {
-            $this->reason = $reason;
-        }
-    };
-    $reader = new class implements T3ThreadReader
-    {
-        /** @var list<array<string, string>> */
-        public array $messages = [];
-
-        public function snapshot(Node $node, string $threadId): ?array
-        {
-            if ($threadId !== 'implementer-thread') {
-                return ['thread' => [
-                    'session' => ['status' => 'idle'],
-                    'messages' => [['id' => 'reviewer-wait', 'role' => 'assistant', 'text' => "I'll wait for the subtask handoff.", 'createdAt' => '2026-09-22T11:00:00Z']],
-                ]];
-            }
-            $snapshot = tick_checked_thread('idle');
-            $snapshot['thread']['messages'] = $this->messages;
-
-            return $snapshot;
-        }
-    };
-    app()->instance(T3Dispatcher::class, $dispatcher);
-    app()->instance(CoderSettleNotifier::class, $notifier);
-    app()->instance(T3ThreadReader::class, $reader);
-    Classification::fake([['blocked' => new ChoiceAnswer('yes', [], 0.84)], ['blocked' => new ChoiceAnswer('yes', [], 0.84)]]);
-
-    app(TaskScheduler::class)->tick();
-
-    $reminder = $dispatcher->commands[0]['message']['text'];
-    expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toStartWith('Orbit could not confirm the brief is complete.')
-        ->and($reminder)->not->toContain('blocked')
-        ->and($reminder)->not->toContain('assistance_requested')
-        ->and($group->fresh()?->assistance_requested)->toBeFalse();
-
-    $reader->messages = [
-        ['id' => 'reminder', 'role' => 'user', 'text' => $reminder, 'createdAt' => '2026-09-22T11:58:00Z'],
-        ['id' => 'reply', 'role' => 'assistant', 'text' => 'Installing the extension needs sudo, and sudo was denied.', 'createdAt' => '2026-09-22T11:59:00Z'],
-    ];
-    app(TaskScheduler::class)->tick();
-
-    expect($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toBe('Checks still failed after the reminder. blocked: Jev answered yes at 0.84.');
-    Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
-        && ! array_key_exists('threads', $prompt->state)
-        && array_column($prompt->state['thread']['recent_messages'], 'id') === ['reply', 'check-1']);
 });
 
 it('retries the reviewer nudge until the handoff send succeeds', function (): void {
@@ -934,7 +939,6 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
             return tick_checked_thread('idle');
         }
     });
-    Classification::fake(tick_transcript());
 
     app(TaskScheduler::class)->tick();
 
@@ -1049,7 +1053,9 @@ it('retries review findings until the implementer receives them', function (): v
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
-        ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.');
+        ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
+        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer())
+        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
 });
 
 it('repeated reminder send failures reach assistance', function (): void {
@@ -1069,7 +1075,6 @@ it('repeated reminder send failures reach assistance', function (): void {
             throw new T3DispatchException('send failed');
         }
     });
-    Classification::fake();
     for ($i = 0; $i < 6; $i++) {
         app(TaskScheduler::class)->tick();
     }
@@ -1092,7 +1097,6 @@ it('handoff waits while reviewer still reports its old turn', function (): void 
             return $snapshot;
         }
     });
-    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)], ['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
     app(TaskScheduler::class)->tick();
     expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing);
     expect($dispatcher->commands)->toHaveCount(1);
@@ -1180,8 +1184,6 @@ it('relayed findings require a newer implementer turn and a new check before rev
         }
     };
     app()->instance(T3ThreadReader::class, $reader);
-    $answer = ['blocked' => new ChoiceAnswer('no', [], 0.95)];
-    Classification::fake([$answer, $answer]);
 
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
@@ -1262,7 +1264,6 @@ it('keeps check evidence from before the findings invalid after assistance is re
             return $snapshot;
         }
     });
-    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.95)]]);
 
     app(StoreTaskCommentAction::class)->execute($task, [
         'type' => 'resolution', 'body' => 'Continue with the review findings.', 'author' => 'operator',

@@ -42,7 +42,7 @@ The reviewer thread starts at the first handoff, not when the group starts. One 
 
 ### The run receipt
 
-The Gateway places the script `.git/orbit/run` in the workspace when it prepares the workspace. `.git/orbit/` is inside the Git directory, so Git never tracks it and no Project needs an ignore rule. The Gateway owns the script and its version.
+Before each agent turn, the Gateway places the script `.git/orbit/run` in the workspace, writes `.git/orbit/turn.json` with the role of the turn, and removes any earlier receipt. The script reads `turn.json` to check the outcome. `.git/orbit/` is inside the Git directory, so Git never tracks it and no Project needs an ignore rule. The Gateway owns the script and its version.
 
 An agent ends its turn with one command:
 
@@ -126,7 +126,7 @@ Operator comments stay: `assistance_requested` from Orbit and `resolution` from 
 - The loop has one source of truth for the end of a turn, and every transition happens in the scheduler.
 - The implementer and reviewer need only one command, the same for every driver.
 - A crash between storing and removing a receipt must not record it twice. The scheduler stores the receipt with its content hash and ignores a repeat.
-- Existing groups keep the current comment flow until they settle.
+- A group that is active during the deploy receives the script with its next reminder, because the reminder also installs it.
 
 ## Affects
 

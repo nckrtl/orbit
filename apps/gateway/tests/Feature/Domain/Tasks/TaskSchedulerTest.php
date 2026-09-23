@@ -24,6 +24,8 @@ use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskRunReceiptException;
+use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -40,6 +42,8 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+
+use function Pest\Laravel\mock;
 
 function scheduler_app(string $slug): OrbitApp
 {
@@ -278,7 +282,55 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
         ->and($claimed?->taskable_id)->toBe($instance->id)
         ->and($claimed?->reviewer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'reviewer-thread')->sole()->id)
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
-        ->and($claimed?->tasks->first()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-thread')->sole()->id);
+        ->and($claimed?->tasks->first()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-thread')->sole()->id)
+        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer']);
+});
+
+it('fails a group and its first task when the run script cannot be installed', function (): void {
+    $app = scheduler_app('orbit');
+    $node = scheduler_node('orbit-node', '10.44.0.91');
+    $instance = scheduler_instance($app, $node, 'isolated');
+    $group = queued_group($app, 'Wire T3');
+    app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        {
+            return $this->instance;
+        }
+    });
+    $spawner = new class implements AgentSpawner
+    {
+        public int $implementers = 0;
+
+        public function spawnReviewer(TaskGroup $group): ?int
+        {
+            return test_agent_thread($group, 'reviewer-thread')->id;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            $this->implementers++;
+
+            return null;
+        }
+
+        public function requestReview(Task $task): void {}
+
+        public function signOff(Task $task): ?string
+        {
+            return null;
+        }
+    };
+    app()->instance(AgentSpawner::class, $spawner);
+    mock(TaskRunReceipts::class)->shouldReceive('prepare')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
+
+    app(TaskScheduler::class)->claimNext();
+
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
+        ->and($group->tasks()->first()?->status)->toBe(TaskStatus::Failed)
+        ->and($spawner->implementers)->toBe(0);
 });
 
 it('fails a group when the reviewer spawn returns no thread id', function (): void {

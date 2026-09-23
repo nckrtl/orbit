@@ -28,7 +28,6 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
 use Laravel\Ai\Classification;
-use Laravel\Ai\Responses\Data\ChoiceAnswer;
 use Tests\Support\FakeAgentDriver;
 
 /** @return array{TaskGroup, Task, FakeAgentDriver, AgentDriverRegistry} */
@@ -177,7 +176,6 @@ it('routes an attached conversation without a legacy pointer', function (): void
     [$group, $task, $driver] = driver_group();
     $task->update(['implementer_agent_thread_id' => null]);
     $driver->observation = new AgentObservation(AgentThreadState::Done);
-    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 1.0)]]);
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
@@ -218,7 +216,6 @@ it('alerts once after a continuous observation outage and rearms after recovery'
         public function assistance(TaskGroup $group, string $reason): void {}
     };
     app()->instance(CoderSettleNotifier::class, $notifier);
-    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 1.0)]]);
     $scheduler = app(TaskScheduler::class);
 
     expect($scheduler->tick()[0]->action)->toBe(TaskSessionNextAction::Noop);

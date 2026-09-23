@@ -1,0 +1,65 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/*
+ * Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
+ * An agent ends its turn with: .git/orbit/run --outcome=OUTCOME --summary="..."
+ */
+
+const OUTCOMES = [
+    'implementer' => ['ready_for_review', 'blocked'],
+    'reviewer' => ['approved', 'changes_requested', 'blocked'],
+];
+
+function refuse(string $message): never
+{
+    fwrite(STDERR, "orbit run: {$message}\n");
+    exit(2);
+}
+
+$turn = json_decode((string) @file_get_contents(__DIR__.'/turn.json'), true);
+$role = is_array($turn) ? ($turn['role'] ?? null) : null;
+if (! is_string($role) || ! array_key_exists($role, OUTCOMES)) {
+    refuse('Orbit has not started a turn in this workspace.');
+}
+
+$options = [];
+$arguments = array_slice($argv, 1);
+while ($arguments !== []) {
+    $argument = array_shift($arguments);
+    if (preg_match('/\A--(outcome|summary)(?:=(.*))?\z/s', $argument, $match) !== 1) {
+        refuse("unknown argument {$argument}.");
+    }
+    $value = array_key_exists(2, $match) ? $match[2] : array_shift($arguments);
+    if (! is_string($value)) {
+        refuse("--{$match[1]} needs a value.");
+    }
+    if (array_key_exists($match[1], $options)) {
+        refuse("pass --{$match[1]} once.");
+    }
+    $options[$match[1]] = $value;
+}
+
+$allowed = OUTCOMES[$role];
+$outcome = $options['outcome'] ?? '';
+if (! in_array($outcome, $allowed, true)) {
+    refuse('--outcome must be one of: '.implode(', ', $allowed).'.');
+}
+$summary = trim($options['summary'] ?? '');
+if ($summary === '') {
+    refuse('--summary is required.');
+}
+
+$receipt = json_encode(
+    ['outcome' => $outcome, 'summary' => $summary, 'nonce' => bin2hex(random_bytes(16))],
+    JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+);
+$temporary = __DIR__.'/run.json.'.getmypid();
+if (file_put_contents($temporary, $receipt."\n") === false || ! rename($temporary, __DIR__.'/run.json')) {
+    @unlink($temporary);
+    refuse('could not write the run receipt.');
+}
+
+fwrite(STDOUT, "Orbit recorded the run receipt ({$outcome}). End your turn now.\n");
