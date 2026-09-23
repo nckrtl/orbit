@@ -1493,7 +1493,8 @@ function tick_checking(array $readings): array
 }
 
 it('waits while the check process runs and starts the reviewer only after it passes', function (): void {
-    [$group, $task, $checks] = tick_checking([TaskCheckReading::running(), TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    $finished = TaskCheckReading::finished(0, str_repeat('a', 40), str_repeat('b', 40), [], "checks passed\n", 1790170874.25);
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running(), TaskCheckReading::running(), $finished]);
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
@@ -1511,7 +1512,7 @@ it('waits while the check process runs and starts the reviewer only after it pas
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
         ->and($check->fresh()?->exit_code)->toBe(0)
-        ->and($check->fresh()?->finished_at)->not->toBeNull()
+        ->and($check->fresh()?->finished_at?->getTimestamp())->toBe(1790170874)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 

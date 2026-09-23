@@ -106,6 +106,8 @@ it('runs composer check detached and reports running, then the exit code and out
         ->and($reading->output)->toContain($output)
         ->and($reading->treeAfter)->toBe($process->tree)
         ->and($reading->changedPaths)->toBe([])
+        ->and($reading->finishedAt)->toBeFloat()
+        ->and($reading->finishedAt)->toBeLessThanOrEqual(microtime(true))
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
 })->with([
     'passing' => ['sleep 1 && echo all checks passed', 0, 'all checks passed'],

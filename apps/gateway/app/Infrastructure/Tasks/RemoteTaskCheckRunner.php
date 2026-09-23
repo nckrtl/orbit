@@ -71,7 +71,9 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         }
         $paths = array_values(array_filter($result['changed_paths'], is_string(...)));
 
-        return TaskCheckReading::finished($result['exit_code'], $result['head_after'], $result['tree_after'], $paths, $output);
+        $finishedAt = $result['finished_at'] ?? null;
+
+        return TaskCheckReading::finished($result['exit_code'], $result['head_after'], $result['tree_after'], $paths, $output, is_int($finishedAt) || is_float($finishedAt) ? (float) $finishedAt : null);
     }
 
     /**

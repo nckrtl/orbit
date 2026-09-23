@@ -17,6 +17,7 @@ final readonly class TaskCheckReading
         public ?string $treeAfter = null,
         public array $changedPaths = [],
         public string $output = '',
+        public ?float $finishedAt = null,
     ) {}
 
     public static function running(): self
@@ -24,10 +25,13 @@ final readonly class TaskCheckReading
         return new self('running');
     }
 
-    /** @param list<string> $changedPaths */
-    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output): self
+    /**
+     * @param  list<string>  $changedPaths
+     * @param  float|null  $finishedAt  the Unix time at which the check itself ended
+     */
+    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null): self
     {
-        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output);
+        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt);
     }
 
     public static function lost(string $output): self

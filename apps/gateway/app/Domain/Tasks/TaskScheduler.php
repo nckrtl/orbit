@@ -10,6 +10,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -300,8 +301,9 @@ final readonly class TaskScheduler
                 'changed_paths' => json_encode($reading->changedPaths, JSON_THROW_ON_ERROR),
                 'output' => $reading->output,
             ];
+        $finishedAt = $reading->finishedAt === null ? now() : Carbon::createFromTimestamp($reading->finishedAt);
         TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
-            ->update([...$values, 'finished_at' => now(), 'updated_at' => now()]);
+            ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
         $check->refresh();
     }
 
