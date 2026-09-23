@@ -173,7 +173,7 @@ final readonly class TaskScheduler
             $checks = $waiting instanceof TaskRubricItem
                 ? []
                 : $this->classifier->classifyTranscript($observation, TaskThreadRole::Implementer);
-            $items = $this->implementerItems($task, $implementer, $checks);
+            $items = $this->implementerItems($group, $task, $implementer, $checks);
         } catch (TaskSessionClassificationException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -307,12 +307,14 @@ final readonly class TaskScheduler
     /** @param array<string, TaskTranscriptCheck> $checks
      * @return list<TaskRubricItem>
      */
-    private function implementerItems(Task $task, TaskThreadObservation $thread, array $checks): array
+    private function implementerItems(TaskGroup $group, Task $task, TaskThreadObservation $thread, array $checks): array
     {
         $evidence = ComposerCheckEvidence::fromMessages($thread->recentMessages);
         $freshRun = $task->completion_handoff_attempt === null
             || ($evidence->runId !== null && $evidence->runId !== $task->completion_handoff_check_id);
+        $instance = $group->taskable;
         $items = [
+            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so composer check ran a built-in Composer command. Restore the check script and run composer check again.'),
             new TaskRubricItem('check_invoked', $evidence->invoked, 'composer check was not found in the recent tool output. Run composer check.'),
             new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
             new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),

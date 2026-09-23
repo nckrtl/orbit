@@ -115,6 +115,34 @@ function tick_checked_thread(string $status): array
     ]];
 }
 
+function tick_workspace(bool $definesCheckScript = true): void
+{
+    app()->instance(TaskWorkspaceStateReader::class, new readonly class($definesCheckScript) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private bool $definesCheckScript) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return null;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return null;
+        }
+
+        public function isClean(AppInstance $instance): bool
+        {
+            return false;
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return $this->definesCheckScript;
+        }
+    });
+}
+
 function tick_dispatcher(): T3Dispatcher
 {
     return new class implements T3Dispatcher
@@ -174,6 +202,10 @@ function tick_reviewed_pull_request(TaskGroup $group): array
         'head' => ['repo' => ['full_name' => 'acme/orbit'], 'ref' => 'task-'.$group->id, 'sha' => str_repeat('a', 40)],
     ];
 }
+
+beforeEach(function (): void {
+    tick_workspace();
+});
 
 it('stores the final approved PR before settling and watches that same PR on later ticks', function (): void {
     $group = tick_final_review();
@@ -435,6 +467,41 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
         ->and($spawner->reviews)->toBe(1);
 });
+
+it('hands off only a composer check that ran the workspace check script', function (bool $definesCheckScript, string $output, TaskStatus $status): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    tick_workspace($definesCheckScript);
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new readonly class($output) implements T3ThreadReader
+    {
+        public function __construct(private string $output) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['activities'][0]['output'] = $this->output;
+
+            return $snapshot;
+        }
+    });
+    Classification::fake(tick_transcript());
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe($status);
+    $commands = app(T3Dispatcher::class)->commands;
+    if ($status === TaskStatus::Running) {
+        expect($commands)->toHaveCount(1)
+            ->and($commands[0]['message']['text'])->toContain('does not define a check script')
+            ->not->toContain('composer check did not pass');
+    }
+})->with([
+    'project check script' => [true, "composer check\n> pint --test\n> phpstan analyse\n> pest", TaskStatus::Reviewing],
+    'check-platform-reqs without a check script' => [false, "composer check\nChecking platform requirements for packages in the vendor dir\nphp 8.5.0 success", TaskStatus::Running],
+    'missing check script' => [false, 'composer check', TaskStatus::Running],
+]);
 
 it('notifies Coder when classification fails closed', function (): void {
     $group = tick_group();
