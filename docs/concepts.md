@@ -14,6 +14,8 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Project type** — Closed enum `monorepo`, `laravel-app`, or `laravel-package`. `laravel-app` is the web-serving type. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
 - **Repository identity** — The Git host and path, without a trailing `.git`. Equivalent SSH and HTTPS URLs identify the same repository and belong to one Project. See [Projects](/reference/apps#keep-one-repository-owner).
 - **Instance** — One managed copy of a Project on a Node. Placement on app-dev uses a checkout or worktree. Placement on app-prod requires a candidate. See [ADR 0047](/decisions/0047-create-production-appinstances-from-candidates) and [Applications](/domains/applications).
+- **Setup step** — One named setup command stored for a Project. See [Instance setup and teardown](/reference/instance-setup).
+- **Teardown step** — One named teardown command stored for a Project. See [Instance setup and teardown](/reference/instance-setup).
 - **Instance routing** — An active `laravel-app` Instance has one Route. A `monorepo` or `laravel-package` Instance has no Route by default. See [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type).
 - **Web root** — The directory served by a web-serving Instance, with a relative path inherited from the Project or overridden per Instance. app-prod resolves it inside the selected release. See [Production release layout](/reference/deployments).
 - **Route** — A domain the Gateway publishes on the private network. See [ADR 0064](/decisions/0064-name-application-endpoints-as-domains), [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes), and [Routes](/reference/routes).

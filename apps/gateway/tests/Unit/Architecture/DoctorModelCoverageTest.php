@@ -32,6 +32,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
@@ -82,6 +83,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Activity::class,
         AppInstanceDeployment::class,
         AppInstanceDeployStep::class,
+        ProjectLifecycleStep::class,
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         AppInstanceTransfer::class,

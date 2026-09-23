@@ -2958,6 +2958,10 @@
             "type": "string",
             "maxLength": 253,
             "description": "Optional explicit Route domain"
+          },
+          "setup": {
+            "type": "boolean",
+            "description": "Run the Project setup steps after adoption"
           }
         },
         "additionalProperties": false,
@@ -3074,6 +3078,186 @@
       }
     },
     {
+      "name": "instance-setup",
+      "title": "instance:setup",
+      "description": "Run the Project setup steps for one development Instance.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/setup",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-setup-step-create",
+      "title": "instance:setup-step:create",
+      "description": "Record one named setup step on a Project.",
+      "method": "POST",
+      "path": "/api/v1/projects/{app}/setup-steps",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Step name"
+          },
+          "command": {
+            "type": "string",
+            "description": "Shell command the Gateway runs"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "name",
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "instance-setup-step-destroy",
+      "title": "instance:setup-step:destroy",
+      "description": "Remove one named setup step.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{app}/setup-steps/{step}",
+      "path_inputs": [
+        "app",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "step"
+        ]
+      }
+    },
+    {
+      "name": "instance-setup-step-list",
+      "title": "instance:setup-step:list",
+      "description": "List a Project's setup steps.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/setup-steps",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "instance-setup-step-update",
+      "title": "instance:setup-step:update",
+      "description": "Change one named setup step.",
+      "method": "PATCH",
+      "path": "/api/v1/projects/{app}/setup-steps/{step}",
+      "path_inputs": [
+        "app",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          },
+          "command": {
+            "type": "string",
+            "description": "Replacement shell command"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "step"
+        ]
+      }
+    },
+    {
       "name": "instance-show",
       "title": "Show an Instance",
       "description": "Show an instance.",
@@ -3096,6 +3280,160 @@
         "additionalProperties": false,
         "required": [
           "instance"
+        ]
+      }
+    },
+    {
+      "name": "instance-teardown-step-create",
+      "title": "instance:teardown-step:create",
+      "description": "Record one named teardown step on a Project.",
+      "method": "POST",
+      "path": "/api/v1/projects/{app}/teardown-steps",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Step name"
+          },
+          "command": {
+            "type": "string",
+            "description": "Shell command the Gateway runs"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "name",
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "instance-teardown-step-destroy",
+      "title": "instance:teardown-step:destroy",
+      "description": "Remove one named teardown step.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{app}/teardown-steps/{step}",
+      "path_inputs": [
+        "app",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "step"
+        ]
+      }
+    },
+    {
+      "name": "instance-teardown-step-list",
+      "title": "instance:teardown-step:list",
+      "description": "List a Project's teardown steps.",
+      "method": "GET",
+      "path": "/api/v1/projects/{app}/teardown-steps",
+      "path_inputs": [
+        "app"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app"
+        ]
+      }
+    },
+    {
+      "name": "instance-teardown-step-update",
+      "title": "instance:teardown-step:update",
+      "description": "Change one named teardown step.",
+      "method": "PATCH",
+      "path": "/api/v1/projects/{app}/teardown-steps/{step}",
+      "path_inputs": [
+        "app",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          },
+          "command": {
+            "type": "string",
+            "description": "Replacement shell command"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "app",
+          "step"
         ]
       }
     },

@@ -81,6 +81,7 @@
               "reference/php-runtime",
               "reference/appinstance-cloning",
               "reference/deployments",
+              "reference/instance-setup",
               "reference/instance-logs",
               "reference/instance-queue",
               "reference/instance-analytics-stats",
@@ -370,7 +371,16 @@
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
               "POST /api/v1/instances/{instance}/rollback",
-              "POST /api/v1/instances/{instance}/transfer"
+              "POST /api/v1/instances/{instance}/setup",
+              "POST /api/v1/instances/{instance}/transfer",
+              "GET /api/v1/projects/{app}/setup-steps",
+              "POST /api/v1/projects/{app}/setup-steps",
+              "DELETE /api/v1/projects/{app}/setup-steps/{step}",
+              "PATCH /api/v1/projects/{app}/setup-steps/{step}",
+              "GET /api/v1/projects/{app}/teardown-steps",
+              "POST /api/v1/projects/{app}/teardown-steps",
+              "DELETE /api/v1/projects/{app}/teardown-steps/{step}",
+              "PATCH /api/v1/projects/{app}/teardown-steps/{step}"
             ]
           },
           {
@@ -651,7 +661,9 @@
               "decisions/0112-isolate-agent-threads-behind-drivers",
               "decisions/0113-gate-task-completion-on-validation-and-review",
               "decisions/0114-judge-task-completion-as-separate-checks",
-              "decisions/0116-run-task-implementers-on-pi"
+              "decisions/0115-run-project-setup-commands-on-development-instances",
+              "decisions/0116-run-task-implementers-on-pi",
+              "decisions/0117-judge-the-blocked-question-on-role-evidence"
             ]
           }
         ]

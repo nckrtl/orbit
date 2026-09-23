@@ -39,6 +39,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -53,6 +54,7 @@ use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Database\Events\QueryExecuted;
@@ -62,6 +64,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Tests\Support\LifecycleSshExecutor;
 use Tests\TestCase;
 
 beforeEach(function (): void {
@@ -3310,3 +3313,47 @@ final class RecoveredSourceProfileEnvironmentAccess implements AppInstanceEnviro
         return AppInstanceEnvironmentWriteResult::changed();
     }
 }
+
+it('runs setup once on create and skips it for an already active instance', function (): void {
+    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $input = ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'setup', 'branch' => 'dev'];
+    $this->postJson('/api/v1/instances', $input)->assertCreated();
+    $this->postJson('/api/v1/instances', $input)->assertOk();
+    expect($transport->inputs)->toHaveCount(1);
+});
+
+it('tears down and removes a newly created instance after confirmed setup failure', function (int $teardownExit): void {
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'preserve', 'branch' => 'dev'])->assertCreated();
+    $preservedId = AppInstance::query()->sole()->id;
+
+    foreach (['setup', 'teardown'] as $phase) {
+        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
+    }
+    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
+    expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
+        ->and(AppInstance::query()->sole()->id)->toBe($preservedId)
+        ->and(Route::query()->count())->toBe(1);
+})->with([0, 1]);
+
+it('retains the checkout when setup execution cannot be confirmed', function (): void {
+    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
+    expect(AppInstance::query()->count())->toBe(1)
+        ->and(Route::query()->count())->toBe(1)
+        ->and($transport->inputs)->toHaveCount(1);
+    $this->postJson('/api/v1/instances', ['app_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
+        ->assertConflict()->assertJsonPath('error.code', 'instance.setup_step_failed');
+    $transport->result = static fn (): int => 0;
+    $instance = AppInstance::query()->sole();
+    $this->postJson('/api/v1/instances/'.$instance->id.'/setup')->assertOk();
+    expect($instance->refresh()->failed_step)->toBeNull();
+
+});

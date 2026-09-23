@@ -121,3 +121,5 @@ A Docker Instance Process on app-dev maps restart policy `always` to Docker `unl
 Doctor compares desired Process state with the observed systemd or Docker status. When the awake marker is absent, Doctor does not report a state mismatch for a non-keep-alive Process that is desired running and observed stopped. A keep-alive Process that is desired running and down remains a state mismatch. Doctor does not start or stop the Processes.
 
 `orbit process:list --instance=ID` shows the same desired and observed states, including `keep_alive`.
+
+Development Caddy publication validates its candidate as the Caddy service user. Validation can create access logs; running it as root leaves new log files unwritable by the service.

@@ -500,6 +500,13 @@ final readonly class RecordCommandActivity
                 'instance:deploy-step:create',
                 'instance:deploy-step:update',
                 'instance:deploy-step:destroy',
+                'instance:setup-step:create',
+                'instance:setup-step:update',
+                'instance:setup-step:destroy',
+                'instance:teardown-step:create',
+                'instance:teardown-step:update',
+                'instance:teardown-step:destroy',
+                'instance:setup',
                 'instance:update',
             ], true)
         ) {

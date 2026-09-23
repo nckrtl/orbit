@@ -47,6 +47,8 @@ uses(TestCase::class, RefreshDatabase::class)
     })
     ->in('Feature');
 
+uses(TestCase::class)->in('Calibration');
+
 pest()
     ->tia()
     ->locally()

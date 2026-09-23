@@ -309,7 +309,9 @@
                 "Project",
                 "Repository identity",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Setup step",
+                "Teardown step"
             ],
             "governing_adrs": []
         },
@@ -563,8 +565,10 @@
                 "Router",
                 "Runtime hibernation",
                 "Schedule",
+                "Setup step",
                 "Task",
                 "Task group",
+                "Teardown step",
                 "Tool",
                 "Tool Manager",
                 "Web root",
@@ -3068,7 +3072,33 @@
             "governing_adrs": [
                 "0110",
                 "0113",
-                "0114"
+                "0114",
+                "0117"
+            ]
+        },
+        {
+            "path": "docs/decisions/0115-run-project-setup-commands-on-development-instances.md",
+            "title": "ADR 0115: Run Project setup commands on development Instances",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0027",
+                "0071",
+                "0073",
+                "0115"
             ]
         },
         {
@@ -3093,6 +3123,25 @@
                 "0112",
                 "0114",
                 "0116"
+            ]
+        },
+        {
+            "path": "docs/decisions/0117-judge-the-blocked-question-on-role-evidence.md",
+            "title": "ADR 0117: Judge the blocked question on the role's own evidence",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0117"
             ]
         },
         {
@@ -3241,7 +3290,8 @@
                 "0112",
                 "0113",
                 "0114",
-                "0116"
+                "0116",
+                "0117"
             ]
         },
         {
@@ -3600,6 +3650,8 @@
                 "Route",
                 "Router",
                 "Schedule",
+                "Setup step",
+                "Teardown step",
                 "Tool",
                 "proxycli"
             ],
@@ -3966,6 +4018,26 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/instance-setup.md",
+            "title": "Instance setup and teardown",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Setup step",
+                "Teardown step"
+            ],
+            "governing_adrs": [
+                "0115"
+            ]
+        },
+        {
             "path": "docs/reference/local-resolver-overrides.md",
             "title": "Local resolver overrides",
             "kind": "reference",
@@ -4268,7 +4340,9 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Database",
                 "Gateway",
@@ -4288,7 +4362,8 @@
                 "0112",
                 "0113",
                 "0114",
-                "0116"
+                "0116",
+                "0117"
             ]
         },
         {

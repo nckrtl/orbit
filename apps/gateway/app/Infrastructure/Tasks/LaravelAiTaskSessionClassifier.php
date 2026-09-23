@@ -56,10 +56,12 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
                 : ['Is the reviewer blocked on something the review cannot resolve?', 'The reviewer is blocked.', 'The reviewer is not blocked.'],
         ];
 
-        $classification = Classification::of([
-            ...$observation->toArray(),
-            'classification_role' => $role->value,
-        ]);
+        $evidence = $observation->transcriptEvidence($role);
+        if ($evidence === null) {
+            throw new TaskSessionClassificationException('The '.$role->value.' thread is not in the observation.');
+        }
+
+        $classification = Classification::of($evidence);
         foreach ($definitions as $key => [$prompt, $yes, $no]) {
             $classification = $classification->question($key, new Choice($prompt, ['yes' => $yes, 'no' => $no]));
         }
@@ -68,10 +70,10 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
         $checks = [];
         foreach (array_keys($definitions) as $key) {
             $answer = $answers[$key] ?? null;
-            if (! $answer instanceof ChoiceAnswer) {
+            if (! $answer instanceof ChoiceAnswer || $answer->confidence === null) {
                 throw new TaskSessionClassificationException('TypeSafe Jev did not return the '.$key.' check.');
             }
-            $checks[$key] = new TaskTranscriptCheck($key, $answer->choice, $answer->confidence);
+            $checks[$key] = new TaskTranscriptCheck($key, $answer->choice, $answer->confidence, $answer->probabilities);
         }
 
         return $checks;

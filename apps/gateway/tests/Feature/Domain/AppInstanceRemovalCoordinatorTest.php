@@ -25,6 +25,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -43,9 +44,11 @@ use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
 
@@ -73,6 +76,47 @@ beforeEach(function (): void {
         $this->orb183Content,
         app(RouteStateResolver::class),
     );
+});
+
+it('refuses newly dirty teardown before acceptance and requires an explicit force retry', function (): void {
+    $instance = orb181_coordinator_instance();
+    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
+        expect($this->orb181Inspector->calls)->not->toBeEmpty();
+        $this->orb181Inspector->normalUnsafeIds[] = $instance->id;
+
+        return 0;
+    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
+    $removal = $this->orb181Coordinator->execute($instance, true);
+    expect($removal->status->value)->toBe('completed')->and($transport->inputs)->toHaveCount(2);
+});
+
+it('refuses source identity changes made by teardown', function (): void {
+    $instance = orb181_coordinator_instance();
+    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
+        $this->orb181Inspector->observedCommits[$instance->id] = str_repeat('b', 40);
+
+        return 0;
+    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
+        ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
+});
+
+it('keeps the route and checkout after a teardown command fails', function (): void {
+    $instance = orb181_coordinator_instance();
+    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor(result: static fn (): int => 1);
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
+        ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and($instance->routes()->count())->toBe(1)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
 });
 
 it('accepts exactly one independent checkout and completes every durable step', function (bool $force): void {
@@ -1329,3 +1373,15 @@ final class Orb131CoordinatorProcessRuntimeManager implements ProcessRuntimeMana
         return '';
     }
 }
+
+it('refuses to cascade create rollback into another registered instance', function (): void {
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    expect(fn () => $this->orb181Coordinator->execute($checkout, force: true, runTeardown: false, allowCascade: false))
+        ->toThrow(ResourceOperationException::class, 'Create rollback cannot remove other Instances.')
+        ->and(AppInstance::query()->count())->toBe(3)
+        ->and(AppInstanceRemoval::query()->count())->toBe(0);
+});

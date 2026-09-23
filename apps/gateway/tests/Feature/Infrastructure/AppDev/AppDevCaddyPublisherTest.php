@@ -23,7 +23,8 @@ it('repairs 0700 hibernation ancestors so caddy can traverse markers and write l
             },
         );
 
-        expect($result->exitCode)->toBe(0);
+        expect($result->exitCode)->toBe(0)
+            ->and(file_get_contents($harness->rootPath().'/validate.log'))->toStartWith("user=caddy\n");
         expect_hibernation_directory_modes($paths);
     } finally {
         $harness->cleanup();
@@ -40,7 +41,8 @@ it('creates missing hibernation ancestors as 0755 despite the publish umask', fu
             scenario: AppDevCaddyPublishScenario::packageDefault("package default\n", "package default\n"),
         );
 
-        expect($result->exitCode)->toBe(0);
+        expect($result->exitCode)->toBe(0)
+            ->and(file_get_contents($harness->rootPath().'/validate.log'))->toStartWith("user=caddy\n");
         expect_hibernation_directory_modes($paths);
     } finally {
         $harness->cleanup();
