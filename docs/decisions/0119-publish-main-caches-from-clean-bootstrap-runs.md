@@ -1,10 +1,10 @@
 ---
-title: "ADR 0118: Share caches after bootstrap"
-sidebarTitle: "0118 Share bootstrap caches"
+title: "ADR 0119: Share caches after bootstrap"
+sidebarTitle: "0119 Share bootstrap caches"
 description: "Proposed. Save successful bootstrap caches for subsequent local worktrees without updating the running checkout."
 ---
 
-# ADR 0118: Share caches after bootstrap
+# ADR 0119: Share caches after bootstrap
 
 ## Status
 
