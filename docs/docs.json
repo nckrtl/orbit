@@ -699,6 +699,7 @@
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
               "decisions/0126-limit-browser-api-calls-to-orbit-origins",
               "decisions/0127-share-one-ssh-connection-per-node",
+              "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question"
             ]
           }
