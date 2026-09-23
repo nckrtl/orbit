@@ -1,11 +1,11 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension stores TaskGroup features, provisions a shared Instance, starts T3 agents, routes idle sessions with Jev, verifies the reviewer's pull request, notifies Coder, and removes the instance on complete."
+description: "How the Gateway tasks extension holds TaskGroup features in Backlog, runs Todo groups on a shared Instance with T3 agents and Jev routing, verifies the reviewer's pull request, and removes the instance on complete."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. The Gateway stores the group, provisions its shared Instance, starts T3 agents, and routes task sessions with typed comments and Jev. It then verifies and watches the reviewer's pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates.
+This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts T3 agents, and routes task sessions with typed comments and Jev. It then verifies and watches the reviewer's pull request, retains capacity through assistance and merge wait, and removes the instance after completion. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
 
@@ -18,10 +18,10 @@ Enable and disable require Gateway access: the active Gateway peer, or a Node wi
 | Operation | Route | Effect |
 | --- | --- | --- |
 | `tasks:enable` | `POST /api/v1/tasks/enable` | Turns the extension on. Idempotent. |
-| `tasks:disable` | `POST /api/v1/tasks/disable` | Turns the extension off. Existing rows stay. Further create, add, list, show, and complete return `tasks.disabled`. |
+| `tasks:disable` | `POST /api/v1/tasks/disable` | Turns the extension off. Existing rows stay. Further group and subtask operations return `tasks.disabled`. |
 | `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled. |
 
-Create, add, list, show, and complete refuse with `tasks.disabled` and HTTP 409 while the extension is off.
+Every group and subtask operation below refuses with `tasks.disabled` and HTTP 409 while the extension is off.
 
 ## Model
 
@@ -41,27 +41,54 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `implementer_model` / `reviewer_model` | TaskGroup | `ORBIT_TASKS_IMPLEMENTER_MODEL` and `ORBIT_TASKS_REVIEWER_MODEL` set them for new groups. Unset, they default to `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
 | `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
 
-Group statuses: `queued`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `pending`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
+Group statuses: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `todo`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
 
-`settling` is the reviewable state: the pull request is open or the Gateway has finished the open attempt, and Coder may review.
+`backlog` means the group is being prepared, and the scheduler never claims it. `todo` means the group is ready and waits for the scheduler. `settling` is the reviewable state: the pull request is open or the Gateway has finished the open attempt, and Coder may review.
 
 v1 attaches the group to one Instance. A new decision is required before another morph target is stored.
 
-## Create, add, list, show, and complete
+## Groups and subtasks
 
-Use these operations after the extension is enabled. Create, add, and complete require Gateway access. List and show accept any authorized peer.
+Use these operations after the extension is enabled. Every operation except list and show requires Gateway access. List and show accept any authorized peer.
 
 | Operation | Route | Access |
 | --- | --- | --- |
 | `tasks:create` | `POST /api/v1/task-groups` | Gateway |
-| `tasks:add` | `POST /api/v1/task-groups/{group}/tasks` | Gateway |
+| `tasks:update` | `PATCH /api/v1/task-groups/{group}` | Gateway |
 | `tasks:list` | `GET /api/v1/task-groups` | Collection |
 | `tasks:show` | `GET /api/v1/task-groups/{group}` | Collection |
 | `tasks:complete` | `POST /api/v1/task-groups/{group}/complete` | Gateway |
+| `tasks:subtask:create` | `POST /api/v1/task-groups/{group}/tasks` | Gateway |
+| `tasks:subtask:update` | `PATCH /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
+| `tasks:subtask:destroy` | `DELETE /api/v1/task-groups/{group}/tasks/{task}` | Gateway |
 
-Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects and either `notify_coder` or `notify_on_settle`. Add appends one subtask at the next position. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
+Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief}` objects, a `status` of `backlog` or `todo`, and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. Complete marks a `settling` group `completed` and removes its Instance.
 
-MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-add`, `tasks-list`, `tasks-show`, `tasks-complete`, `tasks-enable`, `tasks-disable`, and `tasks-status`.
+Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
+
+Subtask create appends one subtask at the next position with status `todo`. It works while the group is active. Subtask update changes `title`, `brief`, or `position`, and the other subtasks shift to keep positions gapless from 1. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`.
+
+| Error | HTTP | When |
+| --- | --- | --- |
+| `tasks.no_subtasks` | 422 | Create with `status: todo`, or update to `todo`, on a group without subtasks |
+| `tasks.not_in_backlog` | 409 | Group title or brief update, or subtask update or destroy, outside `backlog` |
+| `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
+
+A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
+
+MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-update`, `tasks-list`, `tasks-show`, `tasks-complete`, `tasks-subtask-create`, `tasks-subtask-update`, `tasks-subtask-destroy`, `tasks-enable`, `tasks-disable`, and `tasks-status`.
+
+## Prepare a group in Backlog
+
+A group in Backlog has an id but no Instance and no agents. Use that time to shape the feature before any agent runs.
+
+1. Create the group. It starts in `backlog`.
+2. In a worktree, create the branch `task-{group id}` from the Project default branch.
+3. Write the feature's ADRs and documentation on that branch, following the [contributor guide](/contributor-guide). Push the branch.
+4. Add, update, reorder, and remove subtasks until each brief is one reviewable step that cites the ADRs and documentation it implements.
+5. Move the group to `todo` with `tasks:update`.
+
+The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
 
 ## Web task board
 
@@ -69,15 +96,15 @@ Open **Tasks** in the web navigation to see all tracked task groups. Each card s
 
 Codes are unique across Projects. Edit a code in the Project properties; changing it updates card labels without changing task IDs or URLs.
 
-Cards show separate added and deleted line counts when available, an uppercase status outside Todo, and elapsed duration in minutes and hours.
+Cards show separate added and deleted line counts when available, an uppercase status outside Backlog and Todo, and elapsed duration in minutes and hours.
 
-Select a card to read the task brief, its status, tokens, line diff, duration, and its subtasks. Subtasks use their own Todo, In progress, and Done board. Pending subtasks appear in Todo; reserved, running, and reviewing subtasks appear in In progress. Completed, failed, and cancelled subtasks appear in Done with their outcomes visible. Cards retain their sequence numbers and briefs. Subtask cards show that subtask's tokens and line diff when the Gateway has observed them.
+Select a card to read the task brief, its status, tokens, line diff, duration, and its subtasks. Subtasks use their own Todo, In progress, and Done board. `todo` subtasks appear in Todo; reserved, running, and reviewing subtasks appear in In progress. Completed, failed, and cancelled subtasks appear in Done with their outcomes visible. Cards retain their sequence numbers and briefs. Subtask cards show that subtask's tokens and line diff when the Gateway has observed them.
 
 Select a subtask to open its own detail page with its title, brief, status, Project, shared Instance, tokens, line diff, and duration. The subtask detail omits the subtasks board. Use the parent task breadcrumb to return to the board.
 
-The board refreshes every ten seconds. Todo contains queued groups waiting for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
+The board refreshes every ten seconds. Backlog contains groups that are still being prepared. Todo contains groups that wait for the scheduler. In progress contains reserved, running, reviewing, and settling groups. Settling means awaiting completion after review and merge. Done contains completed, failed, and cancelled groups; each card keeps its outcome visible. Failed and cancelled do not mean successful completion.
 
-The board is read-only. The Gateway still owns scheduling and concurrency. When the extension is disabled, the page explains that tasks are unavailable. Request errors remain visible instead of appearing as an empty board.
+The board is read-only. Move a group from Backlog to Todo with `tasks:update`. The Gateway still owns scheduling and concurrency. When the extension is disabled, the page explains that tasks are unavailable. Request errors remain visible instead of appearing as an empty board.
 
 ### Tokens and line diff
 
@@ -85,7 +112,7 @@ When the parent task is open, Tokens is the total for the current implementer of
 
 ## Scheduler and ceilings
 
-After a successful create, the Gateway scheduler claims the oldest queued group that still fits the Node ceiling. It does not poll Nodes and it does not apply a per-Project ceiling.
+After a create or update stores a `todo` group, the Gateway scheduler claims the oldest `todo` group that still fits the Node ceiling. It never claims a `backlog` group. It does not poll Nodes and it does not apply a per-Project ceiling.
 
 Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
@@ -95,7 +122,7 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A fitting claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
+A fitting claimed group moves from `todo` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the shared reviewer and first implementer through the selected driver. The Gateway stores their Orbit thread IDs only after creation and the opening turn succeed.
 
@@ -105,7 +132,7 @@ A spawn that returns no thread id marks the group `failed` and logs which spawn 
 
 ## Shared Instance
 
-One fresh Instance belongs to the group. Every subtask reuses it. The instance name and feature branch are `task-{group id}`. When `origin/task-{group id}` is missing, the provisioner creates that branch from the Project `default_branch` and checks it out in the shared workspace.
+One fresh Instance belongs to the group. Every subtask reuses it. The instance name and feature branch are `task-{group id}`. When `origin/task-{group id}` exists, as it does after [preparation in Backlog](#prepare-a-group-in-backlog), the provisioner checks it out. When it is missing, the provisioner creates that branch from the Project `default_branch` and checks it out in the shared workspace.
 
 | Intent | When | Result |
 | --- | --- | --- |
@@ -148,7 +175,7 @@ Agents run on the T3 server of the Node that owns that Instance. The Gateway pos
 
 When `project.create` collides on an occupied workspace root, T3's receipt is `Active project '{uuid}' already exists for workspace root '{path}'`. HTTP dispatch may wrap that as `EnvironmentInternalError` / `orchestration_dispatch_failed` without the phrase. The Gateway parses the project id from that phrase when it appears in the error body, a nested cause, or a header, and otherwise adopts the active project for that workspace root from `GET /api/orchestration/snapshot`. After a successful `thread.create`, the Gateway starts the first turn. A refused `thread.turn.start` is retried once and logged at error. The spawn then returns null and stores no thread id.
 
-Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first pending subtask. The next pending subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
+Each subtask gets a fresh implementer (`instanceId=codex`, `model=gpt-5.6-luna`, `reasoningEffort=low`). The group keeps one reviewer thread (`instanceId=claudeAgent`, `model=claude-opus-5`, `effort=high`). The T3 provider instance is selected from the model: Claude model names use `claudeAgent`; other configured models use `codex`. Role supplies default model and effort. The instance is fixed at `thread.create`. Subtasks run in position order. At most one Task in a group is `running`. Opening starts only the first `todo` subtask. The next `todo` subtask becomes `running` only after reviewer sign-off completes the current one and no sibling is `running`. The scheduler refuses a second running task and does not spawn another implementer.
 
 When an implementer is idle, done, or asking for input, the Gateway reads `composer check` from tool activity: the command ran, the exit code is 0, and no edit, write, or patch follows it. It also reads `composer.json` at the workspace root, which must define a `check` script. Jev is asked only whether the agent is blocked, from the implementer thread and the task and group briefs. A pending input fails on its own.
 
@@ -170,7 +197,7 @@ Transcripts become normalized entries. A bash result is one activity that ends w
 
 ## Session routing
 
-A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. Pending, completed, failed, and cancelled tasks do not ask Jev for decisions.
+A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. `todo`, completed, failed, and cancelled tasks do not ask Jev for decisions.
 
 AgentThread state is authoritative. A `working` thread (including a starting T3 session) defers its task until a later tick. The Gateway does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
@@ -218,7 +245,7 @@ Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
-Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest pending groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
+Run the tick with `php artisan tasks:tick` while the extension is enabled. One Gateway lock protects scheduled and manual ticks. A held lock skips the invocation without routing or claiming work. After current work and merge checks, the tick fills available Node capacity with the oldest `todo` groups. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
 The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
@@ -309,7 +336,7 @@ These items stay unimplemented here and need a later feature PR.
 
 ## Cancel a stuck group
 
-Call `tasks-cancel` with `{ "group": 123 }` to cancel a `queued`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. Cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
+Call `tasks-cancel` with `{ "group": 123 }` to cancel a `backlog`, `todo`, `reserved`, `running`, `reviewing`, or `failed` group. The API operation is `tasks:cancel`. A `backlog` or `todo` group has no Instance, so cancellation only marks it `cancelled`. For other groups, cancellation removes the shared Instance and clears both taskable fields before returning the group as `cancelled`. Repeating cancellation is safe and also cleans up an Instance still attached to a group already marked `cancelled`. Subtask records and agent thread identifiers stay as history.
 
 A route-free Instance in `source_resolved` uses the Ops database cleanup contract: delete the Instance row and retain its checkout on disk. Other Instances use the existing forced Instance remover, including Route cleanup. Removal errors propagate and leave the group attached for retry. Cancellation does not interrupt the external agent conversation.
 
