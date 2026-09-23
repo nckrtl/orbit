@@ -45,6 +45,8 @@ jobs:
         run: cross build --locked --release --target x86_64-unknown-linux-musl
 
       - name: Build static aarch64 binary
+        env:
+          CROSS_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_IMAGE: ghcr.io/cross-rs/aarch64-unknown-linux-musl@sha256:3e4143bd829176f52fe2cff24ecd7d007bb3fcc640310f667eb1c88d8b4daa9f
         run: cross build --locked --release --target aarch64-unknown-linux-musl
 
       - name: Prepare release assets
