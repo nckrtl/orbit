@@ -41,7 +41,7 @@ final class GrafanaPrometheusClient
      */
     public function query(string $promql): array
     {
-        $credentials = $this->credentials->credentials();
+        $credentials = $this->credentials->storedCredentials();
         $base = $this->base ??= 'http://'.$this->metricsNodeAddress().':3000';
         $uid = $this->datasourceUid ??= $this->resolveDatasourceUid($base, $credentials->username, $credentials->password);
 

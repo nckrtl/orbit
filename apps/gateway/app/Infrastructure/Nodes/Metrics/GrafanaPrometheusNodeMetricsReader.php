@@ -43,7 +43,7 @@ final readonly class GrafanaPrometheusNodeMetricsReader implements NodeMetricsRe
         }
 
         $metricsAddress = $this->metricsNodeAddress();
-        $credentials = $this->credentials->credentials();
+        $credentials = $this->credentials->storedCredentials();
         $base = "http://{$metricsAddress}:3000";
         $instance = "{$address}:9100";
 

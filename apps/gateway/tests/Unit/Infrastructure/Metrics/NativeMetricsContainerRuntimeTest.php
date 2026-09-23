@@ -314,6 +314,13 @@ final class MetricsCredentialManagerFake implements MetricsCredentialManager
         throw new RuntimeException('Not used by this test.');
     }
 
+    public function storedCredentials(): MetricsCredentialsData
+    {
+
+        return $this->credentials();
+
+    }
+
     public function reset(): MetricsCredentialsData
     {
         throw new RuntimeException('Not used by this test.');

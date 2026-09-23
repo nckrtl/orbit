@@ -20,11 +20,10 @@ final readonly class PrometheusProcessMetricsQueries
 {
     /**
      * The window `cpu()`'s rate() covers. cAdvisor is scraped every
-     * `PrometheusConfigRenderer::CadvisorScrapeInterval` (30s), so this holds four scrapes — the
-     * same margin `PrometheusMetricsQueries::RateWindow` keeps over the node exporter's own,
-     * faster scrape (see `PrometheusMetricsQueriesTest`).
+     * `PrometheusConfigRenderer::ScrapeInterval` (10s), so this holds four scrapes, the same
+     * margin `PrometheusMetricsQueries::RateWindow` keeps.
      */
-    public const string CpuRateWindow = '120s';
+    public const string CpuRateWindow = '40s';
 
     /** A container's `name`, which is `DockerProcessRenderer::containerName()` exactly. */
     private const string CONTAINER_SELECTOR = 'name=~"orbit-process-.*"';

@@ -16,10 +16,10 @@ final readonly class PrometheusMetricsQueries
     /**
      * The window every rate() covers. Prometheus needs several samples inside it to produce a
      * rate at all, and it smooths whatever it covers, so this tracks the scrape interval: at a
-     * five-second scrape this holds six samples, which reacts to a spike within seconds instead
-     * of averaging it away over a minute.
+     * ten-second scrape this holds four samples, which survives one dropped scrape and still
+     * shows a spike instead of averaging it away over minutes.
      */
-    public const string RateWindow = '30s';
+    public const string RateWindow = '40s';
 
     /** The label `pressure()` writes its kind into, and the mapper groups by. */
     public const string PRESSURE_KIND_LABEL = 'orbit_pressure';
