@@ -251,7 +251,7 @@ The Gateway registers `tasks:tick` every ten seconds when the tasks extension is
 
 ### Project check
 
-Orbit runs the Project's `composer check` after each `ready_for_review` receipt whose items pass. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs `composer check` in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0123](/decisions/0123-run-the-project-check-when-the-implementer-hands-off) records the decision.
+Orbit runs the Project's `composer check` after each `ready_for_review` receipt whose items pass. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs `composer check` in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0124](/decisions/0124-run-the-project-check-when-the-implementer-hands-off) records the decision.
 
 The task stays `running` during the check. On each tick the scheduler reads the check. It identifies the process by its ID and its start time, so a reused process ID does not count. There is no time limit.
 

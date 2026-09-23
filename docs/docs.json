@@ -97,6 +97,7 @@
             "group": "Fleet",
             "pages": [
               "reference/gateway-trust",
+              "reference/web-app",
               "reference/gateway-recovery",
               "reference/node-provisioning",
               "reference/node-settings",
@@ -690,7 +691,8 @@
               "decisions/0118-exclude-app-dev-nodes-per-project",
               "decisions/0120-extract-agent-annotation-package",
               "decisions/0121-end-agent-turns-with-a-run-receipt",
-              "decisions/0123-run-the-project-check-when-the-implementer-hands-off"
+              "decisions/0123-serve-the-web-app-from-the-gateway-origin",
+              "decisions/0124-run-the-project-check-when-the-implementer-hands-off"
             ]
           }
         ]

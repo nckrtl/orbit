@@ -3256,8 +3256,26 @@
             ]
         },
         {
-            "path": "docs/decisions/0123-run-the-project-check-when-the-implementer-hands-off.md",
-            "title": "ADR 0123: Run the Project check when the implementer hands off",
+            "path": "docs/decisions/0123-serve-the-web-app-from-the-gateway-origin.md",
+            "title": "ADR 0123: Serve the web app from the Gateway origin",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0085",
+                "0123"
+            ]
+        },
+        {
+            "path": "docs/decisions/0124-run-the-project-check-when-the-implementer-hands-off.md",
+            "title": "ADR 0124: Run the Project check when the implementer hands off",
             "kind": "decision",
             "components": [
                 "apps/docs",
@@ -3274,7 +3292,7 @@
             "governing_adrs": [
                 "0114",
                 "0121",
-                "0123"
+                "0124"
             ]
         },
         {
@@ -3428,7 +3446,8 @@
                 "0120",
                 "0121",
                 "0122",
-                "0123"
+                "0123",
+                "0124"
             ]
         },
         {
@@ -4542,7 +4561,7 @@
                 "0116",
                 "0121",
                 "0122",
-                "0123"
+                "0124"
             ]
         },
         {
@@ -4597,6 +4616,20 @@
                 "0037",
                 "0049",
                 "0056"
+            ]
+        },
+        {
+            "path": "docs/reference/web-app.md",
+            "title": "Web app",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0123"
             ]
         },
         {

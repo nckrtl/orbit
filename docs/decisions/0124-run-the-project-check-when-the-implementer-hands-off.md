@@ -1,10 +1,10 @@
 ---
-title: "ADR 0123: Run the Project check when the implementer hands off"
-sidebarTitle: "0123 Run the Project check at handoff"
+title: "ADR 0124: Run the Project check when the implementer hands off"
+sidebarTitle: "0124 Run the Project check at handoff"
 description: "Proposed. When an implementer ends its turn with ready_for_review, Orbit runs the Project's composer check in the workspace itself. The check runs detached on the Node, and the scheduler reads its state from the process, not from a timer. The reviewer starts only after the check passes."
 ---
 
-# ADR 0123: Run the Project check when the implementer hands off
+# ADR 0124: Run the Project check when the implementer hands off
 
 When an implementer ends its turn with `ready_for_review`, Orbit runs the Project's `composer check` in the task workspace itself. The check runs as a detached process on the Node. Each scheduler tick reads the process state and, when the process ends, its result. The reviewer starts only after the check passes. Orbit no longer reads check results from the agent's transcript.
 

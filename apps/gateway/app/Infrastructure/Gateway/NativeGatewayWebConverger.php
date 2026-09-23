@@ -17,17 +17,20 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private GatewayFpmConfigRenderer $fpmRenderer,
         private ProtectedFileWriter $files,
         private GatewayCheckoutAccessConverger $checkout,
+        private GatewayWebDirectoryConverger $webDirectory,
         private NativeGatewayCertificatePublisher $certificatePublisher,
         private NativeGatewayFpmConverger $fpm,
         private NativeGatewayCaddyConverger $caddy,
         private string $orbitHome,
         private string $checkoutPath,
+        private string $webRoot,
         private RuntimeHibernatorConverger $hibernator,
     ) {}
 
     public function converge(string $hostname, string $wireguardIp): void
     {
         $this->checkout->converge();
+        $this->webDirectory->converge();
         $certificate = $this->certificates->issue($hostname, $wireguardIp);
         $generatedDirectory = rtrim(string: $this->orbitHome, characters: '/').'/generated/gateway';
         $generatedFpmPool = $generatedDirectory.'/php-fpm-pool.conf';
@@ -39,7 +42,7 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         );
         $this->files->put(
             $generatedCaddy,
-            $this->caddyRenderer->render($hostname, $wireguardIp, $this->checkoutPath),
+            $this->caddyRenderer->render($hostname, $wireguardIp, $this->checkoutPath, $this->webRoot),
             0o644,
         );
         $this->certificatePublisher->publish($certificate);
