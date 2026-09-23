@@ -3337,6 +3337,23 @@
             ]
         },
         {
+            "path": "docs/decisions/0126-limit-browser-api-calls-to-orbit-origins.md",
+            "title": "ADR 0126: Limit browser API calls to Orbit origins",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0123",
+                "0126"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3489,7 +3506,8 @@
                 "0122",
                 "0123",
                 "0124",
-                "0125"
+                "0125",
+                "0126"
             ]
         },
         {
@@ -3825,6 +3843,21 @@
             ],
             "governing_adrs": [
                 "0078"
+            ]
+        },
+        {
+            "path": "docs/reference/browser-access.md",
+            "title": "Browser access to the Gateway",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0126"
             ]
         },
         {
