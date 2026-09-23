@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -35,9 +36,8 @@ final readonly class CancelTaskGroupAction
 
         $instance = $group->taskable;
 
-        // Removal also deletes a never-active task workspace's checkout from its Node.
         if ($instance instanceof AppInstance) {
-            $this->remover->execute($instance, true);
+            $this->removeWorkspace($instance);
         }
 
         $group->taskable()->dissociate();
@@ -51,5 +51,25 @@ final readonly class CancelTaskGroupAction
         $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
 
         return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    }
+
+    /**
+     * Removal also deletes a never-active workspace's checkout from its Node. When removal refuses
+     * before it starts, for example on a half-created checkout or an unreachable Node, cancel still
+     * finishes: it deletes the record and leaves the checkout for Doctor to report.
+     */
+    private function removeWorkspace(AppInstance $instance): void
+    {
+        try {
+            $this->remover->execute($instance, true);
+        } catch (ResourceOperationException $exception) {
+            $instance->refresh();
+
+            if ($instance->status !== AppInstanceState::SourceResolved || $instance->routes()->exists()) {
+                throw $exception;
+            }
+
+            $instance->delete();
+        }
     }
 }
