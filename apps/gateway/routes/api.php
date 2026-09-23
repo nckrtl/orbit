@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AgentRealtimeController;
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AnnotationsController;
@@ -82,12 +83,12 @@ Route::prefix('v1')->group(function (): void {
         ->name('realtime:auth');
 
     Route::middleware(RequireActiveWireGuardPeer::class)
-        ->get('agent/realtime', [RealtimeConfigController::class, 'agent'])
+        ->get('agent/realtime', [AgentRealtimeController::class, 'show'])
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('agent:realtime');
 
     Route::middleware(RequireActiveWireGuardPeer::class)
-        ->post('agent/broadcasting/auth', [RealtimeAuthController::class, 'authenticateAgent'])
+        ->post('agent/broadcasting/auth', [AgentRealtimeController::class, 'authenticate'])
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('agent:realtime:auth');
 

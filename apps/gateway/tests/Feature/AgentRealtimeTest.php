@@ -28,6 +28,11 @@ describe('agent realtime endpoints', function (): void {
             ->assertJsonPath('data.member', "agent.{$this->node->id}");
     });
 
+    it('returns an eligibility error for an unmanaged node', function (): void {
+        $this->node->update(['platform' => 'windows']);
+        $this->getJson('/api/v1/agent/realtime')->assertForbidden()->assertJsonPath('error.code', 'agent.node_ineligible');
+    });
+
     it('returns null connection values when websocket is not active', function (): void {
         $this->getJson('/api/v1/agent/realtime')->assertOk()
             ->assertJsonPath('data.url', null)->assertJsonPath('data.key', null);
@@ -59,6 +64,13 @@ describe('agent realtime endpoints', function (): void {
             ->assertForbidden()->assertJsonPath('error.code', 'agent.node_ineligible');
     });
 
+    it('rejects invalid socket ids with 422', function (): void {
+        activate_websocket_role($this->node);
+        $this->postJson('/api/v1/agent/broadcasting/auth', [
+            'socket_id' => 'invalid', 'channel_name' => "presence-node.{$this->node->id}",
+        ])->assertUnprocessable();
+    });
+
     it('requires a known active peer', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.90']);
         $this->getJson('/api/v1/agent/realtime')->assertForbidden()->assertJsonPath('error.code', 'peer.identity_unknown');
@@ -67,6 +79,6 @@ describe('agent realtime endpoints', function (): void {
     it('returns not found when agent auth has no websocket connection', function (): void {
         $this->postJson('/api/v1/agent/broadcasting/auth', [
             'socket_id' => '1.2', 'channel_name' => "presence-node.{$this->node->id}",
-        ])->assertNotFound();
+        ])->assertNotFound()->assertJsonPath('error.code', 'realtime.not_configured');
     });
 });

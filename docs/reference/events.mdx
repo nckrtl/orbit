@@ -188,7 +188,7 @@ A member's `user_info` is `{ "kind": "agent", "node_id": 12, "version": "0.1.0" 
 
 ### Events
 
-The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber must ignore an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`.
+The agent publishes Pusher client events. Reverb adds the sender's `user_id` to each one. A subscriber must ignore an event on `presence-node.{id}` unless its `user_id` is `agent.{id}`. Viewer authorization rejects other presence channels with `broadcast.channel_forbidden` (403).
 
 | Event | When | Data |
 | --- | --- | --- |

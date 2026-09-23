@@ -4,74 +4,53 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\Broadcasting\RealtimeConnection;
-use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\RealtimeAuthRequest;
 use App\Models\Node;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 
-/**
- * Authorises a Reverb subscription to the private `orbit` channel. Any active WireGuard
- * peer with Gateway access may subscribe; the channel rules live in routes/channels.php.
- */
+/** Authorises Gateway-accessible realtime subscriptions. */
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class RealtimeAuthController extends Controller
 {
-    public function authenticateAgent(Request $request, RealtimeConnection $realtime, ManagedNodeEligibility $eligibility): mixed
+    public function authenticate(RealtimeAuthRequest $request, RealtimeConnection $realtime, PresenceChannelSigner $signer): mixed
     {
-        $peer = $request->user();
-
-        if (! $peer instanceof Node || ! $eligibility->allows($peer)) {
-            return response()->json(['error' => ['code' => 'agent.node_ineligible', 'message' => 'Node is not eligible for an agent.', 'details' => []]], 403);
-        }
-
-        $nodeId = $this->nodeId($peer);
-        $channel = "presence-node.{$nodeId}";
-
-        if ($request->input('channel_name') !== $channel) {
-            return response()->json(['error' => ['code' => 'agent.channel_forbidden', 'message' => 'Agent may only join its own presence channel.', 'details' => []]], 403);
-        }
-
         $connection = $realtime->resolve();
 
         if ($connection === null) {
-            return new JsonResponse(['message' => 'Realtime is not configured.'], 404);
+            throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
         }
 
-        return $this->presenceResponse($request, $realtime, "agent.{$nodeId}", [
-            'kind' => 'agent',
-            'node_id' => $nodeId,
-            'version' => $request->input('version'),
-        ]);
-    }
+        $channel = $request->channelName();
 
-    public function authenticate(Request $request, RealtimeConnection $realtime): mixed
-    {
-        if (! $realtime->configureBroadcasting()) {
-            return new JsonResponse(['message' => 'Realtime is not configured.'], 404);
-        }
-
-        $channel = $request->input('channel_name');
-
-        if (is_string($channel) && str_starts_with($channel, 'presence-node.')) {
+        if (str_starts_with($channel, 'presence-node.')) {
             if (preg_match('/^presence-node\\.[0-9]+$/', $channel) !== 1) {
-                return response()->json(['error' => ['code' => 'broadcast.channel_forbidden', 'message' => 'Channel is not authorized.', 'details' => []]], 403);
+                throw new ResourceOperationException('broadcast.channel_forbidden', 'Channel is not authorized.', 403);
             }
 
-            return $this->presenceResponse($request, $realtime, "viewer.{$request->input('socket_id')}", [
+            $peer = $request->user();
+            if (! $peer instanceof Node) {
+                throw new ResourceOperationException('peer.identity_unknown', 'Active WireGuard peer identity required.', 403);
+            }
+
+            $viewerNodeId = $this->nodeId($peer);
+
+            return $signer->sign($request->socketId(), $channel, $connection, 'viewer.'.$request->socketId(), [
                 'kind' => 'viewer',
-                'node_id' => substr($channel, strlen('presence-node.')),
+                'node_id' => $viewerNodeId,
             ]);
         }
 
-        if (is_string($channel) && str_starts_with($channel, 'presence-')) {
-            return response()->json(['error' => ['code' => 'broadcast.channel_forbidden', 'message' => 'Channel is not authorized.', 'details' => []]], 403);
+        if (str_starts_with($channel, 'presence-')) {
+            throw new ResourceOperationException('broadcast.channel_forbidden', 'Channel is not authorized.', 403);
         }
 
+        $realtime->configureBroadcasting();
         $realtime->registerChannelAuthorizers();
 
         return Broadcast::auth($request);
@@ -80,17 +59,5 @@ final class RealtimeAuthController extends Controller
     private function nodeId(Node $node): int
     {
         return (int) $node->getKey();
-    }
-
-    /** @param array{kind: string, node_id: mixed, version?: mixed} $userInfo */
-    private function presenceResponse(Request $request, RealtimeConnection $realtime, string $member, array $userInfo): JsonResponse
-    {
-        $connection = $realtime->resolve();
-        $channel = $request->string('channel_name')->toString();
-        $socketId = $request->string('socket_id')->toString();
-        $channelData = json_encode(['user_id' => $member, 'user_info' => $userInfo], JSON_THROW_ON_ERROR);
-        $auth = $connection->key.':'.hash_hmac('sha256', "{$socketId}:{$channel}:{$channelData}", $connection->secret);
-
-        return response()->json(['auth' => $auth, 'channel_data' => $channelData]);
     }
 }
