@@ -37,6 +37,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
@@ -277,6 +278,8 @@ final readonly class TransferAppInstanceAction
         }
 
         $this->assertActiveAppDevCluster($destination, 'destination');
+        $instance->loadMissing('app');
+        app(DevelopmentNodeExclusion::class)->assertAvailable($instance->app, $destination);
     }
 
     private function assertActiveAppDevCluster(Node $node, string $role): void

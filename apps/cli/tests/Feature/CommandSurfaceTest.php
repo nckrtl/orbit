@@ -146,6 +146,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:access:add',
         'node:access:remove',
         'node:add',
+        'node:excluded-project:add',
+        'node:excluded-project:list',
+        'node:excluded-project:remove',
         'node:list',
         'node:metrics',
         'node:remove',
@@ -168,6 +171,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'profile',
         'project:create',
         'project:destroy',
+        'project:excluded-node:add',
+        'project:excluded-node:list',
+        'project:excluded-node:remove',
         'project:list',
         'project:show',
         'project:update',
@@ -314,7 +320,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(149);
+    expect($orbitCommands)->toHaveCount(155);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -521,6 +527,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name' => null, 'default-branch' => null, 'root' => 'public', 'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
+        'project:excluded-node:add' => [['node'], ['project' => null, 'json' => false]],
+        'project:excluded-node:list' => [[], ['project' => null, 'json' => false]],
+        'project:excluded-node:remove' => [['node'], ['project' => null, 'json' => false]],
         'project:show' => [['project'], ['json' => false]],
         'project:update' => [
             ['project'],
@@ -779,6 +788,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'metrics:status' => [[], ['json' => false]],
         'node:access:add' => [['consumer', 'serving'], ['json' => false]],
         'node:access:remove' => [['consumer', 'serving'], ['force' => false, 'json' => false]],
+        'node:excluded-project:add' => [['project'], ['node' => null, 'json' => false]],
+        'node:excluded-project:list' => [[], ['node' => null, 'json' => false]],
+        'node:excluded-project:remove' => [['project'], ['node' => null, 'json' => false]],
         'node:add' => [
             ['name', 'host'],
             [
@@ -960,7 +972,8 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node:add' => ['host'],
             'profile' => ['url'],
             'tool:install' => ['package'],
-            'metrics:enable' => ['node'],
+            'metrics:enable', 'project:excluded-node:add', 'project:excluded-node:remove' => ['node'],
+            'node:excluded-project:add', 'node:excluded-project:remove' => ['project'],
             'analytics:update' => ['version'],
             'route:create' => ['app', 'domain'],
             default => [],
@@ -1032,6 +1045,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'project:list' => [[], ...$profileMissing],
         'project:create' => [['slug' => 'app', 'type' => 'laravel-app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
         'project:destroy' => [['project' => '1'], ...$profileMissing],
+        'project:excluded-node:add' => [['node' => 'sabre', '--project' => '4'], ...$profileMissing],
+        'project:excluded-node:list' => [['--project' => '4'], ...$profileMissing],
+        'project:excluded-node:remove' => [['node' => 'sabre', '--project' => '4'], ...$profileMissing],
         'project:show' => [['project' => '1'], ...$profileMissing],
         'project:update' => [['project' => '1', '--slug' => 'shop'], ...$profileMissing],
         'cluster:list' => [[], ...$profileMissing],
@@ -1174,6 +1190,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'metrics:status' => [[], ...$profileMissing],
         'node:access:add' => [['consumer' => '2', 'serving' => '3'], ...$profileMissing],
         'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
+        'node:excluded-project:add' => [['project' => '4', '--node' => 'sabre'], ...$profileMissing],
+        'node:excluded-project:list' => [['--node' => 'sabre'], ...$profileMissing],
+        'node:excluded-project:remove' => [['project' => '4', '--node' => 'sabre'], ...$profileMissing],
         'node:add' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:list' => [[], ...$profileMissing],
         'node:metrics' => [['node' => '1'], ...$profileMissing],

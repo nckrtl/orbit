@@ -62,7 +62,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode($intent->group->agent_driver);
+        $node = $this->selectNode($group->app, $intent->group->agent_driver);
 
         if (! $node instanceof Node) {
             return null;
@@ -253,7 +253,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return is_string($app->root) && RelativeWebRoot::isValid($app->root);
     }
 
-    private function selectNode(string $driver): ?Node
+    private function selectNode(OrbitApp $app, string $driver): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -263,6 +263,10 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 static fn ($query) => $query
                     ->where('role', RoleName::AppDev)
                     ->where('status', LifecycleStatus::Active),
+            )
+            ->whereDoesntHave(
+                'projectNodeExclusions',
+                static fn ($query) => $query->where('app_id', $app->id),
             )
             ->orderBy('id')
             ->get();

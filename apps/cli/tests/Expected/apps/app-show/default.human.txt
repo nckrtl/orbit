@@ -13,7 +13,9 @@ Fetching Instances...
 │
 ├  Default branch   —
 │
-└  Web root         —
+├  Web root         —
+│
+└  Excluded nodes   —
 
  ┌────┬──────┬─────────────┬─────────┬───────────────┬────────┐
  │ ID │ NAME │ ENVIRONMENT │ NODE    │ DOMAIN        │ STATUS │

@@ -22,6 +22,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class NodeRole extends Model
 {
+    protected static function booted(): void
+    {
+        self::deleting(static function (self $role): void {
+            if ($role->role !== RoleName::AppDev) {
+                return;
+            }
+
+            ProjectNodeExclusion::query()->where('node_id', $role->node_id)->delete();
+        });
+    }
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
