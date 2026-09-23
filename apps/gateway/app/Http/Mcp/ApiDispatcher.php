@@ -55,7 +55,8 @@ final readonly class ApiDispatcher
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_ORBIT_CLIENT' => 'mcp',
             ],
-            content: $sendsBody ? json_encode((object) $arguments, JSON_THROW_ON_ERROR) : null,
+            // Null content makes Symfony read php://input, which under PHP-FPM is the caller's JSON-RPC body.
+            content: $sendsBody ? json_encode((object) $arguments, JSON_THROW_ON_ERROR) : '',
         );
 
         try {
