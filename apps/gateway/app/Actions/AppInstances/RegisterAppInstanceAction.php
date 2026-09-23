@@ -25,6 +25,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\ProjectTypeClassifier;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
@@ -911,6 +912,7 @@ final readonly class RegisterAppInstanceAction
                     continue;
                 }
 
+                app(DevelopmentNodeExclusion::class)->assertAvailable($app, $node);
                 $instance = AppInstance::query()->create([
                     'app_id' => $app->id,
                     'node_id' => $node->id,

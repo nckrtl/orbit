@@ -105,6 +105,24 @@ it('uses primary main caches and ignores newer feature worktree caches', functio
     expect(file_get_contents($worktree.'/apps/cli/vendor/phpstan/cache/resultCache.php'))->toBe('primary cache');
 });
 
+it('refuses unpublished caches when the primary checkout is not an allowed source', function (string $condition): void {
+    ['root' => $root, 'worktree' => $worktree, 'run' => $run] = worktreeCacheFixture();
+    writeQualityCache($root, 'apps/cli', 'vendor/pint.cache', 'unpublished cache');
+
+    if ($condition === 'dirty main') {
+        file_put_contents($root.'/uncommitted.php', '<?php');
+    } elseif ($condition === 'feature branch') {
+        expect($run->path($root)->run(['git', 'switch', '-c', 'primary-feature'])->successful())->toBeTrue();
+    } else {
+        $run = $run->env(['ORBIT_MAIN_CACHE_STORE' => $root.'/missing-publications']);
+    }
+
+    $result = $run->run([$worktree.'/bin/worktree-cache']);
+
+    expect($result->successful())->toBeTrue();
+    expect(file_exists($worktree.'/apps/cli/vendor/pint.cache'))->toBeFalse();
+})->with(['dirty main', 'feature branch', 'transported publications']);
+
 it('skips incompatible dependency locks and caches that are missing or symlinked', function (): void {
     ['root' => $root, 'worktree' => $worktree, 'run' => $run] = worktreeCacheFixture();
     writeQualityCache($root, 'apps/cli', 'vendor/pint.cache', 'incompatible cache');

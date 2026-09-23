@@ -33,10 +33,12 @@ use App\Http\Controllers\Api\HerdrSessionsController;
 use App\Http\Controllers\Api\InstanceAnalyticsController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
+use App\Http\Controllers\Api\NodeExcludedProjectsController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
+use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ProxyCliController;
 use App\Http\Controllers\Api\RealtimeAuthController;
@@ -173,6 +175,17 @@ Route::prefix('v1')->group(function (): void {
             ->name('firewall:live:list');
         Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
             ->name('node:metrics');
+        Route::get('nodes/{node}/excluded-projects', [NodeExcludedProjectsController::class, 'index'])
+            ->whereNumber('node')
+            ->name('node:excluded-project:list');
+        Route::post('nodes/{node}/excluded-projects/{app}', [NodeExcludedProjectsController::class, 'store'])
+            ->whereNumber('node')
+            ->whereNumber('app')
+            ->name('node:excluded-project:add');
+        Route::delete('nodes/{node}/excluded-projects/{app}', [NodeExcludedProjectsController::class, 'destroy'])
+            ->whereNumber('node')
+            ->whereNumber('app')
+            ->name('node:excluded-project:remove');
         Route::get('activities', [ActivitiesController::class, 'index'])
             ->name('activity:list');
         Route::get('activities/{activity}', [ActivitiesController::class, 'show'])
@@ -212,6 +225,17 @@ Route::prefix('v1')->group(function (): void {
         Route::post('projects', [AppsController::class, 'store'])->name('project:create');
         Route::patch('projects/{app}', [AppsController::class, 'update'])->name('project:update');
         Route::delete('projects/{app}', [AppsController::class, 'destroy'])->name('project:destroy');
+        Route::get('projects/{app}/excluded-nodes', [ProjectExcludedNodesController::class, 'index'])
+            ->whereNumber('app')
+            ->name('project:excluded-node:list');
+        Route::post('projects/{app}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'store'])
+            ->whereNumber('app')
+            ->whereNumber('node')
+            ->name('project:excluded-node:add');
+        Route::delete('projects/{app}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'destroy'])
+            ->whereNumber('app')
+            ->whereNumber('node')
+            ->name('project:excluded-node:remove');
         Route::get('projects/{app}/setup-steps', [ProjectLifecycleStepsController::class, 'setupIndex'])->name('instance:setup-step:list');
         Route::post('projects/{app}/setup-steps', [ProjectLifecycleStepsController::class, 'setupStore'])->name('instance:setup-step:create');
         Route::patch('projects/{app}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupUpdate'])

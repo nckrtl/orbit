@@ -33,6 +33,8 @@ final readonly class NodeResponse
         public ?string $dnsServerOverride = null,
         public ?NodeAccessResponse $access = null,
         public ?NodeSettings $settings = null,
+        /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
+        public ?array $excludedProjects = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -73,6 +75,7 @@ final readonly class NodeResponse
             requestId: $requestId,
             access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
             settings: self::settings($data['settings'] ?? null),
+            excludedProjects: self::exclusions($data['excluded_projects'] ?? null),
         );
     }
 
@@ -109,7 +112,49 @@ final readonly class NodeResponse
             $data['access'] = $this->access->toArray();
         }
 
+        if ($this->excludedProjects !== null) {
+            $data['excluded_projects'] = $this->excludedProjects;
+        }
+
         return $data;
+    }
+
+    /**
+     * @return list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null
+     */
+    private static function exclusions(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $projectId = $item['project_id'] ?? null;
+            $nodeId = $item['node_id'] ?? null;
+            $count = $item['development_instance_count'] ?? null;
+            $projectSlug = $item['project_slug'] ?? null;
+            $nodeName = $item['node_name'] ?? null;
+
+            if (! is_int($projectId) || ! is_int($nodeId) || ! is_int($count) || ! is_string($projectSlug) || ! is_string($nodeName)) {
+                continue;
+            }
+
+            $result[] = [
+                'project_id' => $projectId,
+                'project_slug' => $projectSlug,
+                'node_id' => $nodeId,
+                'node_name' => $nodeName,
+                'development_instance_count' => $count,
+            ];
+        }
+
+        return $result;
     }
 
     private static function settings(mixed $value): ?NodeSettings

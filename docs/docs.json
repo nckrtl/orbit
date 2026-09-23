@@ -82,6 +82,7 @@
               "reference/appinstance-cloning",
               "reference/deployments",
               "reference/instance-setup",
+              "reference/development-node-exclusions",
               "reference/instance-logs",
               "reference/instance-queue",
               "reference/instance-analytics-stats",
@@ -223,6 +224,9 @@
               "POST /api/v1/nodes",
               "DELETE /api/v1/nodes/{node}",
               "GET /api/v1/nodes/{node}",
+              "GET /api/v1/nodes/{node}/excluded-projects",
+              "DELETE /api/v1/nodes/{node}/excluded-projects/{app}",
+              "POST /api/v1/nodes/{node}/excluded-projects/{app}",
               "GET /api/v1/nodes/{node}/metrics",
               "PATCH /api/v1/nodes/{node}/name",
               "GET /api/v1/nodes/{node}/roles",
@@ -325,6 +329,9 @@
               "DELETE /api/v1/projects/{app}",
               "GET /api/v1/projects/{app}",
               "PATCH /api/v1/projects/{app}",
+              "GET /api/v1/projects/{app}/excluded-nodes",
+              "DELETE /api/v1/projects/{app}/excluded-nodes/{node}",
+              "POST /api/v1/projects/{app}/excluded-nodes/{node}",
               "GET /api/v1/projects/{app}/process-definitions",
               "POST /api/v1/projects/{app}/process-definitions",
               "DELETE /api/v1/projects/{app}/process-definitions/{process_definition}",
@@ -663,6 +670,8 @@
               "decisions/0113-gate-task-completion-on-validation-and-review",
               "decisions/0114-judge-task-completion-as-separate-checks",
               "decisions/0115-run-project-setup-commands-on-development-instances",
+              "decisions/0117-judge-the-blocked-question-on-role-evidence",
+              "decisions/0118-exclude-app-dev-nodes-per-project",
               "decisions/0120-verify-task-evidence-before-review"
             ]
           }

@@ -941,7 +941,14 @@ def data_schema_for(route):
     if not cands:
         return {'type': 'object'}, is_list
     if action == 'NodesController@show':
-        return {'allOf': [ref('NodeData'), {'type': 'object', 'properties': {'access': ref('NodeAccessData')}}]}, False
+        return {'allOf': [ref('NodeData'), {'type': 'object', 'properties': {
+            'access': ref('NodeAccessData'),
+            'excluded_projects': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
+        }}]}, False
+    if action == 'AppsController@show':
+        return {'allOf': [ref('AppData'), {'type': 'object', 'properties': {
+            'excluded_nodes': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
+        }}]}, False
     return ref(cands[0]), is_list
 
 

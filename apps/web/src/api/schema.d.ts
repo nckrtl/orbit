@@ -1489,6 +1489,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{node}/excluded-projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * node:excluded-project:list
+         * @description List the Projects that cannot use an app-dev Node for development.
+         */
+        get: operations["node-excluded-project-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node}/excluded-projects/{app}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * node:excluded-project:add
+         * @description Exclude a Project from development placement on an app-dev Node.
+         */
+        post: operations["node-excluded-project-add"];
+        /**
+         * node:excluded-project:remove
+         * @description Remove a Project from the development exclusions of an app-dev Node.
+         */
+        delete: operations["node-excluded-project-remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{node}/firewall-rules": {
         parameters: {
             query?: never;
@@ -1951,6 +1995,50 @@ export interface paths {
          * @description Update a project.
          */
         patch: operations["project-update"];
+        trace?: never;
+    };
+    "/api/v1/projects/{app}/excluded-nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * project:excluded-node:list
+         * @description List the app-dev Nodes a Project cannot use for development.
+         */
+        get: operations["project-excluded-node-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{app}/excluded-nodes/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * project:excluded-node:add
+         * @description Exclude an app-dev Node from development placement for a Project.
+         */
+        post: operations["project-excluded-node-add"];
+        /**
+         * project:excluded-node:remove
+         * @description Remove a development Node exclusion from a Project.
+         */
+        delete: operations["project-excluded-node-remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{app}/process-definitions": {
@@ -2886,6 +2974,13 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        DevelopmentNodeExclusion: {
+            project_id?: number;
+            project_slug?: string;
+            node_id?: number;
+            node_name?: string;
+            development_instance_count?: number;
+        };
         AppRuntimeDefinition: {
             id?: string;
             app_id?: number;
@@ -3213,6 +3308,14 @@ export interface components {
         NodeAccessNode: {
             id?: number;
             name?: string;
+        };
+        DevelopmentNodeExclusionResult: {
+            project_id?: number;
+            project_slug?: string;
+            node_id?: number;
+            node_name?: string;
+            development_instance_count?: number;
+            already_exists?: boolean;
         };
         FirewallRule: {
             id?: number;
@@ -3840,7 +3943,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"];
+                        data: components["schemas"]["App"] & {
+                            excluded_nodes?: components["schemas"]["DevelopmentNodeExclusion"][];
+                        };
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -9249,6 +9354,7 @@ export interface operations {
                     "application/json": {
                         data: components["schemas"]["Node"] & {
                             access?: components["schemas"]["NodeAccess"];
+                            excluded_projects?: components["schemas"]["DevelopmentNodeExclusion"][];
                         };
                         meta: components["schemas"]["Meta"];
                     };
@@ -9346,6 +9452,172 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "node-excluded-project-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>[];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "node-excluded-project-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+                /** @description Numeric Project ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentNodeExclusionResult"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentNodeExclusionResult"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "node-excluded-project-remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+                /** @description Numeric Project ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentNodeExclusion"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10996,7 +11268,9 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"];
+                        data: components["schemas"]["App"] & {
+                            excluded_nodes?: components["schemas"]["DevelopmentNodeExclusion"][];
+                        };
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11145,6 +11419,172 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-excluded-node-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                app: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>[];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-excluded-node-add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                app: number;
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentNodeExclusionResult"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentNodeExclusionResult"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-excluded-node-remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                app: number;
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentNodeExclusion"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

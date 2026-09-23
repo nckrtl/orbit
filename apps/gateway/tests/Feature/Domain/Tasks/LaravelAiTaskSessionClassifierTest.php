@@ -3,14 +3,20 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\TaskJevOutcome;
+use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionClassifier;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
+use GuzzleHttp\Psr7\Response as Psr7Response;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 function classifier_observation(
@@ -172,6 +178,68 @@ it('asks Jev only whether the implementer is blocked', function (): void {
         ->and($checks['blocked']->confidence)->toBe(0.96);
 });
 
+it('judges the implementer blocked question without the reviewer thread', function (): void {
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.98)]]);
+
+    app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(
+        classifier_observation(reviewerText: "I'll wait for the subtask handoff.", recentMessages: [
+            ['id' => 'done', 'kind' => 'message', 'label' => 'assistant', 'text' => 'The models are stored and composer check passed.', 'at' => '2026-09-22T10:00:00Z'],
+        ]),
+        TaskThreadRole::Implementer,
+    );
+
+    Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => $prompt->state === [
+        'classification_role' => 'implementer',
+        'group_title' => 'Route sessions',
+        'group_brief' => 'Pick the next mechanical action.',
+        'task_title' => 'Models',
+        'task_brief' => 'Implement the models.',
+        'thread' => [
+            'state' => 'idle',
+            'recent_messages' => [
+                ['id' => 'done', 'kind' => 'message', 'label' => 'assistant', 'text' => 'The models are stored and composer check passed.', 'at' => '2026-09-22T10:00:00Z'],
+            ],
+        ],
+    ]);
+});
+
+it('leaves Gateway rubric reminders out of the blocked evidence', function (): void {
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.98)]]);
+    $reply = ['id' => 'reply', 'kind' => 'message', 'label' => 'assistant', 'text' => 'The brief is complete. composer check passed.', 'at' => '2026-09-22T10:02:00Z'];
+
+    app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(
+        classifier_observation(recentMessages: [
+            ['id' => 'reminder', 'kind' => 'message', 'label' => 'user', 'text' => 'Orbit could not confirm the brief is complete. If it is, reply with a short summary.', 'at' => '2026-09-22T10:01:00Z'],
+            $reply,
+        ]),
+        TaskThreadRole::Implementer,
+    );
+
+    Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
+        && $prompt->state['thread']['recent_messages'] === [$reply]);
+});
+
+it('judges the reviewer blocked question on the reviewer thread', function (): void {
+    Classification::fake([['blocked' => new ChoiceAnswer('no', [], 0.97)]]);
+
+    app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(
+        classifier_observation(recentMessages: [
+            ['id' => 'stuck', 'kind' => 'message', 'label' => 'assistant', 'text' => 'I cannot run sudo.', 'at' => '2026-09-22T10:00:00Z'],
+        ]),
+        TaskThreadRole::Reviewer,
+    );
+
+    Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
+        && $prompt->state['classification_role'] === 'reviewer'
+        && $prompt->state['thread'] === ['state' => 'idle', 'recent_messages' => []]);
+});
+
+it('treats a Jev answer without confidence as a missing answer', function (): void {
+    Classification::fake([['blocked' => new ChoiceAnswer('no', ['no' => 0.9, 'yes' => 0.1])]]);
+
+    app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(classifier_observation(), TaskThreadRole::Implementer);
+})->throws(TaskSessionClassificationException::class, 'TypeSafe Jev did not return the blocked check.');
+
 it('requires a passing composer check in the last five messages for completion', function (): void {
     Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]]);
 
@@ -198,4 +266,35 @@ it('does not treat an assistant claim as composer check evidence', function (): 
     );
 
     expect($decision->outcome)->toBe(TaskJevOutcome::AssistanceRequired);
+});
+
+describe('provider failures', function (): void {
+    it('reports a provider error as a classification failure without the response body', function (): void {
+        config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(500, [], '{"detail":"provider body"}'))));
+
+        expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(classifier_observation(), TaskThreadRole::Implementer))
+            ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (RequestException).');
+        try {
+            app(LaravelAiTaskSessionClassifier::class)->classifyTranscript(classifier_observation(), TaskThreadRole::Implementer);
+        } catch (TaskSessionClassificationException $exception) {
+            expect($exception->getMessage())->not->toContain('provider body');
+        }
+    });
+
+    it('reports an unreachable provider as a classification failure', function (): void {
+        config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+        Classification::fake(fn () => throw new ConnectionException('Connection refused'));
+
+        expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
+            ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');
+    });
+
+    it('names the missing key when a request fails without one', function (?string $key): void {
+        config()->set('ai.providers.typesafe.key', $key);
+        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"Must supply an API key!"}'))));
+
+        expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(classifier_observation(), TaskThreadRole::Implementer))
+            ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.');
+    })->with(['missing' => [null], 'empty' => ['']]);
 });

@@ -1,0 +1,127 @@
+{
+    "note": "Modeled on the observations from the Incus diagnosis (Pi implementer, T3 reviewer). Replace with a captured observation from the Coder escalation webhook when one is available.",
+    "role": "implementer",
+    "expected": "no",
+    "observation": {
+        "group_id": 7,
+        "available": true,
+        "task_id": 12,
+        "task_status": "running",
+        "task_title": "Slug column and backfill",
+        "task_brief": "Add a nullable `slug` string column to the `posts` table, fill it from each title with Str::slug, and cover the backfill with a Pest test.",
+        "group_status": "running",
+        "title": "Post slugs",
+        "brief": "Give posts stable URL slugs. Keep existing routes working.",
+        "has_pending_subtasks": true,
+        "pr_url": null,
+        "ci_summary": null,
+        "threads": [
+            {
+                "thread_id": 31,
+                "role": "reviewer",
+                "state": "idle",
+                "available": true,
+                "error": null,
+                "input_requests": [],
+                "idle": true,
+                "pending_approval_id": null,
+                "pending_user_input_id": null,
+                "last_assistant_text": "I'll wait for the subtask handoff. Nothing is ready to review yet, so I have not inspected any changes.",
+                "last_user_text": "You are the long-lived reviewer for this feature group.\n\nOrbit task group #7\n\nFeature: Post slugs\n\nGive posts stable URL slugs. Keep existing routes working.\n\nWait for subtask review handoffs. After you accept a subtask, create the sign-off commit in this workspace.",
+                "has_new_commits_since_thread_start": false,
+                "pr_url": null,
+                "ci_summary": null,
+                "recent_messages": [
+                    {
+                        "id": "r-1",
+                        "kind": "message",
+                        "label": "user",
+                        "text": "You are the long-lived reviewer for this feature group.\n\nOrbit task group #7\n\nFeature: Post slugs\n\nGive posts stable URL slugs. Keep existing routes working.\n\nWait for subtask review handoffs. After you accept a subtask, create the sign-off commit in this workspace.",
+                        "at": "2026-09-22T09:00:00Z"
+                    },
+                    {
+                        "id": "r-2",
+                        "kind": "message",
+                        "label": "assistant",
+                        "text": "I'll wait for the subtask handoff. Nothing is ready to review yet, so I have not inspected any changes.",
+                        "at": "2026-09-22T09:00:40Z"
+                    }
+                ]
+            },
+            {
+                "thread_id": 32,
+                "role": "implementer",
+                "state": "done",
+                "available": true,
+                "error": null,
+                "input_requests": [],
+                "idle": true,
+                "pending_approval_id": null,
+                "pending_user_input_id": null,
+                "last_assistant_text": "The brief is complete. I added the nullable `slug` column and its backfill migration, plus PostSlugBackfillTest. composer check passed: 214 tests, exit code 0.",
+                "last_user_text": "Orbit could not confirm the brief is complete. If it is, reply with a short summary of what changed and the composer check result. If something outside the brief stops you, say what it is.",
+                "has_new_commits_since_thread_start": false,
+                "pr_url": null,
+                "ci_summary": null,
+                "recent_messages": [
+                    {
+                        "id": "m-1",
+                        "kind": "message",
+                        "label": "user",
+                        "text": "Implement this subtask in the shared workspace, then stop so the reviewer can inspect it.\n\nOrbit task group #7\n\nFeature: Post slugs\n\nOrbit subtask #12\n\nSubtask: Slug column and backfill\n\nAdd a nullable `slug` string column to the `posts` table, fill it from each title with Str::slug, and cover the backfill with a Pest test.",
+                        "at": "2026-09-22T09:01:00Z"
+                    },
+                    {
+                        "id": "m-2",
+                        "kind": "message",
+                        "label": "assistant",
+                        "text": "I'll add the migration, backfill the existing rows, and cover it with a test.",
+                        "at": "2026-09-22T09:01:20Z"
+                    },
+                    {
+                        "id": "a-1",
+                        "kind": "activity",
+                        "label": "tool",
+                        "text": "write database/migrations/2026_09_22_090200_add_slug_to_posts_table.php",
+                        "at": "2026-09-22T09:02:00Z"
+                    },
+                    {
+                        "id": "a-2",
+                        "kind": "activity",
+                        "label": "tool",
+                        "text": "write tests/Feature/PostSlugBackfillTest.php",
+                        "at": "2026-09-22T09:03:00Z"
+                    },
+                    {
+                        "id": "a-3",
+                        "kind": "activity",
+                        "label": "tool",
+                        "text": "composer check\n> pint --test\n> phpstan analyse\n> pest --parallel\n  Tests:    214 passed (1032 assertions) exit code 0",
+                        "at": "2026-09-22T09:05:00Z"
+                    },
+                    {
+                        "id": "m-3",
+                        "kind": "message",
+                        "label": "assistant",
+                        "text": "Added the nullable `slug` column in a new migration, backfilled it from each title with Str::slug in the same migration, and added PostSlugBackfillTest. composer check passed with exit code 0.",
+                        "at": "2026-09-22T09:05:30Z"
+                    },
+                    {
+                        "id": "m-4",
+                        "kind": "message",
+                        "label": "user",
+                        "text": "Orbit could not confirm the brief is complete. If it is, reply with a short summary of what changed and the composer check result. If something outside the brief stops you, say what it is.",
+                        "at": "2026-09-22T09:06:00Z"
+                    },
+                    {
+                        "id": "m-5",
+                        "kind": "message",
+                        "label": "assistant",
+                        "text": "The brief is complete. I added the nullable `slug` column and its backfill migration, plus PostSlugBackfillTest. composer check passed: 214 tests, exit code 0.",
+                        "at": "2026-09-22T09:06:20Z"
+                    }
+                ]
+            }
+        ]
+    }
+}

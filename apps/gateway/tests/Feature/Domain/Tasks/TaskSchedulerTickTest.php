@@ -36,9 +36,13 @@ use App\Models\AppInstanceRemoval;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
+use Laravel\Ai\Prompts\ClassificationPrompt;
 use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 use function Pest\Laravel\mock;
@@ -114,6 +118,34 @@ function tick_checked_thread(string $status): array
     ]];
 }
 
+function tick_workspace(bool $definesCheckScript = true): void
+{
+    app()->instance(TaskWorkspaceStateReader::class, new readonly class($definesCheckScript) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private bool $definesCheckScript) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return null;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return null;
+        }
+
+        public function isClean(AppInstance $instance): bool
+        {
+            return false;
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return $this->definesCheckScript;
+        }
+    });
+}
+
 function tick_dispatcher(): T3Dispatcher
 {
     return new class implements T3Dispatcher
@@ -173,6 +205,10 @@ function tick_reviewed_pull_request(TaskGroup $group): array
         'head' => ['repo' => ['full_name' => 'acme/orbit'], 'ref' => 'task-'.$group->id, 'sha' => str_repeat('a', 40)],
     ];
 }
+
+beforeEach(function (): void {
+    tick_workspace();
+});
 
 it('stores the final approved PR before settling and watches that same PR on later ticks', function (): void {
     $group = tick_final_review();
@@ -433,6 +469,67 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
         ->and($spawner->reviews)->toBe(1);
+});
+
+it('hands off only a composer check that ran the workspace check script', function (bool $definesCheckScript, string $output, TaskStatus $status): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    tick_workspace($definesCheckScript);
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new readonly class($output) implements T3ThreadReader
+    {
+        public function __construct(private string $output) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['activities'][0]['output'] = $this->output;
+
+            return $snapshot;
+        }
+    });
+    Classification::fake(tick_transcript());
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->status)->toBe($status);
+    $commands = app(T3Dispatcher::class)->commands;
+    if ($status === TaskStatus::Running) {
+        expect($commands)->toHaveCount(1)
+            ->and($commands[0]['message']['text'])->toContain('does not define a check script')
+            ->not->toContain('composer check did not pass');
+    }
+})->with([
+    'project check script' => [true, "composer check\n> pint --test\n> phpstan analyse\n> pest", TaskStatus::Reviewing],
+    'check-platform-reqs without a check script' => [false, "composer check\nChecking platform requirements for packages in the vendor dir\nphp 8.5.0 success", TaskStatus::Running],
+    'missing check script' => [false, 'composer check', TaskStatus::Running],
+]);
+
+it('records a Jev provider failure as a communication failure without aborting the tick', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    tick_workspace(true);
+    config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $snapshot = tick_checked_thread('done');
+            $snapshot['thread']['activities'][0]['output'] = "composer check\n> pest";
+
+            return $snapshot;
+        }
+    });
+    Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"provider body"}'))));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->communication_failures)->toBe(1)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and(app(T3Dispatcher::class)->commands)->toBe([]);
 });
 
 it('notifies Coder when classification fails closed', function (): void {
@@ -734,6 +831,69 @@ it('asks for assistance when implementer checks still fail after one reminder', 
         ->and($notifier->reason)->toContain('Checks still failed')
         ->and($notifier->reason)->toContain('composer check was not found')
         ->and($dispatcher->commands)->toHaveCount(1);
+});
+
+it('reminds a finished implementer without claiming a blocker and hides the reminder from Jev', function (): void {
+    $group = tick_group();
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    $notifier = new class implements CoderSettleNotifier
+    {
+        public ?string $reason = null;
+
+        public function notify(TaskGroup $group): void {}
+
+        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+
+        public function assistance(TaskGroup $group, string $reason): void
+        {
+            $this->reason = $reason;
+        }
+    };
+    $reader = new class implements T3ThreadReader
+    {
+        /** @var list<array<string, string>> */
+        public array $messages = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            if ($threadId !== 'implementer-thread') {
+                return ['thread' => [
+                    'session' => ['status' => 'idle'],
+                    'messages' => [['id' => 'reviewer-wait', 'role' => 'assistant', 'text' => "I'll wait for the subtask handoff.", 'createdAt' => '2026-09-22T11:00:00Z']],
+                ]];
+            }
+            $snapshot = tick_checked_thread('idle');
+            $snapshot['thread']['messages'] = $this->messages;
+
+            return $snapshot;
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+    app()->instance(CoderSettleNotifier::class, $notifier);
+    app()->instance(T3ThreadReader::class, $reader);
+    Classification::fake([['blocked' => new ChoiceAnswer('yes', [], 0.84)], ['blocked' => new ChoiceAnswer('yes', [], 0.84)]]);
+
+    app(TaskScheduler::class)->tick();
+
+    $reminder = $dispatcher->commands[0]['message']['text'];
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and($reminder)->toStartWith('Orbit could not confirm the brief is complete.')
+        ->and($reminder)->not->toContain('blocked')
+        ->and($reminder)->not->toContain('assistance_requested')
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    $reader->messages = [
+        ['id' => 'reminder', 'role' => 'user', 'text' => $reminder, 'createdAt' => '2026-09-22T11:58:00Z'],
+        ['id' => 'reply', 'role' => 'assistant', 'text' => 'Installing the extension needs sudo, and sudo was denied.', 'createdAt' => '2026-09-22T11:59:00Z'],
+    ];
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($notifier->reason)->toBe('Checks still failed after the reminder. blocked: Jev answered yes at 0.84.');
+    Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
+        && ! array_key_exists('threads', $prompt->state)
+        && array_column($prompt->state['thread']['recent_messages'], 'id') === ['reply', 'check-1']);
 });
 
 it('retries the reviewer nudge until the handoff send succeeds', function (): void {

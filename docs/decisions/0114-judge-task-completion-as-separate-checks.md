@@ -14,6 +14,8 @@ Proposed.
 
 This amends the single outcome Choice in [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) and the composer-check evidence check in [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review). It also removes `ready_for_review` as a required comment. `changes_requested`, `approved`, `assistance_requested`, and `resolution` stay comments. The reviewer's ownership of the commit and pull request, the one-reminder allowance, and assistance history stay.
 
+[ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence) amends the evidence Jev reads for the `blocked` item and the reminder wording.
+
 ## Context
 
 [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) requires a passing `composer check` and a `ready_for_review` comment before review, and a verified commit and pull request before an approval advances. The scheduler matches `composer check` plus a passing phrase in recent tool output, and otherwise asks Jev for one of three outcomes: `completed_successfully`, `changes_requested`, or `assistance_required`. One confidence covers that bundle. A missing comment, a stale check, a dirty tree, and a blocked agent then share one assistance reason.
@@ -36,13 +38,16 @@ Use this rubric while a `running` task's implementer is `Idle`, `Done`, or `Aski
 
 | Item | Instrument | Pass |
 | --- | --- | --- |
+| `check_script` | Code, from `composer.json` at the workspace root | `scripts.check` is a non-empty command or list |
 | `check_invoked` | Code, from a tool activity whose text names `composer check` | The activity is present |
 | `check_passed` | Code, from the `exit code` on that activity | The exit code is 0 |
 | `check_current` | Code, from tool activity after that run | No edit, write, or patch activity follows it |
 | `blocked` | Jev yes/no over the thread | `no` at or above the threshold |
 | `waiting_for_input` | Runtime pending-input state | No pending input |
 
-`check_invoked` passes from a tool activity. An assistant message does not pass it. A run with no `exit code` fails `check_passed`. When `check_invoked` fails, `check_passed` and `check_current` fail with it. The activities are the ones already in the observation window. A `composer check` that has scrolled out of that window fails `check_invoked`, and the reminder asks for a new run. Jev is not asked these three questions. When every item passes, the Gateway sets the task status to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. The Gateway observes the shared reviewer before the handoff and records its current turn. While the reviewer thread is still idle, or its snapshot is still the turn recorded at the handoff, the Gateway waits. A missing current turn ID does not prove that a newer turn stopped. It asks for an outcome only after a newer review turn stops. A pending input skips the blocked question. A thread state the rubric does not recognize waits without a model call. The agent does not post a `ready_for_review` comment, and a posted comment of that type is not a gate.
+Composer resolves an abbreviated command name. Without a `check` script, `composer check` runs the built-in `check-platform-reqs` command, which exits 0. The Gateway reads `composer.json` in the workspace over SSH when it evaluates the rubric. `check_script` fails when that file is missing, is not valid JSON, or defines no `check` script. The transcript items can still pass, but the rubric does not. A command such as `composer check-platform-reqs` or `composer check:types` does not count as a `composer check` run.
+
+`check_invoked` passes from a tool activity. An assistant message does not pass it. A run with no `exit code` fails `check_passed`. When `check_invoked` fails, `check_passed` and `check_current` fail with it. The activities are the ones already in the observation window. A `composer check` that has scrolled out of that window fails `check_invoked`, and the reminder asks for a new run. Jev is not asked the check questions. When every item passes, the Gateway sets the task status to `reviewing` and sends `please review` to the reviewer thread. If that send fails, the next tick sends it again before the reviewer is asked for an outcome comment. The Gateway observes the shared reviewer before the handoff and records its current turn. While the reviewer thread is still idle, or its snapshot is still the turn recorded at the handoff, the Gateway waits. A missing current turn ID does not prove that a newer turn stopped. It asks for an outcome only after a newer review turn stops. A pending input skips the blocked question. A thread state the rubric does not recognize waits without a model call. The agent does not post a `ready_for_review` comment, and a posted comment of that type is not a gate.
 
 Task status stays the current phase: `running`, `reviewing`, or `completed`. These comments stay events, and each accepted event updates status or the assistance flag:
 
@@ -84,6 +89,8 @@ The second pass is the next rubric evaluation after that reminder, once the same
 - Escalate on the first failure: the agent can repair a named list of failures in one turn.
 - Send a separate reminder for each failed item: one stop would start several turns.
 - Skip the reminder while the thread is `AskingForInput`: a pending question is one of the failures the reminder lists. A `Working` or `Failed` thread still does not receive that reminder.
+- Recognize `check-platform-reqs` output in the tool activity: the activity keeps only the last 2000 characters, and a real check script can call that command as one step. The workspace file answers the question without reading output.
+- Require the check script to print a marker: every repository would need to add it, and the agent can print the same text.
 - Widen the transcript until an older `composer check` stays visible: a check outside the current window fails closed, and the reminder asks for a new run.
 - Require a `ready_for_review` comment before `reviewing`: the transcript checks are the implementer's claim, and the status change is the Gateway's acceptance of that claim.
 - Replace `changes_requested`, `approved`, `assistance_requested`, and `resolution` with a status write: the findings, commit SHA, pull request URL, and earlier assistance cycles need a stored event. Status holds one current phase.
@@ -95,6 +102,8 @@ The second pass is the next rubric evaluation after that reminder, once the same
 - A reviewer causes a Jev call only when its outcome comment for the current attempt is missing.
 - Assistance reasons name the failed checks, which makes repeated blockers comparable.
 - A long thread can fail `check_invoked` after a real run has left the observation window. The repair is a new run.
+- Each rubric evaluation of a stopped implementer reads `composer.json` over SSH. A repository without a `check` script at the workspace root cannot pass the implementer rubric.
+- `check_script` reads the file at evaluation time. A shell command that removes the script, runs `composer check`, and restores the file is not an edit, write, or patch activity, so neither `check_script` nor `check_current` detects it.
 - Scheduler tests that fake the single outcome Choice need to fake these questions instead. The text match on `composer check` and a passing phrase stops being the gate.
 
 ## Affects
@@ -102,4 +111,4 @@ The second pass is the next rubric evaluation after that reminder, once the same
 - Components: apps/gateway, apps/docs
 - ADRs: [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev), [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review)
 - Detail: [Tasks](/reference/tasks)
-- Verify: `TaskSchedulerTickTest`, `LaravelAiTaskSessionClassifierTest`, and `composer check` in `apps/gateway`
+- Verify: `TaskSchedulerTickTest`, `ComposerCheckEvidenceTest`, `RemoteTaskWorkspaceStateReaderTest`, `LaravelAiTaskSessionClassifierTest`, and `composer check` in `apps/gateway`

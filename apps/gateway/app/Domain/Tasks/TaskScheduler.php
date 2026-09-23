@@ -175,7 +175,7 @@ final readonly class TaskScheduler
             $checks = $waiting instanceof TaskRubricItem
                 ? []
                 : $this->classifier->classifyTranscript($observation, TaskThreadRole::Implementer);
-            $items = $this->implementerItems($task, $implementer, $checks);
+            $items = $this->implementerItems($group, $task, $implementer, $checks);
         } catch (TaskSessionClassificationException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -279,7 +279,7 @@ final readonly class TaskScheduler
 
                     return true;
                 }
-                $items[] = $this->jevItem($checks['blocked'], 'no', 'The reviewer is blocked. Post an assistance_requested comment with the blocker, or continue the review.');
+                $items[] = $this->jevItem($checks['blocked'], 'no');
             }
         } else {
             array_push($items, ...$this->approvalItems($group, $task, $comment));
@@ -309,12 +309,14 @@ final readonly class TaskScheduler
     /** @param array<string, TaskTranscriptCheck> $checks
      * @return list<TaskRubricItem>
      */
-    private function implementerItems(Task $task, TaskThreadObservation $thread, array $checks): array
+    private function implementerItems(TaskGroup $group, Task $task, TaskThreadObservation $thread, array $checks): array
     {
         $evidence = ComposerCheckEvidence::fromMessages($thread->recentMessages);
         $freshRun = $task->completion_handoff_attempt === null
             || ($evidence->runId !== null && $evidence->runId !== $task->completion_handoff_check_id);
+        $instance = $group->taskable;
         $items = [
+            new TaskRubricItem('check_script', $instance instanceof AppInstance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so composer check ran a built-in Composer command. Restore the check script and run composer check again.'),
             new TaskRubricItem('check_invoked', $evidence->invoked, 'composer check was not found in the recent tool output. Run composer check.'),
             new TaskRubricItem('check_passed', $evidence->invoked && $evidence->passed, 'composer check did not pass. Run composer check again.'),
             new TaskRubricItem('check_current', $evidence->invoked && $evidence->passed && $evidence->current && $freshRun, 'composer check output is from before a change to the tree or the latest review findings. Run composer check again.'),
@@ -331,7 +333,7 @@ final readonly class TaskScheduler
         if (! isset($checks['blocked'])) {
             throw new TaskSessionClassificationException('TypeSafe Jev did not return the blocked check.');
         }
-        $items[] = $this->jevItem($checks['blocked'], 'no', 'The thread is blocked. Post an assistance_requested comment with the blocker, or continue the brief.');
+        $items[] = $this->jevItem($checks['blocked'], 'no');
 
         return $items;
     }
@@ -366,12 +368,12 @@ final readonly class TaskScheduler
         return $items;
     }
 
-    private function jevItem(TaskTranscriptCheck $check, string $passingChoice, string $reminder): TaskRubricItem
+    private function jevItem(TaskTranscriptCheck $check, string $passingChoice): TaskRubricItem
     {
         return new TaskRubricItem(
             $check->key,
             $check->choice === $passingChoice && $check->confidence >= $this->jevThreshold(),
-            $reminder,
+            '',
             $check->choice,
             $check->confidence,
         );
@@ -386,7 +388,9 @@ final readonly class TaskScheduler
             return null;
         }
 
-        return new TaskRubricItem('waiting_for_input', false, 'The thread is waiting for input. Continue the current brief or post an assistance_requested comment.');
+        $work = $thread->role === TaskThreadRole::Implementer ? 'brief' : 'review';
+
+        return new TaskRubricItem('waiting_for_input', false, 'The thread is waiting for input. Continue the current '.$work.' without it.');
     }
 
     /** @param list<TaskRubricItem> $items */
@@ -402,7 +406,7 @@ final readonly class TaskScheduler
         }
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
-                $this->actor->remindRubric($group, $thread, 'These checks failed. '.implode(' ', array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures)));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures));
             } catch (AgentDriverException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -414,12 +418,11 @@ final readonly class TaskScheduler
         }
 
         $reasons = array_map(static function (TaskRubricItem $item): string {
-            $reason = $item->reminder;
             if ($item->choice !== null && $item->confidence !== null) {
-                $reason .= ' Jev answered '.$item->choice.' at '.$item->confidence.'.';
+                return trim($item->reminder.' '.$item->key.': Jev answered '.$item->choice.' at '.$item->confidence.'.');
             }
 
-            return $reason;
+            return $item->reminder;
         }, $failures);
         $this->requestAssistance($task, $group, 'Checks still failed after the reminder. '.implode(' ', $reasons));
     }

@@ -545,6 +545,7 @@
                 "Cluster",
                 "Database",
                 "Database connection",
+                "Development node exclusion",
                 "Development-server endpoint",
                 "Doctor",
                 "Documentation context",
@@ -3072,7 +3073,8 @@
             "governing_adrs": [
                 "0110",
                 "0113",
-                "0114"
+                "0114",
+                "0117"
             ]
         },
         {
@@ -3098,6 +3100,72 @@
                 "0071",
                 "0073",
                 "0115"
+            ]
+        },
+        {
+            "path": "docs/decisions/0117-judge-the-blocked-question-on-role-evidence.md",
+            "title": "ADR 0117: Judge the blocked question on the role's own evidence",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0117"
+            ]
+        },
+        {
+            "path": "docs/decisions/0118-exclude-app-dev-nodes-per-project.md",
+            "title": "ADR 0118: Skip selected Nodes for a Project",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0066",
+                "0071",
+                "0086",
+                "0103",
+                "0118"
+            ]
+        },
+        {
+            "path": "docs/decisions/0119-publish-main-caches-from-clean-bootstrap-runs.md",
+            "title": "ADR 0119: Share caches after bootstrap",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0052",
+                "0054",
+                "0119"
             ]
         },
         {
@@ -3277,6 +3345,7 @@
                 "0112",
                 "0113",
                 "0114",
+                "0117",
                 "0120"
             ]
         },
@@ -3731,6 +3800,24 @@
             ]
         },
         {
+            "path": "docs/reference/development-node-exclusions.md",
+            "title": "Development node exclusions",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0118"
+            ]
+        },
+        {
             "path": "docs/reference/environment-variables.md",
             "title": "Instance environment variables",
             "kind": "reference",
@@ -3882,7 +3969,8 @@
                 "0054",
                 "0076",
                 "0113",
-                "0114"
+                "0114",
+                "0119"
             ]
         },
         {
@@ -4017,6 +4105,7 @@
                 "Project",
                 "Route",
                 "Setup step",
+                "Task",
                 "Teardown step"
             ],
             "governing_adrs": [
@@ -4343,6 +4432,7 @@
             ],
             "concepts": [
                 "Database",
+                "Development node exclusion",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -4360,6 +4450,7 @@
                 "0112",
                 "0113",
                 "0114",
+                "0117",
                 "0120"
             ]
         },
