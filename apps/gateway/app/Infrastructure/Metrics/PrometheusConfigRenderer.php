@@ -10,16 +10,17 @@ use Symfony\Component\Yaml\Yaml;
 final readonly class PrometheusConfigRenderer
 {
     /**
-     * How often Prometheus scrapes every node exporter. `orbit top` redraws a node's metrics
-     * every five seconds, so anything longer than this shows the same sample twice; the cost is
-     * one cheap `/proc` read per node per interval (measured at 0.08s-0.18s per scrape).
+     * How often Prometheus scrapes every node exporter. Every metrics reader, `orbit top` and the
+     * web dashboard, refreshes on the same ten seconds, so no reader polls faster than new samples
+     * arrive; the cost is one cheap `/proc` read per node per interval (measured at 0.08s-0.18s
+     * per scrape).
      */
-    public const string ScrapeInterval = '5s';
+    public const string ScrapeInterval = '10s';
 
     /**
      * How often Prometheus scrapes cAdvisor. Process CPU and memory do not need `orbit top`'s
-     * five-second node resolution, and cAdvisor is the expensive job (see
-     * `MetricsFootprint::CadvisorDisabledMetrics`), so it is scraped six times less often than the
+     * ten-second node resolution, and cAdvisor is the expensive job (see
+     * `MetricsFootprint::CadvisorDisabledMetrics`), so it is scraped three times less often than the
      * node exporter. `PrometheusProcessMetricsQueries::CpuRateWindow` is sized off this interval.
      */
     public const string CadvisorScrapeInterval = '30s';

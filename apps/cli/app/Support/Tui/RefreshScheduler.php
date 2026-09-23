@@ -33,12 +33,12 @@ use Closure;
  */
 final class RefreshScheduler
 {
-    private const float METRICS_INTERVAL_SECONDS = 5.0;
+    private const float METRICS_INTERVAL_SECONDS = 10.0;
 
     /**
      * The dashboard's fleet-wide fetch runs on its own, longer interval: it is one request no
      * matter how many Nodes there are, and the Metrics role's Prometheus only has new samples
-     * every 15s (see `PrometheusConfigRenderer`), so refreshing faster would not show anything new.
+     * every 10s (see the Gateway's `PrometheusConfigRenderer`), so refreshing faster would not show anything new.
      */
     private const float FLEET_METRICS_INTERVAL_SECONDS = 10.0;
 

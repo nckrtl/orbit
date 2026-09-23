@@ -36,6 +36,13 @@ function usage_index(): PrometheusProcessUsageIndex
             return new MetricsCredentialsData('https://metrics.orbit', 'admin', 'password');
         }
 
+        public function storedCredentials(): MetricsCredentialsData
+        {
+
+            return $this->credentials();
+
+        }
+
         public function reset(): MetricsCredentialsData
         {
             return $this->credentials();

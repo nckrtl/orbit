@@ -142,9 +142,9 @@ describe("mapMetrics", () => {
 
 describe("queries", () => {
     it("covers every instance, or one scrape target", () => {
-        expect(queries.cores()).toBe('1 - rate(node_cpu_seconds_total{mode="idle"}[30s])');
+        expect(queries.cores()).toBe('1 - rate(node_cpu_seconds_total{mode="idle"}[40s])');
         expect(queries.cores("10.44.0.2:9100")).toBe(
-            '1 - rate(node_cpu_seconds_total{mode="idle",instance="10.44.0.2:9100"}[30s])',
+            '1 - rate(node_cpu_seconds_total{mode="idle",instance="10.44.0.2:9100"}[40s])',
         );
         expect(queries.disks("10.44.0.2:9100")).toContain(',instance="10.44.0.2:9100"}');
     });

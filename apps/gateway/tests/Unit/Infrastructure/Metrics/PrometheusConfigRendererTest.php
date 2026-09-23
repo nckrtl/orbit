@@ -16,7 +16,7 @@ it('renders both the node exporter and cadvisor scrape jobs, on their own ports 
     $parsed = Yaml::parse($rendered);
 
     expect($parsed['global']['scrape_interval'])
-        ->toBe('5s')
+        ->toBe('10s')
         ->and($parsed['scrape_configs'])
         ->toHaveCount(2);
 

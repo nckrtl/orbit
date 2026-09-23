@@ -149,7 +149,7 @@ export function useNodeMetrics(node: Node): NodeMetrics | null {
         queryKey: ["metrics", "node", ip],
         queryFn: () => readMetrics(`${ip}:9100`),
         enabled: typeof ip === "string" && ip !== "",
-        refetchInterval: interval(5),
+        refetchInterval: interval(10),
         retry: false,
         staleTime: 0,
     });

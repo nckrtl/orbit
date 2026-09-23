@@ -107,6 +107,11 @@ final readonly class NativeMetricsCredentialManager implements MetricsCredential
         });
     }
 
+    public function storedCredentials(): MetricsCredentialsData
+    {
+        return $this->data($this->activePassword($this->assignedNode()));
+    }
+
     public function reset(): MetricsCredentialsData
     {
         $node = $this->assignedNode();
