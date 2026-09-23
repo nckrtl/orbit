@@ -78,6 +78,8 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 | `tasks.plan_requires_backlog` | 422 | Create with `plan: true` and `status: todo` |
 | `tasks.planner_driver_unavailable` | 409 | Create with `plan: true` when the reviewer driver is not T3 |
 | `tasks.planner_node_unavailable` | 409 | Create with `plan: true` when no app-dev Node with Gateway access fits |
+| `tasks.planner_unavailable` | 409 | Create with `plan: true` when the T3 driver refuses the planner thread |
+| `tasks.commit_failed` | 409 | Update to `todo` on a planning group when Orbit cannot commit its workspace |
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -114,7 +116,8 @@ At the first review handoff, the scheduler sends the review request to the plann
 | MCP | The planner's T3 agent needs Orbit MCP configured on its Node; Orbit does not configure it |
 | Node ceiling | A Backlog group does not count, with or without an Instance |
 | Uncommitted work | The ADRs and documentation stay uncommitted until the move to `todo`; an empty workspace produces no commit |
-| Failed commit | The group stays in Backlog and the update returns the error |
+| Failed start | When no Node fits or the planner thread cannot start, create removes any Instance and stores no group |
+| Failed commit | The group stays in Backlog and the update returns `tasks.commit_failed` |
 | Back to Backlog | The group keeps its Instance, planner, and commits |
 | Cancel | Removes the Instance; the conversation stays in T3 |
 

@@ -33,7 +33,7 @@ A planner is an opt-in T3 thread that shapes a Backlog group through Orbit MCP a
 - `tasks:create` accepts `plan: true` for a group created in `backlog`. The Gateway then provisions the group's shared Instance at once, on the feature branch `task-{group id}`, and starts the planner thread through the T3 driver on that Instance's Node. The thread title is `Orbit task #{group id} · Planner: {title}`, so it appears in the operator's T3 client like every other task thread.
 - `plan: true` with `status: todo` fails with `tasks.plan_requires_backlog` (HTTP 422). A group without `plan` behaves as in ADR 0122.
 - The planner uses the group's reviewer model and effort. Planning requires the T3 driver for the reviewer role. Otherwise create fails with `tasks.planner_driver_unavailable` (HTTP 409) before storing a group.
-- Placement for a planning group considers only app-dev Nodes with access to the Gateway, because the planner calls Orbit MCP from its Node. When none fits, create fails with `tasks.planner_node_unavailable` (HTTP 409) before storing a group. The planner's T3 agent needs Orbit MCP configured on that Node; Orbit does not configure it.
+- Placement for a planning group considers only app-dev Nodes with access to the Gateway, because the planner calls Orbit MCP from its Node. When none fits, create fails with `tasks.planner_node_unavailable` (HTTP 409) and stores no group. When the T3 driver refuses the planner thread, create removes the Instance, stores no group, and fails with `tasks.planner_unavailable` (HTTP 409). The planner's T3 agent needs Orbit MCP configured on that Node; Orbit does not configure it.
 - The planner's opening prompt holds the group ID, title, and brief. It tells the planner to shape the feature with the operator, following the repository's own instructions for feature design, to manage the group and its subtasks through Orbit MCP, and to move the group to Todo when the operator agrees the plan is ready. Orbit's repository maps feature design to the `grill-with-docs` skill.
 - Planning does not count toward the Node ceiling. Backlog groups never count, with or without an Instance.
 
@@ -45,8 +45,8 @@ A planner is an opt-in T3 thread that shapes a Backlog group through Orbit MCP a
 ### Moving to Todo
 
 - The planner or the operator moves the group to Todo with `tasks:update`. Orbit applies no extra condition to a planning group.
-- On that move, Orbit commits every workspace change on `task-{group id}` as `orbit <tasks@orbit>` with the message `Plan: {group title}`, then the group becomes `todo`. An empty workspace produces no commit. A failed commit leaves the group in Backlog and returns the error.
-- The scheduler claim reuses the group's Instance instead of provisioning one.
+- On that move, Orbit commits every workspace change on `task-{group id}` as `orbit <tasks@orbit>` with the message `Plan: {group title}`, then the group becomes `todo`. An empty workspace produces no commit. A failed commit leaves the group in Backlog and returns `tasks.commit_failed` (HTTP 409).
+- The scheduler claim reuses the group's Instance instead of provisioning one. A claim that the Node ceiling holds back leaves the group in `todo` on that Instance.
 - A planning group moved back to Backlog keeps its Instance, its planner, and its commits.
 
 ### The planner becomes the reviewer

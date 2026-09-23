@@ -13,6 +13,7 @@ use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -47,6 +48,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentAppInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
+        private NodeAccessAuthorizer $access,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): ?AppInstance
@@ -62,7 +64,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver]);
+        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $intent->gatewayAccess);
 
         if (! $node instanceof Node) {
             return null;
@@ -254,7 +256,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     }
 
     /** @param list<string> $drivers Every driver the group uses must allow the Node. */
-    private function selectNode(OrbitApp $app, array $drivers): ?Node
+    private function selectNode(OrbitApp $app, array $drivers, bool $gatewayAccess): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -274,6 +276,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         $eligible = $nodes
             ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)))
+            ->filter(fn (Node $node): bool => ! $gatewayAccess || $this->access->hasGatewayAuthority($node))
             ->filter(fn (Node $node): bool => $this->ceilings->activeForNode($node->id) < TaskCeilings::PerNode)
             ->sortBy(fn (Node $node): array => [$this->ceilings->activeForNode($node->id), $node->id])
             ->values();

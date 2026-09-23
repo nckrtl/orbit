@@ -10,7 +10,7 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 
-final readonly class TaskAgentSpawner implements AgentSpawner
+final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawner
 {
     public function __construct(private AgentDriverRegistry $drivers) {}
 
@@ -22,6 +22,15 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
 
         return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Reviewer: '.$group->title, $this->reviewerPrompt($group)."\n\n".$this->reviewPrompt($task));
+    }
+
+    public function spawnPlanner(TaskGroup $group): ?int
+    {
+        if ($group->reviewer_agent_thread_id !== null) {
+            return $group->reviewer_agent_thread_id;
+        }
+
+        return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Planner: '.$group->title, $this->plannerPrompt($group));
     }
 
     public function spawnImplementer(Task $task): ?int
@@ -73,7 +82,28 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         if ($thread === null) {
             throw new AgentDriverException('Reviewer conversation is unavailable.');
         }
-        $this->drivers->get($thread->driver)->send($thread, $this->reviewPrompt($task));
+        $group = $task->taskGroup;
+        $prompt = $this->reviewPrompt($task);
+
+        // ADR 0123: the planner thread becomes the reviewer with the group's first review request.
+        if ($group->plan && ! $group->tasks()->whereNotNull('review_notified_attempt')->exists()) {
+            $prompt = 'The plan is in Todo and Orbit has started the implementers. From now on you are the reviewer of this group, not its planner. Do not change the plan or the subtasks.'."\n\n".$this->reviewerPrompt($group)."\n\n".$prompt;
+        }
+
+        $this->drivers->get($thread->driver)->send($thread, $prompt);
+    }
+
+    private function plannerPrompt(TaskGroup $group): string
+    {
+        return implode("\n\n", [
+            'You are the planner for this Orbit task group. Shape the feature with the operator in this thread before any agent implements it.',
+            'Orbit task group #'.$group->id.' for Project '.$group->app->slug.' (app_id '.$group->app_id.')',
+            'Feature: '.$group->title,
+            $group->brief,
+            'Follow this repository\'s instructions for designing a feature. Write the ADRs and documentation in this workspace on the branch task-'.$group->id.' and leave them uncommitted. Orbit commits them when the group moves to Todo.',
+            'Keep the group current through Orbit MCP: tasks-update for the title and brief, and tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy for the subtasks. Make each subtask brief one reviewable step that names the ADRs and documentation it implements.',
+            'When the operator agrees the plan is ready, move the group to Todo with tasks-update and status todo. Orbit then runs the implementers, and this thread becomes the group\'s reviewer.',
+        ]);
     }
 
     private function reviewerPrompt(TaskGroup $group): string

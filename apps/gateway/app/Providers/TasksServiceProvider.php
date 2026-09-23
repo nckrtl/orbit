@@ -11,6 +11,7 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskBriefCoverage;
+use App\Domain\Tasks\TaskPlannerSpawner;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskRunReceipts;
@@ -47,6 +48,7 @@ final class TasksServiceProvider extends ServiceProvider
         T3Stream::class => T3TaskAgentStream::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         AgentSpawner::class => TaskAgentSpawner::class,
+        TaskPlannerSpawner::class => TaskAgentSpawner::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,
         T3ThreadReader::class => HttpT3ThreadReader::class,
         TaskWorkspaceSigner::class => RemoteTaskWorkspaceSigner::class,
