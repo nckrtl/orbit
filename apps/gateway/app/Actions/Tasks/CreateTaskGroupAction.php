@@ -22,6 +22,7 @@ final readonly class CreateTaskGroupAction
         private RequireTasksExtensionAction $requireExtension,
         private TaskScheduler $scheduler,
         private AgentDriverRegistry $drivers,
+        private StartTaskPlannerAction $planner,
     ) {}
 
     public function execute(CreateTaskGroupData $data): TaskGroup
@@ -33,6 +34,14 @@ final readonly class CreateTaskGroupAction
             $reviewerDriver = $this->drivers->get((string) config('orbit.tasks.reviewer_agent_driver', 't3'))->key();
         } catch (AgentDriverException) {
             throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
+        }
+
+        if ($data->plan && $data->status !== TaskGroupStatus::Backlog) {
+            throw TaskGroupGuard::planRequiresBacklog();
+        }
+
+        if ($data->plan && $reviewerDriver !== 't3') {
+            throw TaskGroupGuard::plannerDriverUnavailable();
         }
 
         if ($data->status === TaskGroupStatus::Todo && $data->tasks === []) {
@@ -47,6 +56,7 @@ final readonly class CreateTaskGroupAction
             'brief' => $data->brief,
             'status' => $data->status,
             'notify_coder' => $data->notifyCoder,
+            'plan' => $data->plan,
             'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
             'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
         ]);
@@ -59,6 +69,10 @@ final readonly class CreateTaskGroupAction
                 'brief' => $task->brief,
                 'status' => TaskStatus::Todo,
             ]);
+        }
+
+        if ($data->plan) {
+            $group = $this->planner->execute($group);
         }
 
         if ($data->status === TaskGroupStatus::Todo) {

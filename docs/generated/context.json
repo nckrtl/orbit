@@ -3274,6 +3274,29 @@
             ]
         },
         {
+            "path": "docs/decisions/0124-plan-backlog-groups-with-a-t3-planner.md",
+            "title": "ADR 0124: Plan Backlog groups with a T3 planner",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0086",
+                "0112",
+                "0121",
+                "0122",
+                "0124"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3424,7 +3447,8 @@
                 "0120",
                 "0121",
                 "0122",
-                "0123"
+                "0123",
+                "0124"
             ]
         },
         {
@@ -4537,7 +4561,8 @@
                 "0114",
                 "0116",
                 "0121",
-                "0122"
+                "0122",
+                "0124"
             ]
         },
         {

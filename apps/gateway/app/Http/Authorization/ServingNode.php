@@ -22,6 +22,7 @@ enum ServingNode
     case ToolOwning;
     case ClusterOwning;
     case RouteOwning;
+    case TaskGroupOwning;
     case RoleMutation;
     case Collection;
     case Caller;
