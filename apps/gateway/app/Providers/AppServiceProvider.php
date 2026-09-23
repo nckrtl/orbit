@@ -128,6 +128,7 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessUsageIndex;
+use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliCache;
 use App\Domain\ProxyCli\ProxyCliManagementClient;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
@@ -285,6 +286,7 @@ use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\ProxyCli\ArrayProxyCliCache;
 use App\Infrastructure\ProxyCli\HttpCliProxyApiClient;
+use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
@@ -455,6 +457,7 @@ final class AppServiceProvider extends ServiceProvider
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
         ProxyCliManagementClient::class => HttpCliProxyApiClient::class,
+        ProxyCliAccountControlClient::class => HttpProxyCliAccountControlClient::class,
     ];
 
     public function register(): void

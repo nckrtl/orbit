@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliAccount;
 use App\Domain\ProxyCli\ProxyCliCache;
-use App\Domain\ProxyCli\ProxyCliManagementClient;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
-use App\Domain\ProxyCli\ProxyCliUsageResponse;
+use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\ProxyCli\ProxyCliWindow;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -235,7 +235,7 @@ it('reads providers from the snapshot and never calls CLIProxyAPI', function ():
     Http::assertNothingSent();
 });
 
-it('toggles an account in CLIProxyAPI then recompiles from cache', function (): void {
+it('toggles an account through the collector using its auth index', function (): void {
     $gateway = proxycli_gateway();
     $node = proxycli_node();
     proxycli_valkey($node);
@@ -250,44 +250,29 @@ it('toggles an account in CLIProxyAPI then recompiles from cache', function (): 
         ->assertCreated();
 
     app(ProxyCliSnapshotStore::class)->write([
-        new ProxyCliAccount('plus.json', 'codex', 'plus', false, 'enabled', [
+        new ProxyCliAccount('auth-index-42', 'codex', 'plus', false, 'enabled', [
             new ProxyCliWindow('7d', 30),
         ]),
     ], '2026-09-20T12:00:00+00:00');
 
-    $client = new class implements ProxyCliManagementClient
-    {
-        public int $statusCalls = 0;
-
-        public int $quotaCalls = 0;
-
-        public function authFiles(string $baseUrl, string $managementKey): array
-        {
-            return [];
-        }
-
-        public function apiCall(string $baseUrl, string $managementKey, string $authIndex, string $url, array $headers = []): ProxyCliUsageResponse
-        {
-            $this->quotaCalls++;
-
-            return new ProxyCliUsageResponse(200, []);
-        }
-
-        public function setDisabled(string $baseUrl, string $managementKey, string $account, bool $disabled): void
-        {
-            $this->statusCalls++;
-        }
-    };
-    app()->instance(ProxyCliManagementClient::class, $client);
+    $signer = Mockery::mock(LeafCertificateSigner::class);
+    $signer->shouldReceive('rootCertificate')->once()->andReturn('test Orbit root certificate');
+    app()->instance(LeafCertificateSigner::class, $signer);
+    Http::fake();
 
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
-        ->patchJson('/api/v1/proxycli/accounts/plus.json', ['disabled' => true])
+        ->patchJson('/api/v1/proxycli/accounts/auth-index-42', ['disabled' => true])
         ->assertOk()
+        ->assertJsonPath('data.id', 'auth-index-42')
         ->assertJsonPath('data.disabled', true);
 
-    expect($client->statusCalls)->toBe(1)
-        ->and($client->quotaCalls)->toBe(0)
-        ->and(app(ProxyCliSnapshotStore::class)->accounts()[0]->disabled)->toBeTrue();
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://10.44.0.8/v1/accounts/auth-index-42'
+        && $request->method() === 'PATCH'
+        && $request->hasHeader('Host', 'collector.proxycli.orbit')
+        && $request->hasHeader('Authorization', 'Bearer '.app(ProxyCliState::class)->controlToken())
+        && $request['disabled'] === true);
+
+    expect(app(ProxyCliSnapshotStore::class)->accounts()[0]->disabled)->toBeTrue();
 });
 
 it('disables the extension, stops the process, and hides provider reads', function (): void {

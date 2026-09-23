@@ -11,7 +11,7 @@ This page tells an operator how the optional `proxycli` extension collects CLIPr
 
 `proxycli` is a Gateway-owned fleet feature. Enabling the local CLI extension reveals the `proxycli:*` family. Enabling the fleet feature deploys one collector Process and publishes `https://collector.proxycli.orbit`. Disabling the fleet feature stops that Process, withdraws the hostname, and hides the web quota UI.
 
-The collector is the only process that calls CLIProxyAPI for quota. The web app, the Gateway API, and CodexBar read the Valkey snapshot. A refresh does not start a second poll. An account toggle updates CLIProxyAPI account status and then recompiles pools from the cached snapshot.
+The collector is the only process that calls CLIProxyAPI for quota. The web app, the Gateway API, and CodexBar read the Valkey snapshot. A refresh does not start a second poll. An account toggle sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{id}` to the collector site on its Node, with `Host: collector.proxycli.orbit`, Orbit CA verification, the account's `auth_index`, and the collector control token. The Gateway then recompiles pools from the cached snapshot. It does not call CLIProxyAPI directly.
 
 ## Valkey placement
 

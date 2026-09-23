@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\ProxyCli;
 
-use App\Domain\ProxyCli\ProxyCliManagementClient;
+use App\Domain\ProxyCli\ProxyCliAccountControlClient;
+use App\Domain\ProxyCli\ProxyCliPlacement;
 use App\Domain\ProxyCli\ProxyCliPoolCompiler;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
@@ -15,7 +16,8 @@ final readonly class UpdateProxyCliAccountAction
     public function __construct(
         private ProxyCliState $state,
         private ProxyCliSnapshotStore $snapshots,
-        private ProxyCliManagementClient $client,
+        private ProxyCliPlacement $placement,
+        private ProxyCliAccountControlClient $client,
         private ProxyCliPoolCompiler $compiler = new ProxyCliPoolCompiler,
     ) {}
 
@@ -25,16 +27,7 @@ final readonly class UpdateProxyCliAccountAction
     public function execute(string $account, bool $disabled): array
     {
         $this->state->assertEnabled();
-        $url = $this->state->cliproxyUrl();
-        $key = $this->state->cliproxyManagementKey();
-
-        if (! is_string($url) || ! is_string($key)) {
-            throw new ResourceOperationException(
-                'proxycli.disabled',
-                'The proxycli extension has no stored CLIProxyAPI credentials.',
-                409,
-            );
-        }
+        $node = $this->placement->node($this->state->nodeId() ?? 0);
 
         $accounts = $this->snapshots->accounts();
         $known = array_any($accounts, static fn ($row): bool => $row->id === $account);
@@ -47,7 +40,13 @@ final readonly class UpdateProxyCliAccountAction
             );
         }
 
-        $this->client->setDisabled($url, $key, $account, $disabled);
+        $this->client->setDisabled(
+            $node->wireguard_ip,
+            443,
+            (string) $this->state->controlToken(),
+            $account,
+            $disabled,
+        );
         $updated = $this->compiler->withDisabled($accounts, $account, $disabled);
         $snapshot = $this->snapshots->write($updated, date(DATE_ATOM));
         $match = array_first(array_filter(
