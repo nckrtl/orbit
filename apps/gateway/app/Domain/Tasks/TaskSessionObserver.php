@@ -62,7 +62,7 @@ final readonly class TaskSessionObserver
         return new TaskSessionObservation(
             taskId: $task->id, taskStatus: $task->status->value, taskTitle: $task->title, taskBrief: $task->brief,
             groupId: $group->id, groupStatus: $group->status->value, title: $group->title, brief: $group->brief,
-            hasPendingSubtasks: $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Pending, TaskStatus::Reserved, TaskStatus::Running, TaskStatus::Reviewing], true)),
+            hasPendingSubtasks: $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Running, TaskStatus::Reviewing], true)),
             prUrl: $group->pr_url, ciSummary: null, threads: $threads,
             available: ! array_any($threads, static fn (TaskThreadObservation $thread): bool => ! $thread->available),
         );

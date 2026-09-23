@@ -166,10 +166,12 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
             'attachments' => [],
         ])
         ->and($dispatcher->commands[2]['message']['text'])->toContain('long-lived reviewer')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract. Review each subtask against them.')
         ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
         ->and($dispatcher->commands[2]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[2]['interactionMode'])->toBe('default')
         ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
+        ->and($dispatcher->commands[5]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract. Build to them.')
         ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection)
         ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')

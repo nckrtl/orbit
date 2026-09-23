@@ -84,7 +84,7 @@ function provisioner_group(OrbitApp $app, string $title = 'Workspace'): TaskGrou
         'position' => 1,
         'title' => 'First',
         'brief' => 'First subtask',
-        'status' => TaskStatus::Pending,
+        'status' => TaskStatus::Todo,
     ]);
 
     return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;

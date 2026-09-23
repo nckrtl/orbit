@@ -57,7 +57,7 @@ A [Herdr session](/reference/herdr-sessions) runs a named headless Herdr server 
 
 ## Tasks
 
-The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared Instance. After MCP create, the Gateway claims the group, provisions that instance on an `app-dev` Node, and starts the T3 reviewer and the first implementer on the instance-owning Node.
+The optional [tasks](/reference/tasks) extension stores Commander-style feature groups on the Gateway. A Task group has ordered Task subtasks and one shared Instance. A new group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group moves to Todo, the Gateway claims it, provisions that instance on an `app-dev` Node, and starts the T3 reviewer and the first implementer on the instance-owning Node.
 
 Each remaining implementer starts only after reviewer sign-off, with at most one Task `running`. A scheduler tick then observes those task threads, asks TypeSafe Jev for one next action, and executes it without Coder or Nick in the loop. Coder is notified only on escalate or a settle that is ready for CLEAN. After the last sign-off the Gateway verifies and stores the reviewer's pull request, fills settle metrics, and posts that settle webhook when opted in. `tasks:complete` removes the instance after merge.
 

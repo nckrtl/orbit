@@ -16,6 +16,8 @@ Proposed. Amended on 2026-09-21 for T3-capable placement and fail-closed spawns.
 
 [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) replaces this record's Gateway PR creation with reviewer ownership. The reviewer creates the final PR; the Gateway verifies and stores its URL before settling.
 
+[ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) replaces this record's claim immediately after create. A group starts in Backlog, and the scheduler claims only Todo groups. The status `queued` becomes `todo`.
+
 ## Context
 
 Commander owns feature decomposition, implementer and reviewer threads, and pull request handoff outside Orbit. Orbit already owns Apps, App instances, Routes, node access, and the MCP catalogue generated from the Gateway API ([ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)). Absorbing Commander work without a new forever-on core surface would either bury an experimental scheduler in every Gateway or force a second control plane to keep polling Nodes.

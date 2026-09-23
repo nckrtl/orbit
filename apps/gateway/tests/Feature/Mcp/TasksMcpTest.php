@@ -143,7 +143,8 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
         ->and($document['data']['taskable_id'])->toBeNull()
         ->and(AppInstance::query()->find($instance->id))->toBeNull();
 })->with([
-    'queued' => TaskGroupStatus::Queued,
+    'backlog' => TaskGroupStatus::Backlog,
+    'todo' => TaskGroupStatus::Todo,
     'running' => TaskGroupStatus::Running,
 ]);
 
@@ -194,4 +195,33 @@ it('returns a structured MCP error for canceling a completed group', function ()
     expect($cancelled['result']['isError'])->toBeTrue()
         ->and($error['status'])->toBe(409)
         ->and($error['error']['code'])->toBe('tasks.not_cancellable');
+});
+
+it('prepares a backlog group and moves it to todo through MCP', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $call = function (string $name, array $arguments): array {
+        $message = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', ['name' => $name, 'arguments' => $arguments]));
+
+        expect($message['result']['isError'] ?? true)->toBeFalse();
+
+        return json_decode($message['result']['content'][0]['text'], true)['data'];
+    };
+
+    $tools = collect(tasks_mcp_message(tasks_mcp_call($this, 'tools/list'))['result']['tools'])->pluck('name');
+
+    expect($tools)->toContain('tasks-update', 'tasks-subtask-create', 'tasks-subtask-update', 'tasks-subtask-destroy')
+        ->and($tools)->not->toContain('tasks-add');
+
+    $group = $call('tasks-create', ['app_id' => $this->appRecord->id, 'title' => 'MCP backlog', 'brief' => 'Prepare first.']);
+    $first = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'First', 'brief' => 'One.']);
+    $second = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'Second', 'brief' => 'Two.']);
+    $moved = $call('tasks-subtask-update', ['group' => $group['id'], 'task' => $second['id'], 'position' => 1]);
+    $destroyed = $call('tasks-subtask-destroy', ['group' => $group['id'], 'task' => $first['id']]);
+    $ready = $call('tasks-update', ['group' => $group['id'], 'status' => 'todo']);
+
+    expect($group['status'])->toBe('backlog')
+        ->and($moved['position'])->toBe(1)
+        ->and($destroyed['title'])->toBe('First')
+        ->and($ready['status'])->toBe('todo')
+        ->and(array_column($ready['tasks'], 'title'))->toBe(['Second']);
 });
