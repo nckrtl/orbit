@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Agent } from "node:https";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type Plugin } from "vite-plus";
+import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
 import { gatewayProfile, grafanaTarget, realtimeTarget } from "./dev/gateway-profile.ts";
 import { commanderOneShot } from "./dev/commander-oneshot.ts";
@@ -39,7 +39,12 @@ function orbitGateway(): Plugin {
                 define: { __ORBIT_GATEWAY__: JSON.stringify(profile.url) },
                 server: {
                     proxy: {
-                        "^/api/": { target: profile.url, changeOrigin: true, agent },
+                        "^/api/": {
+                            target: profile.url,
+                            changeOrigin: true,
+                            agent,
+                            configure: asSameOriginClient,
+                        },
                         // pusher-js connects to `/app/{key}`; `^/app/` keeps the `/projects` page out of the proxy.
                         ...(realtime === null
                             ? {}
@@ -61,6 +66,7 @@ function orbitGateway(): Plugin {
                                       changeOrigin: true,
                                       agent,
                                       rewrite: (path: string) => path.replace(/^\/grafana/, ""),
+                                      configure: asSameOriginClient,
                                   },
                               }),
                     },
@@ -69,6 +75,15 @@ function orbitGateway(): Plugin {
         },
     };
 }
+
+/**
+ * The Gateway refuses browser requests from origins outside Orbit (ADR 0125). This proxy serves
+ * the page on its own origin, so it forwards as a same-origin client: it drops the browser's
+ * `Origin` but keeps `Sec-Fetch-Site`, so a cross-site request through it is still refused.
+ */
+const asSameOriginClient: NonNullable<ProxyOptions["configure"]> = (proxy) => {
+    proxy.on("proxyReq", (request) => request.removeHeader("origin"));
+};
 
 function annotationSpeech(): Plugin {
     return {

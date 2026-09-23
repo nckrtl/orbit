@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskSchedule;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Controllers\Api\JwksController;
 use App\Http\Middleware\EnsureRequestId;
+use App\Http\Middleware\GuardBrowserOrigins;
 use App\Http\Middleware\NormalizeErrorDetails;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -62,6 +63,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(GuardBrowserOrigins::class);
         $middleware->api(prepend: [NormalizeErrorDetails::class, EnsureRequestId::class, RecordCommandActivity::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);

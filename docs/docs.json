@@ -98,6 +98,7 @@
             "pages": [
               "reference/gateway-trust",
               "reference/web-app",
+              "reference/browser-access",
               "reference/gateway-recovery",
               "reference/node-provisioning",
               "reference/node-settings",
@@ -692,7 +693,8 @@
               "decisions/0121-end-agent-turns-with-a-run-receipt",
               "decisions/0122-hold-task-groups-in-backlog-until-ready",
               "decisions/0123-serve-the-web-app-from-the-gateway-origin",
-              "decisions/0124-plan-backlog-groups-with-a-t3-planner"
+              "decisions/0124-plan-backlog-groups-with-a-t3-planner",
+              "decisions/0125-limit-browser-api-calls-to-orbit-origins"
             ]
           }
         ]
