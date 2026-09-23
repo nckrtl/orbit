@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { sep } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -78,6 +79,8 @@ export interface Usage {
 
 export interface Snapshot {
     kind: "snapshot";
+    /** Identifies this load of the session. A cursor from another run cannot resume. */
+    run: string;
     sequence: number;
     session: { id: string; cwd: string; model: string; thinkingLevel: string };
     state: DerivedState["state"];
@@ -88,29 +91,59 @@ export interface Snapshot {
     usage: Usage;
 }
 
-export type StreamEvent =
-    | Snapshot
-    | { kind: "entry"; sequence: number; entry: TranscriptEntry }
-    | {
-          kind: "state";
-          sequence: number;
-          state: DerivedState["state"];
-          error: string | null;
-          turnId: string | null;
-          usage: Usage;
-      };
+export interface EntryEvent {
+    kind: "entry";
+    run: string;
+    sequence: number;
+    entry: TranscriptEntry;
+}
+
+export interface StateEvent {
+    kind: "state";
+    run: string;
+    sequence: number;
+    state: DerivedState["state"];
+    error: string | null;
+    turnId: string | null;
+    usage: Usage;
+}
+
+/**
+ * Starts a stream that continues from a cursor instead of a snapshot. `context` holds the
+ * assistant entries the client already has whose tool calls have no result yet, so the client
+ * can name the results that follow.
+ */
+export interface Resumed {
+    kind: "resumed";
+    run: string;
+    sequence: number;
+    session: { id: string };
+    context: TranscriptEntry[];
+}
+
+export type StreamEvent = Snapshot | Resumed | EntryEvent | StateEvent;
+
+/** The last event a client received: the run and the sequence number within it. */
+export interface StreamCursor {
+    run: string;
+    sequence: number;
+}
 
 export type StreamListener = (event: StreamEvent) => void;
 
 interface LiveSession {
     id: string;
+    /** A new random value each time the session loads. Sequence numbers restart with it. */
+    run: string;
     record: SessionRecord;
     session: AgentSession;
     working: boolean;
     interruptedByRestart: boolean;
     sequence: number;
-    emittedEntryIds: Set<string>;
+    /** The sequence each entry was streamed with. Entries loaded from disk have 0. */
+    entrySequences: Map<string, number>;
     lastState: string;
+    lastStateEvent: StateEvent | undefined;
     listeners: Set<StreamListener>;
     lastUsedAt: number;
 }
@@ -202,11 +235,20 @@ export class SessionRegistry {
         return this.buildSnapshot(await this.load(id));
     }
 
-    /** Subscribes to a session. The listener receives a full snapshot first, then changes. */
-    async subscribe(id: string, listener: StreamListener): Promise<() => void> {
+    /**
+     * Subscribes to a session. With a cursor from the current run, the listener first receives a
+     * `resumed` event and the events after the cursor. Otherwise it receives a full snapshot.
+     * Then it receives changes.
+     */
+    async subscribe(
+        id: string,
+        listener: StreamListener,
+        after?: StreamCursor,
+    ): Promise<() => void> {
         const live = await this.load(id);
         live.listeners.add(listener);
-        listener(this.buildSnapshot(live));
+        const replay = after === undefined ? undefined : this.replay(live, after);
+        (replay ?? [this.buildSnapshot(live)]).forEach(listener);
 
         return () => {
             live.listeners.delete(listener);
@@ -303,13 +345,15 @@ export class SessionRegistry {
 
         const live: LiveSession = {
             id,
+            run: randomBytes(8).toString("hex"),
             record,
             session,
             working: false,
             interruptedByRestart: record.turnActive,
             sequence: 0,
-            emittedEntryIds: new Set(transcript(session).map((entry) => entry.id)),
+            entrySequences: new Map(transcript(session).map((entry) => [entry.id, 0])),
             lastState: "",
+            lastStateEvent: undefined,
             listeners: new Set(),
             lastUsedAt: Date.now(),
         };
@@ -330,9 +374,10 @@ export class SessionRegistry {
 
     private publishEntries(live: LiveSession): void {
         for (const entry of transcript(live.session)) {
-            if (!live.emittedEntryIds.has(entry.id)) {
-                live.emittedEntryIds.add(entry.id);
-                this.emit(live, { kind: "entry", sequence: ++live.sequence, entry });
+            if (!live.entrySequences.has(entry.id)) {
+                const sequence = ++live.sequence;
+                live.entrySequences.set(entry.id, sequence);
+                this.emit(live, { kind: "entry", run: live.run, sequence, entry });
             }
         }
     }
@@ -345,13 +390,61 @@ export class SessionRegistry {
             return;
         }
         live.lastState = key;
-        this.emit(live, {
+        live.lastStateEvent = {
             kind: "state",
+            run: live.run,
             sequence: ++live.sequence,
             ...derived,
             turnId: latestTurn(live),
             usage: tokens,
-        });
+        };
+        this.emit(live, live.lastStateEvent);
+    }
+
+    /**
+     * Rebuilds what a client missed after a cursor: the entries streamed after it and the latest
+     * state if it changed after it, in sequence order. Returns undefined when the cursor belongs
+     * to another run or is ahead of this run, so the caller sends a snapshot instead.
+     */
+    private replay(live: LiveSession, after: StreamCursor): StreamEvent[] | undefined {
+        if (after.run !== live.run || after.sequence > live.sequence) {
+            return undefined;
+        }
+        const missed: (EntryEvent | StateEvent)[] = [];
+        const openCalls = new Map<string, TranscriptEntry>();
+        for (const entry of transcript(live.session)) {
+            const sequence = live.entrySequences.get(entry.id);
+            if (sequence === undefined) {
+                // Not streamed yet. It reaches this listener as a live entry event.
+                continue;
+            }
+            if (sequence > after.sequence) {
+                missed.push({ kind: "entry", run: live.run, sequence, entry });
+                continue;
+            }
+            const message = entry.message as { role?: unknown; toolCallId?: unknown };
+            if (message.role === "assistant") {
+                toolCallIds(entry.message).forEach((callId) => openCalls.set(callId, entry));
+            } else if (message.role === "toolResult" && typeof message.toolCallId === "string") {
+                openCalls.delete(message.toolCallId);
+            }
+        }
+        const state = live.lastStateEvent;
+        if (state !== undefined && state.sequence > after.sequence) {
+            missed.push(state);
+        }
+        missed.sort((a, b) => a.sequence - b.sequence);
+
+        return [
+            {
+                kind: "resumed",
+                run: live.run,
+                sequence: after.sequence,
+                session: { id: live.id },
+                context: [...new Set(openCalls.values())],
+            },
+            ...missed,
+        ];
     }
 
     private emit(live: LiveSession, event: StreamEvent): void {
@@ -365,6 +458,7 @@ export class SessionRegistry {
 
         return {
             kind: "snapshot",
+            run: live.run,
             sequence: live.sequence,
             session: { id: live.id, cwd, model, thinkingLevel },
             ...this.derive(live),
@@ -476,6 +570,15 @@ function transcript(session: AgentSession): TranscriptEntry[] {
         )
         .filter((entry) => entry.message.role !== "system")
         .map((entry) => ({ id: entry.id, timestamp: entry.timestamp, message: entry.message }));
+}
+
+function toolCallIds(message: unknown): string[] {
+    const content = (message as { content?: unknown }).content;
+
+    return (Array.isArray(content) ? content : []).flatMap((block: unknown) => {
+        const call = block as { type?: unknown; id?: unknown };
+        return call.type === "toolCall" && typeof call.id === "string" ? [call.id] : [];
+    });
 }
 
 function latestTurn(live: LiveSession): string | null {

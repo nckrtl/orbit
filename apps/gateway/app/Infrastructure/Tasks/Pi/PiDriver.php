@@ -86,19 +86,20 @@ final readonly class PiDriver implements AgentDriver
         return $this->snapshotObservation($snapshot, new PiTranscript, $node);
     }
 
+    /**
+     * Relays one Pi server stream. A cursor is `{run}.{sequence}`. A cursor from the server's
+     * current run resumes after it, so a reconnect gets only what it missed. Any other cursor,
+     * including one from before a server restart, gets a fresh snapshot.
+     */
     public function events(AgentThread $thread, ?string $cursor): iterable
     {
-        if ($cursor !== null && (! ctype_digit($cursor) || strlen($cursor) > 16)) {
-            throw new AgentDriverException('Invalid agent stream cursor.');
-        }
         $node = $this->node($thread);
         $transcript = new PiTranscript;
         $started = false;
 
-        // Every connection starts with a snapshot, so a reconnect never needs the old cursor.
-        foreach ($this->client->stream($node, $thread->external_id) as $event) {
+        foreach ($this->client->stream($node, $thread->external_id, $this->resumeFrom($cursor)) as $event) {
             $kind = $event['kind'];
-            $sequence = is_int($event['sequence'] ?? null) ? (string) $event['sequence'] : null;
+            $next = $this->cursor($event);
             if ($kind === 'heartbeat') {
                 yield new AgentThreadEvent($thread->id, 'heartbeat');
             } elseif ($kind === 'snapshot') {
@@ -107,19 +108,71 @@ final readonly class PiDriver implements AgentDriver
                 }
                 $started = true;
                 $transcript = new PiTranscript;
-                yield new AgentThreadEvent($thread->id, 'snapshot', $this->snapshotObservation($event, $transcript, $node)->toArray(), $sequence);
-            } elseif ($started && $kind === 'entry' && is_array($event['entry'] ?? null)) {
-                /** @var array<string, mixed> $entry */
-                $entry = $event['entry'];
-                foreach ($this->redact($transcript->entries($entry), $node) as $normalized) {
-                    yield new AgentThreadEvent($thread->id, 'entry', ['entry' => $normalized], $sequence);
+                yield new AgentThreadEvent($thread->id, 'snapshot', $this->snapshotObservation($event, $transcript, $node)->toArray(), $next);
+            } elseif ($kind === 'resumed') {
+                if (data_get($event, 'session.id') !== $thread->external_id) {
+                    continue;
                 }
+                $started = true;
+                $transcript = new PiTranscript;
+                foreach (is_array($event['context'] ?? null) ? $event['context'] : [] as $entry) {
+                    if (is_array($entry)) {
+                        $transcript->remember($entry);
+                    }
+                }
+                yield new AgentThreadEvent($thread->id, 'resumed');
+            } elseif ($started && $kind === 'entry' && is_array($event['entry'] ?? null)) {
+                yield from $this->entryEvents($thread, $this->redact($transcript->entries($event['entry']), $node), $next);
             } elseif ($started && $kind === 'state') {
                 $state = $this->observation($event, [])->toArray();
                 unset($state['entries']);
-                yield new AgentThreadEvent($thread->id, 'state', $this->redact($state, $node), $sequence);
+                if ($this->settled($state['state'])) {
+                    yield from $this->entryEvents($thread, $this->redact($transcript->settle(), $node), null);
+                }
+                yield new AgentThreadEvent($thread->id, 'state', $this->redact($state, $node), $next);
             }
         }
+    }
+
+    /**
+     * One Pi event can become several entries. Only the last carries the cursor, so a viewer that
+     * disconnects between them resumes before the event and receives all of them again.
+     *
+     * @param  list<array{id: string, kind: string, label: string, text: string, at: string}>  $entries
+     * @return iterable<AgentThreadEvent>
+     */
+    private function entryEvents(AgentThread $thread, array $entries, ?string $cursor): iterable
+    {
+        foreach ($entries as $index => $entry) {
+            yield new AgentThreadEvent($thread->id, 'entry', ['entry' => $entry], $index === array_key_last($entries) ? $cursor : null);
+        }
+    }
+
+    /** A settled turn has no running tool calls left. */
+    private function settled(mixed $state): bool
+    {
+        return in_array(AgentThreadState::tryFrom(is_string($state) ? $state : ''), [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::Failed], true);
+    }
+
+    /** @return array{run: string, sequence: int}|null */
+    private function resumeFrom(?string $cursor): ?array
+    {
+        if ($cursor === null || preg_match('/^([A-Za-z0-9_-]{1,64})\.(\d{1,15})$/', $cursor, $match) !== 1) {
+            return null;
+        }
+
+        return ['run' => $match[1], 'sequence' => (int) $match[2]];
+    }
+
+    /** @param array<string, mixed> $event */
+    private function cursor(array $event): ?string
+    {
+        $run = $event['run'] ?? null;
+        $sequence = $event['sequence'] ?? null;
+
+        return is_string($run) && preg_match('/^[A-Za-z0-9_-]{1,64}$/', $run) === 1 && is_int($sequence) && $sequence >= 0
+            ? $run.'.'.$sequence
+            : null;
     }
 
     private function deliver(Node $node, string $sessionId, string $message): void
@@ -141,15 +194,22 @@ final readonly class PiDriver implements AgentDriver
     /** @param array<string, mixed> $snapshot */
     private function snapshotObservation(array $snapshot, PiTranscript $transcript, Node $node): AgentObservation
     {
+        // A tool result replaces its running call in place, so entries are keyed by ID.
         $entries = [];
         foreach (is_array($snapshot['entries'] ?? null) ? $snapshot['entries'] : [] as $entry) {
             if (is_array($entry)) {
-                /** @var array<string, mixed> $entry */
-                array_push($entries, ...$transcript->entries($entry));
+                foreach ($transcript->entries($entry) as $normalized) {
+                    $entries[$normalized['id']] = $normalized;
+                }
+            }
+        }
+        if ($this->settled($snapshot['state'] ?? null)) {
+            foreach ($transcript->settle() as $normalized) {
+                $entries[$normalized['id']] = $normalized;
             }
         }
 
-        return $this->observation($snapshot, $this->redact($entries, $node));
+        return $this->observation($snapshot, $this->redact(array_values($entries), $node));
     }
 
     /**
@@ -161,7 +221,6 @@ final readonly class PiDriver implements AgentDriver
         $state = AgentThreadState::tryFrom(is_string($data['state'] ?? null) ? $data['state'] : '');
         $error = is_string($data['error'] ?? null) && $data['error'] !== '' ? $data['error'] : null;
         $tokens = data_get($data, 'usage.total');
-        $sequence = $data['sequence'] ?? null;
         $turnId = $data['turnId'] ?? null;
 
         return new AgentObservation(
@@ -169,7 +228,7 @@ final readonly class PiDriver implements AgentDriver
             entries: $entries,
             tokens: is_int($tokens) ? $tokens : null,
             error: $state === AgentThreadState::Failed ? ($error ?? 'Agent turn failed.') : null,
-            cursor: is_int($sequence) ? (string) $sequence : null,
+            cursor: $this->cursor($data),
             turnId: is_string($turnId) && $turnId !== '' ? $turnId : null,
         );
     }

@@ -62,12 +62,15 @@ final readonly class PiClient
     }
 
     /**
-     * Streams one bounded connection: a snapshot, then entry and state events. Yields a heartbeat
-     * whenever no event arrives within the read timeout.
+     * Streams one bounded connection. Without a cursor it starts with a snapshot. With a cursor
+     * from the server's current run it starts with a `resumed` event and the events after the
+     * cursor; the server sends a snapshot instead when it cannot resume. Then entry and state
+     * events follow. Yields a heartbeat whenever no event arrives within the read timeout.
      *
+     * @param  array{run: string, sequence: int}|null  $after
      * @return iterable<array<string, mixed>>
      */
-    public function stream(Node $node, string $sessionId): iterable
+    public function stream(Node $node, string $sessionId, ?array $after = null): iterable
     {
         // HTTP/1.0 keeps the response unchunked. PHP's dechunk filter holds small NDJSON lines
         // until 8 KiB arrive, which would stall every event behind the next heartbeats.
@@ -75,7 +78,7 @@ final readonly class PiClient
             ->timeout(0)
             ->withOptions(['stream' => true, 'read_timeout' => self::STREAM_READ_TIMEOUT, 'version' => '1.0'])
             ->accept('application/x-ndjson')
-            ->get($this->url($node, 'sessions', $sessionId, 'stream'))));
+            ->get($this->url($node, 'sessions', $sessionId, 'stream'), $after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])));
         $body = $response->toPsrResponse()->getBody();
 
         try {

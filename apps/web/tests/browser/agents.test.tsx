@@ -264,3 +264,88 @@ it("shows each thread's polled state in its tab, whatever the selected thread's 
         .element(pane("Agents").getByRole("tab", { name: /Implementer/ }))
         .toHaveAttribute("aria-selected", "true");
 });
+
+it("pauses a hidden tab's stream and resumes it after the last cursor", async () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    let visibility: DocumentVisibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => visibility,
+    });
+    const setVisibility = (value: DocumentVisibilityState) => {
+        visibility = value;
+        document.dispatchEvent(new Event("visibilitychange"));
+    };
+    try {
+        const app = await openApp();
+        const group = {
+            id: 51,
+            title: "Resume",
+            brief: "Resume streams",
+            status: "running",
+            app_id: 999,
+            app: "test",
+            taskable_type: null,
+            tasks: [{ id: 52, title: "Only subtask", brief: "Stream", status: "running" }],
+        };
+        const session = {
+            id: 4,
+            task_group_id: 51,
+            task_id: 52,
+            node_id: 2,
+            role: "implementer",
+            external_id: "pi-session",
+            driver: "pi",
+            state: "working",
+        };
+        setTransport((method, path, body) =>
+            path.startsWith("/api/v1/task-groups/")
+                ? Promise.resolve({
+                      status: 200,
+                      payload: {
+                          data: path.endsWith("/agents")
+                              ? [session]
+                              : path.endsWith("/comments")
+                                ? []
+                                : group,
+                      },
+                  })
+                : app.gateway.transport(method, path, body),
+        );
+        await app.router.navigate({ to: "/tasks/$id", params: { id: "51" } });
+        await expect.poll(() => FakeSource.instances.length).toBe(1);
+        const first = FakeSource.instances[0]!;
+        expect(first.url).toBe("/api/v1/task-groups/51/agents/4/stream");
+        first.send({ kind: "snapshot", thread_id: 4, cursor: "run-1.7", entries: [] });
+        first.send({
+            kind: "entry",
+            thread_id: 4,
+            cursor: "run-1.8",
+            entry: {
+                id: "e2:0",
+                kind: "activity",
+                label: "Running",
+                text: "Running: $ composer test",
+                at: "",
+            },
+        });
+        await expect
+            .element(page.getByRole("tabpanel"))
+            .toHaveTextContent("Running: $ composer test");
+
+        setVisibility("hidden");
+        await expect.element(page.getByLabelText("Agent connection")).toHaveTextContent("Paused");
+        expect(first.closed).toBe(true);
+
+        setVisibility("visible");
+        await expect.poll(() => FakeSource.instances.length).toBe(2);
+        expect(FakeSource.instances[1]!.url).toBe(
+            "/api/v1/task-groups/51/agents/4/stream?after_sequence=run-1.8",
+        );
+        await expect
+            .element(page.getByRole("tabpanel"))
+            .toHaveTextContent("Running: $ composer test");
+    } finally {
+        delete (document as { visibilityState?: unknown }).visibilityState;
+    }
+});
