@@ -196,6 +196,31 @@ it('does not let one UDP requester pollute another requesters TCP cache', functi
     }
 });
 
+it('refuses an explicit port whose TCP side is taken and releases its UDP socket', function (): void {
+    $taken = stream_socket_server('tcp://127.0.0.1:0', $error, $message);
+    expect($taken)->toBeResource();
+    $name = (string) stream_socket_get_name($taken, false);
+    $port = (int) substr($name, strrpos($name, ':') + 1);
+    $server = new PrivateDnsTransportServer(
+        handler: new PrivateDnsRequestHandler(
+            requesters: new WireGuardDnsRequesterResolver,
+            selector: new CatalogPrivateDnsAnswerSelector(new PrivateDnsAnswerCatalog(exact: [], suffixes: [])),
+            cache: new InMemoryPrivateDnsAnswerCache,
+        ),
+        port: $port,
+    );
+
+    try {
+        expect(fn () => $server->start())->toThrow(RuntimeException::class);
+        expect($server->port())->toBe($port);
+        $udp = stream_socket_server('udp://127.0.0.1:'.$port, $error, $message, STREAM_SERVER_BIND);
+        expect($udp)->toBeResource();
+        fclose($udp);
+    } finally {
+        fclose($taken);
+    }
+});
+
 function orb258_transport_server(
     PrivateDnsAnswerCatalog $catalog,
     ?InMemoryPrivateDnsAnswerCache $cache = null,

@@ -10,6 +10,8 @@ use Throwable;
 
 final class PrivateDnsTransportServer
 {
+    private const int EphemeralBindAttempts = 5;
+
     private const int MaxUdpDatagramsPerWake = 64;
 
     private const int MaxUdpDatagramBytes = 4096;
@@ -30,33 +32,42 @@ final class PrivateDnsTransportServer
 
     public function start(): void
     {
-        $udp = @stream_socket_server(
-            'udp://'.$this->listenAddress.':'.$this->port,
-            $udpError,
-            $udpMessage,
-            STREAM_SERVER_BIND,
-        );
-        if (! is_resource($udp)) {
-            throw new RuntimeException($udpMessage !== '' ? $udpMessage : 'Could not bind the private DNS UDP socket.');
-        }
+        $requested = $this->port;
 
-        $name = stream_socket_get_name($udp, false);
-        if (! is_string($name) || ! str_contains($name, ':')) {
+        // An ephemeral UDP port can already be in use for TCP on a busy host, so pick a new pair.
+        for ($attempt = 1; ; $attempt++) {
+            $udp = @stream_socket_server(
+                'udp://'.$this->listenAddress.':'.$requested,
+                $udpError,
+                $udpMessage,
+                STREAM_SERVER_BIND,
+            );
+            if (! is_resource($udp)) {
+                throw new RuntimeException($udpMessage !== '' ? $udpMessage : 'Could not bind the private DNS UDP socket.');
+            }
+
+            $name = stream_socket_get_name($udp, false);
+            if (! is_string($name) || ! str_contains($name, ':')) {
+                fclose($udp);
+
+                throw new RuntimeException('Could not determine the private DNS UDP port.');
+            }
+
+            $this->port = (int) substr($name, strrpos($name, ':') + 1);
+            $tcp = @stream_socket_server(
+                'tcp://'.$this->listenAddress.':'.$this->port,
+                $tcpError,
+                $tcpMessage,
+            );
+            if (is_resource($tcp)) {
+                break;
+            }
+
             fclose($udp);
-
-            throw new RuntimeException('Could not determine the private DNS UDP port.');
-        }
-
-        $this->port = (int) substr($name, strrpos($name, ':') + 1);
-        $tcp = @stream_socket_server(
-            'tcp://'.$this->listenAddress.':'.$this->port,
-            $tcpError,
-            $tcpMessage,
-        );
-        if (! is_resource($tcp)) {
-            fclose($udp);
-
-            throw new RuntimeException($tcpMessage !== '' ? $tcpMessage : 'Could not bind the private DNS TCP socket.');
+            $this->port = $requested;
+            if ($requested !== 0 || $attempt >= self::EphemeralBindAttempts) {
+                throw new RuntimeException($tcpMessage !== '' ? $tcpMessage : 'Could not bind the private DNS TCP socket.');
+            }
         }
 
         stream_set_blocking($udp, false);
