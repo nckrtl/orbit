@@ -26,6 +26,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Projects\ProjectLifecycleRunner;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -47,7 +48,9 @@ use App\Models\Process;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Schedule;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 use Tests\Support\Schedules\FakeScheduleRuntimeManager;
@@ -850,9 +853,99 @@ it('closes a public Route handler before deleting its identity and leaves unrela
         ->toBeFalse();
 });
 
+it('removes an Instance that has no Route without touching Route projections', function (string $environment): void {
+    $instance = orb181_coordinator_instance(environment: $environment, withRoute: false);
+    $removal = $this->orb181Coordinator->execute($instance, false);
+    $member = $removal->members->sole();
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($member->route_id)
+        ->toBeNull()
+        ->and($member->route_outcome)
+        ->toBe('none')
+        ->and($member->route_cleared_at)
+        ->not->toBeNull()
+        ->and($member->row_deleted_at)
+        ->not->toBeNull()
+        ->and(AppInstance::query()->whereKey($instance->id)->exists())
+        ->toBeFalse()
+        ->and($this->orb181Projector->calls)
+        ->toBe(["runtime:{$instance->id}"]);
+})->with(['development', 'production']);
+
+it('removes the Route an operator set on a monorepo Instance', function (): void {
+    $instance = orb181_coordinator_instance();
+    $instance->app->update(['type' => ProjectType::Monorepo]);
+    $routeId = $instance->routes->sole()->id;
+    $removal = $this->orb181Coordinator->execute($instance->refresh()->load(['app', 'node', 'routes.targets']), false);
+    $member = $removal->members->sole();
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($member->route_id)
+        ->toBe($routeId)
+        ->and($member->route_outcome)
+        ->toBe('deleted')
+        ->and(Route::query()->find($routeId))
+        ->toBeNull()
+        ->and($this->orb181Projector->calls)
+        ->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
+});
+
+it('refuses removal evidence that hides a Route target or claims no Route for a routed Instance', function (): void {
+    $routed = orb181_coordinator_instance();
+    $routeless = orb181_coordinator_instance(withRoute: false);
+    $removal = fn (AppInstance $instance): AppInstanceRemoval => AppInstanceRemoval::query()->create([
+        'id' => (string) Str::uuid(),
+        'requested_app_instance_id' => $instance->id,
+        'requested_name' => $instance->name,
+        'force' => false,
+        'inventory_digest' => str_repeat('d', 64),
+        'total' => 1,
+        'status' => 'removing',
+        'current_step' => 'source_preparation',
+    ]);
+    $member = static fn (AppInstanceRemoval $operation, AppInstance $instance, ?int $routeId): AppInstanceRemovalMember => $operation->members()->create([
+        'position' => 0,
+        'app_instance_id' => $instance->id,
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'route_id' => $routeId,
+        'name' => $instance->name,
+        'environment' => 'development',
+        'source_layout' => 'checkout',
+        'repository_identity' => $instance->app->repository_identity,
+        'checkout_path' => $instance->checkout_path,
+        'root' => 'public',
+        'branch' => 'dev',
+        'starting_commit' => str_repeat('a', 40),
+        'source_commit' => str_repeat('a', 40),
+        'common_repository_path' => $instance->checkout_path,
+        'source_identity' => "test:{$instance->id}",
+        'linked_worktree_paths' => [$instance->checkout_path],
+        'source_digest' => str_repeat('e', 64),
+    ]);
+
+    expect(fn () => $member($removal($routed), $routed, null))
+        ->toThrow(QueryException::class, 'Invalid AppInstance removal member contract.');
+
+    $accepted = $member($removal($routeless), $routeless, null);
+    $routeless->update(['status' => AppInstanceState::Removing]);
+    $accepted->update(['source_prepared_at' => now()]);
+
+    expect(fn () => $accepted->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']))
+        ->toThrow(QueryException::class, 'Invalid AppInstance removal member contract.');
+
+    $accepted->refresh()->update(['route_cleared_at' => now(), 'route_outcome' => 'none']);
+
+    expect($accepted->refresh()->route_outcome)->toBe('none');
+});
+
 function orb181_coordinator_instance(
     string $environment = 'development',
     string $layout = AppInstanceSourceLayout::Checkout->value,
+    bool $withRoute = true,
 ): AppInstance {
     static $sequence = 0;
     $sequence++;
@@ -863,6 +956,7 @@ function orb181_coordinator_instance(
         'repository_url' => "https://example.test/{$slug}.git",
         'default_branch' => 'main',
         'root' => 'public',
+        'type' => $withRoute ? ProjectType::LaravelApp : ProjectType::Monorepo,
     ]);
     $cluster = $environment === 'production'
         ? Cluster::query()->create(['name' => "production-{$sequence}", 'state' => 'active'])
@@ -890,6 +984,12 @@ function orb181_coordinator_instance(
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::SourceResolved,
     ]);
+    if (! $withRoute) {
+        $instance->update(['status' => AppInstanceState::Active]);
+
+        return $instance->load(['app', 'node', 'routes.targets']);
+    }
+
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $environment === 'production' ? null : $node->id,
