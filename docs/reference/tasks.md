@@ -38,7 +38,7 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `implementer_agent_thread_id` | Task | Fresh implementer thread for that subtask |
 | `pr_url` | TaskGroup | Pull request opened after the last sign-off |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
-| `implementer_model` / `reviewer_model` | TaskGroup | Defaults: `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
+| `implementer_model` / `reviewer_model` | TaskGroup | `ORBIT_TASKS_IMPLEMENTER_MODEL` and `ORBIT_TASKS_REVIEWER_MODEL` set them for new groups. Unset, they default to `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
 | `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
 
 Group statuses: `queued`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `pending`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
@@ -95,7 +95,7 @@ Active groups are those in `reserved`, `running`, `reviewing`, or `settling`.
 
 The Node ceiling applies once `taskable` points at an Instance on that Node. A group without an Instance is not held by a Project ceiling.
 
-A fitting claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. The selected driver must allow the Node. T3 requires an active `t3-code` Process whose desired state is `running`, matching the managed T3 service. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver check and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
+A fitting claimed group moves from `queued` to `reserved`. InstanceProvisioning assigns the shared Instance on an active Linux `app-dev` Node with capacity and a WireGuard address. Both of the group's drivers must allow the Node. T3 requires an active `t3-code` Process, and Pi requires an active `pi-server` Process, each with desired state `running`. This recorded state is the placement signal, not an HTTP health probe. A [development node exclusion](/reference/development-node-exclusions) removes that Node from the choice before the driver checks and the ceiling. If no remaining Node fits, provisioning returns no Instance and the group remains `queued` without a workspace.
 
 When the assignment fits the Node ceiling, the group becomes `running`. AgentSpawner starts the shared reviewer and first implementer through the selected driver. The Gateway stores their Orbit thread IDs only after creation and the opening turn succeed.
 
@@ -138,7 +138,7 @@ It is forward-only; reverting to an older Gateway requires restoring a database 
 
 Completion and failure remain visible until a new turn starts. Task completion still requires the scheduler workflow and review. Failed observations preserve the last known state and metrics and mark them unavailable. Connection health does not change a thread to idle or failed. Unavailable observations use the outage grace period and cannot advance a task from cached state.
 
-`ORBIT_TASKS_AGENT_DRIVER` selects the registered driver for new groups and defaults to `t3`. Existing groups and threads keep their recorded driver. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
+A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups. Each defaults to `ORBIT_TASKS_AGENT_DRIVER`, which defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
 The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
 
@@ -159,6 +159,14 @@ After review findings are relayed, the Gateway waits for a newer implementer tur
 A reviewer posts `changes_requested` or `approved`. The Gateway relays the findings to the implementer and returns the task to `running` only after that send succeeds. A failed send stays in `reviewing` and is retried. An approval is checked in code before advancing. After the last subtask, the group moves to `settling` and remains active until its expected pull request is merged.
 
 `thread.turn.start` sends the T3 0.0.42 message struct `{messageId, role: user, text, attachments: []}` plus `modelSelection`. A flat string message is rejected by T3.
+
+### Pi driver
+
+The `pi` driver runs a thread on the [Pi server](/reference/pi-server) of the Node that owns the Instance. [ADR 0116](/decisions/0116-run-task-implementers-on-pi) records the decision. A Node allows the driver while its `pi-server` Process is active with desired state `running`.
+
+The Gateway chooses the session ID and stores it as the external ID. It creates the session in the Instance checkout, then starts the opening turn. Each send uses a new key; a retry reuses that key, so an ambiguous failure never starts a second turn. The driver maps model names to Pi's `provider/model` form. When `ORBIT_PI_PROVIDER` is set, such as to a CLIProxyAPI provider, every plain name uses it. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused, including through a proxy.
+
+Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`, so the `composer check` rubric items read Pi threads the same way as T3 threads. Other tools show their name and target, not file contents. Tokens come from Pi's cumulative usage. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 
 ## Session routing
 
@@ -255,7 +263,11 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
 | `ORBIT_TASKS_GITHUB_TOKEN` | GitHub token with repository and pull-request read access for final approval verification and merge watching |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
-| `ORBIT_TASKS_AGENT_DRIVER` | Registered driver key for new groups. Defaults to `t3` |
+| `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
+| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
+| `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
+| `ORBIT_TASKS_IMPLEMENTER_MODEL` | Implementer model for new groups. Defaults to `gpt-5.6-luna` |
+| `ORBIT_TASKS_REVIEWER_MODEL` | Reviewer model for new groups. Defaults to `claude-opus-5` |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
 | `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |

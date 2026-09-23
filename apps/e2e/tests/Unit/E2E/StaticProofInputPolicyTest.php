@@ -40,6 +40,7 @@ describe('StaticProofInputPolicy', function (): void {
         'documentation tooling' => ['apps/docs/app/Rules/Rule.php', 'non-runtime'],
         'desktop app' => ['apps/desktop/package.json', 'non-runtime'],
         'web app' => ['apps/web/package.json', 'non-runtime'],
+        'Pi server' => ['apps/pi-server/package.json', 'non-runtime'],
         'agent instructions' => ['apps/e2e/.agents/skills/example/SKILL.md', 'non-runtime'],
         'tests' => ['apps/e2e/tests/Unit/ExampleTest.php', 'non-runtime'],
         'CLI design fixture' => ['apps/cli/design/Flows/NodeAddFlowCommand.php', 'non-runtime'],

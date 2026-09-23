@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\LaravelAiTaskSessionClassifier;
+use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
@@ -56,7 +57,7 @@ final class TasksServiceProvider extends ServiceProvider
     {
         parent::register();
 
-        $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class)]));
+        $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class), $app->make(PiDriver::class)]));
 
     }
 }

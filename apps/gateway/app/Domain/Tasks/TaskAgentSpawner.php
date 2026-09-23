@@ -43,7 +43,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         $model = $reviewer ? $group->reviewer_model : $group->implementer_model;
         $effort = $reviewer ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort;
         try {
-            $driver = $this->drivers->get($group->agent_driver);
+            $driver = $this->drivers->get($reviewer ? $group->reviewer_agent_driver : $group->implementer_agent_driver);
             $externalId = $driver->create(new AgentThreadStart($instance->node, $instance, $title, $prompt, $model, $effort, $role));
         } catch (AgentDriverException) {
             Log::error('Agent conversation creation failed.', ['task_group_id' => $group->id, 'task_id' => $taskId, 'role' => $role->value]);

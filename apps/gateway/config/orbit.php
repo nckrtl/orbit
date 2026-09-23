@@ -39,8 +39,18 @@ return [
         'port' => max(1, (int) env('ORBIT_T3_PORT', 3773)),
         'token' => env('ORBIT_T3_TOKEN'),
     ],
+    'pi' => [
+        'port' => max(1, (int) env('ORBIT_PI_PORT', 3774)),
+        'token' => env('ORBIT_PI_TOKEN'),
+        // A models.json provider such as a CLIProxyAPI endpoint. Plain model names use it when set.
+        'provider' => env('ORBIT_PI_PROVIDER'),
+    ],
     'tasks' => [
-        'agent_driver' => env('ORBIT_TASKS_AGENT_DRIVER', 't3'),
+        'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', env('ORBIT_TASKS_AGENT_DRIVER', 't3')),
+        'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', env('ORBIT_TASKS_AGENT_DRIVER', 't3')),
+        // Models for new groups. Unset keeps TaskAgentDefaults.
+        'implementer_model' => env('ORBIT_TASKS_IMPLEMENTER_MODEL'),
+        'reviewer_model' => env('ORBIT_TASKS_REVIEWER_MODEL'),
         'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
