@@ -23,7 +23,7 @@ use Tests\Support\LocalShellSshExecutor;
 
 function check_runner_checkout(string $check): string
 {
-    $checkout = sys_get_temp_dir().'/orbit-task-check-'.bin2hex(random_bytes(6));
+    $checkout = test()->directory.'/'.bin2hex(random_bytes(6));
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
     file_put_contents($checkout.'/composer.json', json_encode(['scripts' => ['check' => $check]], JSON_THROW_ON_ERROR));
     file_put_contents($checkout.'/.gitignore', "ignored/\n");
@@ -82,10 +82,40 @@ function check_runner_wait(RemoteTaskCheckRunner $runner, AppInstance $instance,
     throw new RuntimeException('The check did not finish.');
 }
 
+/**
+ * Run the real `check status` with a stubbed process lookup. The lookup answers whether the check is alive,
+ * and first runs `$meanwhile`, so a test can place a result write at the moment status looks up the process.
+ *
+ * @return array<string, mixed>
+ */
+function check_runner_status(bool $alive, string $meanwhile = ''): array
+{
+    $script = test()->directory.'/script/check';
+    File::ensureDirectoryExists(dirname($script));
+    File::copy(resource_path('tasks/check'), $script);
+    $status = new Process(['python3', '-c', <<<'PYTHON'
+        import importlib.machinery, importlib.util, sys
+        loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+        check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+        loader.exec_module(check)
+        def process_started(pid):
+            exec(sys.argv[3], {'check': check})
+            return 'Wed Sep 23 12:00:00 2026' if sys.argv[2] == 'alive' else None
+        check.process_started = process_started
+        check.status(7, 'Wed Sep 23 12:00:00 2026')
+        PYTHON, $script, $alive ? 'alive' : 'gone', $meanwhile]);
+
+    return json_decode($status->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+}
+
+beforeEach(function (): void {
+    // Each test owns one directory, so a concurrent run on the same machine keeps its checkouts.
+    $this->directory = sys_get_temp_dir().'/orbit-task-check-'.bin2hex(random_bytes(6));
+    File::ensureDirectoryExists($this->directory);
+});
+
 afterEach(function (): void {
-    foreach (glob(sys_get_temp_dir().'/orbit-task-check-*') ?: [] as $directory) {
-        File::deleteDirectory($directory);
-    }
+    File::deleteDirectory($this->directory);
 });
 
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
@@ -191,4 +221,16 @@ it('stops at the first failing setup step without running composer check', funct
         ->and($reading->output)->toContain('cannot install')
         ->and($reading->output)->not->toContain('composer check')
         ->and(file_exists($checkout.'/never-ran'))->toBeFalse();
+});
+
+it('reports a check that writes its result and exits while status looks it up as finished, not lost', function (): void {
+    $status = check_runner_status(alive: false, meanwhile: 'with open(check.RESULT, "w") as result: result.write(\'{"exit_code": 5}\')');
+
+    expect($status['state'])->toBe('finished')
+        ->and($status['result']['exit_code'])->toBe(5);
+});
+
+it('reports a live check without a result as running, and a gone check without a result as lost', function (): void {
+    expect(check_runner_status(alive: true)['state'])->toBe('running')
+        ->and(check_runner_status(alive: false)['state'])->toBe('lost');
 });
