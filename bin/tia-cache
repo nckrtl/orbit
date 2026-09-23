@@ -62,10 +62,12 @@ def maintenance_environment():
     return environment
 
 
-def run(root, *command, capture=True):
+def run(root, *command, capture=True, tia_directory=None):
     options = {'cwd': root, 'text': True, 'start_new_session': True,
                'pass_fds': () if COMMAND_LOCK is None else (COMMAND_LOCK,),
                'env': maintenance_environment()}
+    if tia_directory is not None:
+        options['env']['ORBIT_TIA_DIRECTORY'] = str(tia_directory)
     def execute(**streams):
         # Descendants inherit maintenance ownership if the worker is interrupted.
         process = subprocess.Popen(command, **streams, **options)
@@ -279,7 +281,7 @@ def refresh_project(root, store, project, commit, installed=False, recover=False
     command = ['composer', 'test:affected']
     if recover:
         command += ['--', '--fresh']
-    run(root / project, *command, capture=False)
+    run(root / project, *command, capture=False, tia_directory=graph_path.parent)
     if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
         raise RuntimeError('Cache checkout changed during testing; publication refused.')
     graph = graph_path.read_text()

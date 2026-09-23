@@ -284,6 +284,7 @@ blocked = (
 )
 observation = {
     'command': sys.argv[1:],
+    'tia_directory': os.environ.get('ORBIT_TIA_DIRECTORY'),
     'blocked_present': [name for name in blocked if name in os.environ],
     'path_finds_fixture': os.environ.get('PATH', '').split(os.pathsep)[0] == os.environ['TIA_CACHE_FIXTURE_BIN'],
     'composer_auth_available': os.environ.get('COMPOSER_AUTH') == 'disposable-composer-auth',
@@ -324,7 +325,7 @@ elif command == 'test:affected':
             'results': {'example': {'status': 0, 'file': 'tests/ExampleTest.php'}},
         }},
     }
-    destination = Path(os.environ['TIA_CACHE_FIXTURE_CACHE']) / 'graph.json'
+    destination = Path(os.environ['ORBIT_TIA_DIRECTORY']) / 'graph.json'
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(graph))
     sys.exit(int(os.environ['TIA_CACHE_FIXTURE_TEST_EXIT']))
@@ -382,6 +383,7 @@ else:
             **os.environ,
             'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
             'ORBIT_HOME': str(orbit_home),
+            'ORBIT_TIA_DIRECTORY': str(sentinels / 'caller-cache'),
             'APP_CONFIG_CACHE': str(app_config),
             'APP_BASE_PATH': str(app_base),
             'DB_DATABASE': str(database),
@@ -459,6 +461,8 @@ else:
             [observation['command'] for observation in child_environments],
         )
         for observation in child_environments:
+            expected_cache = str(runtime_cache) if observation['command'][0] == 'test:affected' else None
+            self.assertEqual(expected_cache, observation['tia_directory'])
             self.assertEqual([], observation['blocked_present'])
             self.assertTrue(observation['path_finds_fixture'])
             self.assertTrue(observation['composer_auth_available'])

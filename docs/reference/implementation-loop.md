@@ -124,7 +124,7 @@ Use these commands from the affected project directory.
 
 TIA requires PCOV or Xdebug to record dependencies. The first run, or a run without a usable baseline, can execute the full project suite. Later runs reuse the baseline and select tests affected by changes. Run `test:affected` in each affected project for development feedback; acceptance evidence and CI remain required. A TIA skip or zero selected tests is not new acceptance evidence.
 
-Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Every `tests/Pest.php` honors `ORBIT_TIA_DIRECTORY`; only the guidance check sets it, so a fresh guidance run never replaces the seeded baseline.
+Baselines stay separate between projects. Bootstrap seeds absent worktree caches from a compatible successful main baseline. A missing or incompatible publication still needs an initial recording run. Every `tests/Pest.php` honors `ORBIT_TIA_DIRECTORY`. Guidance uses its own directory, so a fresh guidance run never replaces the seeded baseline. Main cache maintenance explicitly selects the directory it will validate and publish, including when refreshing an older main checkout with a different default cache location.
 
 ## Main test baselines
 
