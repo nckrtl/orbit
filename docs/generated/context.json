@@ -4073,6 +4073,7 @@
                 "Project",
                 "Route",
                 "Setup step",
+                "Task",
                 "Teardown step"
             ],
             "governing_adrs": [
