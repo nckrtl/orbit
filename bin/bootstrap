@@ -2,6 +2,18 @@
 
 set -euo pipefail
 
+run_checks=1
+publish_caches=1
+if [[ -n "${ORBIT_MAIN_CACHE_STORE:-}" || "${ORBIT_TIA_DIRECTORY:-.orbit-tia}" != .orbit-tia ]]; then
+    publish_caches=0
+fi
+if [[ $# -eq 1 && "$1" == --skip-checks ]]; then
+    run_checks=0
+elif [[ $# -ne 0 ]]; then
+    printf 'Usage: bin/bootstrap [--skip-checks]\n' >&2
+    exit 2
+fi
+
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
 
@@ -70,9 +82,7 @@ for project in "${projects[@]}"; do
             cp .env.example .env
         fi
 
-        cache_dir="$(mktemp -d)"
-        trap 'rm -rf "$cache_dir"' EXIT
-        COMPOSER_CACHE_DIR="$cache_dir" composer install --no-interaction --prefer-dist
+        composer install --no-interaction --prefer-dist
     ) >"$log_directory/${project//\//-}.log" 2>&1 &
     pids+=("$!")
 done
@@ -99,8 +109,9 @@ fi
 
 ensure_gateway_app_key
 
-# Cache reuse is optional feedback and must not make bootstrap a test gate.
+# A cache miss falls back to normal checks.
 "$repository_root/bin/tia-cache" seed --repository="$repository_root" || printf 'TIA cache seeding unavailable.\n' >&2
+unset ORBIT_MAIN_CACHE_STORE
 
 pids=()
 
@@ -126,4 +137,27 @@ for index in "${!projects[@]}"; do
     sed 's/^/  /' "$log_file"
 done
 
-exit "$failed"
+if ((failed != 0)); then
+    exit "$failed"
+fi
+
+if ((run_checks)); then
+    checked_commit=""
+    if ((publish_caches)) && [[ -z "$(git -C "$repository_root" status --porcelain)" ]] \
+        && [[ "$(git -C "$repository_root" rev-parse HEAD)" == "$(git -C "$repository_root" rev-parse --verify refs/remotes/origin/main 2>/dev/null)" ]]; then
+        checked_commit="$(git -C "$repository_root" rev-parse HEAD)"
+    fi
+    for project in "${projects[@]}"; do
+        printf '\n[%s] affected tests and quality checks\n' "$project"
+        (
+            cd "$repository_root/$project"
+            export COMPOSER_PROCESS_TIMEOUT=0
+            composer test:affected
+            composer check
+        )
+    done
+    if [[ -n "$checked_commit" ]]; then
+        "$repository_root/bin/tia-cache" publish --repository="$repository_root" --commit="$checked_commit" \
+            || printf 'Bootstrap cache publication unavailable.\n' >&2
+    fi
+fi

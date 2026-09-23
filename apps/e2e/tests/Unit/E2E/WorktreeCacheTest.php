@@ -64,7 +64,7 @@ it('seeds all five projects during bootstrap with independent cache copies', fun
         if [ "$1" = "install" ]; then
             mkdir -p vendor
             touch vendor/installed
-        elif [ "$1" = "guidance:check" ]; then
+        elif [ "$1" = "guidance:check" ] || [ "$1" = "test:affected" ] || [ "$1" = "check" ]; then
             test -f vendor/installed && test -f vendor/pint.cache && test -f vendor/phpstan/cache/resultCache.php
         else
             exit 2
@@ -89,7 +89,7 @@ it('seeds all five projects during bootstrap with independent cache copies', fun
     expect(file_get_contents($worktree.'/apps/cli/vendor/pint.cache'))->toBe('worktree result');
 });
 
-it('selects the most recent compatible worktree for each cache', function (): void {
+it('uses primary main caches and ignores newer feature worktree caches', function (): void {
     ['root' => $root, 'worktree' => $worktree, 'run' => $run] = worktreeCacheFixture();
     $sibling = $root.'/.worktrees/sibling';
     expect($run->path($root)->run(['git', 'worktree', 'add', '-b', 'sibling', $sibling])->successful())->toBeTrue();
@@ -101,9 +101,27 @@ it('selects the most recent compatible worktree for each cache', function (): vo
     file_put_contents($sibling.'/apps/cli/phpstan.neon', 'different configuration');
 
     expect($run->run([$root.'/bin/worktree-cache', '--worktree='.$worktree])->successful())->toBeTrue();
-    expect(file_get_contents($worktree.'/apps/cli/vendor/pint.cache'))->toBe('sibling cache');
+    expect(file_get_contents($worktree.'/apps/cli/vendor/pint.cache'))->toBe('primary cache');
     expect(file_get_contents($worktree.'/apps/cli/vendor/phpstan/cache/resultCache.php'))->toBe('primary cache');
 });
+
+it('refuses unpublished caches when the primary checkout is not an allowed source', function (string $condition): void {
+    ['root' => $root, 'worktree' => $worktree, 'run' => $run] = worktreeCacheFixture();
+    writeQualityCache($root, 'apps/cli', 'vendor/pint.cache', 'unpublished cache');
+
+    if ($condition === 'dirty main') {
+        file_put_contents($root.'/uncommitted.php', '<?php');
+    } elseif ($condition === 'feature branch') {
+        expect($run->path($root)->run(['git', 'switch', '-c', 'primary-feature'])->successful())->toBeTrue();
+    } else {
+        $run = $run->env(['ORBIT_MAIN_CACHE_STORE' => $root.'/missing-publications']);
+    }
+
+    $result = $run->run([$worktree.'/bin/worktree-cache']);
+
+    expect($result->successful())->toBeTrue();
+    expect(file_exists($worktree.'/apps/cli/vendor/pint.cache'))->toBeFalse();
+})->with(['dirty main', 'feature branch', 'transported publications']);
 
 it('skips incompatible dependency locks and caches that are missing or symlinked', function (): void {
     ['root' => $root, 'worktree' => $worktree, 'run' => $run] = worktreeCacheFixture();

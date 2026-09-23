@@ -3172,6 +3172,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0119-publish-main-caches-from-clean-bootstrap-runs.md",
+            "title": "ADR 0119: Share caches after bootstrap",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0052",
+                "0054",
+                "0119"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3941,7 +3962,8 @@
                 "0054",
                 "0076",
                 "0113",
-                "0114"
+                "0114",
+                "0119"
             ]
         },
         {
@@ -4076,6 +4098,7 @@
                 "Project",
                 "Route",
                 "Setup step",
+                "Task",
                 "Teardown step"
             ],
             "governing_adrs": [

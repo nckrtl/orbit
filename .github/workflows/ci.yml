@@ -81,7 +81,7 @@ jobs:
       - name: Install all project dependencies for E2E integration tests
         if: matrix.directory == 'apps/e2e'
         working-directory: .
-        run: bin/bootstrap
+        run: bin/bootstrap --skip-checks
 
       - name: Validate Composer metadata
         run: composer validate --strict

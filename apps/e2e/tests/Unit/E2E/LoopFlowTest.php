@@ -91,8 +91,9 @@ it('creates clean worktrees without plans or inherited delivery selections', fun
     expect($run->path($root)->run(['git', 'show-ref', '--verify', 'refs/heads/tst-42'])->successful())->toBeFalse();
 });
 
-it('pulls clean primary main and queues warming without making it a worktree creation gate', function (): void {
+it('creates from fetched main without updating primary or queuing duplicate checks', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $primaryHead = $run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output();
     $remote = temporaryPath('orbit-flow-new-main-', 6);
     $run->run(['git', 'init', '--bare', $remote]);
     $run->path($root)->run(['git', 'remote', 'add', 'origin', $remote]);
@@ -107,21 +108,32 @@ it('pulls clean primary main and queues warming without making it a worktree cre
     $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-46']);
 
     expect($result->successful())->toBeTrue($result->errorOutput());
-    expect(file_get_contents($root.'/next.txt'))->toBe('new main');
+    expect(file_exists($root.'/next.txt'))->toBeFalse();
+    expect($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output())->toBe($primaryHead);
     expect(file_get_contents($root.'-worktrees/tst-46/next.txt'))->toBe('new main');
-    expect(trim(file_get_contents($root.'/.git/tia-queued')))->toBe('refresh --background --repository='.$root);
+    expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
     expect($run->path($root)->run(['git', 'status', '--porcelain'])->output())->toBe('');
 });
 
-it('preserves dirty primary main before attempting new worktree setup', function (): void {
+it('creates from main while preserving a dirty primary on another branch', function (): void {
     ['root' => $root, 'run' => $run] = loopFlowFixture();
+    $run->path($root)->run(['git', 'remote', 'add', 'origin', $root]);
+    $run->path($root)->run(['git', 'checkout', '-b', 'running-checkout']);
+    $primaryHead = $run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output();
     file_put_contents($root.'/shared.txt', 'active migration');
+    $run->path($root)->run(['git', 'add', 'shared.txt']);
+    $index = $run->path($root)->run(['git', 'write-tree'])->output();
+    file_put_contents($root.'/untracked.txt', 'unrelated work');
 
     $result = $run->path($root)->run([$root.'/bin/worktree-create', 'TST-47']);
 
-    expect($result->successful())->toBeFalse();
+    expect($result->successful())->toBeTrue($result->errorOutput());
     expect(file_get_contents($root.'/shared.txt'))->toBe('active migration');
-    expect(file_exists($root.'-worktrees/tst-47'))->toBeFalse();
+    expect(file_get_contents($root.'/untracked.txt'))->toBe('unrelated work');
+    expect($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output())->toBe($primaryHead);
+    expect($run->path($root)->run(['git', 'write-tree'])->output())->toBe($index);
+    expect(trim($run->path($root)->run(['git', 'branch', '--show-current'])->output()))->toBe('running-checkout');
+    expect(file_get_contents($root.'-worktrees/tst-47/shared.txt'))->toBe("base\n");
     expect(file_exists($root.'/.git/tia-queued'))->toBeFalse();
 });
 

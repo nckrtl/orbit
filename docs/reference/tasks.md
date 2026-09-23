@@ -195,7 +195,7 @@ The reminder does not say that the thread is blocked and does not ask for an `as
 
 The next idle evaluation asks for assistance when any item still fails. Repeated reminder-send failures ask for assistance on the fifth failure; a successful Jev answer does not reset that send counter. The same pending input does not count as that next evaluation. A `Failed` thread asks for assistance without a reminder.
 
-A missing Jev answer, or one without a confidence, counts as a communication failure and asks for assistance on the fifth consecutive failure. The assistance reason names each remaining item, and a Jev item includes its choice and confidence.
+A missing Jev answer, one without a confidence, a missing or empty `TYPESAFE_API_KEY`, or a failed or unreachable TypeSafe request counts as a communication failure for that task and asks for assistance on the fifth consecutive failure. The tick continues with the other tasks. The recorded reason names the failure but never includes the provider's response. The assistance reason names each remaining item, and a Jev item includes its choice and confidence.
 
 Typed comments are the workflow record. They preserve the full body, author, timestamp, task and thread context, and reviewer attempt metadata. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` comment preserves the history, resets the completion and communication attempts, and continues the blocked AgentThread idempotently; failed delivery leaves the task visibly blocked.
 
