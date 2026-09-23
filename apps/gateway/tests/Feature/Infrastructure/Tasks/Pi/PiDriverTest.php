@@ -259,6 +259,18 @@ describe('observe', function (): void {
         ]);
     });
 
+    it('shows a docs search by its queries', function (): void {
+        $entries = [
+            ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
+                ['type' => 'toolCall', 'id' => 'call-9', 'name' => 'search_docs', 'arguments' => ['queries' => ['queue rate limiting', 'throttle']]],
+            ]]],
+            ['id' => 'e2', 'timestamp' => '2026-09-22T10:00:01.000Z', 'message' => ['role' => 'toolResult', 'toolCallId' => 'call-9', 'toolName' => 'search_docs', 'isError' => false, 'content' => [['type' => 'text', 'text' => 'Rate Limiting ...']]]],
+        ];
+        Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('done', $entries))]);
+
+        expect(array_last(pi_driver()->observe(pi_thread(pi_node()))->entries)['text'])->toBe('Searching docs for "queue rate limiting", "throttle"');
+    });
+
     it('carries the reported failure', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('failed', error: 'quota exceeded'))]);
 

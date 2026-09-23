@@ -84,8 +84,12 @@ final class PiTranscript
         } else {
             $target = $this->string($arguments['path'] ?? $arguments['file_path'] ?? $arguments['pattern'] ?? null);
             $verb = self::FILE_VERBS[$name] ?? null;
-            $text = ($verb !== null && $target !== '' ? $verb.' '.basename($target) : trim($name.' '.$target))
-                .($failed ? ' failed: '.mb_substr($output, 0, 500) : '');
+            $queries = array_values(array_filter((array) ($arguments['queries'] ?? []), is_string(...)));
+            $text = match (true) {
+                $name === 'search_docs' && $queries !== [] => 'Searching docs for '.implode(', ', array_map(static fn (string $query): string => '"'.$query.'"', $queries)),
+                $verb !== null && $target !== '' => $verb.' '.basename($target),
+                default => trim($name.' '.$target),
+            }.($failed ? ' failed: '.mb_substr($output, 0, 500) : '');
         }
 
         return ['id' => $id, 'kind' => 'activity', 'label' => $name, 'text' => ltrim($text, "\n"), 'at' => $at];
