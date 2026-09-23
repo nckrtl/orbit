@@ -78,6 +78,7 @@
         "lint": "@format:check",
         "rector": "vendor/bin/rector process --dry-run --no-progress-bar",
         "test": "vendor/bin/pest --parallel --tia --compact",
+        "test:calibration": "vendor/bin/pest --configuration=phpunit.calibration.xml --no-tia",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

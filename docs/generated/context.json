@@ -3072,7 +3072,8 @@
             "governing_adrs": [
                 "0110",
                 "0113",
-                "0114"
+                "0114",
+                "0117"
             ]
         },
         {
@@ -3098,6 +3099,25 @@
                 "0071",
                 "0073",
                 "0115"
+            ]
+        },
+        {
+            "path": "docs/decisions/0117-judge-the-blocked-question-on-role-evidence.md",
+            "title": "ADR 0117: Judge the blocked question on the role's own evidence",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task",
+                "Task group",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0114",
+                "0117"
             ]
         },
         {
@@ -3245,7 +3265,8 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0117"
             ]
         },
         {
@@ -4278,7 +4299,9 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Database",
                 "Gateway",
@@ -4297,7 +4320,8 @@
                 "0110",
                 "0112",
                 "0113",
-                "0114"
+                "0114",
+                "0117"
             ]
         },
         {
