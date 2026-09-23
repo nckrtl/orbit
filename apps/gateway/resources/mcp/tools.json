@@ -6215,9 +6215,6 @@
           "type": {
             "type": "string",
             "enum": [
-              "ready_for_review",
-              "changes_requested",
-              "approved",
               "assistance_requested",
               "resolution"
             ]
@@ -6235,45 +6232,6 @@
               "integer",
               "null"
             ]
-          },
-          "review_attempt": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "minimum": 1,
-            "description": "Conditionally required."
-          },
-          "reviewer_thread_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 255,
-            "description": "Conditionally required."
-          },
-          "driver_turn": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "maxLength": 255,
-            "description": "Conditionally required."
-          },
-          "commit_sha": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
-          },
-          "pr_url": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uri",
-            "maxLength": 2048
           }
         },
         "additionalProperties": false,

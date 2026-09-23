@@ -12,7 +12,6 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskTranscriptCheck;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Classification\Choice;
 use Laravel\Ai\PendingResponses\PendingClassification;
@@ -49,37 +48,6 @@ final readonly class LaravelAiTaskSessionClassifier implements TaskSessionClassi
         }
 
         return new TaskJevDecision($outcome, $answer->confidence, 'Jev selected '.$outcome->value.'.');
-    }
-
-    public function classifyTranscript(TaskSessionObservation $observation, TaskThreadRole $role): array
-    {
-        $definitions = [
-            'blocked' => $role === TaskThreadRole::Implementer
-                ? ['Is the agent blocked on something the brief cannot resolve?', 'The agent is blocked.', 'The agent is not blocked.']
-                : ['Is the reviewer blocked on something the review cannot resolve?', 'The reviewer is blocked.', 'The reviewer is not blocked.'],
-        ];
-
-        $evidence = $observation->transcriptEvidence($role);
-        if ($evidence === null) {
-            throw new TaskSessionClassificationException('The '.$role->value.' thread is not in the observation.');
-        }
-
-        $classification = Classification::of($evidence);
-        foreach ($definitions as $key => [$prompt, $yes, $no]) {
-            $classification = $classification->question($key, new Choice($prompt, ['yes' => $yes, 'no' => $no]));
-        }
-
-        $answers = $this->answers($classification);
-        $checks = [];
-        foreach (array_keys($definitions) as $key) {
-            $answer = $answers[$key] ?? null;
-            if (! $answer instanceof ChoiceAnswer || $answer->confidence === null) {
-                throw new TaskSessionClassificationException('TypeSafe Jev did not return the '.$key.' check.');
-            }
-            $checks[$key] = new TaskTranscriptCheck($key, $answer->choice, $answer->confidence, $answer->probabilities);
-        }
-
-        return $checks;
     }
 
     public function classify(TaskSessionObservation $observation): TaskSessionDecision

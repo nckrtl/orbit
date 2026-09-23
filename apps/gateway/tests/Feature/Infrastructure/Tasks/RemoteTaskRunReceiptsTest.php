@@ -10,8 +10,6 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
@@ -21,6 +19,7 @@ use App\Models\Node;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LocalShellSshExecutor;
 
 function run_receipt_checkout(): string
 {
@@ -66,21 +65,6 @@ function run_receipts(SshExecutor $transport): RemoteTaskRunReceipts
     ));
 }
 
-/** Runs each remote command in a local shell, so the real program is exercised. */
-function run_receipt_local_shell(): SshExecutor
-{
-    return new class implements SshExecutor
-    {
-        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-        {
-            $process = new Process($command->arguments, null, null, $command->input);
-            $process->run();
-
-            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
-        }
-    };
-}
-
 /** @param list<string> $arguments */
 function run_receipt_script(string $checkout, array $arguments): Process
 {
@@ -99,7 +83,7 @@ afterEach(function (): void {
 it('installs the run script outside the tracked tree and reads the receipt it writes', function (): void {
     $checkout = run_receipt_checkout();
     $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(run_receipt_local_shell());
+    $receipts = run_receipts(new LocalShellSshExecutor);
 
     $receipts->prepare($instance, TaskThreadRole::Implementer);
     $written = run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary', ' Added the export. ']);
@@ -118,7 +102,7 @@ it('installs the run script outside the tracked tree and reads the receipt it wr
 it('removes a receipt only while its content is unchanged', function (): void {
     $checkout = run_receipt_checkout();
     $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(run_receipt_local_shell());
+    $receipts = run_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
     run_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.']);
     $first = $receipts->read($instance);
@@ -135,7 +119,7 @@ it('removes a receipt only while its content is unchanged', function (): void {
 it('removes an earlier receipt when a turn starts', function (): void {
     $checkout = run_receipt_checkout();
     $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(run_receipt_local_shell());
+    $receipts = run_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
     run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
 
@@ -147,7 +131,7 @@ it('removes an earlier receipt when a turn starts', function (): void {
 it('refuses input that does not fit the turn', function (TaskThreadRole $role, array $arguments, string $error): void {
     $checkout = run_receipt_checkout();
     $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(run_receipt_local_shell());
+    $receipts = run_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, $role);
 
     $process = run_receipt_script($checkout, $arguments);

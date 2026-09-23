@@ -25,11 +25,6 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
         return $this->run($instance, 'git -C "$checkout" rev-parse --abbrev-ref HEAD');
     }
 
-    public function isClean(AppInstance $instance): bool
-    {
-        return $this->run($instance, 'git -C "$checkout" status --porcelain --untracked-files=all') === '';
-    }
-
     /**
      * Composer resolves an abbreviated command name, so `composer check` runs the built-in
      * `check-platform-reqs` command when the project defines no `check` script.

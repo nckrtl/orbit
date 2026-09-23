@@ -12,7 +12,5 @@ interface TaskWorkspaceStateReader
 
     public function currentBranch(AppInstance $instance): ?string;
 
-    public function isClean(AppInstance $instance): bool;
-
     public function definesComposerCheckScript(AppInstance $instance): bool;
 }

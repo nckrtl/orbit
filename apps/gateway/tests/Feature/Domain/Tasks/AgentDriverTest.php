@@ -44,7 +44,7 @@ function driver_group(): array
     $registry = new AgentDriverRegistry([$driver]);
     app()->instance(AgentDriverRegistry::class, $registry);
     $spawner = app(AgentSpawner::class);
-    $group->update(['reviewer_agent_thread_id' => $spawner->spawnReviewer($group)]);
+    $group->update(['reviewer_agent_thread_id' => $spawner->spawnReviewer($task)]);
     $task->update(['implementer_agent_thread_id' => $spawner->spawnImplementer($task)]);
 
     return [$group, $task, $driver, $registry];
@@ -63,7 +63,7 @@ it('creates the conversation for each role through the driver recorded for that 
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$implementer, $reviewer]));
     $spawner = app(AgentSpawner::class);
 
-    $reviewerThread = AgentThread::query()->findOrFail($spawner->spawnReviewer($group));
+    $reviewerThread = AgentThread::query()->findOrFail($spawner->spawnReviewer($task));
     $implementerThread = AgentThread::query()->findOrFail($spawner->spawnImplementer($task));
 
     expect($reviewerThread->driver)->toBe('reviewer-runtime')

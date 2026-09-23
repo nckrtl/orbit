@@ -5,22 +5,19 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 /**
  * Starts agent conversations on the Node that owns the group's App instance.
  *
- * A no-op implementation returns null. A spawner implementation starts one
- * long-lived reviewer for the group and a fresh implementer per subtask, then
- * hands settled subtasks to the reviewer and records the sign-off commit.
+ * A no-op implementation returns null. A spawner implementation starts a fresh
+ * implementer per subtask and one reviewer for the group at its first handoff,
+ * then sends that reviewer each later handoff.
  */
 interface AgentSpawner
 {
-    public function spawnReviewer(TaskGroup $group): ?int;
+    public function spawnReviewer(Task $task): ?int;
 
     public function spawnImplementer(Task $task): ?int;
 
     public function requestReview(Task $task): void;
-
-    public function signOff(Task $task): ?string;
 }

@@ -120,8 +120,10 @@ function scheduler_recording_spawner(): AgentSpawner
         /** @var list<string> */
         public array $events = [];
 
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             $this->events[] = 'reviewer';
 
             return test_agent_thread($group, 'reviewer-thread')->id;
@@ -137,13 +139,6 @@ function scheduler_recording_spawner(): AgentSpawner
         public function requestReview(Task $task): void
         {
             $this->events[] = 'review:'.$task->position;
-        }
-
-        public function signOff(Task $task): ?string
-        {
-            $this->events[] = 'signoff:'.$task->position;
-
-            return 'sha-'.$task->position;
         }
     };
 }
@@ -257,8 +252,10 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
@@ -268,11 +265,6 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return 'signoff-sha';
-        }
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
@@ -280,7 +272,7 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
     expect($claimed)->not->toBeNull()
         ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
         ->and($claimed?->taskable_id)->toBe($instance->id)
-        ->and($claimed?->reviewer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'reviewer-thread')->sole()->id)
+        ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
         ->and($claimed?->tasks->first()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-thread')->sole()->id)
         ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer']);
@@ -304,8 +296,10 @@ it('fails a group and its first task when the run script cannot be installed', f
     {
         public int $implementers = 0;
 
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
@@ -317,11 +311,6 @@ it('fails a group and its first task when the run script cannot be installed', f
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return null;
-        }
     };
     app()->instance(AgentSpawner::class, $spawner);
     mock(TaskRunReceipts::class)->shouldReceive('prepare')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
@@ -333,7 +322,7 @@ it('fails a group and its first task when the run script cannot be installed', f
         ->and($spawner->implementers)->toBe(0);
 });
 
-it('fails a group when the reviewer spawn returns no thread id', function (): void {
+it('keeps the task in review and counts a communication failure when the reviewer spawn at the first handoff returns no thread id', function (): void {
     $app = scheduler_app('missing-reviewer');
     $instance = scheduler_instance($app, scheduler_node('missing-reviewer-node', '10.44.0.96'), 'workspace');
     $group = queued_group($app, 'Missing reviewer');
@@ -349,7 +338,7 @@ it('fails a group when the reviewer spawn returns no thread id', function (): vo
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
             return null;
         }
@@ -360,20 +349,18 @@ it('fails a group when the reviewer spawn returns no thread id', function (): vo
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return 'signoff-sha';
-        }
     });
 
-    $claimed = app(TaskScheduler::class)->claimNext();
+    app(TaskScheduler::class)->claimNext();
+    $task = $group->tasks()->sole();
+    app(TaskScheduler::class)->settleImplementer($task);
 
-    expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBeNull()
-        ->and($group->tasks->first()?->fresh()?->status)->toBe(TaskStatus::Pending)
-        ->and($group->tasks->first()?->fresh()?->implementer_agent_thread_id)->toBeNull();
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->communication_failures)->toBe(1)
+        ->and($task->fresh()?->review_notified_attempt)->toBeNull()
+        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'reviewer']);
 });
 
 it('fails a group and its first task when the implementer spawn returns no thread id', function (): void {
@@ -392,8 +379,10 @@ it('fails a group and its first task when the implementer spawn returns no threa
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
@@ -403,18 +392,13 @@ it('fails a group and its first task when the implementer spawn returns no threa
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return 'signoff-sha';
-        }
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
-        ->and($group->fresh()?->reviewer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'reviewer-thread')->sole()->id)
+        ->and($group->fresh()?->reviewer_agent_thread_id)->toBeNull()
         ->and($group->tasks->first()?->fresh()?->status)->toBe(TaskStatus::Failed)
         ->and($group->tasks->first()?->fresh()?->implementer_agent_thread_id)->toBeNull();
 });
@@ -442,8 +426,10 @@ it('fails the group when a later implementer spawn returns no thread id', functi
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
@@ -453,11 +439,6 @@ it('fails the group when a later implementer spawn returns no thread id', functi
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return 'signoff-sha';
-        }
     });
 
     $claimed = app(TaskScheduler::class)->claimNext();
@@ -580,7 +561,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         ->and($claimed?->taskable)->toBeInstanceOf(AppInstance::class)
         ->and($claimed?->taskable?->status)->toBe(AppInstanceState::SourceResolved)
         ->and($claimed?->taskable?->routes()->count())->toBe(0)
-        ->and($claimed?->reviewer_agent_thread_id)->not->toBeNull()
+        ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
         ->and($claimed?->tasks->first()?->implementer_agent_thread_id)->not->toBeNull();
 });
@@ -601,7 +582,7 @@ it('starts only the first pending subtask when a claimed group has later sibling
         ->and($tasks?->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Pending])
         ->and($tasks?->get(0)?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-1')->sole()->id)
         ->and($tasks?->get(1)?->implementer_agent_thread_id)->toBeNull()
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1']);
+        ->and($spawner->events)->toBe(['implementer:1']);
 });
 
 it('rejects starting a later subtask while a sibling is still running', function (): void {
@@ -628,7 +609,7 @@ it('rejects starting a later subtask while a sibling is still running', function
 
     expect($tasks->pluck('status')->all())->toBe([TaskStatus::Running, TaskStatus::Pending])
         ->and($tasks->get(1)?->implementer_agent_thread_id)->toBeNull()
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1']);
+        ->and($spawner->events)->toBe(['implementer:1']);
 });
 
 it('starts the next pending subtask as the sole running task after review is accepted', function (): void {
@@ -649,10 +630,10 @@ it('starts the next pending subtask as the sole running task after review is acc
         ->and($tasks->pluck('status')->all())->toBe([TaskStatus::Completed, TaskStatus::Running])
         ->and($tasks->filter(fn (Task $task): bool => $task->status === TaskStatus::Running)->count())->toBe(1)
         ->and($tasks->get(1)?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-2')->sole()->id)
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'implementer:2']);
+        ->and($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2']);
 });
 
-it('hands a settled subtask to the reviewer and starts the next implementer after sign-off', function (): void {
+it('starts the reviewer at the first handoff, reuses it for later handoffs, and starts the next implementer after approval', function (): void {
     $app = scheduler_app('handoff-app');
     $node = scheduler_node('handoff-node', '10.44.0.93');
     $instance = scheduler_instance($app, $node, 'handoff');
@@ -669,8 +650,10 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         /** @var list<string> */
         public array $events = [];
 
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             $this->events[] = 'reviewer';
 
             return test_agent_thread($group, 'reviewer-thread')->id;
@@ -686,13 +669,6 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         public function requestReview(Task $task): void
         {
             $this->events[] = 'review:'.$task->position;
-        }
-
-        public function signOff(Task $task): ?string
-        {
-            $this->events[] = 'signoff:'.$task->position;
-
-            return 'sha-'.$task->position;
         }
     };
 
@@ -722,7 +698,7 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
 
     expect($reviewing->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($reviewing->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1']);
+        ->and($spawner->events)->toBe(['implementer:1', 'reviewer']);
 
     $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
 
@@ -730,9 +706,11 @@ it('hands a settled subtask to the reviewer and starts the next implementer afte
         ->and($advanced->tasks->first()?->status)->toBe(TaskStatus::Completed)
         ->and($advanced->tasks->last()?->status)->toBe(TaskStatus::Running)
         ->and($advanced->tasks->last()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-2')->sole()->id)
-        ->and($spawner->events)->toBe(['reviewer', 'implementer:1', 'review:1', 'implementer:2']);
+        ->and($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2']);
 
     $lastReview = app(TaskScheduler::class)->settleImplementer($advanced->tasks->last());
+
+    expect($spawner->events)->toBe(['implementer:1', 'reviewer', 'implementer:2', 'review:2']);
     $settled = app(TaskScheduler::class)->acceptReview($lastReview->tasks->last());
 
     expect($settled->status)->toBe(TaskGroupStatus::Settling)
@@ -785,8 +763,10 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
+            $group = $task->taskGroup;
+
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
@@ -796,11 +776,6 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return 'sha';
-        }
     });
     app()->instance(TaskSettleMetricsCollector::class, $metrics);
     app()->instance(CoderSettleNotifier::class, $notifier);

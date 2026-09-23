@@ -23,10 +23,7 @@ final class TaskCommentData extends Data
         public string $author,
         public string $postedAt,
         public ?int $reviewAttempt,
-        public ?string $reviewerThreadId,
-        public ?string $driverTurn,
         public ?string $commitSha,
-        public ?string $prUrl,
     ) {}
 
     public static function fromModel(TaskComment $comment): self
@@ -41,10 +38,7 @@ final class TaskCommentData extends Data
             author: $comment->author,
             postedAt: $comment->posted_at->toIso8601String(),
             reviewAttempt: $comment->review_attempt,
-            reviewerThreadId: $comment->reviewer_thread_id,
-            driverTurn: $comment->driver_turn,
             commitSha: $comment->commit_sha,
-            prUrl: $comment->pr_url,
         );
     }
 }

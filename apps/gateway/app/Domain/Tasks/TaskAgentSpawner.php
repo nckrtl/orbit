@@ -12,15 +12,16 @@ use Illuminate\Support\Facades\Log;
 
 final readonly class TaskAgentSpawner implements AgentSpawner
 {
-    public function __construct(private AgentDriverRegistry $drivers, private TaskWorkspaceSigner $signer) {}
+    public function __construct(private AgentDriverRegistry $drivers) {}
 
-    public function spawnReviewer(TaskGroup $group): ?int
+    public function spawnReviewer(Task $task): ?int
     {
+        $group = $task->taskGroup;
         if ($group->reviewer_agent_thread_id !== null) {
             return $group->reviewer_agent_thread_id;
         }
 
-        return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Reviewer: '.$group->title, $this->reviewerPrompt($group));
+        return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Reviewer: '.$group->title, $this->reviewerPrompt($group)."\n\n".$this->reviewPrompt($task));
     }
 
     public function spawnImplementer(Task $task): ?int
@@ -75,21 +76,13 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         $this->drivers->get($thread->driver)->send($thread, $this->reviewPrompt($task));
     }
 
-    public function signOff(Task $task): ?string
-    {
-        $instance = $task->taskGroup->taskable;
-
-        return $instance instanceof AppInstance ? $this->signer->commit($instance, 'Reviewer sign-off: '.$task->title) : null;
-    }
-
     private function reviewerPrompt(TaskGroup $group): string
     {
         return implode("\n\n", [
-            'You are the long-lived reviewer for this feature group.',
+            'You are the reviewer for this feature group. Orbit asks you to review one subtask at a time in this shared workspace.',
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             $group->brief,
-            'Wait for subtask review handoffs. After you accept a subtask, create the sign-off commit in this workspace.',
         ]);
     }
 
@@ -108,10 +101,9 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     private function reviewPrompt(Task $task): string
     {
         return implode("\n\n", [
-            'please review',
-            'Orbit task group #'.$task->task_group_id.' / subtask #'.$task->id,
-            'Subtask '.$task->title.' is done.',
+            'Review subtask #'.$task->id.': '.$task->title,
             $task->brief,
+            TaskRunInstructions::reviewer(),
         ]);
     }
 }

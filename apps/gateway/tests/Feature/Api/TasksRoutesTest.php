@@ -78,7 +78,7 @@ it('exposes the tasks routes with stable methods', function (): void {
     ]);
 });
 
-it('creates and reads typed task comments with review metadata', function (): void {
+it('creates and reads operator task comments', function (): void {
     tasks_gateway();
     enable_tasks();
     $app = tasks_app('comments');
@@ -90,44 +90,28 @@ it('creates and reads typed task comments with review metadata', function (): vo
     ])->assertCreated()->json('data');
 
     $taskId = $group['tasks'][0]['id'];
-    foreach (['ready_for_review', 'assistance_requested', 'resolution'] as $type) {
+    foreach (['assistance_requested', 'resolution'] as $type) {
         $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
             'type' => $type,
             'body' => "Body for {$type}.",
-            'author' => 'agent@example.test',
+            'author' => 'operator@example.test',
         ])
             ->assertCreated()
             ->assertJsonPath('data.type', $type)
             ->assertJsonPath('data.body', "Body for {$type}.")
-            ->assertJsonPath('data.author', 'agent@example.test')
+            ->assertJsonPath('data.author', 'operator@example.test')
             ->assertJsonPath('data.task_id', $taskId)
             ->assertJsonPath('data.task_group_id', $group['id'])
             ->assertJsonPath('data.posted_at', fn (mixed $value): bool => is_string($value));
     }
 
-    foreach (['changes_requested', 'approved'] as $type) {
-        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
-            'type' => $type,
-            'body' => "Body for {$type}.",
-            'author' => 'reviewer@example.test',
-            'review_attempt' => 2,
-            'reviewer_thread_id' => 'review-thread-2',
-            'driver_turn' => 'turn-17',
-        ])
-            ->assertCreated()
-            ->assertJsonPath('data.type', $type)
-            ->assertJsonPath('data.review_attempt', 2)
-            ->assertJsonPath('data.reviewer_thread_id', 'review-thread-2')
-            ->assertJsonPath('data.driver_turn', 'turn-17');
-    }
-
     $this->getJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments")
         ->assertOk()
-        ->assertJsonCount(5, 'data')
-        ->assertJsonPath('data.0.type', 'approved');
+        ->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.type', 'resolution');
 });
 
-it('rejects invalid comment types and incomplete reviewer outcomes', function (): void {
+it('refuses turn outcomes, which agents report with the run script', function (string $type): void {
     tasks_gateway();
     enable_tasks();
     $app = tasks_app('invalid-comments');
@@ -138,13 +122,9 @@ it('rejects invalid comment types and incomplete reviewer outcomes', function ()
     $taskId = $group['tasks'][0]['id'];
 
     $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
-        'type' => 'unknown', 'body' => 'Nope', 'author' => 'tester',
+        'type' => $type, 'body' => 'Nope', 'author' => 'tester',
     ])->assertStatus(422);
-
-    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}/comments", [
-        'type' => 'approved', 'body' => 'Missing metadata', 'author' => 'tester',
-    ])->assertStatus(422);
-});
+})->with(['ready_for_review', 'changes_requested', 'approved', 'blocked', 'unknown']);
 
 it('declares Gateway access for enable disable status create and add', function (): void {
     expect(new ReflectionClass(TasksController::class)->getAttributes(RequiresNodeAccess::class)[0]->newInstance()->servingNode)
@@ -252,7 +232,7 @@ it('still returns the created group when the opening spawn fails', function (): 
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
-        public function spawnReviewer(TaskGroup $group): ?int
+        public function spawnReviewer(Task $task): ?int
         {
             return null;
         }
@@ -263,11 +243,6 @@ it('still returns the created group when the opening spawn fails', function (): 
         }
 
         public function requestReview(Task $task): void {}
-
-        public function signOff(Task $task): ?string
-        {
-            return null;
-        }
     });
 
     $this->postJson('/api/v1/task-groups', [

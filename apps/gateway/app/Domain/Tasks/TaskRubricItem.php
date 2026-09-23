@@ -10,7 +10,5 @@ final readonly class TaskRubricItem
         public string $key,
         public bool $passed,
         public string $reminder,
-        public ?string $choice = null,
-        public ?float $confidence = null,
     ) {}
 }

@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\AppInstance;
 
 /**
- * Creates the reviewer sign-off commit in a Task group's shared checkout.
+ * Commits an approved subtask in a Task group's shared checkout.
  */
 interface TaskWorkspaceSigner
 {

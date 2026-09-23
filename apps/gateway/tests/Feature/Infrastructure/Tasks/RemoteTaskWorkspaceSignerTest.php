@@ -7,14 +7,18 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LocalShellSshExecutor;
 
-function task_signer_instance(): AppInstance
+function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9'): AppInstance
 {
     $app = OrbitApp::query()->create([
         'name' => 'orbit',
@@ -35,12 +39,12 @@ function task_signer_instance(): AppInstance
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-9',
-        'checkout_path' => '/srv/orbit/apps/orbit/task-9',
+        'checkout_path' => $checkout,
         'status' => 'source_resolved',
     ]);
 }
 
-function task_signer_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
+function task_signer_ssh(SshExecutor $transport): AppDevSshExecutor
 {
     return new AppDevSshExecutor(
         $transport,
@@ -68,26 +72,42 @@ function task_signer_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
     );
 }
 
-it('commits in the shared checkout and returns the HEAD sha', function (): void {
-    $sha = str_repeat('e', 40);
-    $transport = new AppDevFakeSshExecutor([new CommandResult(0, $sha."\n", '', 1, false)]);
-    $instance = task_signer_instance();
+/** @param list<string> $arguments */
+function task_signer_git(string $checkout, array $arguments): string
+{
+    return trim((new Process(['git', '-C', $checkout, ...$arguments]))->mustRun()->getOutput());
+}
 
-    $result = new RemoteTaskWorkspaceSigner(task_signer_ssh($transport))->commit(
-        $instance,
-        'Reviewer sign-off: Models',
-    );
+it('commits every workspace change with the message from stdin and returns the new HEAD', function (): void {
+    $checkout = sys_get_temp_dir().'/orbit-task-signer-'.bin2hex(random_bytes(6));
+    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
+    task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
+    file_put_contents($checkout.'/export.php', "<?php\n");
+    $message = "Models\n\nChecked the export and its test. It's \$ready; `no` shell expansion.";
 
-    expect($result)->toBe($sha)
-        ->and($transport->commands)->toHaveCount(1)
-        ->and($transport->commands[0]->arguments)->toBe([
-            'bash',
-            '-seu',
-            '--',
-            '/srv/orbit/apps/orbit/task-9',
-            'Reviewer sign-off: Models',
-        ])
-        ->and((string) $transport->commands[0]->input)->toContain('git -C "$checkout" commit');
+    try {
+        $sha = new RemoteTaskWorkspaceSigner(task_signer_ssh(new LocalShellSshExecutor))->commit(task_signer_instance($checkout), $message);
+
+        expect($sha)->toBe(task_signer_git($checkout, ['rev-parse', 'HEAD']))
+            ->and(task_signer_git($checkout, ['log', '-1', '--format=%B']))->toBe($message)
+            ->and(task_signer_git($checkout, ['log', '-1', '--format=%an <%ae>']))->toBe('orbit <tasks@orbit>')
+            ->and(task_signer_git($checkout, ['status', '--porcelain']))->toBe('');
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+});
+
+it('returns HEAD without a new commit when the workspace has no changes', function (): void {
+    $checkout = sys_get_temp_dir().'/orbit-task-signer-'.bin2hex(random_bytes(6));
+    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
+    task_signer_git($checkout, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '--allow-empty', '-m', 'start']);
+    $head = task_signer_git($checkout, ['rev-parse', 'HEAD']);
+
+    try {
+        expect(new RemoteTaskWorkspaceSigner(task_signer_ssh(new LocalShellSshExecutor))->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
+    } finally {
+        File::deleteDirectory($checkout);
+    }
 });
 
 it('returns null when the remote git commit fails', function (): void {
@@ -95,6 +115,6 @@ it('returns null when the remote git commit fails', function (): void {
 
     expect(new RemoteTaskWorkspaceSigner(task_signer_ssh($transport))->commit(
         task_signer_instance(),
-        'Reviewer sign-off: Models',
+        'Models',
     ))->toBeNull();
 });

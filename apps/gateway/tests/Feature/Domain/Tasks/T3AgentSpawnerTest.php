@@ -6,8 +6,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
@@ -111,28 +111,15 @@ function t3_spawner_stack(): array
             return ['sequence' => count($this->commands), 'thread_id' => $threadId];
         }
     };
-    $signer = new class implements TaskWorkspaceSigner
-    {
-        public int $commits = 0;
 
-        public function commit(AppInstance $instance, string $message): ?string
-        {
-            $this->commits++;
-            expect($message)->toStartWith('Reviewer sign-off:')
-                ->and($instance->checkout_path)->toBe('/srv/orbit/apps/orbit/task-1');
-
-            return str_repeat('b', 40);
-        }
-    };
-
-    return [new TaskAgentSpawner(test_t3_registry($dispatcher), $signer), $dispatcher, $signer];
+    return [new TaskAgentSpawner(test_t3_registry($dispatcher)), $dispatcher];
 }
 
-it('spawns a long-lived reviewer and a fresh implementer on the instance Node', function (): void {
+it('spawns the group reviewer with its first review and a fresh implementer on the instance Node', function (): void {
     $group = t3_spawner_group();
     [$spawner, $dispatcher] = t3_spawner_stack();
 
-    $reviewerId = $spawner->spawnReviewer($group);
+    $reviewerId = $spawner->spawnReviewer($group->tasks->first());
     $implementerId = $spawner->spawnImplementer($group->tasks->first());
 
     expect($reviewerId)->not->toBeNull()
@@ -165,7 +152,8 @@ it('spawns a long-lived reviewer and a fresh implementer on the instance Node', 
             'role' => 'user',
             'attachments' => [],
         ])
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('long-lived reviewer')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('You are the reviewer for this feature group.')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('Review subtask #'.$group->tasks->first()->id)
         ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
         ->and($dispatcher->commands[2]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[2]['interactionMode'])->toBe('default')
@@ -183,9 +171,7 @@ it('posts T3 model options as id and value JSON objects', function (): void {
         'http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1]),
     ]);
     $group = t3_spawner_group();
-    [, , $signer] = t3_spawner_stack();
-
-    $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class)), $signer))->spawnReviewer($group);
+    $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class))))->spawnReviewer($group->tasks->first());
 
     expect($threadId)->not->toBeNull();
 
@@ -220,25 +206,23 @@ it('posts T3 model options as id and value JSON objects', function (): void {
     });
 });
 
-it('sends please review to the stored reviewer thread and commits on sign-off', function (): void {
+it('sends the review request to the stored reviewer thread', function (): void {
     $group = t3_spawner_group();
     $group->reviewer_agent_thread_id = test_agent_thread($group, 'reviewer-existing')->id;
     $group->save();
-    [$spawner, $dispatcher, $signer] = t3_spawner_stack();
+    [$spawner, $dispatcher] = t3_spawner_stack();
 
     $spawner->requestReview($group->tasks->first());
-    $sha = $spawner->signOff($group->tasks->first());
 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
-        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('please review')
+        ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$group->tasks->first()->id)
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer())
         ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
         ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort))
         ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
-        ->and($dispatcher->commands[0]['interactionMode'])->toBe('default')
-        ->and($sha)->toBe(str_repeat('b', 40))
-        ->and($signer->commits)->toBe(1);
+        ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
 });
 
 it('adopts the existing T3 project when workspace root already has one', function (): void {
@@ -246,7 +230,7 @@ it('adopts the existing T3 project when workspace root already has one', functio
     [$spawner, $dispatcher] = t3_spawner_stack();
     $dispatcher->adoptProjectId = '550e8400-e29b-41d4-a716-446655440000';
 
-    $reviewerId = $spawner->spawnReviewer($group);
+    $reviewerId = $spawner->spawnReviewer($group->tasks->first());
 
     expect($reviewerId)->not->toBeNull()
         ->and(array_column($dispatcher->commands, 'type'))->toBe([
@@ -274,7 +258,7 @@ it('stores no thread id when turn start fails after thread create', function (?s
             return true;
         }));
 
-    $reviewerId = $spawner->spawnReviewer($group);
+    $reviewerId = $spawner->spawnReviewer($group->tasks->first());
 
     expect($reviewerId)->toBeNull()
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBeNull()
@@ -300,7 +284,7 @@ it('returns null when T3 refuses the spawn', function (): void {
     [$spawner, $dispatcher] = t3_spawner_stack();
     $dispatcher->fail = true;
 
-    expect($spawner->spawnReviewer($group))->toBeNull()
+    expect($spawner->spawnReviewer($group->tasks->first()))->toBeNull()
         ->and($spawner->spawnImplementer($group->tasks->first()))->toBeNull();
 });
 
@@ -311,7 +295,7 @@ it('reuses persisted thread ids instead of spawning again', function (): void {
     $group->tasks->first()->update(['implementer_agent_thread_id' => test_agent_thread($group, 'kept-implementer', $group->tasks->firstOrFail())->id]);
     [$spawner, $dispatcher] = t3_spawner_stack();
 
-    expect($spawner->spawnReviewer($group->fresh(['taskable']) ?? $group))->toBe($group->reviewer_agent_thread_id)
+    expect($spawner->spawnReviewer($group->tasks->first()))->toBe($group->reviewer_agent_thread_id)
         ->and($spawner->spawnImplementer($group->tasks->first()->fresh(['taskGroup.taskable']) ?? $group->tasks->first()))
         ->toBe($group->tasks->firstOrFail()->implementer_agent_thread_id)
         ->and($dispatcher->commands)->toBe([]);
@@ -320,7 +304,7 @@ it('reuses persisted thread ids instead of spawning again', function (): void {
 it('keeps persisted role links after workspace removal', function (): void {
     $group = t3_spawner_group();
     [$spawner] = t3_spawner_stack();
-    $reviewer = $spawner->spawnReviewer($group);
+    $reviewer = $spawner->spawnReviewer($group->tasks->first());
     $implementer = $spawner->spawnImplementer($group->tasks->firstOrFail());
     $group->taskable->delete();
     $links = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get();
@@ -393,7 +377,7 @@ it('imports legacy thread links using the instance morph alias', function (strin
 it('uses high effort for a reviewer follow-up when a legacy effort is absent', function (): void {
     $group = t3_spawner_group();
     [$spawner, $dispatcher] = t3_spawner_stack();
-    $id = $spawner->spawnReviewer($group);
+    $id = $spawner->spawnReviewer($group->tasks->first());
     $thread = AgentThread::query()->findOrFail($id);
     $thread->update(['effort' => null]);
 

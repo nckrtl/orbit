@@ -36,34 +36,6 @@ final readonly class TaskSessionObservation
         return null;
     }
 
-    /**
-     * The evidence Jev reads for a role's blocked question: the briefs and that role's own thread, without rubric reminders.
-     *
-     * @return array{classification_role: string, group_title: string, group_brief: string, task_title: string, task_brief: string, thread: array{state: string, recent_messages: list<array{id: string, kind: string, label: string, text: string, at: string}>}}|null
-     */
-    public function transcriptEvidence(TaskThreadRole $role): ?array
-    {
-        $thread = $this->thread($role);
-        if ($thread === null) {
-            return null;
-        }
-
-        return [
-            'classification_role' => $role->value,
-            'group_title' => $this->title,
-            'group_brief' => $this->brief,
-            'task_title' => $this->taskTitle,
-            'task_brief' => $this->taskBrief,
-            'thread' => [
-                'state' => $thread->sessState,
-                'recent_messages' => array_values(array_filter(
-                    $thread->recentMessages,
-                    static fn (array $entry): bool => ! ($entry['kind'] === 'message' && $entry['label'] === 'user' && TaskRubricReminder::isReminder($entry['text'])),
-                )),
-            ],
-        ];
-    }
-
     /** @return array<string, mixed> */
     public function toArray(): array
     {

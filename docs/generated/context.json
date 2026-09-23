@@ -4432,9 +4432,7 @@
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
+            "components": [],
             "concepts": [
                 "Database",
                 "Development node exclusion",
@@ -4456,7 +4454,6 @@
                 "0113",
                 "0114",
                 "0116",
-                "0117",
                 "0121"
             ]
         },
