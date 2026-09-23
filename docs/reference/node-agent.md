@@ -49,7 +49,10 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
    `url` and `key` are `null` when no `websocket` role is active. The agent then asks again every 60 seconds.
 
 2. The agent opens the WebSocket and reads its `socket_id` from `pusher:connection_established`.
-3. The agent calls `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and its short `version` string (for example, `1.2.3`). The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
+3. The agent requests authorization at `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and `version`.
+
+   The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
+
 4. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats and changes. [Realtime events](/reference/events#node-agent-channels) defines the events.
 
 The two agent endpoints require an active WireGuard peer, but no Gateway access edge. They do not record Activity.
