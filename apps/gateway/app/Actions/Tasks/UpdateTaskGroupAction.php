@@ -20,6 +20,7 @@ final readonly class UpdateTaskGroupAction
 
     public function execute(TaskGroup $group, UpdateTaskGroupData $data): TaskGroup
     {
+        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         // The row lock makes a status move and a scheduler claim exclusive: whichever commits second sees the other's status.

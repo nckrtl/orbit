@@ -107,7 +107,7 @@ An edit to an instruction that has reached the server needs a new annotation. Th
 
 ## Orbit tasks
 
-Every annotation creates one Task with `type=annotation` in a TaskGroup with `execution_mode=existing_thread`. The group references the existing Instance; it does not own that Instance. Each annotation has its own group so completion remains independent. The browser continues to call these records annotations. Its pending, in-progress, and done states derive from the Task's pending, running, and completed states. The Task owns the completion summary and timestamps; the annotation stores page context and delivery bookkeeping.
+Every annotation creates one Task with `type=annotation` in a TaskGroup with `execution_mode=existing_thread`. The group references the existing Instance; it does not own that Instance. Each annotation has its own group so completion remains independent. The browser continues to call these records annotations. Its pending, in-progress, and done states derive from the Task's `todo`, `running`, and `completed` states. The Task owns the completion summary and timestamps; the annotation stores page context and delivery bookkeeping.
 
 Managed groups keep `execution_mode=managed`. The managed scheduler excludes existing-thread groups from claiming, monitoring, provisioning, review, cleanup, and concurrency counts. Managed lifecycle actions reject these groups, preventing accidental Instance removal. The annotation dispatcher sends existing-thread tasks serially to their selected T3 thread, waits for explicit completion, and never falls back to starting a managed worker. Missing destinations remain pending. A retry can assign a thread before the first delivery attempt; commands already sent cannot be retargeted.
 

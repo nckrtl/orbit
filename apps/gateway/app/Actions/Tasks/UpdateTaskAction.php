@@ -19,6 +19,7 @@ final readonly class UpdateTaskAction
 
     public function execute(TaskGroup $group, Task $task, UpdateTaskData $data): Task
     {
+        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         return DB::transaction(static function () use ($group, $task, $data): Task {

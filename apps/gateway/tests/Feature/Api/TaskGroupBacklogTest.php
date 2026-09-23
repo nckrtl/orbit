@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\App as OrbitApp;
@@ -244,4 +245,24 @@ it('filters the list by backlog and rejects the old queued status', function ():
         ->assertJsonCount(0, 'data');
     $this->getJson('/api/v1/task-groups?status=queued')
         ->assertUnprocessable();
+});
+
+it('refuses group and subtask edits on an existing-thread group', function (): void {
+    $group = backlog_group($this);
+    TaskGroup::query()->whereKey($group['id'])->update(['execution_mode' => TaskExecutionMode::ExistingThread]);
+    $first = $group['tasks'][0]['id'];
+
+    $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.external_execution');
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$first}", ['title' => 'Changed'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.external_execution');
+    $this->deleteJson("/api/v1/task-groups/{$group['id']}/tasks/{$first}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.external_execution');
+
+    expect(TaskGroup::query()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Backlog)
+        ->and(backlog_order($group['id']))->toBe(['One', 'Two', 'Three'])
+        ->and($this->provisioning->calls)->toBe(0);
 });

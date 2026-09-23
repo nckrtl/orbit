@@ -73,6 +73,7 @@ Subtask create appends one subtask at the next position with status `todo`. It w
 | `tasks.no_subtasks` | 422 | Create with `status: todo`, or update to `todo`, on a group without subtasks |
 | `tasks.not_in_backlog` | 409 | Group title or brief update, or subtask update or destroy, outside `backlog` |
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
+| `tasks.external_execution` | 409 | Group update, subtask create, update, or destroy, cancel, or complete on an [annotation group](/reference/agent-annotation#orbit-tasks) |
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
