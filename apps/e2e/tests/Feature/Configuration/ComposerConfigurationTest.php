@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
@@ -151,6 +152,26 @@ describe('Composer configuration', function (): void {
         foreach (['pint.json', 'phpstan.neon'] as $file) {
             expect(file_get_contents(base_path($file)))->not->toMatch('/database|routes/i');
         }
+    });
+
+    it('installs E2E dependencies without running other projects checks in the E2E job', function (): void {
+        $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+        $project = $workflow['jobs']['project'];
+        $steps = array_column($project['steps'], null, 'name');
+
+        expect($steps['Install all project dependencies for E2E integration tests'])
+            ->toMatchArray([
+                'if' => "matrix.directory == 'apps/e2e'",
+                'working-directory' => '.',
+                'run' => 'bin/bootstrap --skip-checks',
+            ]);
+        expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.directory }}');
+        expect($steps['Run project quality checks'])
+            ->toMatchArray(['run' => 'composer check'])
+            ->not->toHaveKey('if');
+        expect($steps['Run affected tests'])
+            ->toMatchArray(['run' => 'vendor/bin/pest --parallel --processes=2 --tia --compact'])
+            ->not->toHaveKey('if');
     });
 
     it('persists per-project Pest TIA graphs on a named checkout', function (): void {

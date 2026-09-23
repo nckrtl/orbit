@@ -132,6 +132,8 @@ Baselines stay separate between projects. Bootstrap seeds absent worktree caches
 
 Worktree creation requires clean primary main, fetches origin, fast-forwards main, and queues background maintenance without waiting for newer caches. It then calls bootstrap, which installs the patched Pest runner and copies a compatible main dependency graph into each absent private cache. Bootstrap validates guidance, runs `composer test:affected`, and runs `composer check` in each project. A compatible history selects affected tests; a cache miss may need a full run. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` explicitly requests installation, seeding, and guidance validation only. Manually created worktrees get the same setup through `bin/bootstrap`.
 
+The GitHub E2E job uses `bin/bootstrap --skip-checks` to install dependencies across projects. Each matrix job then restores its caches and runs its own quality checks and affected tests. Gateway tests run in the Gateway job, which installs their required system tools and creates the `caddy` user.
+
 The repository commands manage this lifecycle.
 
 | Command | Result |
