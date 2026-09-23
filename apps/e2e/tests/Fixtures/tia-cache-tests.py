@@ -561,6 +561,130 @@ else:
                 if failure in ('install', 'guidance:check'):
                     self.assertNotIn('composer test:affected', calls.read_text())
 
+        (root / '.gitignore').write_text('/calls\n/orbit-home/\n')
+        cache.git(root, 'init', '-b', 'main')
+        cache.git(root, 'config', 'user.name', 'Orbit')
+        cache.git(root, 'config', 'user.email', 'orbit@example.test')
+        cache.git(root, 'add', '.')
+        cache.git(root, 'commit', '-m', 'bootstrap fixture')
+        commit = cache.git(root, 'rev-parse', 'HEAD')
+        cache.git(root, 'update-ref', 'refs/remotes/origin/main', commit)
+        local = {key: value for key, value in environment.items() if key != 'ORBIT_MAIN_CACHE_STORE'}
+        local['TIA_TEST_STORE'] = ''
+        for failure in ('', 'test:affected', 'check'):
+            calls.unlink(missing_ok=True)
+            result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True,
+                                    env={**local, 'TIA_TEST_FAIL': failure})
+            self.assertEqual(not failure, result.returncode == 0, result.stderr)
+            published = 'cache publish --repository=' + str(root) + ' --commit=' + commit
+            self.assertEqual(not failure, published in calls.read_text())
+        calls.unlink()
+        subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks'],
+                       capture_output=True, text=True, env=local, check=True)
+        self.assertNotIn('cache publish', calls.read_text())
+
+
+
+class BootstrapCacheTest(unittest.TestCase):
+    setUp = MainCacheTest.setUp
+    commit_change = MainCacheTest.commit_change
+    feature = MainCacheTest.feature
+    seed = MainCacheTest.seed
+    publish = MainCacheTest.publish
+    write_graph = MainCacheTest.write_graph
+
+    def share(self, root, commit=None):
+        with patch.object(cache, 'metadata', return_value=self.info), \
+                patch.object(cache, 'quality_fingerprint', return_value='quality-fixture'):
+            cache.publish_bootstrap(root, self.store, [self.project], commit or self.commit)
+
+    def test_bootstrap_results_seed_next_worktree_without_updating_primary(self):
+        (self.root / '.gitignore').write_text('**/vendor/\n')
+        self.commit = self.commit_change('ignore caches')
+        self.graph['baselines']['main']['sha'] = self.commit
+        self.graph['baselines']['main']['results']['unaffected'] = {
+            'status': 0, 'file': 'tests/OtherTest.php',
+        }
+        self.publish()
+        primary_commit = self.commit
+        (self.root / 'source.php').write_text('new main')
+        self.commit = self.commit_change('new main')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit)
+        first = self.feature()
+        cache.git(self.root, 'reset', '--hard', primary_commit)
+        self.graph['baselines']['feature'] = {
+            'sha': self.commit, 'tree': {}, 'complete': True,
+            'results': {'replacement': {'status': 0, 'file': 'tests/ExampleTest.php'}},
+        }
+        self.write_graph()
+        for tool, (_, relative, _) in cache.QUALITY.items():
+            path = first / self.project / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(tool + ' cache')
+
+        self.share(first)
+
+        snapshot = cache.read_publication(self.store, self.project)
+        self.assertEqual(self.commit, snapshot['tested_commit'])
+        self.assertEqual(self.commit, snapshot['graph_commit'])
+        self.assertEqual({'unaffected', 'replacement'}, set(json.loads(snapshot['graph'])['baselines']['main']['results']))
+        second = self.feature('second')
+        cache.git(second, 'reset', '--hard', self.commit)
+        seeded = self.seed(second)
+        self.assertEqual(snapshot['graph'], (seeded / 'graph.json').read_text())
+        self.assertEqual(primary_commit, cache.git(self.root, 'rev-parse', 'HEAD'))
+        for tool in cache.QUALITY:
+            quality = json.loads(cache.quality_path(self.store, self.project, tool).read_text())
+            self.assertEqual((tool + ' cache').encode(), cache.quality_data(quality, self.project, tool))
+        # A delayed older writer must leave these results intact.
+        with self.assertRaises(cache.CommandFailure):
+            cache.publish_snapshot(self.root, cache.publication_path(self.store, self.project),
+                                   {**snapshot, 'tested_commit': primary_commit})
+        self.assertEqual(snapshot, cache.read_publication(self.store, self.project))
+
+    def test_no_affected_tests_preserve_the_actual_graph_anchor(self):
+        self.publish()
+        previous = self.commit
+        (self.root / 'source.php').write_text('unrelated main change')
+        self.commit = self.commit_change('next main')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit)
+        self.share(self.feature())
+        snapshot = cache.read_publication(self.store, self.project)
+        self.assertEqual(self.commit, snapshot['tested_commit'])
+        self.assertEqual(previous, snapshot['graph_commit'])
+
+    def test_dirty_changed_feature_and_custom_runs_leave_publications_unchanged(self):
+        self.publish()
+        original = cache.read_publication(self.store, self.project)
+        first = self.feature()
+        (first / 'source.php').write_text('private change')
+        with self.assertRaisesRegex(ValueError, 'unchanged clean bootstrap'):
+            self.share(first)
+        cache.git(first, 'add', '.')
+        cache.git(first, 'commit', '-m', 'feature')
+        for commit in (self.commit, cache.git(first, 'rev-parse', 'HEAD')):
+            with self.assertRaisesRegex(ValueError, 'unchanged clean bootstrap'):
+                self.share(first, commit)
+        for variable in ('ORBIT_MAIN_CACHE_STORE', 'ORBIT_TIA_DIRECTORY'):
+            with patch.dict(os.environ, {variable: '/custom'}), self.assertRaisesRegex(ValueError, 'stay private'):
+                self.share(self.root)
+        self.assertEqual(original, cache.read_publication(self.store, self.project))
+
+    def test_busy_maintenance_and_untrusted_graphs_keep_last_publication(self):
+        self.publish()
+        original = cache.read_publication(self.store, self.project)
+        first = self.feature()
+        with cache.acquire_worker(self.store):
+            self.share(first)
+        for baseline in (
+            {'sha': self.commit, 'tree': {}, 'results': {}},
+            {'sha': self.commit, 'tree': {'source.php': 'dirty'}, 'complete': True, 'results': {}},
+        ):
+            self.graph['baselines']['feature'] = baseline
+            self.write_graph()
+            self.share(first)
+            self.assertEqual(original, cache.read_publication(self.store, self.project))
+
 
 class MaintenanceQueueTest(unittest.TestCase):
     setUp = MainCacheTest.setUp

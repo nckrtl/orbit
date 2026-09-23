@@ -289,13 +289,18 @@ def refresh_project(root, store, project, commit, installed=False, recover=False
     if recover and anchor != commit:
         raise RecoveryNotExecuted(
             f'TIA recovery at {commit} did not record executed tests; graph remains at {anchor}.')
+    publish_graph(root, store, project, commit, info, graph)
+
+
+def publish_graph(root, store, project, commit, info, graph):
+    anchor = validate_graph(root, graph, info, commit)
     snapshot = {
         'schema': 1, 'project': project, 'tested_commit': commit, 'graph_commit': anchor,
         'published_at': datetime.now(timezone.utc).isoformat(),
         'fingerprint': info['fingerprint'], 'runner': info['runner'],
         'sha256': digest(graph.encode()), 'graph': graph,
     }
-    atomic_write(publication_path(store, project), json.dumps(snapshot).encode())
+    publish_snapshot(root, publication_path(store, project), snapshot)
     print(f'[{project}] published main {commit[:12]}', flush=True)
 
 
@@ -343,16 +348,75 @@ def refresh_quality(root, store, project, commit, tool, force=False):
     run(root / project, 'composer', script, capture=False)
     if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
         raise RuntimeError('Cache checkout changed during quality checks; publication refused.')
+    publish_quality(root, store, project, commit, tool)
+
+
+def publish_quality(root, store, project, commit, tool):
+    destination = root / project / QUALITY[tool][1]
     if destination.is_symlink() or not destination.is_file():
         raise RuntimeError('Quality check did not produce a regular result cache.')
     data = destination.read_bytes()
     if not data:
         raise RuntimeError('Quality check produced an empty cache.')
     snapshot = {'schema': 1, 'project': project, 'tool': tool, 'tested_commit': commit,
-                'fingerprint': fingerprint, 'sha256': digest(data),
+                'fingerprint': quality_fingerprint(root, project, tool), 'sha256': digest(data),
                 'data': base64.b64encode(data).decode(),
                 'published_at': datetime.now(timezone.utc).isoformat()}
+    publish_snapshot(root, quality_path(store, project, tool), snapshot)
+
+
+def publish_snapshot(root, path, snapshot):
+    # Both callers hold the existing maintenance lock.
+    if path.exists():
+        previous = json.loads(path.read_text())
+        require_ancestor(root, previous['tested_commit'], snapshot['tested_commit'])
     atomic_write(path, json.dumps(snapshot).encode())
+
+
+def publish_bootstrap(root, store, projects, commit):
+    if (os.environ.get('ORBIT_MAIN_CACHE_STORE')
+            or os.environ.get('ORBIT_TIA_DIRECTORY', '.orbit-tia') != '.orbit-tia'):
+        raise ValueError('Imported or custom caches stay private.')
+    if (git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit
+            or git(root, 'rev-parse', 'refs/remotes/origin/main') != commit):
+        raise ValueError('Only an unchanged clean bootstrap at fetched main can share caches.')
+    branch = git(root, 'symbolic-ref', '--short', 'HEAD')
+    store.mkdir(parents=True, exist_ok=True)
+    lock = acquire_worker(store)
+    if lock is None:
+        print('Main cache maintenance is active; bootstrap caches stay private.', flush=True)
+        return
+    with lock:
+        for project in projects:
+            try:
+                if load_requests(store).get('correctness_failures', {}).get(project):
+                    raise ValueError('Main has an unresolved maintenance failure.')
+                info = metadata(root, project)
+                graph = json.loads((Path(info['cache']) / 'graph.json').read_text())
+                baselines = graph['baselines']
+                if set(baselines) - {'main', branch}:
+                    raise ValueError('Unrelated branch history stays private.')
+                for baseline in baselines.values():
+                    if baseline.get('tree') not in ({}, []):
+                        raise ValueError('Working-edit history stays private.')
+                    require_ancestor(root, baseline.get('sha'), commit)
+                if branch != 'main' and branch in baselines:
+                    own = baselines[branch]
+                    if own.get('sha') != commit or own.get('complete') is not True:
+                        raise ValueError('The task baseline is not complete at the checked commit.')
+                    results = baselines.get('main', {}).get('results', {})
+                    covered = {result.get('file') for result in own['results'].values()}
+                    # Pest replaces whole files covered by the task, retaining unaffected results.
+                    results = {key: value for key, value in results.items() if value.get('file') not in covered}
+                    baselines['main'] = {**own, 'results': {**results, **own['results']}}
+                    del baselines[branch]
+                if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
+                    raise ValueError('The checkout changed during publication.')
+                publish_graph(root, store, project, commit, info, json.dumps(graph))
+                for tool in QUALITY:
+                    publish_quality(root, store, project, commit, tool)
+            except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
+                print(f'[{project}] bootstrap caches not published: {error}', file=sys.stderr, flush=True)
 
 
 @contextmanager
@@ -630,13 +694,14 @@ def status(common, store, remote=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work'))
+    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish'))
     parser.add_argument('--repository', default='.')
     parser.add_argument('--project', action='append', choices=PROJECTS)
     parser.add_argument('--background', action='store_true')
     parser.add_argument('--json', action='store_true', help='Print machine-readable maintenance status')
     parser.add_argument('--remote', action='store_true', help='Read authoritative remote main for status')
     parser.add_argument('--worker-fd', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--commit', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.background and args.action != 'refresh':
         parser.error('--background requires refresh')
@@ -644,6 +709,8 @@ def main():
         parser.error('--json and --remote require status')
     if args.action == 'work' and args.worker_fd is None:
         parser.error('work requires an inherited worker lock')
+    if args.action == 'publish' and args.commit is None:
+        parser.error('publish requires the commit checked by bootstrap')
     common = common_directory(args.repository)
     store = cache_store(common)
     projects = args.project or PROJECTS
@@ -651,6 +718,9 @@ def main():
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
         store = Path(os.environ.get('ORBIT_MAIN_CACHE_STORE', store))
         seed(root, store, projects)
+    elif args.action == 'publish':
+        root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
+        publish_bootstrap(root, store, projects, args.commit)
     elif args.action == 'status':
         if args.json:
             print(json.dumps(status(common, store, args.remote), sort_keys=True))
