@@ -8,6 +8,7 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\Activity;
 use App\Models\Task;
 use App\Models\TaskComment;
@@ -46,19 +47,25 @@ final readonly class StoreTaskCommentAction
         });
 
         if ($deliverResolution) {
-            $task->loadMissing('implementerThread', 'taskGroup');
+            $task->loadMissing('implementerThread', 'taskGroup.reviewerThread');
+            // A task under review is blocked on the group's reviewer; otherwise on its implementer.
+            $reviewing = $task->status === TaskStatus::Reviewing;
             try {
-                $thread = $task->implementerThread;
+                $thread = $reviewing ? $task->taskGroup->reviewerThread : $task->implementerThread;
                 if ($thread === null) {
                     throw new AgentDriverException('Blocked AgentThread is unavailable.');
                 }
                 $this->drivers->get($thread->driver)->send($thread, $comment->body);
-                DB::transaction(function () use ($task, $comment): void {
+                DB::transaction(function () use ($task, $comment, $reviewing): void {
                     $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
                     if (! $locked->assistance_requested) {
                         return;
                     }
-                    $locked->update(['assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
+                    // The resolution is the reviewer's next request, so the tick must not send another.
+                    $attempt = $reviewing
+                        ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
+                        : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
+                    $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
                     $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
                     $this->log($locked, $comment, 'resolution delivered');
                 });

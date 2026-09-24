@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\CreateTaskGroupData;
+use App\Data\Tasks\TaskInputData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -48,6 +49,11 @@ final readonly class CreateTaskGroupAction
             throw TaskGroupGuard::noSubtasks();
         }
 
+        $missing = array_keys(array_filter($data->tasks, static fn (TaskInputData $task): bool => $task->deliverables === []));
+        if ($data->status === TaskGroupStatus::Todo && $missing !== []) {
+            throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
+        }
+
         $group = TaskGroup::query()->create([
             'app_id' => $data->appId,
             'implementer_agent_driver' => $implementerDriver,
@@ -67,6 +73,7 @@ final readonly class CreateTaskGroupAction
                 'position' => $index + 1,
                 'title' => $task->title,
                 'brief' => $task->brief,
+                'deliverables' => $task->deliverables,
                 'status' => TaskStatus::Todo,
             ]);
         }

@@ -148,7 +148,7 @@ it('provisions the workspace on a self-access Node and starts the planner as the
 });
 
 it('refuses a planner for a group created in todo', function (): void {
-    planner_create($this, ['status' => 'todo', 'tasks' => [['title' => 'One', 'brief' => 'One.']]])
+    planner_create($this, ['status' => 'todo', 'tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'tasks.plan_requires_backlog');
 
@@ -189,7 +189,7 @@ it('removes the workspace and stores no group when the planner cannot start', fu
 });
 
 it('commits the plan and reuses the workspace when the group moves to todo', function (): void {
-    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.']]])->assertCreated()->json('data');
+    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])->assertCreated()->json('data');
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo', 'title' => 'Planned feature, final'])
         ->assertOk();
@@ -203,7 +203,7 @@ it('commits the plan and reuses the workspace when the group moves to todo', fun
 });
 
 it('keeps a planning group in backlog when the plan commit fails', function (): void {
-    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.']]])->assertCreated()->json('data');
+    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])->assertCreated()->json('data');
     $this->signer->refuse = true;
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])
@@ -214,7 +214,7 @@ it('keeps a planning group in backlog when the plan commit fails', function (): 
 });
 
 it('commits nothing when a group without a planner moves to todo', function (): void {
-    $group = planner_create($this, ['plan' => false, 'tasks' => [['title' => 'One', 'brief' => 'One.']]])->assertCreated()->json('data');
+    $group = planner_create($this, ['plan' => false, 'tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])->assertCreated()->json('data');
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])->assertOk();
 
@@ -223,7 +223,7 @@ it('commits nothing when a group without a planner moves to todo', function (): 
 });
 
 it('keeps the workspace and planner when a planning group moves back to backlog', function (): void {
-    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.']]])->assertCreated()->json('data');
+    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])->assertCreated()->json('data');
     TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Todo]);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'backlog'])
@@ -244,13 +244,13 @@ it('removes the workspace when a planning group is cancelled', function (): void
 });
 
 it('lets a Node with access to itself manage the planning group its workspace holds', function (): void {
-    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.']]])->assertCreated()->json('data');
+    $group = planner_create($this, ['tasks' => [['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'One is done.']]]]])->assertCreated()->json('data');
     $this->workspaceNode->accessibleNodes()->attach($this->workspaceNode->id);
     $this->withServerVariables(['REMOTE_ADDR' => $this->workspaceNode->wireguard_ip]);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['brief' => 'Shaped by the planner.'])->assertOk();
     $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Two', 'brief' => 'Two.'])->assertCreated()->json('data');
-    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", ['position' => 1])->assertOk();
+    $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$subtask['id']}", ['position' => 1, 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Two is done.']]])->assertOk();
     $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])->assertOk();
 
     expect(TaskGroup::query()->findOrFail($group['id'])->brief)->toBe('Shaped by the planner.')

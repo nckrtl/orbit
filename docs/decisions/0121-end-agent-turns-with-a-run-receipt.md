@@ -14,6 +14,8 @@ Proposed.
 
 This amends [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review), [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks), [ADR 0117](/decisions/0117-judge-the-blocked-question-on-role-evidence), and [ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app). The mechanical checks in ADR 0114 and the `check_script` item stay. Task verification (ADR 0120, proposed in #591) supplies stronger evidence when it lands.
 
+[ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) requires a `blocked` receipt to ask the operator one specific question.
+
 ## Context
 
 The intended loop has seven steps:

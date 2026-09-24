@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskRunReceipt;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
@@ -24,19 +25,27 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false): void
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = []): void
     {
         $script = file_get_contents(resource_path('tasks/run'));
         if ($script === false) {
             throw new TaskRunReceiptException('The run script is missing from the Gateway.');
         }
-        $this->run($instance, [$role->value, $final ? 'true' : 'false'], "script='".base64_encode($script)."'\n".<<<'BASH'
+        $turn = json_encode([
+            'role' => $role->value,
+            'final' => $final,
+            'deliverables' => array_map(static fn (TaskDeliverable $deliverable): array => [
+                'id' => $deliverable->id, 'type' => $deliverable->type->value, 'description' => $deliverable->description,
+            ], $deliverables),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $this->run($instance, [], "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
             rm -f -- "$dir/run.json"
             printf '%s' "$script" | base64 -d > "$dir/run.new"
             chmod 0755 "$dir/run.new"
             mv -f -- "$dir/run.new" "$dir/run"
-            printf '{"role":"%s","final":%s}\n' "$2" "$3" > "$dir/turn.new"
+            printf '%s' "$turn" | base64 -d > "$dir/turn.new"
+            printf '\n' >> "$dir/turn.new"
             mv -f -- "$dir/turn.new" "$dir/turn.json"
             BASH);
     }

@@ -10,7 +10,9 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Models\AppInstance;
+use App\Models\Task;
 use App\Models\TaskGroup;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateTaskGroupAction
@@ -25,6 +27,9 @@ final readonly class UpdateTaskGroupAction
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
+        if ($data->status === TaskGroupStatus::Todo && $group->status === TaskGroupStatus::Backlog) {
+            self::requireDeliverables($group->tasks()->get());
+        }
         $this->commitPlan($group, $data);
 
         // The row lock makes a status move and a scheduler claim exclusive: whichever commits second sees the other's status.
@@ -44,6 +49,10 @@ final readonly class UpdateTaskGroupAction
                     throw TaskGroupGuard::noSubtasks();
                 }
 
+                if ($data->status === TaskGroupStatus::Todo) {
+                    self::requireDeliverables($locked->tasks);
+                }
+
                 $locked->status = $data->status;
             }
 
@@ -59,6 +68,19 @@ final readonly class UpdateTaskGroupAction
         }
 
         return $updated->fresh(['app', 'tasks', 'taskable']) ?? $updated;
+    }
+
+    /**
+     * ADR 0133: a group moves to Todo only when every subtask has deliverables.
+     *
+     * @param  Collection<int, Task>  $tasks
+     */
+    private static function requireDeliverables(Collection $tasks): void
+    {
+        $missing = $tasks->sortBy('position')->filter(static fn (Task $task): bool => $task->deliverableList() === []);
+        if ($missing->isNotEmpty()) {
+            throw TaskGroupGuard::deliverablesMissing($missing->map(static fn (Task $task): string => '#'.$task->id.' "'.$task->title.'"')->values()->all());
+        }
     }
 
     /**

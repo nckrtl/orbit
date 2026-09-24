@@ -55,7 +55,11 @@ function backlog_group(mixed $test, array $subtasks = ['One', 'Two', 'Three'], a
         'app_id' => $test->appRecord->id,
         'title' => 'Backlog feature',
         'brief' => 'Prepare before running.',
-        'tasks' => array_map(static fn (string $title): array => ['title' => $title, 'brief' => "{$title} brief."], $subtasks),
+        'tasks' => array_map(static fn (string $title): array => [
+            'title' => $title,
+            'brief' => "{$title} brief.",
+            'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => "{$title} is done."]],
+        ], $subtasks),
         ...$extra,
     ])->assertCreated()->json('data');
 }
@@ -208,7 +212,7 @@ it('refuses subtask update and destroy outside backlog but still appends subtask
     $this->deleteJson("/api/v1/task-groups/{$group['id']}/tasks/{$first}")
         ->assertConflict()
         ->assertJsonPath('error.code', 'tasks.not_in_backlog');
-    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Four', 'brief' => 'Four brief.'])
+    $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Four', 'brief' => 'Four brief.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Four is done.']]])
         ->assertCreated()
         ->assertJsonPath('data.position', 4)
         ->assertJsonPath('data.status', 'todo');
@@ -288,4 +292,131 @@ it('clears a requested assistance when the group is cancelled', function (): voi
         ->assertJsonPath('data.assistance_requested', false)
         ->assertJsonPath('data.assistance_reason', 'composer check is blocked.')
         ->assertJsonPath('data.tasks.0.assistance_requested', false);
+});
+
+describe('subtask deliverables', function (): void {
+    it('stores typed deliverables on a subtask and returns the fields of each type', function (): void {
+        $group = backlog_group($this, []);
+
+        $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Export', 'brief' => 'Add the export.', 'deliverables' => [
+            ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
+            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+            ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test'],
+            ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
+        ]])->assertCreated()->json('data');
+
+        expect($this->getJson("/api/v1/task-groups/{$group['id']}")->assertOk()->json('data.tasks.0.deliverables'))->toBe([
+            ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
+            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+            ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => '.'],
+            ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
+        ])->and($created['deliverables'])->toHaveCount(4);
+    });
+
+    it('refuses a deliverable that does not fit its type', function (array $deliverable, string $field, string $message): void {
+        $group = backlog_group($this, []);
+
+        $details = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Export', 'brief' => 'Add it.', 'deliverables' => [$deliverable]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->json('error.details');
+
+        expect($details[$field][0] ?? null)->toBe($message);
+    })->with([
+        'an unknown type' => [['id' => 'docs', 'type' => 'doc', 'description' => 'Docs'], 'deliverables.0.type', 'The selected deliverables.0.type is invalid.'],
+        'a missing id' => [['type' => 'review', 'description' => 'Docs'], 'deliverables.0.id', 'The deliverables.0.id field is required.'],
+        'an id that is not a slug' => [['id' => 'Docs page', 'type' => 'review', 'description' => 'Docs'], 'deliverables.0.id', 'The deliverables.0.id field format is invalid.'],
+        'a missing description' => [['id' => 'docs', 'type' => 'review'], 'deliverables.0.description', 'The deliverables.0.description field is required.'],
+        'a file without a path' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'change' => 'any'], 'deliverables.0.path', 'The deliverables.0.path field is required when deliverables.0.type is file.'],
+        'a file without a change' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md'], 'deliverables.0.change', 'The deliverables.0.change field is required when deliverables.0.type is file.'],
+        'a file with an unknown change' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'deleted'], 'deliverables.0.change', 'The selected deliverables.0.change is invalid.'],
+        'a path outside the workspace' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => '../secrets.md', 'change' => 'any'], 'deliverables.0.path', 'The deliverables.0.path field format is invalid.'],
+        'an absolute path' => [['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => '/etc/passwd', 'change' => 'any'], 'deliverables.0.path', 'The deliverables.0.path field format is invalid.'],
+        'a test without a name' => [['id' => 'export-test', 'type' => 'test', 'description' => 'Test', 'project' => 'apps/gateway', 'file' => 'tests/ExportTest.php'], 'deliverables.0.name', 'The deliverables.0.name field is required when deliverables.0.type is test.'],
+        'a test without a project' => [['id' => 'export-test', 'type' => 'test', 'description' => 'Test', 'file' => 'tests/ExportTest.php', 'name' => 'exports'], 'deliverables.0.project', 'The deliverables.0.project field is required when deliverables.0.type is test.'],
+        'a command without a command' => [['id' => 'web', 'type' => 'command', 'description' => 'Web tests'], 'deliverables.0.command', 'The deliverables.0.command field is required when deliverables.0.type is command.'],
+        'a command directory outside the workspace' => [['id' => 'web', 'type' => 'command', 'description' => 'Web tests', 'command' => 'bun test', 'directory' => 'apps/../../etc'], 'deliverables.0.directory', 'The deliverables.0.directory field format is invalid.'],
+        'a field of another type' => [['id' => 'docs', 'type' => 'review', 'description' => 'Docs', 'path' => 'docs/a.md'], 'deliverables.0.path', 'The deliverables.0.path field is prohibited unless deliverables.0.type is in file.'],
+        'an unknown field' => [['id' => 'docs', 'type' => 'review', 'description' => 'Docs', 'owner' => 'nick'], 'deliverables.0', 'The deliverables.0 field must be an array.'],
+    ]);
+
+    it('refuses an id twice within one subtask but allows it across subtasks', function (): void {
+        $review = ['id' => 'done', 'type' => 'review', 'description' => 'Done.'];
+
+        $this->postJson('/api/v1/task-groups', ['app_id' => $this->appRecord->id, 'title' => 'Twice', 'brief' => 'Twice.', 'tasks' => [
+            ['title' => 'One', 'brief' => 'One.', 'deliverables' => [$review, $review]],
+        ]])->assertUnprocessable()->assertJsonPath('error.details', ['tasks.0.deliverables' => ['Each deliverable id must be unique within the subtask. Repeated: done.']]);
+
+        $this->postJson('/api/v1/task-groups', ['app_id' => $this->appRecord->id, 'title' => 'Across', 'brief' => 'Across.', 'tasks' => [
+            ['title' => 'One', 'brief' => 'One.', 'deliverables' => [$review]],
+            ['title' => 'Two', 'brief' => 'Two.', 'deliverables' => [$review]],
+        ]])->assertCreated();
+    });
+
+    it('refuses more than five deliverables on a subtask', function (): void {
+        $group = backlog_group($this, []);
+        $deliverables = array_map(static fn (int $index): array => ['id' => "item-{$index}", 'type' => 'review', 'description' => 'Item.'], range(1, 6));
+
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Many', 'brief' => 'Many.', 'deliverables' => $deliverables])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.deliverables', ['The deliverables field must not have more than 5 items.']);
+    });
+
+    it('refuses to move a group to todo while a subtask has no deliverables', function (): void {
+        $group = backlog_group($this, ['One']);
+        $bare = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Bare', 'brief' => 'No deliverables.'])->assertCreated()->json('data');
+
+        $this->patchJson("/api/v1/task-groups/{$group['id']}", ['status' => 'todo'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing')
+            ->assertJsonPath('error.details.subtasks', "#{$bare['id']} \"Bare\"");
+
+        expect(TaskGroup::query()->findOrFail($group['id'])->status)->toBe(TaskGroupStatus::Backlog)
+            ->and($this->provisioning->calls)->toBe(0);
+    });
+
+    it('refuses to create a group in todo while a subtask has no deliverables', function (): void {
+        $this->postJson('/api/v1/task-groups', ['app_id' => $this->appRecord->id, 'title' => 'Ready', 'brief' => 'Ready.', 'status' => 'todo', 'tasks' => [
+            ['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']]],
+            ['title' => 'Two', 'brief' => 'Two.'],
+        ]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing')
+            ->assertJsonPath('error.details.subtasks', 'position 2 "Two"');
+
+        expect(TaskGroup::query()->count())->toBe(0);
+    });
+
+    it('needs deliverables for a subtask added after the group left backlog', function (): void {
+        $group = backlog_group($this, ['One'], ['status' => 'todo']);
+
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Two', 'brief' => 'Two.'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
+        $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", ['title' => 'Two', 'brief' => 'Two.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']]])
+            ->assertCreated();
+    });
+
+    it('replaces the deliverables of a todo subtask after its group left backlog, but not of a started one', function (): void {
+        $group = backlog_group($this, ['One', 'Two'], ['status' => 'todo']);
+        TaskGroup::query()->whereKey($group['id'])->update(['status' => TaskGroupStatus::Running->value]);
+        [$running, $todo] = [$group['tasks'][0]['id'], $group['tasks'][1]['id']];
+        Task::query()->whereKey($running)->update(['status' => TaskStatus::Running->value]);
+        $docs = [['id' => 'reference-page', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/reference/tasks.md', 'change' => 'modified']];
+
+        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$todo}", ['deliverables' => $docs])
+            ->assertOk()
+            ->assertJsonPath('data.deliverables', $docs);
+        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$running}", ['deliverables' => $docs])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'tasks.deliverables_locked');
+        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$todo}", ['deliverables' => []])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
+        $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$todo}", ['deliverables' => $docs, 'title' => 'Renamed'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'tasks.not_in_backlog');
+
+        expect(Task::query()->findOrFail($todo)->title)->toBe('Two');
+    });
 });

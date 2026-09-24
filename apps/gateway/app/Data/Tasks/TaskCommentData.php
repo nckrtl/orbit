@@ -24,6 +24,7 @@ final class TaskCommentData extends Data
         public string $postedAt,
         public ?int $reviewAttempt,
         public ?string $commitSha,
+        public ?TaskCommentPullRequestData $pullRequest,
     ) {}
 
     public static function fromModel(TaskComment $comment): self
@@ -39,6 +40,7 @@ final class TaskCommentData extends Data
             postedAt: $comment->posted_at->toIso8601String(),
             reviewAttempt: $comment->review_attempt,
             commitSha: $comment->commit_sha,
+            pullRequest: TaskCommentPullRequestData::fromStored($comment->pull_request),
         );
     }
 }

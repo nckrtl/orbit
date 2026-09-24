@@ -79,8 +79,8 @@ describe('task response fixtures', function (): void {
             'title' => 'Add the tasks CLI',
             'brief' => "Add tasks:* commands.\nAccept when every route has a command.",
             'tasks' => [
-                ['title' => 'Add SDK requests', 'brief' => 'One request class per route.'],
-                ['title' => 'Add CLI commands', 'brief' => 'One command per route.'],
+                ['title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'deliverables' => task_fixture_sdk_deliverables()],
+                ['title' => 'Add CLI commands', 'brief' => 'One command per route.', 'deliverables' => task_fixture_cli_deliverables()],
             ],
         ])->assertCreated(), 'tasks/tasks-create/created', CreateTaskGroupRequest::class, 'POST /api/v1/task-groups');
 
@@ -136,9 +136,19 @@ describe('task response fixtures', function (): void {
         record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
             'title' => 'Document the commands',
             'brief' => 'Add docs/cli/tasks.mdx.',
+            'deliverables' => [
+                ['id' => 'cli-page', 'type' => 'file', 'description' => 'Document every tasks command', 'path' => 'docs/cli/tasks.mdx', 'change' => 'modified'],
+                ['id' => 'docs-lint', 'type' => 'command', 'description' => 'The documentation lint passes', 'command' => 'composer docs-lint'],
+            ],
         ])->assertCreated(), 'tasks/tasks-subtask-create/created', CreateSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks');
 
         record_fixture($this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}", ['position' => 2])->assertOk(), 'tasks/tasks-subtask-update/updated', UpdateSubtaskRequest::class, 'PATCH /api/v1/task-groups/{group}/tasks/{task}');
+
+        $group->update(['status' => TaskGroupStatus::Running]);
+        $first->update(['status' => TaskStatus::Running]);
+        record_fixture($this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}", ['deliverables' => task_fixture_cli_deliverables()])->assertConflict(), 'tasks/tasks-subtask-update/deliverables-locked', UpdateSubtaskRequest::class, 'PATCH /api/v1/task-groups/{group}/tasks/{task}');
+        $group->update(['status' => TaskGroupStatus::Backlog]);
+        $first->update(['status' => TaskStatus::Todo]);
 
         record_fixture($this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$first->id}")->assertOk(), 'tasks/tasks-subtask-destroy/destroyed', DestroySubtaskRequest::class, 'DELETE /api/v1/task-groups/{group}/tasks/{task}');
     });
@@ -170,8 +180,26 @@ function task_fixture_group(OrbitApp $project): TaskGroup
         'title' => 'Add the tasks CLI',
         'brief' => "Add tasks:* commands.\nAccept when every route has a command.",
     ]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'status' => TaskStatus::Todo]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Add CLI commands', 'brief' => 'One command per route.', 'status' => TaskStatus::Todo]);
+    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'deliverables' => task_fixture_sdk_deliverables(), 'status' => TaskStatus::Todo]);
+    Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Add CLI commands', 'brief' => 'One command per route.', 'deliverables' => task_fixture_cli_deliverables(), 'status' => TaskStatus::Todo]);
 
     return $group;
+}
+
+/** @return list<array<string, string>> */
+function task_fixture_sdk_deliverables(): array
+{
+    return [
+        ['id' => 'sdk-requests', 'type' => 'file', 'description' => 'One request class per tasks route', 'path' => 'packages/php-sdk/src/Requests/Tasks/*.php', 'change' => 'created'],
+        ['id' => 'sdk-test', 'type' => 'test', 'description' => 'Every tasks route has a request', 'project' => 'packages/php-sdk', 'file' => 'tests/Unit/Requests/Tasks/TaskRequestsTest.php', 'name' => 'addresses every tasks route'],
+    ];
+}
+
+/** @return list<array<string, string>> */
+function task_fixture_cli_deliverables(): array
+{
+    return [
+        ['id' => 'cli-commands', 'type' => 'file', 'description' => 'One command per tasks route', 'path' => 'apps/cli/app/Commands/Tasks/*.php', 'change' => 'created'],
+        ['id' => 'command-names', 'type' => 'review', 'description' => 'Each command name equals its route name'],
+    ];
 }

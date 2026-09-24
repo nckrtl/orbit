@@ -142,6 +142,7 @@ describe('analytics tracking Route sites', function (): void {
             ->and(new AppDevCaddyConfigRenderer()->render($sites))->toBe(<<<'CADDY'
                 analytics.shop.example.com {
                     bind 0.0.0.0
+                    tls force_automate
                     handle /js/* {
                         reverse_proxy http://10.44.0.40:8000
                     }

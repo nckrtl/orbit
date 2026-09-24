@@ -28,8 +28,8 @@ final readonly class GatewayCaddyConfigRenderer
                     root * {$checkoutPath}/public
                     php_fastcgi unix//run/php/orbit-gateway.sock {
                         dial_timeout 10s
-                        read_timeout 4500s
-                        write_timeout 4500s
+                        read_timeout 600s
+                        write_timeout 600s
                         flush_interval 1ms
                     }
                 }

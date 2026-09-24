@@ -10,11 +10,12 @@ use App\E2E\State\SecretRedactor;
 use App\E2E\TopologyAcquirer;
 use App\E2E\Value\AttemptPurpose;
 use InvalidArgumentException;
-use JsonException;
 use Throwable;
 
 final class ExecCommand extends E2ECommand
 {
+    use ReadsGuestArgv;
+
     #[\Override]
     protected $signature =
         'topology:exec {issue} {role} '
@@ -22,6 +23,7 @@ final class ExecCommand extends E2ECommand
         .' {--argv=} {--argv-file=} {--proof : Run against a retained proof topology}'
         .' {--review-action= : Record this action against captured successful proof}'
         .' {--required : Mark the recorded review action as required}'
+        .' {--timeout=60 : Seconds the guest command may run, from 1 to 3600}'
         .' {--json}';
 
     #[\Override]
@@ -34,6 +36,7 @@ final class ExecCommand extends E2ECommand
     ): int {
         try {
             [$argv, $stdin] = $this->commandInput();
+            $timeout = $this->timeoutOption();
             $request = $this->request();
             $role = (string) $this->argument('role');
             $purpose = $this->option('proof') ? AttemptPurpose::Proof : AttemptPurpose::Discovery;
@@ -44,8 +47,11 @@ final class ExecCommand extends E2ECommand
             if ($action !== null && ! $this->option('proof')) {
                 throw new InvalidArgumentException('--review-action needs --proof.');
             }
+            if ($action !== null && $timeout !== 60) {
+                throw new InvalidArgumentException('--timeout does not apply to a recorded review action.');
+            }
             $result = $action === null
-                ? $acquirer->execute($request, $role, $argv, $stdin, $purpose)
+                ? $acquirer->execute($request, $role, $argv, $stdin, $purpose, $timeout)
                 : $review->execute($request, $action, $role, $argv, (bool) $this->option('required'), $stdin);
             $redactedArgv = json_encode($redactor->redactArgv($argv), JSON_THROW_ON_ERROR);
             $reviewIdentity = $action === null ? '' : " action={$action}";
@@ -70,86 +76,20 @@ final class ExecCommand extends E2ECommand
         }
     }
 
+    private function timeoutOption(): int
+    {
+        $value = $this->option('timeout');
+        if (! is_string($value) || preg_match('/\A[1-9][0-9]{0,3}\z/', $value) !== 1 || (int) $value > 3600) {
+            throw new InvalidArgumentException('--timeout must be a whole number of seconds from 1 to 3600.');
+        }
+
+        return (int) $value;
+    }
+
     private function stringOption(string $name): ?string
     {
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
-    }
-
-    /**
-     * The argv vector comes from exactly one of `--argv` (an inline JSON array of
-     * strings, no stdin) or `--argv-file` (a file holding `{"argv":[...],"stdin":null}`).
-     *
-     * @return array{list<string>, ?string}
-     */
-    private function commandInput(): array
-    {
-        $inline = $this->option('argv');
-        $path = $this->option('argv-file');
-        $hasInline = is_string($inline) && $inline !== '';
-        $hasFile = is_string($path) && $path !== '';
-        if ($hasInline && $hasFile) {
-            throw new InvalidArgumentException('Use either --argv or --argv-file, not both.');
-        }
-        if (! $hasInline && ! $hasFile) {
-            throw new InvalidArgumentException(
-                'An exact argv JSON array (--argv) or argv JSON file (--argv-file) is required.',
-            );
-        }
-        if ($hasInline) {
-            try {
-                $value = json_decode($inline, true, 8, JSON_THROW_ON_ERROR);
-            } catch (JsonException $exception) {
-                throw new InvalidArgumentException(
-                    'The --argv value must be a JSON array of strings, for example \'["orbit","doctor","--json"]\'.',
-                    previous: $exception,
-                );
-            }
-            if (! is_array($value) || ! array_is_list($value) || $value === []) {
-                throw new InvalidArgumentException(
-                    'The --argv value must be a non-empty JSON array of strings, for example \'["orbit","doctor","--json"]\'.',
-                );
-            }
-
-            return [$this->argvList($value), null];
-        }
-        if (! is_file($path) || is_link($path)) {
-            throw new InvalidArgumentException('An exact argv JSON file is required.');
-        }
-        try {
-            $value = json_decode((string) file_get_contents($path), true, 32, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new InvalidArgumentException('The argv JSON file is malformed.', previous: $exception);
-        }
-        if (
-            ! is_array($value)
-            || array_keys($value) !== ['argv', 'stdin']
-            || ! is_array($value['argv'])
-            || ! array_is_list($value['argv'])
-            || $value['stdin'] !== null
-            && ! is_string($value['stdin'])
-        ) {
-            throw new InvalidArgumentException('The argv JSON schema is invalid.');
-        }
-
-        return [$this->argvList($value['argv']), $value['stdin']];
-    }
-
-    /**
-     * @param  list<mixed>  $value
-     * @return list<string>
-     */
-    private function argvList(array $value): array
-    {
-        $argv = [];
-        foreach ($value as $argument) {
-            if (! is_string($argument)) {
-                throw new InvalidArgumentException('Every argv item must be a string.');
-            }
-            $argv[] = $argument;
-        }
-
-        return $argv;
     }
 }

@@ -16,6 +16,8 @@ This extends [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-exte
 
 [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) proposes normalized agent observations and actions behind an `AgentDriver` boundary. Jev classification stays in Laravel AI. ADR 0112 defines the current driver boundary.
 
+[ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) amends the working-thread rule: only the thread that acts in the task's phase defers the task.
+
 ## Context
 
 LIVE Orbit task groups sat idle or waiting for T3 input until a human or Coder drained or kicked the session. Nick wants Gateway plus Laravel AI / Jev for deterministic routing. Tom-on-Mini is out of scope.

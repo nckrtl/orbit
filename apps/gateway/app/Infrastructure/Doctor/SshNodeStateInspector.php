@@ -60,6 +60,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
                     $this->keys->privateKeyPath(),
                     $this->knownHosts->path(),
                     commandTimeout: $this->deadline->cap(30.0),
+                    shareConnection: false,
                 ),
                 new RemoteCommand(['bash', '-seu', '--', $address], self::SCRIPT),
             );

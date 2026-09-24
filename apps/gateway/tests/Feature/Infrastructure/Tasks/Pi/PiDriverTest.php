@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentInputRequest;
+use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskThreadRole;
@@ -64,11 +65,34 @@ function pi_driver(): PiDriver
 function pi_snapshot(string $state, array $entries = [], ?string $error = null, string $id = 'session-1'): array
 {
     return [
-        'kind' => 'snapshot', 'sequence' => 7,
+        'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 7,
         'session' => ['id' => $id, 'cwd' => '/srv/task-1', 'model' => 'openai-codex/gpt-5.6-luna', 'thinkingLevel' => 'low'],
         'state' => $state, 'error' => $error, 'turnId' => 'turn-key-1', 'entries' => $entries,
         'usage' => ['input' => 100, 'output' => 20, 'cacheRead' => 0, 'cacheWrite' => 0, 'total' => 120],
     ];
+}
+
+/** @param list<array<string, mixed>> $lines */
+function pi_stream(array $lines): void
+{
+    Http::fake([PI_BASE.'/sessions/session-1/stream*' => Http::response(implode("\n", array_map(json_encode(...), $lines))."\n")]);
+}
+
+/**
+ * @param  list<array<string, mixed>>  $lines
+ * @return list<AgentThreadEvent>
+ */
+function pi_events(array $lines, ?string $cursor = null): array
+{
+    pi_stream($lines);
+
+    return iterator_to_array(pi_driver()->events(pi_thread(pi_node()), $cursor), false);
+}
+
+/** @return array<string, mixed> */
+function pi_entry_event(int $sequence, array $entry): array
+{
+    return ['kind' => 'entry', 'run' => 'run-1', 'sequence' => $sequence, 'entry' => $entry];
 }
 
 /** @return list<array<string, mixed>> */
@@ -199,7 +223,7 @@ describe('observe', function (): void {
         expect($observation->state)->toBe(AgentThreadState::Done)
             ->and($observation->tokens)->toBe(120)
             ->and($observation->turnId)->toBe('turn-key-1')
-            ->and($observation->cursor)->toBe('7')
+            ->and($observation->cursor)->toBe('run-1.7')
             ->and(array_column($observation->entries, 'kind'))->toBe(['message', 'message', 'activity', 'message'])
             ->and($observation->entries[2])->toMatchArray(['label' => 'bash', 'text' => "All checks passed\n\n$ composer check\nexit code 0"]);
     });
@@ -255,7 +279,7 @@ describe('observe', function (): void {
         Http::fake([PI_BASE.'/sessions/session-1' => Http::response(pi_snapshot('idle', $entries))]);
 
         expect(pi_driver()->observe(pi_thread(pi_node()))->entries)->toBe([
-            ['id' => 'e2', 'kind' => 'activity', 'label' => 'read', 'text' => 'Reading README.md', 'at' => '2026-09-22T10:00:01.000Z'],
+            ['id' => 'e1:0', 'kind' => 'activity', 'label' => 'read', 'text' => 'Reading README.md', 'at' => '2026-09-22T10:00:01.000Z'],
         ]);
     });
 
@@ -296,28 +320,109 @@ describe('observe', function (): void {
 
 describe('events', function (): void {
     it('streams a snapshot, then normalized entries and states, ignoring events before the snapshot', function (): void {
-        $lines = [
-            ['kind' => 'entry', 'sequence' => 1, 'entry' => ['id' => 'early', 'timestamp' => 't', 'message' => ['role' => 'user', 'content' => 'too early']]],
+        $events = pi_events([
+            pi_entry_event(1, ['id' => 'early', 'timestamp' => 't', 'message' => ['role' => 'user', 'content' => 'too early']]),
             pi_snapshot('idle'),
-            ['kind' => 'state', 'sequence' => 8, 'state' => 'working', 'error' => null, 'turnId' => 'turn-key-2', 'usage' => ['total' => 120]],
-            ['kind' => 'entry', 'sequence' => 9, 'entry' => ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'user', 'content' => 'Go']]],
+            ['kind' => 'state', 'run' => 'run-1', 'sequence' => 8, 'state' => 'working', 'error' => null, 'turnId' => 'turn-key-2', 'usage' => ['total' => 120]],
+            pi_entry_event(9, ['id' => 'e1', 'timestamp' => '2026-09-22T10:00:00.000Z', 'message' => ['role' => 'user', 'content' => 'Go']]),
             ['kind' => 'heartbeat'],
-            ['kind' => 'state', 'sequence' => 10, 'state' => 'done', 'error' => null, 'turnId' => 'turn-key-2', 'usage' => ['total' => 300]],
-        ];
-        Http::fake([PI_BASE.'/sessions/session-1/stream' => Http::response(implode("\n", array_map(json_encode(...), $lines))."\n")]);
-        $thread = pi_thread(pi_node());
-
-        $events = iterator_to_array(pi_driver()->events($thread, null), false);
+            ['kind' => 'state', 'run' => 'run-1', 'sequence' => 10, 'state' => 'done', 'error' => null, 'turnId' => 'turn-key-2', 'usage' => ['total' => 300]],
+        ]);
 
         expect(array_map(fn ($event): string => $event->kind, $events))->toBe(['snapshot', 'state', 'entry', 'heartbeat', 'state'])
-            ->and($events[0]->cursor)->toBe('7')
+            ->and($events[0]->cursor)->toBe('run-1.7')
             ->and($events[1]->data)->toMatchArray(['state' => 'working'])
             ->and($events[2]->data['entry'])->toMatchArray(['id' => 'e1', 'kind' => 'message', 'label' => 'user', 'text' => 'Go'])
             ->and($events[4]->data)->toMatchArray(['state' => 'done', 'tokens' => 300])
-            ->and($events[4]->cursor)->toBe('10');
+            ->and($events[4]->cursor)->toBe('run-1.10');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream');
     });
 
-    it('rejects a malformed cursor', function (): void {
-        expect(fn () => iterator_to_array(pi_driver()->events(pi_thread(pi_node()), 'abc')))->toThrow(AgentDriverException::class, 'Invalid agent stream cursor.');
+    it('resumes after a cursor without a snapshot and relays only the later events', function (): void {
+        $events = pi_events([
+            ['kind' => 'resumed', 'run' => 'run-1', 'sequence' => 7, 'session' => ['id' => 'session-1'], 'context' => []],
+            pi_entry_event(8, ['id' => 'e5', 'timestamp' => '2026-09-22T10:00:05.000Z', 'message' => ['role' => 'assistant', 'stopReason' => 'stop', 'content' => [['type' => 'text', 'text' => 'Later.']]]]),
+            ['kind' => 'state', 'run' => 'run-1', 'sequence' => 9, 'state' => 'done', 'error' => null, 'turnId' => 'turn-key-1', 'usage' => ['total' => 400]],
+        ], 'run-1.7');
+
+        expect(array_map(fn ($event): string => $event->kind, $events))->toBe(['resumed', 'entry', 'state'])
+            ->and($events[0]->cursor)->toBeNull()
+            ->and($events[1]->data['entry'])->toMatchArray(['id' => 'e5', 'text' => 'Later.'])
+            ->and($events[1]->cursor)->toBe('run-1.8')
+            ->and($events[2]->cursor)->toBe('run-1.9');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream?run=run-1&after=7');
+    });
+
+    it('asks for a snapshot when the cursor is not a Pi cursor', function (string $cursor): void {
+        $events = pi_events([pi_snapshot('idle')], $cursor);
+
+        expect($events[0]->kind)->toBe('snapshot');
+        Http::assertSent(fn (Request $request): bool => $request->url() === PI_BASE.'/sessions/session-1/stream');
+    })->with(['a sequence from an older Gateway' => '42', 'a foreign cursor' => 'abc', 'a run without a sequence' => 'run-1.']);
+
+    it('ignores a resume for another session', function (): void {
+        $events = pi_events([
+            ['kind' => 'resumed', 'run' => 'run-1', 'sequence' => 7, 'session' => ['id' => 'other'], 'context' => []],
+            pi_entry_event(8, ['id' => 'e5', 'timestamp' => 't', 'message' => ['role' => 'user', 'content' => 'foreign']]),
+        ], 'run-1.7');
+
+        expect($events)->toBe([]);
+    });
+
+    it('shows a started tool call as running until its result replaces it', function (): void {
+        [, $call] = pi_check_transcript('All checks passed');
+        [, , $result] = pi_check_transcript('All checks passed');
+
+        $events = pi_events([pi_snapshot('working'), pi_entry_event(8, $call), pi_entry_event(9, $result)]);
+
+        expect(array_map(fn ($event): array => $event->data['entry'] ?? [], array_slice($events, 1)))->toBe([
+            ['id' => 'e2', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Running the checks.', 'at' => '2026-09-22T10:00:01.000Z'],
+            ['id' => 'e2:0', 'kind' => 'activity', 'label' => 'Running', 'text' => 'Running: $ composer check', 'at' => '2026-09-22T10:00:01.000Z'],
+            ['id' => 'e2:0', 'kind' => 'activity', 'label' => 'bash', 'text' => "All checks passed\n$ composer check\nexit code 0", 'at' => '2026-09-22T10:00:02.000Z'],
+        ])->and(array_map(fn ($event): ?string => $event->cursor, array_slice($events, 1)))->toBe([null, 'run-1.8', 'run-1.9']);
+    });
+
+    it('names a result whose call came before the cursor', function (): void {
+        [, $call, $result] = pi_check_transcript('ok');
+
+        $events = pi_events([
+            ['kind' => 'resumed', 'run' => 'run-1', 'sequence' => 8, 'session' => ['id' => 'session-1'], 'context' => [$call]],
+            pi_entry_event(9, $result),
+        ], 'run-1.8');
+
+        expect($events[1]->data['entry'])->toMatchArray(['id' => 'e2:0', 'label' => 'bash', 'text' => "ok\n$ composer check\nexit code 0"]);
+    });
+
+    it('stops a running call when the turn settles without its result', function (): void {
+        [, $call] = pi_check_transcript('ok');
+
+        $events = pi_events([
+            pi_snapshot('working'),
+            pi_entry_event(8, $call),
+            ['kind' => 'state', 'run' => 'run-1', 'sequence' => 9, 'state' => 'failed', 'error' => 'The turn was interrupted.', 'turnId' => 'turn-key-1', 'usage' => ['total' => 120]],
+        ]);
+
+        expect($events[3]->data['entry'])->toMatchArray(['id' => 'e2:0', 'label' => 'bash', 'text' => '$ composer check (stopped without a result)'])
+            ->and($events[3]->cursor)->toBeNull()
+            ->and($events[4]->kind)->toBe('state');
+    });
+
+    it('shows an unfinished call as running in a snapshot of a working turn', function (): void {
+        [$user, $call] = pi_check_transcript('ok');
+
+        $events = pi_events([pi_snapshot('working', [$user, $call])]);
+
+        expect(array_column($events[0]->data['entries'], 'label'))->toBe(['user', 'assistant', 'Running'])
+            ->and($events[0]->data['entries'][2])->toMatchArray(['id' => 'e2:0', 'text' => 'Running: $ composer check']);
+    });
+
+    it('redacts the Node token from a running command', function (): void {
+        $call = ['id' => 'e1', 'timestamp' => 't', 'message' => ['role' => 'assistant', 'stopReason' => 'toolUse', 'content' => [
+            ['type' => 'toolCall', 'id' => 'call-1', 'name' => 'bash', 'arguments' => ['command' => 'curl -H "Authorization: Bearer '.PI_TOKEN.'" pi']],
+        ]]];
+
+        $events = pi_events([pi_snapshot('working'), pi_entry_event(8, $call)]);
+
+        expect($events[1]->data['entry']['text'])->not->toContain(PI_TOKEN)->toContain('[REDACTED]');
     });
 });

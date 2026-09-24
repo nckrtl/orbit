@@ -29,11 +29,11 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     await expect.element(pane("Agents")).toBeVisible();
     expect(cards()).toEqual([
         "Latest check",
-        "Ready for review by implementer",
-        "Resolution by nick",
-        "Assistance requested by implementer",
-        "Changes requested by reviewer",
-        "Ready for review by implementer",
+        "Implementer · Ready for review",
+        "nick · Resolution",
+        "Implementer · Assistance requested",
+        "Reviewer · Changes requested",
+        "Implementer · Ready for review",
     ]);
     expect(document.querySelector('[aria-label="Comments"] .frame-edge')?.textContent).toContain(
         "5",
@@ -82,6 +82,11 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
         posted_at: new Date().toISOString(),
         review_attempt: 2,
         commit_sha: "5f2c9e1",
+        pull_request: {
+            summary: "Count the boundary day in quota windows.",
+            changes: ["Include the last day of the window."],
+            breaking: [],
+        },
     };
     queryClient.setQueryData<TaskComment[]>(
         ["task-groups", "12", "tasks", "31", "comments"],
@@ -89,6 +94,12 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     );
     await expect.element(comments.getByRole("article").nth(1)).toHaveTextContent("Approved");
     await expect.element(comments.getByRole("article").nth(1)).toHaveTextContent("just now");
+    await expect
+        .element(comments.getByRole("region", { name: "Proposed pull request" }))
+        .toHaveTextContent("Count the boundary day in quota windows.");
+    await expect
+        .element(comments.getByRole("region", { name: "Proposed pull request" }))
+        .toHaveTextContent("No breaking changes");
     expect(
         app.gateway.requests.some(
             (request) => request.path === "/api/v1/task-groups/12/tasks/31/comments",
@@ -99,6 +110,53 @@ it("shows the subtask's latest check and its comments beside the agents, newest 
     await app.router.navigate({ to: "/tasks/$id", params: { id: "12" } });
     await expect.element(pane("Subtasks")).toBeVisible();
     await expect.element(page.getByRole("region", { name: "Comments" })).not.toBeInTheDocument();
+});
+
+it("shows the role before the comment type and collapses a long comment to three lines", async () => {
+    vi.stubGlobal("EventSource", SilentSource);
+    await openApp("/tasks/12/subtasks/31");
+    const comments = pane("Comments");
+    await expect.element(comments).toHaveTextContent("Changes requested");
+
+    const latest = comments.getByRole("article").nth(1);
+    await expect.element(latest).toHaveTextContent(/^Implementer · Ready for review/);
+    // A comment that fits in three lines has nothing to expand.
+    await expect.element(latest.getByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+
+    const body = Array.from({ length: 12 }, (_, line) => `Finding ${line + 1} of the review.`).join(
+        "\n",
+    );
+    const long: TaskComment = {
+        id: 48,
+        task_group_id: 12,
+        task_id: 31,
+        agent_thread_id: 21,
+        type: "changes_requested",
+        body,
+        author: "reviewer",
+        posted_at: new Date().toISOString(),
+        review_attempt: 3,
+        commit_sha: null,
+        pull_request: null,
+    };
+    queryClient.setQueryData<TaskComment[]>(
+        ["task-groups", "12", "tasks", "31", "comments"],
+        (previous) => [long, ...(previous ?? [])],
+    );
+    const card = comments.getByRole("article", { name: "Reviewer · Changes requested" }).first();
+    const toggle = card.getByRole("button", { name: "Show more" });
+    await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
+    const paragraph = () => card.element().querySelector("p") as HTMLParagraphElement;
+    expect(paragraph().scrollHeight).toBeGreaterThan(paragraph().clientHeight);
+
+    // The button expands it; clicking the card itself collapses it again.
+    await toggle.click();
+    await expect
+        .element(card.getByRole("button", { name: "Show less" }))
+        .toHaveAttribute("aria-expanded", "true");
+    expect(paragraph().scrollHeight).toBeLessThanOrEqual(paragraph().clientHeight + 1);
+    await card.getByText("Finding 12 of the review.").click();
+    await expect.element(card.getByRole("button", { name: "Show more" })).toBeVisible();
 });
 
 it("says so when a subtask has no comments or check yet", async () => {

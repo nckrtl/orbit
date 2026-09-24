@@ -1,6 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { PiServerError, type SessionRegistry, type StreamEvent } from "./registry.ts";
+import {
+    PiServerError,
+    type SessionRegistry,
+    type StreamCursor,
+    type StreamEvent,
+} from "./registry.ts";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -93,7 +98,7 @@ export function createPiServer(options: HttpOptions): Server {
             return;
         }
         if (method === "GET" && action === "stream") {
-            await stream(id, request, response);
+            await stream(id, cursor(url.searchParams), request, response);
             return;
         }
 
@@ -102,6 +107,7 @@ export function createPiServer(options: HttpOptions): Server {
 
     async function stream(
         id: string,
+        after: StreamCursor | undefined,
         request: IncomingMessage,
         response: ServerResponse,
     ): Promise<void> {
@@ -110,8 +116,10 @@ export function createPiServer(options: HttpOptions): Server {
         // Subscribe before sending headers so an unknown session still returns a JSON 404.
         const buffered: StreamEvent[] = [];
         let open = false;
-        const unsubscribe = await options.registry.subscribe(id, (event) =>
-            open ? write(event) : buffered.push(event),
+        const unsubscribe = await options.registry.subscribe(
+            id,
+            (event) => (open ? write(event) : buffered.push(event)),
+            after,
         );
 
         response.writeHead(200, {
@@ -126,6 +134,17 @@ export function createPiServer(options: HttpOptions): Server {
             unsubscribe();
         });
     }
+}
+
+/** Reads `run` and `after` from a stream URL. A missing or malformed cursor means a snapshot. */
+function cursor(params: URLSearchParams): StreamCursor | undefined {
+    const run = params.get("run");
+    const after = params.get("after");
+    if (run === null || run === "" || after === null || !/^\d{1,15}$/.test(after)) {
+        return undefined;
+    }
+
+    return { run, sequence: Number(after) };
 }
 
 function authorized(header: string | undefined, token: string): boolean {

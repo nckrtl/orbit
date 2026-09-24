@@ -73,12 +73,20 @@ describe('task transport', function (): void {
             ->and(new UpdateTaskGroupRequest(13, status: 'todo')->body()->all())->toBe('{"status":"todo"}')
             ->and(new UpdateTaskGroupRequest(13, '', 'Brief')->body()->all())->toBe('{"title":"","brief":"Brief"}')
             ->and(new UpdateSubtaskRequest(13, 57)->body()->all())->toBe('{}')
-            ->and(new UpdateSubtaskRequest(13, 57, position: 2)->body()->all())->toBe('{"position":2}');
+            ->and(new UpdateSubtaskRequest(13, 57, position: 2)->body()->all())->toBe('{"position":2}')
+            ->and(new UpdateSubtaskRequest(13, 57, deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']])->body()->all())
+            ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}]}');
     });
 
     it('sends subtask and comment bodies', function (): void {
+        $docs = ['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'any'];
+
         expect(new CreateSubtaskRequest(13, 'Title', 'Brief')->body()->all())
             ->toBe('{"title":"Title","brief":"Brief"}')
+            ->and(new CreateSubtaskRequest(13, 'Title', 'Brief', [$docs])->body()->all())
+            ->toBe('{"title":"Title","brief":"Brief","deliverables":[{"id":"docs","type":"file","description":"Docs","path":"docs\\/a.md","change":"any"}]}')
+            ->and(new SubtaskInput('One', 'First.', [$docs])->toArray())
+            ->toBe(['title' => 'One', 'brief' => 'First.', 'deliverables' => [$docs]])
             ->and(new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick')->body()->all())
             ->toBe('{"type":"resolution","body":"Done.","author":"nick"}')
             ->and(new CreateTaskCommentRequest(13, 57, 'assistance_requested', 'Stuck.', 'nick', 4)->body()->all())
@@ -191,6 +199,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'group with scalar subtasks' => [new ShowTaskGroupRequest(1), ['id' => 1, 'app_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'tasks' => 'none']],
         'group list member without id' => [new ListTaskGroupsRequest, [['title' => 'T']]],
         'subtask without position' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo']],
+        'subtask with a scalar deliverable' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'position' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo', 'deliverables' => ['docs']]],
         'comment without author' => [new CreateTaskCommentRequest(1, 1, 'resolution', 'B', 'nick'), ['id' => 1, 'task_group_id' => 1, 'task_id' => 1, 'type' => 'resolution', 'body' => 'B', 'posted_at' => 'now']],
         'agent without driver' => [new ListTaskAgentsRequest(1), [['id' => 1, 'task_group_id' => 1, 'role' => 'reviewer', 'external_id' => 'x']]],
     ]);

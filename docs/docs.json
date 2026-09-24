@@ -101,6 +101,7 @@
               "reference/browser-access",
               "reference/gateway-recovery",
               "reference/node-provisioning",
+              "reference/caddy-configuration",
               "reference/node-settings",
               "reference/node-retarget",
               "reference/wireguard-endpoints",
@@ -702,7 +703,15 @@
               "decisions/0127-share-one-ssh-connection-per-node",
               "decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
               "decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
-              "decisions/0130-publish-agent-binaries-as-github-releases"
+              "decisions/0130-publish-agent-binaries-as-github-releases",
+              "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
+              "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
+              "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
+              "decisions/0134-resume-pi-agent-streams-from-a-cursor",
+              "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
+              "decisions/0136-run-long-lived-topology-processes-as-transient-units",
+              "decisions/0137-refuse-carried-caddy-global-options",
+              "decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation"
             ]
           }
         ]

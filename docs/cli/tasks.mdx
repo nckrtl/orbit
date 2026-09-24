@@ -104,9 +104,9 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--su
 | --- | --- | --- |
 | `title` | prompt | Short name of the feature. |
 | `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
-| `--brief=TEXT` | prompt | Deliverables and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
-| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask and asks the scheduler to claim the group. |
-| `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief`. |
+| `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
+| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the group. |
+| `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
 | `--notify-coder` | off | Post the Coder settle webhook when the group settles. |
 | `--plan` | off | Start a [planner](/reference/tasks#plan-a-group-with-a-planner): a T3 thread in the group's new workspace that shapes the feature with you while the group stays in `backlog`. |
 
@@ -121,8 +121,9 @@ The CLI does not prompt for the status, the subtasks, the notification, or the p
 | --- | --- |
 | `tasks.project_required`, `tasks.title_required`, `tasks.brief_required` | A `--json` or `-n` call omits a required input. |
 | `tasks.project_invalid`, `tasks.title_invalid`, `tasks.brief_invalid`, `tasks.status_invalid` | A supplied value is outside the accepted form. |
-| `tasks.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief. |
+| `tasks.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
+| `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no group. |
 | `tasks.plan_requires_backlog` | `--plan` with `--status=todo`. |
 | `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable` | The Gateway cannot start the planner. The [tasks reference](/reference/tasks#groups-and-subtasks) explains each case. |
@@ -151,6 +152,7 @@ In a terminal, the group list shows `backlog` and `todo` groups. Without a chang
 | --- | --- |
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
 | `tasks.no_subtasks` | A move to `todo` for a group without subtasks. |
+| `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
 | `tasks.already_claimed` | The scheduler claimed the group before the status change. |
 | `tasks.commit_failed` | A move to `todo` for a planning group when Orbit cannot commit its workspace. |
 
@@ -184,25 +186,36 @@ In a terminal, the group list shows only `settling` groups. The question names t
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a group at the next position, with status `todo`. This works in every group status.
+Append one subtask to a group at the next position, with status `todo`. This works in every group status. Outside `backlog`, the subtask needs deliverables.
 
 ```bash
-orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--json]
+orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]
 ```
 
 | Input | Default | Meaning |
 | --- | --- | --- |
 | `title` | prompt | Short name of the step. |
-| `--brief=TEXT` | prompt | Deliverables and acceptance of the step. |
+| `--brief=TEXT` | prompt | Goal and acceptance of the step. |
+| `--deliverables=FILE` | none | JSON file with an array of at most 20 [deliverables](/reference/tasks#deliverables). |
 
-A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_required` when a value is missing. The CLI shows the created subtask as a detail tree followed by its brief.
+```bash
+orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json
+```
+
+A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_required` when a value is missing. The CLI does not prompt for deliverables. It shows the created subtask as a detail tree followed by its brief and a table of its deliverables.
+
+| Error code | Meaning |
+| --- | --- |
+| `tasks.deliverables_invalid` | The CLI cannot read the deliverables file, or its content is not an array of at most five objects. |
+| `validation.failed` | The Gateway refuses a deliverable. The error details name each field, such as `deliverables.0.path`. |
+| `tasks.subtask_deliverables_missing` | A subtask without deliverables for a group outside `backlog`. |
 
 ## orbit tasks:subtask:update
 
-Change a subtask's title, brief, or position while its group is in `backlog`. A new position shifts the other subtasks, so positions stay gapless from 1.
+Change a subtask's title, brief, or position while its group is in `backlog`. A new position shifts the other subtasks, so positions stay gapless from 1. Replace a subtask's deliverables while its group is in `backlog`, or in any group status while the subtask is `todo`.
 
 ```bash
-orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--json]
+orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--json]
 ```
 
 | Option | Meaning |
@@ -210,8 +223,13 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 | `--title=TEXT` | New title. |
 | `--brief=TEXT` | New brief. |
 | `--position=N` | New position, starting at 1. |
+| `--deliverables=FILE` | JSON file with an array of at most 20 [deliverables](/reference/tasks#deliverables). It replaces the whole list. |
 
-In a terminal, the group list shows only `backlog` groups. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A group outside `backlog` fails with `tasks.not_in_backlog`.
+```bash
+orbit tasks:subtask:update 58 88 --deliverables=deliverables.json
+```
+
+In a terminal, the group list shows only `backlog` groups, unless `--deliverables` is the only change. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change outside `backlog` fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started, outside `backlog`, fails with `tasks.deliverables_locked`. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
 
 ## orbit tasks:subtask:destroy
 

@@ -18,6 +18,40 @@ final class TaskGroupGuard
         );
     }
 
+    /**
+     * ADR 0133: a group moves to todo only when every subtask has deliverables.
+     *
+     * @param  list<string>  $subtasks  the subtasks without deliverables
+     */
+    public static function deliverablesMissing(array $subtasks): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.subtask_deliverables_missing',
+            message: __('Every subtask needs at least one deliverable before the group moves to todo.'),
+            status: 422,
+            details: ['subtasks' => implode(', ', $subtasks)],
+        );
+    }
+
+    /** ADR 0133: a subtask of a group that left backlog is never without deliverables. */
+    public static function deliverablesRequired(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.subtask_deliverables_missing',
+            message: __('A subtask of a group outside backlog needs at least one deliverable.'),
+            status: 422,
+        );
+    }
+
+    public static function deliverablesLocked(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.deliverables_locked',
+            message: __('Deliverables change only while the group is in backlog or the subtask is todo.'),
+            status: 409,
+        );
+    }
+
     public static function planRequiresBacklog(): ResourceOperationException
     {
         return new ResourceOperationException(

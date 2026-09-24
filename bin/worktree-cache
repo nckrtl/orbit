@@ -3,13 +3,17 @@
 
 import argparse
 import base64
+import functools
 import hashlib
+import importlib.machinery
+import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 
 
@@ -61,13 +65,20 @@ def copy_missing(source, destination):
         os.unlink(temporary)
 
 
+@functools.cache
+def main_store(root):
+    """Resolve the store exactly as bin/tia-cache seed does, including the store registered for this origin."""
+    sys.dont_write_bytecode = True
+    loader = importlib.machinery.SourceFileLoader('tia_cache', str(Path(__file__).with_name('tia-cache')))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader('tia_cache', loader))
+    loader.exec_module(module)
+    return module.seed_store(root, module.common_directory(root))[0]
+
+
 def seed_publication(root, project, tool, config, destination):
     """Prefer durable main publications, including after their feature worktrees leave."""
     try:
-        common = Path(subprocess.check_output(
-            ['git', '-C', str(root), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-            text=True, stderr=subprocess.DEVNULL).strip())
-        store = Path(os.environ.get('ORBIT_MAIN_CACHE_STORE', common / 'orbit-tia/v1'))
+        store = main_store(root)
         path = store / 'quality' / project.replace('/', '-') / (tool.lower() + '.json')
         snapshot = json.loads(path.read_text())
         if (snapshot.get('schema') != 1 or snapshot.get('project') != project
@@ -103,7 +114,8 @@ def seed_publication(root, project, tool, config, destination):
             os.unlink(temporary)
         print(f'[{project}] seeded {tool} cache from published main {commit[:12]}')
         return True
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.CalledProcessError):
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError, ImportError,
+            subprocess.CalledProcessError):
         return False
 
 

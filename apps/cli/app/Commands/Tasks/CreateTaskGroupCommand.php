@@ -22,9 +22,9 @@ final class CreateTaskGroupCommand extends TaskCommand
     protected $signature = 'tasks:create
         {title? : Short name of the feature}
         {--project= : Numeric Project ID}
-        {--brief= : Deliverables and acceptance}
+        {--brief= : Goal and acceptance}
         {--status= : backlog (default) or todo}
-        {--subtasks= : JSON file with an ordered array of objects that each hold a title and a brief}
+        {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
         {--notify-coder : Post the Coder settle webhook when the group settles}
         {--plan : Start a T3 planner that shapes the group in Backlog}
         {--json : Return machine-readable JSON}';
@@ -113,7 +113,7 @@ final class CreateTaskGroupCommand extends TaskCommand
             return null;
         }
 
-        $refusal = 'The subtasks file must hold a JSON array of at most '.self::MAX_SUBTASKS.' objects, each with a title and a brief.';
+        $refusal = 'The subtasks file must hold a JSON array of at most '.self::MAX_SUBTASKS.' objects, each with a title and a brief, and optionally a deliverables array of at most '.self::DELIVERABLES_MAX.' objects with string fields.';
         $contents = $path !== '' && is_file($path) && is_readable($path) ? file_get_contents($path) : false;
 
         if ($contents === false) {
@@ -139,9 +139,10 @@ final class CreateTaskGroupCommand extends TaskCommand
         foreach ($entries as $entry) {
             $title = is_array($entry) ? ($entry['title'] ?? null) : null;
             $brief = is_array($entry) ? ($entry['brief'] ?? null) : null;
+            $deliverables = self::deliverables(is_array($entry) ? ($entry['deliverables'] ?? []) : null);
 
             if (
-                ! is_string($title) || ! is_string($brief)
+                ! is_string($title) || ! is_string($brief) || $deliverables === null
                 || self::textError($title, 'Title', self::TITLE_MAX) !== null
                 || self::textError($brief, 'Brief', self::BRIEF_MAX) !== null
             ) {
@@ -150,7 +151,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 return false;
             }
 
-            $subtasks[] = new SubtaskInput($title, $brief);
+            $subtasks[] = new SubtaskInput($title, $brief, $deliverables);
         }
 
         return $subtasks;

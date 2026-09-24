@@ -14,11 +14,17 @@ final readonly class TaskSessionObserver
 {
     public function __construct(private AgentThreadObserver $threads, private TaskWorkspaceDiffReader $diff) {}
 
+    /**
+     * Observes the task's implementer and the group's reviewer. Only the thread that acts in the task's
+     * current phase defers the task while it works: the implementer while the task runs, the reviewer
+     * while it is in review. The other thread's work does not hide the acting thread.
+     */
     public function observe(TaskGroup $group, Task $task): TaskSessionObservation
     {
         $group->loadMissing(['app', 'tasks', 'taskable']);
         $observations = [];
-        $hasActiveThread = false;
+        $actingRole = $task->status === TaskStatus::Reviewing ? TaskThreadRole::Reviewer : TaskThreadRole::Implementer;
+        $actingThreadWorks = false;
         foreach (AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get() as $thread) {
             $role = TaskThreadRole::tryFrom($thread->role);
             $belongsToTask = $thread->task_id === $task->id;
@@ -27,10 +33,10 @@ final readonly class TaskSessionObserver
                 continue;
             }
             $observation = $this->threads->observe($thread);
-            $hasActiveThread = $hasActiveThread || $observation?->state === AgentThreadState::Working;
+            $actingThreadWorks = $actingThreadWorks || ($role === $actingRole && $observation?->state === AgentThreadState::Working);
             $observations[] = [$thread, $role, $observation];
         }
-        if ($hasActiveThread) {
+        if ($actingThreadWorks) {
             $observations = [];
         }
         $threads = [];
