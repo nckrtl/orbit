@@ -12,7 +12,7 @@ The Gateway publishes the Orbit quota collector on `collector.proxycli.orbit`. A
 
 Proposed.
 
-This amends the reserved hostname in [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension). The extension boundary, Valkey cache, collector Process, and token model stay.
+This amends the reserved hostname in [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension). The extension boundary, Valkey cache, collector Process, and token model stay. [ADR 0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) moves the collector to `collector.cli-proxy-api.orbit`.
 
 ## Context
 

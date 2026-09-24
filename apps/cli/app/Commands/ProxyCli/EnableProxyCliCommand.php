@@ -20,7 +20,7 @@ final class EnableProxyCliCommand extends ProxyCliCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Deploy the collector and publish collector.proxycli.orbit.';
+    protected $description = 'Deploy the collector and publish collector.cli-proxy-api.orbit.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {

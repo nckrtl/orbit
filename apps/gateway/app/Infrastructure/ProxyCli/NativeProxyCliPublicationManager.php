@@ -16,6 +16,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use App\Models\Route;
 
 final readonly class NativeProxyCliPublicationManager implements ProxyCliPublicationManager
 {
@@ -28,9 +29,10 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?ProxyCliRouteTakeover $takeover = null,
     ) {}
 
-    public function converge(Node $node, int $port = ProxyCliProcess::PORT): void
+    public function converge(Node $node, int $port = ProxyCliProcess::PORT, ?Route $takeover = null): void
     {
         $address = $this->address($node);
         $this->ensureCaddy($node, $address);
@@ -44,14 +46,25 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
             'proxycli.certificate_publication_failed',
             "proxycli certificate publication failed on node [{$node->name}].",
         );
-        $this->run(
+        $publish = fn (?string $appDevFragment = null) => $this->run(
             $node,
             $address,
-            $this->caddy->command($this->site->render($port), (string) $port, $address),
+            $this->caddy->command($this->site->render($port), (string) $port, $address, $appDevFragment),
             'proxycli.caddy_publication_failed',
             "proxycli Caddy publication failed on node [{$node->name}].",
         );
+
+        if (! $takeover instanceof Route) {
+            $publish();
+            $this->dns->converge($node);
+
+            return;
+        }
+
+        $routes = $this->takeover ?? app(ProxyCliRouteTakeover::class);
+        $routes->publish($takeover, $node, $publish, $port);
         $this->dns->converge($node);
+        $routes->remove($takeover);
     }
 
     public function remove(Node $node): void

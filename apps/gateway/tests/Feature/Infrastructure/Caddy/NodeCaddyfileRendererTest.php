@@ -203,7 +203,7 @@ describe('site sources', function (): void {
         expect($content)
             ->toContain("reverb.orbit {\n    bind 10.44.0.7\n")
             ->toContain("analytics.orbit {\n    bind 10.44.0.7\n")
-            ->toContain("collector.proxycli.orbit {\n    bind 10.44.0.7\n")
+            ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.7\n")
             ->not->toContain('__ORBIT_');
     });
 

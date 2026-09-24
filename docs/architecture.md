@@ -65,7 +65,7 @@ Orbit monorepo groups use a non-visitable checkout with no Route. [ADR 0103](/de
 
 ## proxycli
 
-The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://collector.proxycli.orbit` for CodexBar. The Orbit web app reads the same snapshot. Apex `proxycli.orbit` stays free for a CLIProxyAPI management Route. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) owns the hostname split.
+The optional [proxycli](/reference/proxycli) extension collects CLIProxyAPI account quota into shared Valkey on a `database` Node and publishes `https://collector.cli-proxy-api.orbit` for CodexBar. The Orbit web app reads the same snapshot. Apex `cli-proxy-api.orbit` stays free for a CLIProxyAPI management Route. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) owns the extension boundary. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) and [ADR 0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) own the hostname.
 
 ## Database connections
 

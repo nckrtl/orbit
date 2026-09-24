@@ -27,7 +27,7 @@ These terms describe the parts of Orbit. Follow the links for commands and detai
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
 - **Database** — A Node role that installs and manages Docker for shared database processes. See [Database role](/reference/database-role).
 - **Database connection** — A registered MySQL, PostgreSQL, SQLite, or Redis credential record. See [Database connections](/reference/database-connections).
-- **proxycli** — An optional fleet extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at `collector.proxycli.orbit`. See [proxycli](/reference/proxycli).
+- **proxycli** — An optional fleet extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at `collector.cli-proxy-api.orbit`. See [proxycli](/reference/proxycli).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](/decisions/0004-verify-only-doctor-boundary).
 - **Node agent** — `orbit-agent`, a visibility-only program on every managed Linux Node. It publishes presence and Process runtime state for the web app and never runs commands. See [Node agent](/reference/node-agent).
 - **Process** — A systemd service or Docker container that Orbit manages for an Instance or Node. See [Project processes and schedules](/reference/app-processes-and-schedules).

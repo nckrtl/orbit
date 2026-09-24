@@ -157,7 +157,7 @@ The same state always gives the same file. Route transitions are already [stored
 | `gateway.orbit` | The Node with the `gateway` role | WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role | WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, `collector.proxycli.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
+| `reverb.orbit`, `analytics.orbit`, `collector.cli-proxy-api.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
 Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port.
 
