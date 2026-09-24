@@ -655,8 +655,11 @@ final readonly class AppDevSiteRepository
     {
         $upstream = AnalyticsTrackingUpstream::current();
 
+        // A retiring tracking host is on its way to removal and serves nothing, as its public edge
+        // was withdrawn first.
         if (
             ! $route->sites_published
+            || $route->status === RouteStatus::Retiring
             || $upstream === null
             || ! $router instanceof Node
             || ! is_string($router->wireguard_ip)
