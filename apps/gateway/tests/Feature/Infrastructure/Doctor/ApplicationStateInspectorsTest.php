@@ -107,7 +107,7 @@ it('checks app-production origins as the app owner within its production root', 
             '',
         ])
         ->and($ssh->commands[0]->input)
-        ->toContain('sudo -u "$user" -H -- git -C "$checkout" remote get-url origin');
+        ->toContain('sudo -u "$user" -H -- git -C "$checkout" config --get remote.origin.url');
 });
 
 it('returns a bounded mismatch for an app-production origin', function (): void {
@@ -698,6 +698,84 @@ it('keeps a wrong branch false when the ancestry check succeeds', function (): v
         );
 
         expect($result->stdout)->toBe("1\n1\n1\n0\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+});
+
+it('compares the configured Instance origin, not the insteadOf rewrite Git applies', function (): void {
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($appInstance);
+    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
+
+    try {
+        $result = application_run(
+            [
+                'bash',
+                '-seu',
+                '--',
+                $appInstance->app->repository_url,
+                $fixture['checkout'],
+                $fixture['allowedRoot'],
+                $fixture['user'],
+                $fixture['group'],
+                'checkout',
+                'development',
+                $fixture['startingCommit'],
+                '0',
+            ],
+            $script,
+        );
+
+        expect($result->stdout)->toBe("1\n1\n1\n1\n");
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+});
+
+it('checks a development checkout under the Node apps root', function (): void {
+    $app = application_inspector_app();
+    $node = application_inspector_node();
+    $node->update(['settings' => ['apps' => ['path' => '/fast/apps']]]);
+    $appInstance = application_app_instance($app, $node);
+    $appInstance->update(['checkout_path' => "/fast/apps/{$app->slug}/development"]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+
+    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+
+    expect($inspection)
+        ->toEqual(new AppInspectionData(1, true))
+        ->and($ssh->commands[0]->arguments)
+        ->toBe([
+            'bash',
+            '-seu',
+            '--',
+            $app->repository_url,
+            "/fast/apps/{$app->slug}/development",
+            '/fast/apps',
+            'nckrtl',
+            '',
+            '',
+            'app-dev',
+            '/fast/apps',
+        ]);
+});
+
+it('matches an app origin under the Node apps root despite an insteadOf rewrite', function (): void {
+    $app = application_inspector_app();
+    $node = application_inspector_node();
+    $fixture = application_instance_repository_fixture($app->repository_url);
+    application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
+    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
+    application_app_instance($app, $node)->update(['checkout_path' => $fixture['checkout']]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+    application_app_inspector($ssh)->inspect($app, $node);
+
+    try {
+        $result = application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
+
+        expect($result->stdout)->toBe("1\n");
     } finally {
         new Filesystem()->deleteDirectory($fixture['sandbox']);
     }

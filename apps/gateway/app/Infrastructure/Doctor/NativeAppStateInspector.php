@@ -7,7 +7,10 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -26,6 +29,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         private KnownHostsStore $knownHosts,
         private CommandDeadline $deadline,
         private ManagedUserAccountResolver $accounts,
+        private NodeSettingsNormalizer $nodeSettings = new NodeSettingsNormalizer,
     ) {}
 
     public function inspect(App $app, Node $node): AppInspectionData
@@ -42,7 +46,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             throw new DoctorInspectionException;
         }
 
-        /** @var list<array{path: string, root: string, user: string, slug: string, instance: string, mode: string}> $checkouts */
+        /** @var list<array{path: string, root: string, user: string, slug: string, instance: string, mode: string, expected_root: string}> $checkouts */
         $checkouts = [];
         $appInstances = $app
             ->appInstances()
@@ -64,19 +68,22 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                     'slug' => $app->slug,
                     'instance' => $appInstance->name,
                     'mode' => 'app-prod',
+                    'expected_root' => '',
                 ];
 
                 continue;
             }
 
             $account ??= $this->accounts->resolve($node);
+            $root = $this->developmentRoot($node, $account, $appInstance->checkout_path);
             $checkouts[] = [
                 'path' => $appInstance->checkout_path,
-                'root' => $account->home,
+                'root' => $root,
                 'user' => $account->user,
                 'slug' => '',
                 'instance' => '',
                 'mode' => 'app-dev',
+                'expected_root' => $root,
             ];
         }
         $match = true;
@@ -103,7 +110,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                             $checkout['slug'],
                             $checkout['instance'],
                             $checkout['mode'],
-                            $account->home ?? '',
+                            $checkout['expected_root'],
                         ],
                         input: 'repository=$1'
                         ."\n"
@@ -129,7 +136,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                         ."\n"
                         .'  case "$checkout" in "$expected_root"|"$expected_root"/*) ;; *) exit 1 ;; esac'
                         ."\n"
-                        .'  if test -d "$checkout" && test ! -L "$checkout" && test "$(git -C "$checkout" remote get-url origin 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
+                        .'  if test -d "$checkout" && test ! -L "$checkout" && test "$(git -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
                         ."\n"
                         .'  exit 0'
                         ."\n"
@@ -144,7 +151,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                         .' && test "$(sudo -u "$user" -H -- realpath -e "$checkout")" = "$checkout"'
                         .' && test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"'
                         .' && test "$(sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel 2>/dev/null)" = "$checkout"'
-                        .' && test "$(sudo -u "$user" -H -- git -C "$checkout" remote get-url origin 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
+                        .' && test "$(sudo -u "$user" -H -- git -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
                         ."\n",
                     ),
                 );
@@ -162,5 +169,25 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         }
 
         return new AppInspectionData(count($checkouts), $match);
+    }
+
+    /**
+     * A development checkout lives under the Node's configured apps root, or under the managed
+     * user's home when the Node has no apps root or the checkout predates it.
+     */
+    private function developmentRoot(Node $node, ManagedUserAccount $account, string $checkoutPath): string
+    {
+        try {
+            $configured = $this->nodeSettings->fromStored($node->settings)?->appsPath();
+            $appsRoot = $configured === null ? null : StoragePath::parse($configured);
+        } catch (\Throwable) {
+            throw new DoctorInspectionException;
+        }
+
+        $checkout = StoragePath::tryParse($checkoutPath);
+
+        return $appsRoot instanceof StoragePath && $checkout instanceof StoragePath && $checkout->isInside($appsRoot)
+            ? $appsRoot->value
+            : $account->home;
     }
 }
