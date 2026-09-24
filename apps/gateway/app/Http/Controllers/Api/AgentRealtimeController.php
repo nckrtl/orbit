@@ -26,6 +26,7 @@ final class AgentRealtimeController extends Controller
         return response()->json([
             'data' => [
                 'url' => $connection?->url(),
+                'address' => $connection?->resolveAddress,
                 'key' => $connection?->key,
                 'channel' => "presence-node.{$id}",
                 'member' => "agent.{$id}",

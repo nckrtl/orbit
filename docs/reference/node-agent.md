@@ -30,15 +30,18 @@ The agent merges changes to the same unit or container that arrive within 250 mi
 
 ## How it connects
 
-The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It verifies both against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address, as it identifies every other caller.
+The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS: its configuration contains the Gateway's WireGuard address, and the realtime response contains Reverb's serving address. The agent connects to each address while verifying the certificate for the unchanged hostname against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address, as it identifies every other caller.
 
-1. The agent calls `GET /api/v1/agent/realtime`. The response names the Reverb connection, the Node's channel, and the agent's member ID.
+The Gateway writes `gateway_address` to the agent's `config.toml` on every converge. This is the WireGuard address that Orbit's private DNS answers for `gateway.orbit`.
+
+1. The agent calls `GET /api/v1/agent/realtime`. The response names the Reverb connection, its serving address, the Node's channel, and the agent's member ID.
 
    ```json
    {
      "data": {
        "url": "wss://reverb.orbit",
-       "key": "<reverb-app-key>",
+      "address": "10.0.0.2",
+      "key": "<reverb-app-key>",
        "channel": "presence-node.12",
        "member": "agent.12"
      },
@@ -46,14 +49,17 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
    }
    ```
 
-   `url` and `key` are `null` when no `websocket` role is active. The agent then asks again every 60 seconds.
+   `url`, `address`, and `key` are `null` when no `websocket` role is active. The agent then asks again every 60 seconds.
 
-2. The agent opens the WebSocket and reads its `socket_id` from `pusher:connection_established`.
-3. The agent requests authorization at `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and `version`.
+3. The agent sends every Gateway request to `gateway_address` on port 443. It retains `gateway.orbit` as the TLS server name and verifies that certificate against `ca.pem` without resolving the hostname.
+4. The agent opens a TCP connection to the Reverb `address` on port 443. It uses `reverb.orbit` as the TLS server name and verifies that certificate against `ca.pem`. It reads its `socket_id` from `pusher:connection_established`.
+5. The agent requests authorization at `POST /api/v1/agent/broadcasting/auth` with `socket_id`, `channel_name`, and `version`.
 
    The `version` value is the agent's short version string, such as `1.2.3`. The Gateway signs membership `agent.{id}` on the caller's own channel only. The response has the Pusher `auth` and `channel_data` values.
 
-4. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats and changes. [Realtime events](/reference/events#node-agent-channels) defines the events.
+6. The agent subscribes to `presence-node.{id}`, sends its snapshot, and then sends heartbeats and changes. [Realtime events](/reference/events#node-agent-channels) defines the events.
+
+When the Gateway role moves, its WireGuard address changes. `node:add` and a role converge rewrite `gateway_address`; a changed configuration restarts the agent. The same converge updates the WebSocket serving address returned to the agent.
 
 The two agent endpoints require an active WireGuard peer, but no Gateway access edge. They do not record Activity.
 
@@ -74,7 +80,7 @@ The Gateway pins one agent version and one SHA-256 checksum for each architectur
 | Item | Path or value |
 | --- | --- |
 | Binary | `/usr/local/bin/orbit-agent`, owned by `root`, mode `0755` |
-| Configuration | `/etc/orbit/agent/config.toml`, with the Gateway URL |
+| Configuration | `/etc/orbit/agent/config.toml`, with `gateway_url = "https://gateway.orbit"` and required `gateway_address` (the Gateway's WireGuard address) |
 | Orbit root certificate | `/etc/orbit/agent/ca.pem` |
 | Unit | `/etc/systemd/system/orbit-agent.service`, marked `# Managed by Orbit: agent` |
 | Download | `https://github.com/nckrtl/orbit/releases/download/agent-v{version}/orbit-agent-{version}-linux-{arch}` |
@@ -92,7 +98,7 @@ The Gateway converges the agent at these points:
 | `node:add`, for a new or an existing Node, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an existing active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version.
+To upgrade the fleet, publish a new release, update the pin in the Gateway, deploy the Gateway, and run `orbit node:add <node>` or a role converge on each Node. Doctor reports every Node that still runs another version. Version 0.1.1 requires `gateway_address` in its configuration.
 
 ## Failures
 

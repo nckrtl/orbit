@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeAgentRuntime;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentRoleConverger;
@@ -88,7 +90,7 @@ it('leaves the running agent alone on an unchanged converge', function (): void 
         ->toContain(['sudo', 'systemctl', 'enable', '--now', 'orbit-agent']);
 });
 
-it('writes the hardened agent unit and files and restarts after a change', function (): void {
+it('writes the Gateway address into the agent configuration and restarts after a change', function (): void {
     $ssh = new AgentInstallSsh(null);
     $agent = nodeAgentExecutor($ssh);
 
@@ -106,7 +108,7 @@ it('writes the hardened agent unit and files and restarts after a change', funct
     $arguments = array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands);
 
     expect($contents)
-        ->toContain('gateway_url = "https://gateway.orbit"'."\n")
+        ->toContain('gateway_url = "https://gateway.orbit"'."\n".'gateway_address = "10.44.0.1"'."\n")
         ->and(implode("\n", $contents))
         ->toContain(NodeAgentFootprint::Marker, 'Restart=always', 'RestartSec=2', 'CapabilityBoundingSet=', 'NoNewPrivileges=yes', 'ProtectSystem=strict', 'ProtectHome=yes', 'PrivateTmp=yes', 'MemoryMax=64M', 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6', '-----BEGIN CERTIFICATE-----');
 
@@ -114,6 +116,31 @@ it('writes the hardened agent unit and files and restarts after a change', funct
         ['sudo', 'systemctl', 'enable', '--now', 'orbit-agent'],
         ['sudo', 'systemctl', 'restart', 'orbit-agent'],
     );
+});
+
+it('restarts the agent when the Gateway address changes', function (): void {
+    $ssh = new AgentInstallStatefulSsh;
+    $agent = nodeAgentExecutor($ssh);
+    $agent->converge(nodeAgentNode());
+
+    Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway))
+        ->firstOrFail()->update(['wireguard_ip' => '10.44.0.2']);
+    $ssh->commands = [];
+    $agent->converge(nodeAgentNode());
+
+    $contents = array_map(static function (RemoteCommand $command): string {
+        if ($command->protectedInput === null) {
+            return '';
+        }
+
+        $stream = $command->protectedInput->stream();
+
+        return stream_get_contents($stream) ?: '';
+    }, $ssh->commands);
+
+    expect($contents)->toContain('gateway_url = "https://gateway.orbit"'."\n".'gateway_address = "10.44.0.2"'."\n")
+        ->and(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands))
+        ->toContain(['sudo', 'systemctl', 'restart', 'orbit-agent']);
 });
 
 it('stops, disables, and deletes all agent files during removal', function (): void {
@@ -189,6 +216,18 @@ it('fails with agent.checksum_mismatch', function (): void {
 
 function nodeAgentExecutor(SshExecutor $ssh): NodeAgentSshExecutor
 {
+    if (! Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active))->exists()) {
+        $gateway = Node::query()->create([
+            'name' => 'agent-install-gateway',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.1',
+            'wireguard_ip' => '10.44.0.1',
+            'user' => 'orbit',
+        ]);
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    }
+
     return new NodeAgentSshExecutor(
         $ssh,
         new AgentInstallKeys,

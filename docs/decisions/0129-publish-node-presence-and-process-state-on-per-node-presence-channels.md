@@ -31,7 +31,8 @@ Reverb facts shape the design:
 ## Decision
 
 - Each Node has one presence channel, `presence-node.{id}`, on the existing Reverb app.
-- The Gateway signs one agent membership, member ID `agent.{id}`, on `presence-node.{id}`, and only for a request from Node `{id}`'s own WireGuard address when `ManagedNodeEligibility` allows that Node. It signs through two agent-only endpoints that need no access edge: one returns the Reverb connection and the Node's channel, and one signs the membership.
+- The Gateway signs one agent membership, member ID `agent.{id}`, on `presence-node.{id}`, and only for a request from Node `{id}`'s own WireGuard address when `ManagedNodeEligibility` allows that Node. It signs through two agent-only endpoints that need no access edge: one returns the Reverb connection, its serving address, and the Node's channel, and one signs the membership.
+- The agent never uses system DNS. The Gateway writes its WireGuard address to required `gateway_address` in `config.toml` on every converge. Gateway HTTP requests connect to that address on port 443 while retaining `gateway.orbit` as the TLS server name and validating its certificate against the installed Orbit CA. For Reverb, the agent connects to the returned serving address on port 443 while retaining `reverb.orbit` as the TLS server name and validating its certificate against the same CA. The public connection URLs remain `https://gateway.orbit` and `wss://reverb.orbit`.
 - Every other subscriber, such as a browser, joins through the existing auth endpoint with its existing rules and receives a viewer member ID, `viewer.{socket id}`. The existing endpoint never signs an `agent.*` member.
 - The agent publishes three client events on its own channel: a heartbeat every 5 seconds, a Process change as soon as it sees one, and a full snapshot when it joins and whenever a new member joins.
 - A subscriber must accept an agent event on `presence-node.{id}` only when Reverb's `user_id` equals `agent.{id}`. It must accept a Process entry only when the Process runs on Node `{id}` and the reported unit or container name matches that Process's name.
@@ -56,6 +57,8 @@ Reverb facts shape the design:
 - The API, CLI, and `orbit top` do not see live presence or Process state. A non-browser client that needs live state requires a new decision for a Gateway view.
 - A browser subscribes to one channel per active Node and makes one auth request for each at page load.
 - Agent traffic depends on the `websocket` role. Without it, the agent waits and retries, and the web app polls as today.
+- Moving the Gateway role changes its WireGuard address. `node:add` or a role converge rewrites `gateway_address`, and changed configuration restarts the agent.
+- The Gateway and Reverb connection host checks remain `https://gateway.orbit` and `wss://reverb.orbit`; address pinning does not weaken TLS hostname verification.
 - Client events are limited by Reverb's 10,000-byte message size, so the agent splits a large snapshot into parts.
 
 ## Affects

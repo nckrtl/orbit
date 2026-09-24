@@ -6,6 +6,8 @@ namespace App\Infrastructure\Nodes;
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeAgentRuntime;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -36,7 +38,18 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             throw new ResourceOperationException('agent.architecture_unsupported', 'The Node agent architecture is unsupported.', 422, $exception);
         }
 
-        $configuration = "gateway_url = \"https://gateway.orbit\"\n";
+        $gatewayAddress = Node::query()
+            ->where('status', LifecycleStatus::Active)
+            ->whereHas('roles', static fn ($query) => $query
+                ->where('role', RoleName::Gateway)
+                ->where('status', LifecycleStatus::Active))
+            ->value('wireguard_ip');
+
+        if (! is_string($gatewayAddress) || filter_var($gatewayAddress, FILTER_VALIDATE_IP) === false) {
+            throw new ResourceOperationException('agent.install_failed', 'The active Gateway has no managed WireGuard address.', 409);
+        }
+
+        $configuration = "gateway_url = \"https://gateway.orbit\"\ngateway_address = \"{$gatewayAddress}\"\n";
         $certificate = $this->certificates->rootCertificate();
         $unit = implode("\n", [
             NodeAgentFootprint::Marker,

@@ -1,7 +1,12 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, fs::File, io::BufReader};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::BufReader,
+    net::{IpAddr, SocketAddr},
+};
 
 pub const CONFIG_PATH: &str = "/etc/orbit/agent/config.toml";
 pub const CA_PATH: &str = "/etc/orbit/agent/ca.pem";
@@ -12,12 +17,16 @@ pub const CHANGE_MERGE_WINDOW: std::time::Duration = std::time::Duration::from_m
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub gateway_url: String,
+    pub gateway_address: IpAddr,
 }
 impl Config {
     pub fn load() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let config: Self = toml::from_str(&std::fs::read_to_string(CONFIG_PATH)?)?;
         let url = reqwest::Url::parse(&config.gateway_url)?;
-        if url.scheme() != "https" || url.host_str() != Some("gateway.orbit") {
+        if url.scheme() != "https"
+            || url.host_str() != Some("gateway.orbit")
+            || url.port_or_known_default() != Some(443)
+        {
             return Err("gateway_url must be https://gateway.orbit".into());
         }
         Ok(config)
@@ -261,11 +270,15 @@ pub fn tls_config(
             .with_no_client_auth(),
     ))
 }
-pub fn gateway_client() -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
+pub fn gateway_client(
+    address: IpAddr,
+) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
     let mut reader = BufReader::new(File::open(CA_PATH)?);
     let mut builder = reqwest::Client::builder()
         .https_only(true)
-        .tls_built_in_root_certs(false);
+        .redirect(reqwest::redirect::Policy::none())
+        .tls_built_in_root_certs(false)
+        .resolve("gateway.orbit", SocketAddr::new(address, 443));
     for cert in rustls_pemfile::certs(&mut reader) {
         builder = builder.add_root_certificate(reqwest::Certificate::from_der(&cert?)?);
     }
@@ -282,6 +295,22 @@ mod tests {
             runtime_status: status.into(),
         }
     }
+    #[test]
+    fn gateway_address_is_required_and_parsed_as_an_ip_literal() {
+        assert!(toml::from_str::<Config>(r#"gateway_url = "https://gateway.orbit""#).is_err());
+
+        let config: Config = toml::from_str(
+            r#"gateway_url = "https://gateway.orbit"
+gateway_address = "10.44.0.1""#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.gateway_address,
+            "10.44.0.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
     #[test]
     fn names_filter_and_parse() {
         assert_eq!(

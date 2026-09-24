@@ -18,11 +18,12 @@ describe('agent realtime endpoints', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
     });
 
-    it('returns only caller node connection membership details and permits no access edge', function (): void {
+    it('returns the Reverb serving address', function (): void {
         [, $credentials] = activate_websocket_role($this->node);
 
         $this->getJson('/api/v1/agent/realtime')->assertOk()
             ->assertJsonPath('data.url', 'wss://reverb.orbit')
+            ->assertJsonPath('data.address', $this->node->wireguard_ip)
             ->assertJsonPath('data.key', $credentials->appKey)
             ->assertJsonPath('data.channel', "presence-node.{$this->node->id}")
             ->assertJsonPath('data.member', "agent.{$this->node->id}");
@@ -35,7 +36,7 @@ describe('agent realtime endpoints', function (): void {
 
     it('returns null connection values when websocket is not active', function (): void {
         $this->getJson('/api/v1/agent/realtime')->assertOk()
-            ->assertJsonPath('data.url', null)->assertJsonPath('data.key', null);
+            ->assertJsonPath('data.url', null)->assertJsonPath('data.address', null)->assertJsonPath('data.key', null);
     });
 
     it('signs the agent presence membership with valid Pusher HMAC', function (): void {

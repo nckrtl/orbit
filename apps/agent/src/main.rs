@@ -9,11 +9,12 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
 use tokio::{
+    net::TcpStream,
     sync::{mpsc, watch},
     time::{Instant, Interval},
 };
 use tokio_tungstenite::{
-    connect_async_tls_with_config,
+    client_async_tls_with_config,
     tungstenite::{client::IntoClientRequest, Message},
     Connector, MaybeTlsStream, WebSocketStream,
 };
@@ -34,6 +35,7 @@ struct DiscoveryEnvelope {
 #[derive(Deserialize)]
 struct Discovery {
     url: Option<String>,
+    address: Option<String>,
     key: Option<String>,
     channel: String,
     member: String,
@@ -60,7 +62,7 @@ async fn main() {
 
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Config::load()?;
-    let client = gateway_client()?;
+    let client = gateway_client(config.gateway_address)?;
     let tls = tls_config()?;
     let connection = Connection::system().await?;
     let manager = Proxy::new(
@@ -115,7 +117,9 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         {
             return Err("Gateway returned an invalid agent channel identity".into());
         }
-        let (Some(url), Some(key)) = (discovery.url, discovery.key) else {
+        let (Some(url), Some(address), Some(key)) =
+            (discovery.url, discovery.address, discovery.key)
+        else {
             tokio::select! {_=shutdown_rx.changed()=>return Ok(()),_=realtime_poll.tick()=>{}}
             continue;
         };
@@ -123,6 +127,7 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
             &client,
             &config.gateway_url,
             &url,
+            &address,
             &key,
             &discovery.channel,
             tls.clone(),
@@ -186,6 +191,7 @@ async fn connected_session(
     client: &reqwest::Client,
     gateway: &str,
     ws_url: &str,
+    ws_address: &str,
     key: &str,
     channel: &str,
     tls: Arc<rustls::ClientConfig>,
@@ -201,16 +207,20 @@ async fn connected_session(
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut parsed = reqwest::Url::parse(ws_url)?;
-    if parsed.scheme() != "wss" || parsed.host_str() != Some("reverb.orbit") {
+    if parsed.scheme() != "wss"
+        || parsed.host_str() != Some("reverb.orbit")
+        || parsed.port_or_known_default() != Some(443)
+    {
         return Err("realtime discovery must use wss://reverb.orbit".into());
     }
     parsed.set_path(&format!("/app/{key}"));
     parsed.set_query(Some(&format!(
         "protocol=7&client=orbit-agent&version={VERSION}&flash=false"
     )));
+    let stream = connect_by_address(ws_address.parse::<std::net::IpAddr>()?, 443).await?;
     let request = parsed.as_str().into_client_request()?;
     let (socket, _) =
-        connect_async_tls_with_config(request, None, false, Some(Connector::Rustls(tls))).await?;
+        client_async_tls_with_config(request, stream, None, Some(Connector::Rustls(tls))).await?;
     let auth_url = format!(
         "{}/api/v1/agent/broadcasting/auth",
         gateway.trim_end_matches('/')
@@ -276,6 +286,13 @@ async fn connected_session(
             }
         }
     }
+}
+
+async fn connect_by_address(
+    address: std::net::IpAddr,
+    port: u16,
+) -> Result<TcpStream, std::io::Error> {
+    TcpStream::connect(std::net::SocketAddr::new(address, port)).await
 }
 
 async fn protocol_handshake(
@@ -686,6 +703,21 @@ mod protocol_tests {
         });
         (format!("http://{addr}"), state)
     }
+    #[tokio::test]
+    async fn opens_tcp_connections_to_literal_addresses_without_dns() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.unwrap().0 });
+
+        let stream = connect_by_address(address.ip(), address.port())
+            .await
+            .unwrap();
+
+        assert!(stream.peer_addr().unwrap().ip().is_loopback());
+        drop(stream);
+        drop(accept.await.unwrap());
+    }
+
     #[tokio::test]
     async fn fake_pusher_auth_subscribe_events_and_reconnect() {
         let (base, state) = fake_server().await;
