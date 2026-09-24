@@ -101,10 +101,13 @@ There is no reaper: a topology lives until the operator releases it. Every comma
 | `acquire ISSUE WORKTREE` | Creates discovery from the saved generation, applies pending Gateway migrations from mounted source, verifies readiness, and refuses duplicate discovery or a missing vendor tree |
 | `shell ISSUE NODE [--proof --review-action=ID --required]` | Opens a login shell as `orbit` on one physical Node key of discovery, a retained diagnosis, or a captured successful proof; successful-proof use starts a separate interactive review action |
 | `exec ISSUE NODE --argv=JSON [--timeout=SECONDS] [--proof --review-action=ID --required]` | Runs one argument vector as `orbit` on one physical Node key for up to `--timeout` seconds, default 60, at most 3600. `--argv-file=PATH` replaces `--argv`. Successful-proof use records a review action. |
+| `exec ISSUE NODE --argv=JSON --record=LABEL` | Runs like `exec` and appends the command, its times, exit code, and output to the [evidence log](#evidence-log). `exec` refuses `--record` with `--review-action`. |
 | `spawn ISSUE NODE NAME --argv=JSON` | Starts one argument vector as `orbit` on a discovery Node as the transient unit `orbit-e2e-NAME.service` and returns at once |
 | `logs ISSUE NODE NAME [--since=TIME] [--lines=N]` | Prints the spawned process's output with precise timestamps, also after it ended |
+| `logs ISSUE NODE NAME --record=LABEL` | Prints the output like `logs` and appends the fetched journal output to the [evidence log](#evidence-log) |
 | `kill ISSUE NODE NAME` | Stops the spawned process; its logs stay readable |
 | `sync ISSUE` | Proves the mount, applies pending Gateway migrations from mounted source, and verifies readiness; a file edit needs no `sync` |
+| `sync ISSUE --quick` | Proves the mount, installs the current guest helper scripts, and applies pending Gateway migrations without readiness verification; see [Discovery mount](#discovery-mount) |
 | `verify ISSUE` | Verifies discovery readiness and records the report |
 | `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; a declared snapshot replacement starts from the generic base, and the plan defaults to `.loop/proof/ISSUE.json` |
 | `capture ISSUE [--plan=PATH]` | Captures and archives complete successful proof evidence without releasing the topology, then permits interactive review |
@@ -140,9 +143,24 @@ The vector runs through `runuser -u orbit -- env -C /home/orbit HOME=/home/orbit
 
 `exec --proof` and `shell --proof` accept a `diagnosis` proof under its existing debugging path. They accept a proved topology only after complete capture and bind each successful-proof action to its issue, candidate, and attempt in the separate review record. The harness records whether an action is required or exploratory and its result. An interactive shell action stays incomplete until `review` records its result and finding. Required failures and incomplete required records prevent approval; exploratory failures remain distinct.
 
+### Evidence log
+
+`exec --record=LABEL` and `logs --record=LABEL` append one entry to `<worktree>/.e2e/evidence.log`. [ADR 0143](/decisions/0143-record-topology-evidence-and-sync-without-verification) records the decision. A label has 1 to 80 letters, digits, spaces, dots, dashes, or underscores; the harness checks it before it touches Incus. The log is append-only, is created with mode `0600`, and is plain text:
+
+```text
+=== 2026-09-24T06:40:00.123Z viewer after crash node=app-dev exit=0 duration=1234ms end=2026-09-24T06:40:01.357Z
+$ orbit node:list --json
+--- stdout
+...
+--- stderr
+...
+```
+
+The header gives the start time, label, Node key, exit code, duration, and end time, in UTC with milliseconds. The `$` line is the argv as shell-quoted words. The harness redacts the argv and output as it does in `<worktree>/.e2e/log`. Recording never changes the command's output or exit code; a failed append prints a warning on stderr. In a task workspace clone, the log is in the bridge worktree. `bin/worktree-remove` removes it with the worktree.
+
 ## Discovery mount
 
-`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests, so a changed file needs no `sync`; run `sync` after a migration or a guest helper change.
+`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`, a virtiofs (virtual I/O filesystem) share mounted read-write at `/home/orbit/orbit`. Every host edit is live in both guests, so a changed file needs no `sync`; run `sync` after a migration or a guest helper change. `sync --quick` does only the mount proof, the guest helper install, and the Gateway migrations, then prints a note that readiness was not verified. It skips the readiness probes and the extension converge, and it leaves `topology.json` and the guest source marker at the last full `sync`, so `status` shows that binding and standalone `verify` refuses the changed mount until a full `sync`.
 
 Acquisition and `sync` also install the current guest helper scripts on every physical Node before readiness checks, including three-node topologies cloned from an older snapshot. Guests never run Composer: host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. The harness places the preserved Gateway `.env` into the worktree when it is absent there. The mount device is part of the attempt inventory, so exact release removes it.
 
@@ -152,7 +170,7 @@ This preparation preserves WireGuard keys and private addresses, DNS settings, S
 
 ### Gateway schema readiness
 
-Acquisition and `sync` run `php artisan migrate --force --no-interaction` from the mounted Gateway checkout before they publish readiness for that source. The harness runs the command as `orbit` with `HOME=/home/orbit`, `ORBIT_HOME=/home/orbit/.orbit`, `ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway`, and `DB_DATABASE=/home/orbit/.orbit/gateway.sqlite`. This step applies only the migrations that mounted source declares. It does not run Gateway bootstrap, install dependencies, configure an application, provision roles or sample workloads, or change the promoted snapshot. Repeating `sync` leaves migrations that Laravel has already recorded unchanged.
+Acquisition and `sync` run `php artisan migrate --force --no-interaction` from the mounted Gateway checkout before they publish readiness for that source. The harness runs the command as `orbit` with `HOME=/home/orbit`, `ORBIT_HOME=/home/orbit/.orbit`, `ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway`, and `DB_DATABASE=/home/orbit/.orbit/gateway.sqlite`. This step applies only the migrations that mounted source declares. It does not run Gateway bootstrap, install dependencies, configure an application, provision roles or sample workloads, or change the promoted snapshot. Repeating `sync` leaves migrations that Laravel has already recorded unchanged. `sync --quick` runs the same migration command but publishes no readiness and no source binding.
 
 A migration error or timeout makes `acquire` or `sync` exit nonzero. Failed acquisition runs exact-attempt cleanup. An ownership refusal keeps the lease and exact recovery target for `release`; do not bypass that refusal. Failed `sync` keeps the same discovery resources and its last successful `topology.json` source binding. Guest source markers describe the current mount input and are not readiness receipts. `status` continues to show the last successful binding, and standalone `verify` refuses when the live worktree differs from that binding.
 
