@@ -35,7 +35,7 @@ The operator needs the answers to follow the published catalog, whichever listen
 ## Rejected alternatives
 
 - Restart the listener on every catalog change: rejected because each restart drops DNS on the VPN for a moment, and a current listener reloads without it.
-- Update the `vpn` node's checkout from the Gateway on each publication: rejected for now because it needs Git and Composer access, dependency installs, and a rollback path on that node. That is a larger ownership change than keeping answers current.
+- Update the `vpn` node's checkout from the Gateway on each publication: rejected because it needs Git and Composer access, dependency installs, and a rollback path on that node. That is a larger ownership change than keeping answers current.
 - Probe changed names over DNS and compare the answers: rejected because an added name can come from the dnsmasq backend, so an answer cannot prove which catalog the listener loaded.
 - Tell operators to restart the listener after each deploy: rejected because a missed step leaves answers stale with no signal.
 
