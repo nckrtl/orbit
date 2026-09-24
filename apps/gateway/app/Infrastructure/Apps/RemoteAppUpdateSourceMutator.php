@@ -36,7 +36,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                     test -d "$path"
                     test -d "$path/.git"
                     test ! -f "$path/.git"
-                    origin=$(git -C "$path" remote get-url origin)
+                    origin=$(git -C "$path" config --get remote.origin.url)
                     test "$origin" = "$current"
                     git -C "$path" rev-parse --verify --quiet HEAD >/dev/null
                     git_read git -C "$path" ls-remote --heads -- "$proposed" >/dev/null
@@ -72,7 +72,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                     test -d "$path/.git"
                     test ! -f "$path/.git"
                     git -C "$path" remote set-url origin -- "$url"
-                    git -C "$path" remote get-url origin
+                    test "$(git -C "$path" config --get remote.origin.url)" = "$url"
                     BASH,
                 'app-update-repository-origin',
                 'app.repository_origin_failed',

@@ -80,6 +80,19 @@ it('resumes relocation from each durable cross-filesystem checkpoint', function 
     'verified destination after original removal before the database checkpoint' => 'destination-only',
 ]);
 
+it('reports the configured origin, not the insteadOf rewrite Git applies', function (): void {
+    $fixture = orb105_relocation_fixture(false);
+    orb105_run(['git', '-C', $fixture['source'], 'config', 'url.git@example.test:.insteadOf', 'https://example.test/']);
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        expect($facts->repositoryUrl)->toBe('https://example.test/acme.git');
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
 it('fails closed when an incomplete stage has no verified original', function (): void {
     $fixture = orb105_relocation_fixture();
 

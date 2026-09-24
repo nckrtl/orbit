@@ -58,7 +58,7 @@ During an upgrade, the Gateway checks every existing Project before it makes rep
 
 ## Resolve a Project during registration
 
-Registration finds the Project from the checkout's verified Git origin. It matches the repository identity across URL formats. Conflicting Project or source details stop registration before any changes.
+Registration finds the Project from the checkout's verified Git origin, the `remote.origin.url` value stored in the checkout without `insteadOf` rewrites. It matches the repository identity across URL formats. Conflicting Project or source details stop registration before any changes.
 
 When no Project owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the Project before its Instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request.
 
@@ -104,7 +104,7 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 
 The Gateway treats the supplied fields as one operation. It inventories affected Instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous Project record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
 
-When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another Project (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Production Git source, deployment branch, starting commit, and release layout do not change. Project updates never start a deployment.
+When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another Project (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Preflight compares the `remote.origin.url` value stored in each checkout with the current repository URL and ignores `insteadOf` rewrites from the Node's Git configuration. Production Git source, deployment branch, starting commit, and release layout do not change. Project updates never start a deployment.
 
 When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The Instance name, managed path, and Route identity stay unchanged.
 
