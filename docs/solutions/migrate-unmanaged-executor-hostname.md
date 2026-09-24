@@ -1,13 +1,13 @@
 ---
 title: "Migrate an unmanaged Executor hostname"
-description: "Replace a hand-placed executor.test Caddy site with a Gateway-owned custom proxy Route at executor.orbit before the first Node Caddy build removes it."
+description: "Replace a hand-placed executor.test Caddy fragment with a Gateway-owned custom proxy Route at executor.orbit."
 ---
 
 # Migrate an unmanaged Executor hostname
 
 ## Problem
 
-Beast can already run a self-hosted Executor as a Node-owned Docker Process. The private hostname was published outside Gateway intent: an unmanaged Caddy site such as the `executor.caddy` fragment plus an Orbit CA leaf placed by hand under `/etc/caddy/orbit-certificates/executor/`. That name, often `executor.test`, does not appear in `route:list`. Doctor cannot own it. The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on Beast backs up that fragment and stops serving it.
+Beast can already run a self-hosted Executor as a Node-owned Docker Process. The private hostname was published outside Gateway intent: an unmanaged Caddy fragment such as `executor.caddy` plus an Orbit CA leaf placed by hand under `/etc/caddy/orbit-certificates/executor/`. That name, often `executor.test`, does not appear in `route:list`. Doctor cannot own it. The fragment survives Orbit Caddy converge because publishers preserve non-`app-dev.caddy` files.
 
 ## Cause
 
@@ -25,14 +25,14 @@ Use `--upstream=http://127.0.0.1:4788` when the Process listener is a known loop
 
 The Gateway then publishes exact private DNS for `executor.orbit`, issues an Orbit CA leaf on Beast, and writes the Caddy reverse-proxy site. List and show include the Route. Destroy removes only that Route.
 
-When no Node Caddy build has run on Beast yet, creating the Route runs the first one. That build starts serving `executor.orbit` and stops serving `executor.test` in the same reload, so switch clients to `executor.orbit` at that time. The build copies the old Caddy configuration to `/etc/caddy/orbit-backups/<UTC timestamp>/` and leaves the hand-placed certificate files in place. Remove them by hand after clients stop using `executor.test`.
+Leave the unmanaged `executor.test` fragment and hand-placed certificate in place until clients have moved. Orbit automation must not delete live unmanaged Caddy or those certificate files. The proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)) changes this: its first build on Beast backs up the fragment to `/etc/caddy/orbit-backups/` and stops serving `executor.test`, so move clients before that build. After `https://executor.orbit` works, remove the sidecar by hand on Beast and retire `executor.test` from client configuration.
 
 [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns uniqueness, DNS, Caddy, and removal. [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes) records the kind.
 
 ## Limits
 
-This note does not migrate DNS clients. A name under a Cluster TLD still needs the exact custom proxy record; the TLD wildcard alone would send unmatched names to the Router.
+This note does not destroy unmanaged configuration. It does not migrate DNS clients. A name under a Cluster TLD still needs the exact custom proxy record; the TLD wildcard alone would send unmatched names to the Router.
 
 ## Verification
 
-Create the Route, then confirm `orbit route:show` reports kind `custom_proxy`, `getent ahostsv4 executor.orbit` returns the Beast address, and `https://executor.orbit` reaches Executor through Orbit-CA TLS. Doctor family `route` on Beast should be healthy. After the first Node Caddy build, confirm the old fragment is in `/etc/caddy/orbit-backups/` and `executor.orbit` still works.
+Create the Route, then confirm `orbit route:show` reports kind `custom_proxy`, `getent ahostsv4 executor.orbit` returns the Beast address, and `https://executor.orbit` reaches Executor through Orbit-CA TLS. Doctor family `route` on Beast should be healthy. After clients move, delete the unmanaged fragment by hand and confirm `executor.orbit` still works.

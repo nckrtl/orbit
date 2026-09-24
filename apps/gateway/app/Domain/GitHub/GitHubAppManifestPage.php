@@ -25,6 +25,7 @@ final readonly class GitHubAppManifestPage
             'redirect_url' => "{$registration->gatewayUrl}/api/v1/github/app/callback",
             'public' => true,
             'default_permissions' => [
+                'checks' => 'read',
                 'contents' => 'write',
                 'metadata' => 'read',
                 'pull_requests' => 'write',
