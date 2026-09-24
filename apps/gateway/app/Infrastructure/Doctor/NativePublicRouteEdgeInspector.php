@@ -24,6 +24,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         private CommandDeadline $deadline,
         private IngressSiteRepository $sites = new IngressSiteRepository,
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
+        private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
     ) {}
 
     public function inspect(Node $node, Route $route): PublicRouteEdgeObservation
@@ -40,13 +41,13 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         $artifact->domain,
                         $artifact->routerUpstream,
                         $artifact->certificateDirectory(),
+                        $this->liveCaddyfilePath,
                     ],
                     input: <<<'BASH'
                         domain=$1
                         upstream=$2
                         certificates=$3
-                        config=/etc/caddy/orbit-versions
-                        live=$(readlink -f /etc/caddy/Caddyfile)
+                        live=$(readlink -f "$4")
                         fragment_dir=$(dirname "$live")/fragments
                         if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null \
                             && grep -Rqs -- "$upstream" "$fragment_dir" 2>/dev/null; then
@@ -54,8 +55,17 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         else
                             printf 'ingress=0\n'
                         fi
-                        if grep -Rqs -- "$domain" "$fragment_dir" 2>/dev/null \
-                            && ! grep -Rqs -- "tls $certificates/cert.pem" "$fragment_dir" 2>/dev/null; then
+                        # Caddy must manage the public certificate: the public site pins no Orbit CA
+                        # leaf, and it opts into automation unless the Node leaves automation on.
+                        site=$(awk -v start="$domain {" '
+                            $0 == start { inside = 1 }
+                            inside { print }
+                            inside && $0 == "}" { exit }
+                        ' "$fragment_dir"/*.caddy 2>/dev/null || true)
+                        if [ -n "$site" ] \
+                            && ! grep -Rqs -- "tls $certificates/cert.pem" "$fragment_dir" 2>/dev/null \
+                            && { printf '%s\n' "$site" | grep -Eq '^[[:space:]]+tls force_automate$' \
+                                || ! grep -Eqs '^[[:space:]]*auto_https[[:space:]]+(disable_certs|off)$' "$live"; }; then
                             printf 'tls=1\n'
                         else
                             printf 'tls=0\n'

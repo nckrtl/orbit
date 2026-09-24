@@ -1220,7 +1220,7 @@ it('retires only the exact package-default caddyfile while preserving modified c
         $orbitResult = $harness->run(
             publisher: zero_site_publisher($harness),
             scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "{\n    local_certs\n}\n",
+                'unmanaged.caddy' => "legacy.test {\n}\n",
                 'custom.caddy' => "custom handler\n",
                 'app-dev.caddy' => "stale app-dev\n",
             ]),
@@ -1237,7 +1237,7 @@ it('retires only the exact package-default caddyfile while preserving modified c
             ->and($orbitResult->publishedFragments['custom.caddy'])
             ->toBe("custom handler\n")
             ->and($orbitResult->publishedFragments['00-unmanaged.caddy'])
-            ->toBe("{\n    local_certs\n}\n")
+            ->toBe("legacy.test {\n}\n")
             ->and($orbitResult->publishedFragments['app-dev.caddy'])
             ->toBe("# Managed by Orbit.\n");
 
@@ -1301,6 +1301,61 @@ it('fails closed when both unmanaged Caddy fragment names already exist', functi
             ->toBe(0)
             ->and($result->liveMainAfter)
             ->toBe("import fragments/*.caddy\n")
+            ->and($result->publishedFragments)
+            ->toBeEmpty();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('refuses to adopt a Caddyfile that opens its own global options block', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+    $adopted = "{\n    local_certs\n    email ops@example.test\n}\n\nlegacy.test {\n    respond ok\n}\n";
+
+    try {
+        $result = $harness->run(
+            publisher: zero_site_publisher($harness),
+            scenario: AppDevCaddyPublishScenario::modifiedConfig($adopted, "package default\n"),
+        );
+
+        expect($result->exitCode)
+            ->toBe(1)
+            ->and($result->stderr)
+            ->toBe('Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from '.$harness->etcCaddyPath('Caddyfile').", then publish again.\n")
+            ->and($result->liveMainAfter)
+            ->toBe($adopted)
+            ->and($result->liveLinkTargetAfter)
+            ->toBeNull()
+            ->and($result->publishedFragments)
+            ->toBeEmpty()
+            ->and($result->serviceCalls)
+            ->toBeEmpty()
+            ->and(file_exists($harness->rootPath().'/validate.log'))
+            ->toBeFalse();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('refuses to carry a legacy unmanaged fragment that opens its own global options block', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+
+    try {
+        $result = $harness->run(
+            publisher: zero_site_publisher($harness),
+            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "{\n    local_certs\n}\n",
+                'app-dev.caddy' => "stale app-dev\n",
+            ]),
+        );
+
+        expect($result->exitCode)
+            ->toBe(1)
+            ->and($result->stderr)
+            ->toContain('Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs).')
+            ->toContain('Remove that block from '.$harness->etcCaddyPath('orbit-versions/current/fragments/unmanaged.caddy').', then publish again.')
+            ->and($result->liveLinkTargetAfter)
+            ->toBe($harness->etcCaddyPath('orbit-versions/current/Caddyfile'))
             ->and($result->publishedFragments)
             ->toBeEmpty();
     } finally {

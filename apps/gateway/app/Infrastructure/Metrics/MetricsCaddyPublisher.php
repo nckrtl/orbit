@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Processes\CommandResult;
@@ -41,7 +42,7 @@ final readonly class MetricsCaddyPublisher
                 CaddyPublicationLock::Path,
             ],
             timeout: 60.0,
-            input: <<<BASH
+            input: CaddyGlobalOptions::conflictGuard().<<<BASH
                 version=\$1
                 owned_fragment=\$2
                 versions=\$3
@@ -103,6 +104,7 @@ final readonly class MetricsCaddyPublisher
                     printf 'orbit-metrics-publication:unchanged\n'
                     exit 0
                 fi
+                refuse_carried_global_options "\$candidate" "\$source_main"
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
@@ -185,7 +187,7 @@ final readonly class MetricsCaddyPublisher
                 $this->encodedGlobalOptions(),
             ],
             timeout: 60.0,
-            input: <<<'BASH'
+            input: CaddyGlobalOptions::conflictGuard().<<<'BASH'
                 version=$1
                 owned_fragment=$2
                 versions=$3
@@ -230,6 +232,7 @@ final readonly class MetricsCaddyPublisher
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
+                refuse_carried_global_options "$candidate" "$source_main"
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' "$global_options" | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"

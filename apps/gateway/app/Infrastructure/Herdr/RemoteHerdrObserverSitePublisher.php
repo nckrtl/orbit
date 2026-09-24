@@ -145,7 +145,7 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
                 $this->phpExecutable,
                 $this->herdrExecutable,
             ],
-            protectedInput: ProtectedInput::fromString(<<<BASH
+            protectedInput: ProtectedInput::fromString(CaddyGlobalOptions::conflictGuard().<<<BASH
                 session=\$1
                 action=\$2
                 version=\$3
@@ -393,6 +393,7 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
                 chown -R "\$root_owner:\$caddy_group" "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
+                refuse_carried_global_options "\$candidate" "\$source_main"
                 "\$caddy" validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
