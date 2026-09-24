@@ -5,7 +5,7 @@ description: "Enable or disable optional command families on the operator machin
 
 An extension is a command family that stays hidden until you enable it locally. Extension state lives on the operator machine and composes only that client's command surface. Enabling one changes nothing on the Gateway, and Gateway routes for an extension stay registered whether or not any client enables it.
 
-The CLI stores the enabled set in `$ORBIT_HOME/extensions.json`, next to the Gateway profiles in `config.json`. The file is private to your user; the CLI refuses to read or write it when it is a symlink, is not a regular file, or is readable by other users.
+The CLI stores the enabled set in `$ORBIT_HOME/extensions.json`, next to the Gateway profiles in `config.json`. The file is private to your user; the CLI refuses to read or write it when it is a symlink, is not a regular file, or is readable by other users. The CLI ignores an extension slug it does not know, such as one from an older release, and drops it the next time it writes the file.
 
 ## Commands
 

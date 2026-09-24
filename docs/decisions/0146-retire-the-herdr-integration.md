@@ -27,7 +27,7 @@ Orbit removes the Herdr integration completely.
 - `node:remove` and `node:rename` drop the `node.has_herdr_sessions` guard. Offline removal forgets only Node-owned Processes.
 - Private DNS publishes no Herdr observer host records. The Node Caddy build has no Herdr observer site source.
 - A migration drops `herdr_sessions`, `herdr_observation_nonces`, and `jwks_keys`. It uses `dropIfExists`, so it succeeds when rows remain and when a table is already gone. It has no `down()`, like the other table drops. It changes nothing on a Node, and it keeps every Process row, including one that ran a Herdr server.
-- The CLI removes the `herdr:*` commands and the `herdr` extension slug. The PHP SDK removes the Herdr requests, responses, and the `herdr` Doctor family. The MCP manifest and the web API types are regenerated without the Herdr operations.
+- The CLI removes the `herdr:*` commands and the `herdr` extension slug. It ignores an unknown slug in `extensions.json` instead of refusing the file. The PHP SDK removes the Herdr requests, responses, and the `herdr` Doctor family. The MCP manifest and the web API types are regenerated without the Herdr operations.
 - Shared features stay: Node Processes from [ADR 0069](/decisions/0069-allow-node-process-targets), the Homebrew Tool manager from [ADR 0043](/decisions/0043-manage-homebrew-core-formulae), the local extension mechanism that `proxycli` uses, the shared Caddy lock, the realtime websocket role, and the SSH executors. The Gateway site still sends `/.well-known/*` to Laravel as [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) decides, and Laravel now answers those paths with 404.
 
 This decision amends three earlier ones:
@@ -47,13 +47,13 @@ This decision amends three earlier ones:
 
 - The Gateway API, MCP tools, CLI, and SDK have fewer operations. The SDK models 162 operations instead of 169.
 - A Node that still ran a Herdr observer unit, certificate, or Caddy site keeps those files until an operator removes them. The next Node Caddy build drops the site.
-- An operator machine whose `extensions.json` still lists `herdr` fails with `extension.config_invalid`, because the CLI refuses unknown extensions. The operator removes `herdr` from that file or deletes the file, then enables `proxycli` again when needed.
+- The CLI ignores an extension slug it does not know in `extensions.json` and drops it on the next write. An operator machine that still lists `herdr` keeps working, and its `proxycli` state stays as it was.
 - A `herdr` Tool installed through Homebrew stays an ordinary Tool. `tool:remove` removes it.
 - The migration cannot be reversed. Herdr session rows, nonces, and the signing key are gone.
 
 ## Affects
 
-- Components: apps/cli, apps/docs, apps/gateway, packages/php-sdk
+- Components: apps/cli, apps/docs, apps/gateway, apps/web, packages/php-sdk
 - ADRs: amends [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine), [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity), and [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)
 - Detail: [`doctor`](/cli/doctor), [`extension`](/cli/extension), [Node provisioning](/reference/node-provisioning), [Caddy configuration](/reference/caddy-configuration)
-- Verify: `apps/gateway` Pest tests for the table-drop migration, the Doctor family list, Node removal and rename, the HTTP route surface, and the Node Caddy build; `apps/cli` command-surface and extension tests; `packages/php-sdk` guidance tests; `bin/mcp-tools --check`; an Incus run that migrates, reports a clean `orbit doctor`, and dry-runs `orbit:caddy-build` on every Node
+- Verify: `apps/gateway` Pest tests for the table-drop migration, the Doctor family list, Node removal and rename, the HTTP route surface, and the Node Caddy build; `apps/cli` command-surface and extension state tests, including an unknown slug; `packages/php-sdk` guidance tests; `bin/mcp-tools --check`; an Incus run that migrates, reports a clean `orbit doctor`, and dry-runs `orbit:caddy-build` on every Node
