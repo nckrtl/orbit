@@ -3689,6 +3689,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0142-apply-plausibles-clickhouse-configuration-from-the-analytics-role.md",
+            "title": "ADR 0142: Apply Plausible's ClickHouse configuration from the analytics role",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Node",
+                "Process"
+            ],
+            "governing_adrs": [
+                "0096",
+                "0142"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3857,7 +3876,8 @@
                 "0138",
                 "0139",
                 "0140",
-                "0141"
+                "0141",
+                "0142"
             ]
         },
         {
@@ -4020,7 +4040,8 @@
             "governing_adrs": [
                 "0096",
                 "0097",
-                "0102"
+                "0102",
+                "0142"
             ]
         },
         {

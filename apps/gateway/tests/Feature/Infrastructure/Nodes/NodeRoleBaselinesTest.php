@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -1027,11 +1028,12 @@ function analytics_role_baseline(): AnalyticsRoleBaseline
         public function purge(Node $node): void {}
     };
 
-    // The Process runtime and the publication reach a real node, which this dispatch-only
+    // The ClickHouse configuration, the Process runtime, and the publication reach a real node, which this dispatch-only
     // suite does not exercise; AnalyticsRoleBaselineTest covers what the baseline asks of them.
     return new AnalyticsRoleBaseline(
         $settings,
         new AnalyticsStorageProcessGuard,
+        Mockery::mock(AnalyticsClickhouseConfigurationManager::class)->shouldIgnoreMissing(),
         Mockery::mock(AnalyticsSecretManager::class)->shouldReceive('secretKeyBase')->andReturn(str_repeat('k', 64))->getMock()->shouldIgnoreMissing(),
         new class implements PlausibleRuntimeLifecycle
         {

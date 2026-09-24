@@ -12,6 +12,7 @@ use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
+use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsSecretManager;
@@ -158,6 +159,7 @@ use App\Domain\WireGuard\WireGuardPeerDnsRepairer;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Activity\ActivityPropertiesObserver;
+use App\Infrastructure\Analytics\NativeAnalyticsClickhouseConfigurationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsPublicationManager;
 use App\Infrastructure\Analytics\NativeAnalyticsRoleSettingsRepository;
 use App\Infrastructure\Analytics\NativeAnalyticsSecretManager;
@@ -453,6 +455,7 @@ final class AppServiceProvider extends ServiceProvider
         AnalyticsSecretManager::class => NativeAnalyticsSecretManager::class,
         PlausibleRuntimeLifecycle::class => NativePlausibleRuntimeLifecycle::class,
         AnalyticsPublicationManager::class => NativeAnalyticsPublicationManager::class,
+        AnalyticsClickhouseConfigurationManager::class => NativeAnalyticsClickhouseConfigurationManager::class,
         AnalyticsTrackingRouteProjector::class => NativeAnalyticsTrackingRouteProjector::class,
         AnalyticsStatsDriver::class => PlausibleCommunityEditionStatsDriver::class,
         AnalyticsStatsKeyStore::class => NativeAnalyticsStatsKeyStore::class,
