@@ -2213,6 +2213,38 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('proves the Metrics publication from a Node Caddy build without fragments', function (): void {
+        $fixture = metrics_publication_probe_fixture(true);
+        try {
+            $command = [
+                'bash',
+                $fixture['script'],
+                'metrics.publication',
+                'proof',
+                str_repeat('a', 40),
+                'orbit-e2e-topology-snapshot-gateway',
+                base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
+            ];
+            $build = $fixture['root'].'/etc/caddy/orbit-versions/0123456789abcdef0123456789abcdef';
+            mkdir($build, 0o700, true);
+            $site = "# orbit: metrics metrics.orbit\n".rtrim((string) file_get_contents($fixture['fragment']))."\n";
+            file_put_contents("{$build}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}");
+            unlink($fixture['root'].'/etc/caddy/Caddyfile');
+            symlink("{$build}/Caddyfile", $fixture['root'].'/etc/caddy/Caddyfile');
+            unlink($fixture['fragment']);
+
+            $evidence = json_decode(new Process($command, env: $fixture['environment'])->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+
+            expect($evidence['passed'])->toBeTrue()
+                ->and($evidence['expected'])->toBe('metrics.orbit:current-product-publication');
+
+            file_put_contents("{$build}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n");
+            expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
+        } finally {
+            new Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
     it('proves Metrics publication is absent when the declared map omits app-dev', function (): void {
         $fixture = metrics_publication_probe_fixture(false);
         try {

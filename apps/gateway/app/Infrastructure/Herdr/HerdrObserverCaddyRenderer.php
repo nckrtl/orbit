@@ -8,7 +8,8 @@ use App\Models\HerdrSession;
 
 final readonly class HerdrObserverCaddyRenderer
 {
-    public function render(HerdrSession $session): string
+    /** The live publisher binds every interface; the Node Caddy build passes its chosen listener. */
+    public function render(HerdrSession $session, string $bind = '0.0.0.0'): string
     {
         $hostname = $session->observer_hostname;
         $port = $session->observer_port;
@@ -17,7 +18,7 @@ final readonly class HerdrObserverCaddyRenderer
         return <<<CADDY
             # Managed by Orbit: herdr-observer
             https://{$hostname} {
-                bind 0.0.0.0
+                bind {$bind}
                 tls {$certificateDirectory}/cert.pem {$certificateDirectory}/key.pem
                 reverse_proxy 127.0.0.1:{$port}
             }

@@ -146,18 +146,22 @@ reverb.orbit {
 }
 ```
 
-The Gateway renders the sites from committed database state only. The same state always gives the same file. Route transitions are already [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
+The Gateway renders the sites from committed database state only. A role's sites render while the role is provisioning or active, and after a failed reconvergence, because they were live before that attempt. They stop rendering when the role's removal starts or when its first convergence fails. A Herdr observer site renders while its session publishes the observer and is not being removed.
+
+The same state always gives the same file. Route transitions are already [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a database record that the build reads. A Node gets at most one site for each domain and port. When a Route's current and transition placements render the same site on one Node, the build keeps the current one. Any other duplicate fails the build.
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
-| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | Workload and Router Nodes | `0.0.0.0` |
+| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | Workload and Router Nodes | `0.0.0.0` on a Node with `ingress`; otherwise the WireGuard address and the LAN address when the Node has one |
 | Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0` |
 | `gateway.orbit` | The Node with the `gateway` role | WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role | WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, `collector.proxycli.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row shares the port |
+| `reverb.orbit`, `analytics.orbit`, `collector.proxycli.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
-Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. So `gateway.orbit` stays off the public listener of a Node that also holds `ingress`. A build fails when a WireGuard-only site and a site from the first row share a port on one Node, because the first-row site would be unreachable over WireGuard.
+Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port.
+
+On a Node with `ingress`, first-row sites bind `0.0.0.0`, `gateway.orbit` stays off that public listener, and a build fails when a WireGuard-only site shares a port with a first-row site, because the first-row site would be unreachable over WireGuard.
 
 ### When a build runs
 
@@ -167,29 +171,52 @@ The Gateway runs one build at a time for each Node. A second build waits up to 3
 
 ### How a build is pushed
 
-The Gateway sends one script to the Node over SSH. On the Node that runs the Gateway process, it runs the same script through local `sudo`. The script:
+The Gateway sends one script to the Node over SSH. On the Node that runs the Gateway process, it runs the same script through local `sudo`. The Gateway knows that Node from the serving Node that bootstrap records. Before bootstrap records it, the Node whose `gateway` role renders the Gateway site counts as that Node. The script:
 
 1. Takes `/run/lock/orbit/caddy.lock` with the [path checks](#publication-lock) above.
 2. Checks that the packaged `/usr/bin/caddy` is at least the [release floor](/reference/node-provisioning#package-sources), 2.9.0.
-3. Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes.
-4. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile`. The version name comes from a digest of the file.
-5. Runs `caddy validate` as the `caddy` user, so log files that validation creates stay writable by the service.
-6. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
-7. Keeps the live version and the nine newest others, and removes older versions.
+3. Checks that every specific address the file binds exists on the Node.
+4. Stops without a change when `/etc/caddy/Caddyfile` already points at an unchanged copy of this version.
+5. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile` and runs `caddy validate` on it as the `caddy` user.
+6. Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes.
+7. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
+8. Keeps the live version and the nine newest others, and removes older versions. It never removes the `staged` directory.
+
+The addresses are the WireGuard and LAN addresses that sites bind, because Caddy cannot start with a missing listen address. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest. Validation runs as the `caddy` user, so log files that it creates stay writable by the service. When a build's version file differs from its digest, someone edited it by hand. The script backs that version up before it replaces or prunes it, whatever the new version is.
 
 A version holds only its `Caddyfile`. It has no fragments and imports nothing. Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
 ### When a build fails
 
-A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when `caddy validate` rejects the file, or when Caddy fails to reload. After a reload failure the script points `/etc/caddy/Caddyfile` back at the previous version and reloads again. The live configuration keeps serving in every case.
+A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload. After a reload failure the script points `/etc/caddy/Caddyfile` back at the previous version and reloads again. The live configuration keeps serving in every case.
 
 The command that requested the build fails with its usual error code, such as `app-dev.caddy_config_failed` or `websocket.caddy_publication_failed`. The error details and the activity record name the Node, the failed stage, and Caddy's message. A missing certificate file fails validation; converge the role or Route that owns the site to publish it again. One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site.
 
+The failed stage is one of `lock`, `release`, `addresses`, `write`, `validate`, `backup`, `swap`, or `reload` on the Node. On the Gateway it is `render` or `gateway-lock` before the Gateway contacts the Node, `connect` when the Gateway cannot reach the Node or the Node has no WireGuard address, and `read-live` when `--diff` cannot read the live file.
+
+A stored LAN address must stay on its Node. When the address goes away after a build, Caddy fails at its next restart, and the next build fails at `addresses` and names it. Correct the Node's stored address, then build again.
+
 [`orbit doctor`](/cli/doctor) reports `role.caddy_build_drift` when the live Caddyfile differs from a fresh render. The issue lists the site sources on that Node. Repeat any command that publishes one of them, such as `orbit node:role:add NODE app-dev --converge`, to build the Node again.
+
+### Render without pushing
+
+The Gateway can already render a Node's build, but no command pushes it yet. Role publishers still write the fragment layout above. On the Gateway machine, an operator or a reviewer can render one Node and compare it with that Node's live configuration:
+
+```bash
+php artisan orbit:caddy-build NODE --dry-run
+php artisan orbit:caddy-build NODE --dry-run --diff
+```
+
+| Option | Result |
+| --- | --- |
+| `--dry-run` | Required. Prints the rendered Caddyfile and changes nothing. |
+| `--diff` | Reads the live `/etc/caddy/Caddyfile` and its fragments, and prints one line for each site: `same`, `changed`, `build only`, or `live only`. A `changed` site lists the lines that differ. |
+
+The command exits with status 1 and prints `Build refused:` with the reason when the render has a problem, such as a duplicate address or a WireGuard-only site on a wildcard port. The output names hostnames and certificate paths; Orbit's Caddy sites hold no secrets.
 
 ### Replaced configuration
 
-The build replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`:
+The build replaces a Caddyfile that does not start with its marker line. It never adopts it. The first build on such a Node copies what it replaces to `/etc/caddy/orbit-backups/<UTC timestamp>/`, after the new version passes validation:
 
 | Live `/etc/caddy/Caddyfile` | Backup |
 | --- | --- |
@@ -197,5 +224,6 @@ The build replaces a Caddyfile that does not start with its marker line. It neve
 | Any other regular file | The file |
 | A symlink outside `/etc/caddy/orbit-versions` | The file it points at |
 | A version with a `fragments` directory | The whole version directory |
+| A build's version whose file differs from its digest | The whole version directory, also when prune removes it |
 
 Sites in the replaced file stop serving after that build. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup; remove it by hand when you do not need it.
