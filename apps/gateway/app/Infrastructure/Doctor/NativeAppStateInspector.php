@@ -11,6 +11,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -29,7 +30,8 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         private KnownHostsStore $knownHosts,
         private CommandDeadline $deadline,
         private ManagedUserAccountResolver $accounts,
-        private NodeSettingsNormalizer $nodeSettings = new NodeSettingsNormalizer,
+        private StorageRootResolver $storageRoots,
+        private NodeSettingsNormalizer $nodeSettings,
     ) {}
 
     public function inspect(App $app, Node $node): AppInspectionData
@@ -172,21 +174,22 @@ final readonly class NativeAppStateInspector implements AppStateInspector
     }
 
     /**
-     * A development checkout lives under the Node's configured apps root, or under the managed
-     * user's home when the Node has no apps root or the checkout predates it.
+     * A development checkout lives under the Node's effective apps root, or under the managed
+     * user's home when it predates a configured apps root.
      */
     private function developmentRoot(Node $node, ManagedUserAccount $account, string $checkoutPath): string
     {
         try {
-            $configured = $this->nodeSettings->fromStored($node->settings)?->appsPath();
-            $appsRoot = $configured === null ? null : StoragePath::parse($configured);
+            $appsRoot = $this->storageRoots
+                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account)
+                ->instance;
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
 
         $checkout = StoragePath::tryParse($checkoutPath);
 
-        return $appsRoot instanceof StoragePath && $checkout instanceof StoragePath && $checkout->isInside($appsRoot)
+        return $checkout instanceof StoragePath && $checkout->isInside($appsRoot)
             ? $appsRoot->value
             : $account->home;
     }
