@@ -17,8 +17,11 @@ final readonly class AppDevCaddyConfigRenderer
         private string $gatewayOrigin = 'https://gateway.orbit',
     ) {}
 
-    /** @param Collection<int, AppDevSite> $sites */
-    public function render(Collection $sites): string
+    /**
+     * @param  Collection<int, AppDevSite>  $sites
+     * @param  string  $bind  The listener of private sites. Public sites always bind every address.
+     */
+    public function render(Collection $sites, string $bind = '0.0.0.0'): string
     {
         if ($sites->isEmpty()) {
             return '# Orbit has no active app development sites.'.PHP_EOL;
@@ -27,7 +30,7 @@ final readonly class AppDevCaddyConfigRenderer
         return
             $sites
                 ->sortBy('domain')
-                ->map(function (AppDevSite $site): string {
+                ->map(function (AppDevSite $site) use ($bind): string {
                     $handler = $this->handler($site);
                     $internal = $this->localUnixSite($site);
 
@@ -43,7 +46,7 @@ final readonly class AppDevCaddyConfigRenderer
                             CADDY
                         : <<<CADDY
                             https://{$site->domain} {
-                                bind 0.0.0.0
+                                bind {$bind}
                                 tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
                                 {$handler}
                             }

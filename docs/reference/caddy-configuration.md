@@ -152,14 +152,16 @@ The same state always gives the same file. Route transitions are already [stored
 
 | Site source | Nodes | Listener |
 | --- | --- | --- |
-| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | Workload and Router Nodes | `0.0.0.0` |
+| `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | Workload and Router Nodes | `0.0.0.0` on a Node with `ingress`; otherwise the WireGuard address and the LAN address when the Node has one |
 | Public Ingress sites | The Cluster's Ingress Node | `0.0.0.0` |
 | `gateway.orbit` | The Node with the `gateway` role | WireGuard address |
 | `metrics.orbit` | The Node with the `gateway` role | WireGuard address |
 | Service metrics scrape site on port 9103 | A selected Ingress Node | WireGuard address |
-| `reverb.orbit`, `analytics.orbit`, `collector.proxycli.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row shares the port |
+| `reverb.orbit`, `analytics.orbit`, `collector.proxycli.orbit`, and Herdr observer sites | The Node that runs the role, collector, or session | WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
-Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. So `gateway.orbit` stays off the public listener of a Node that also holds `ingress`. A build fails when a WireGuard-only site and a site from the first row share a port on one Node, because the first-row site would be unreachable over WireGuard.
+Caddy sends a connection for the WireGuard address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Routers, Ingress, and private DNS clients reach first-row sites only on a Node's LAN or WireGuard address, so a Node without `ingress` binds them there and has no wildcard listener. A Gateway that is also a Router therefore serves `gateway.orbit` and its Router sites on the same port.
+
+On a Node with `ingress`, first-row sites bind `0.0.0.0`, `gateway.orbit` stays off that public listener, and a build fails when a WireGuard-only site shares a port with a first-row site, because the first-row site would be unreachable over WireGuard.
 
 ### When a build runs
 

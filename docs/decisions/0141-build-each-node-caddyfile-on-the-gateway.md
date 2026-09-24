@@ -67,13 +67,14 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 
   | Site source | Listener |
   | --- | --- |
-  | `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | `0.0.0.0`, because Routers and workloads reach them over WireGuard and LAN |
+  | `app-dev` and `app-prod` workload and Router sites, custom proxy Routes, analytics tracking hosts, Agentation, and Vite | On a Node with `ingress`, `0.0.0.0`. On any other Node, its WireGuard address and its LAN address when it has one |
   | Public Ingress sites | `0.0.0.0`, because clients reach them on the public address |
   | `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site | The Node's WireGuard address only |
-  | `websocket`, `analytics`, ProxyCli, and Herdr observers | The WireGuard address, or `0.0.0.0` when a site from the first row shares the port on that Node |
+  | `websocket`, `analytics`, ProxyCli, and Herdr observers | The WireGuard address, or `0.0.0.0` when a site from the first row binds `0.0.0.0` on the same port |
 
 - Caddy accepts a wildcard and a specific listener on one port. A connection to the specific address reaches only the sites bound to it. Connections to every other address reach the wildcard sites. A run on Caddy 2.9.1 and 2.11.4 showed this behavior; no official Caddy 2.9.0 image exists.
-- Because of that rule, a WireGuard-only site must not share a port with a site from the first row. The first-row site would be unreachable over WireGuard. The build fails on such a Node and names both sites. A WireGuard-only site may share a port with public Ingress sites, so `gateway.orbit` stays on the WireGuard address and never joins the public listener. Unix socket listeners keep their own addresses.
+- Because of that rule, a Node without `ingress` has no wildcard listener for first-row sites. Nothing on the Node reaches them through loopback: Routers and Ingress prefer a Node's LAN address and fall back to its WireGuard address, and private DNS answers with the Router's LAN address for eligible LAN clients and its WireGuard address otherwise. A WireGuard-only site such as `gateway.orbit` then shares port 443 with the Router sites of a Gateway that is also the Router, and nothing Gateway-private reaches a public listener.
+- On a Node with `ingress`, first-row sites keep `0.0.0.0`. A WireGuard-only site must not share a port with them there, because the first-row site would be unreachable over WireGuard. The build fails on such a Node and names both sites. A WireGuard-only site may share a port with public Ingress sites, so `gateway.orbit` stays on the WireGuard address and never joins the public listener. Unix socket listeners keep their own addresses.
 - Service metrics is a site source. It renders the WireGuard scrape site on a selected Ingress Node. Collection is on through Orbit's global block, as ADR 0139 decides. Service metrics does not read Caddy files from the Node or restore a Caddy snapshot. When its lifecycle fails, it restores its stored state and requests a build.
 
 ### The Gateway machine is a Node like the others
@@ -124,8 +125,8 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 - Operators lose hand-placed Caddy sites on Orbit Nodes. Before the first build on a Node, each live unmanaged site must move into Orbit or it stops serving. The backup keeps the content.
 - Every build renders every site on the Node, so a Node with many sites runs more database queries and a larger `caddy validate` per change. Unchanged renders skip validation and reload.
 - A failing site source blocks every Caddy change on that Node until it is fixed. Today only that publisher's fragment is blocked.
-- Role combinations that put a WireGuard-only site and a first-row site on one port, such as `gateway` with `router`, fail the build. Those combinations already leave the first-row sites unreachable over WireGuard today.
-- `websocket`, `analytics`, ProxyCli, and Herdr sites that share port 443 with first-row sites bind `0.0.0.0`, as they do today. On a Node that also holds `ingress`, they answer on the public listener for their own hostname.
+- A Node that holds `ingress` and a WireGuard-only site, such as `gateway` with `ingress` and `router`, fails the build when its first-row sites share the port. `gateway` with `router` and no `ingress` builds: its Router sites bind the WireGuard and LAN addresses. Today those Router sites bind `0.0.0.0` beside `gateway.orbit` and answer WireGuard clients with an empty response.
+- `websocket`, `analytics`, ProxyCli, and Herdr sites bind `0.0.0.0` only on a Node with `ingress` and first-row sites on their port. There they answer on the public listener for their own hostname. Everywhere else they bind the WireGuard address.
 - Route transitions need schema changes: a stored publication record on each Route and the two transition placement columns.
 - Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source. A Gateway that still runs another Caddy upgrades on its next bootstrap or web convergence. A Node that serves Herdr observers through a Linuxbrew Caddy switches to the packaged service.
 - Migration is ordered. The stored transition state and every site source must exist before any publisher uses the build, because a build replaces every site it cannot render. All publishers and the Incus harness then switch to the build in one change.

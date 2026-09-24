@@ -83,7 +83,7 @@ describe('building a Node', function (): void {
                 expect($exception->details())->toBe([
                     'node' => 'app-dev',
                     'stage' => 'render',
-                    'message' => 'The app-dev site one and the app-dev site two both serve shop.test:443 on 0.0.0.0.',
+                    'message' => 'The app-dev site one and the app-dev site two both serve shop.test:443 on 10.44.0.3.',
                 ]);
             });
         expect($this->ssh->commands)->toBe([]);

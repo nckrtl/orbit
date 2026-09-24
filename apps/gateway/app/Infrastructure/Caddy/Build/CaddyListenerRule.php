@@ -9,7 +9,7 @@ namespace App\Infrastructure\Caddy\Build;
  */
 enum CaddyListenerRule: string
 {
-    /** Workload and Router sites, custom proxy Routes, tracking hosts, Agentation, and Vite: `0.0.0.0`. */
+    /** Workload and Router sites, custom proxy Routes, tracking hosts, Agentation, and Vite: `0.0.0.0` on an Ingress Node, else the WireGuard and LAN addresses. */
     case Wildcard = 'wildcard';
 
     /** Public Ingress sites: `0.0.0.0`, reached on the public address. */
@@ -18,6 +18,6 @@ enum CaddyListenerRule: string
     /** `gateway.orbit`, `metrics.orbit`, and the service metrics scrape site: the WireGuard address only. */
     case WireGuard = 'wireguard';
 
-    /** `websocket`, `analytics`, ProxyCli, and Herdr observers: the WireGuard address, or `0.0.0.0` beside a wildcard site. */
+    /** `websocket`, `analytics`, ProxyCli, and Herdr observers: the WireGuard address, or `0.0.0.0` beside a first-row site on an Ingress Node. */
     case Shared = 'shared';
 }

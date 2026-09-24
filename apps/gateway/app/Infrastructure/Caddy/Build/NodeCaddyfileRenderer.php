@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Models\Node;
 use Throwable;
@@ -37,12 +38,14 @@ final readonly class NodeCaddyfileRenderer
             }
         }
 
-        $wireGuard = is_string($node->wireguard_ip) && $node->wireguard_ip !== '' ? $node->wireguard_ip : null;
-        /** @var array<int, CaddySite> $wildcardPorts The first wildcard site on each port. */
+        $wireGuard = self::address($node->wireguard_ip);
+        $ingress = $node->exists && CaddySiteRoles::nodeServes($node->id, RoleName::Ingress);
+        $explicit = array_values(array_unique(array_filter([$wireGuard, self::address($node->lan_ip)])));
+        /** @var array<int, CaddySite> $wildcardPorts The first first-row site on each port that binds every address. */
         $wildcardPorts = [];
 
         foreach ($sites as $site) {
-            if ($site->listener === CaddyListenerRule::Wildcard && ! array_key_exists($site->port, $wildcardPorts)) {
+            if ($ingress && $site->listener === CaddyListenerRule::Wildcard && ! array_key_exists($site->port, $wildcardPorts)) {
                 $wildcardPorts[$site->port] = $site;
             }
         }
@@ -52,9 +55,9 @@ final readonly class NodeCaddyfileRenderer
         $addresses = [];
 
         foreach ($sites as $site) {
-            $bind = $this->bind($site, $wildcardPorts, $wireGuard);
+            $bind = $this->bind($site, $wildcardPorts, $wireGuard, $ingress, $explicit);
 
-            if ($bind === null) {
+            if ($bind === []) {
                 $problems[] = "The {$site->describe()} needs the WireGuard IPv4 address of Node [{$node->name}].";
 
                 continue;
@@ -63,7 +66,7 @@ final readonly class NodeCaddyfileRenderer
             if ($site->listener === CaddyListenerRule::WireGuard && array_key_exists($site->port, $wildcardPorts)) {
                 $wildcard = $wildcardPorts[$site->port];
                 $problems[] = "The {$site->describe()} binds the WireGuard address on port {$site->port}, which the "
-                    ."{$wildcard->describe()} serves on ".self::Wildcard.'. The '
+                    ."{$wildcard->describe()} serves on ".self::Wildcard.' on this Ingress Node. The '
                     ."{$wildcard->source} site would be unreachable over WireGuard.";
             }
 
@@ -77,7 +80,9 @@ final readonly class NodeCaddyfileRenderer
                 $addresses[$address] = $site;
             }
 
-            $body = $site->bindPlaceholder === null ? $site->body : str_replace($site->bindPlaceholder, $bind, $site->body);
+            $body = $site->bindPlaceholder === null
+                ? $site->body
+                : str_replace($site->bindPlaceholder, implode(' ', $bind), $site->body);
             $blocks[] = "# orbit: {$site->source} {$site->name}".PHP_EOL.rtrim($body).PHP_EOL;
         }
 
@@ -104,23 +109,45 @@ final readonly class NodeCaddyfileRenderer
         return substr(hash('sha256', $content), 0, 32);
     }
 
-    /** @param array<int, CaddySite> $wildcardPorts */
-    private function bind(CaddySite $site, array $wildcardPorts, ?string $wireGuard): ?string
+    /**
+     * First-row sites bind every address on an Ingress Node, where public sites already do. Elsewhere
+     * they bind the Node's WireGuard and LAN addresses, the only ones Routers, workloads, and clients
+     * use, so no wildcard listener exists and WireGuard-only sites can share their port.
+     *
+     * @param  array<int, CaddySite>  $wildcardPorts
+     * @param  list<string>  $explicit
+     * @return list<string>
+     */
+    private function bind(CaddySite $site, array $wildcardPorts, ?string $wireGuard, bool $ingress, array $explicit): array
     {
         return match ($site->listener) {
-            CaddyListenerRule::Wildcard, CaddyListenerRule::Public => self::Wildcard,
-            CaddyListenerRule::WireGuard => $wireGuard,
-            CaddyListenerRule::Shared => array_key_exists($site->port, $wildcardPorts) ? self::Wildcard : $wireGuard,
+            CaddyListenerRule::Public => [self::Wildcard],
+            CaddyListenerRule::Wildcard => $ingress ? [self::Wildcard] : ($wireGuard === null ? [] : $explicit),
+            CaddyListenerRule::WireGuard => $wireGuard === null ? [] : [$wireGuard],
+            CaddyListenerRule::Shared => array_key_exists($site->port, $wildcardPorts)
+                ? [self::Wildcard]
+                : ($wireGuard === null ? [] : [$wireGuard]),
         };
     }
 
-    /** @return list<string> */
-    private function addresses(CaddySite $site, string $bind): array
+    private static function address(?string $address): ?string
     {
-        $addresses = array_map(
-            static fn (string $host): string => strtolower($host).":{$site->port} on {$bind}",
-            $site->hosts,
-        );
+        return is_string($address) && filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? $address : null;
+    }
+
+    /**
+     * @param  list<string>  $bind
+     * @return list<string>
+     */
+    private function addresses(CaddySite $site, array $bind): array
+    {
+        $addresses = [];
+
+        foreach ($bind as $listener) {
+            foreach ($site->hosts as $host) {
+                $addresses[] = strtolower($host).":{$site->port} on {$listener}";
+            }
+        }
 
         foreach ($site->unixSockets as $socket) {
             $addresses[] = $socket;

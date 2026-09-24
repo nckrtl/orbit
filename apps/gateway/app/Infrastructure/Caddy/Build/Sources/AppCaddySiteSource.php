@@ -20,6 +20,8 @@ use Illuminate\Support\Collection;
  */
 final readonly class AppCaddySiteSource implements NodeCaddySiteSource
 {
+    public const string BindPlaceholder = '__ORBIT_APP_BIND__';
+
     public function __construct(
         private AppDevSiteRepository $repository,
         private AppDevCaddyConfigRenderer $renderer,
@@ -44,7 +46,8 @@ final readonly class AppCaddySiteSource implements NodeCaddySiteSource
                 listener: $site->publicListener ? CaddyListenerRule::Public : CaddyListenerRule::Wildcard,
                 hosts: [$site->domain],
                 port: 443,
-                body: $this->renderer->render(collect([$site])),
+                body: $this->renderer->render(collect([$site]), self::BindPlaceholder),
+                bindPlaceholder: $site->publicListener ? null : self::BindPlaceholder,
                 unixSockets: is_string($site->localUnixUpstream) && $site->localUnixUpstream !== ''
                     ? [$site->localUnixUpstream]
                     : [],

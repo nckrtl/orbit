@@ -166,10 +166,10 @@ describe('site sources', function (): void {
         $workloadFile = caddy_build_renderer()->render($workload);
 
         expect($routerFile->content)->toContain(
-            "# orbit: app-dev route-{$route->id}-router\n".rtrim($renderer->render($repository->forNode($router)))."\n",
+            "# orbit: app-dev route-{$route->id}-router\n".rtrim($renderer->render($repository->forNode($router), '10.44.0.1'))."\n",
         )
             ->and($workloadFile->content)->toContain(
-                "# orbit: app-dev app-instance-{$instance->id}\n".rtrim($renderer->render($repository->forNode($workload)))."\n",
+                "# orbit: app-dev app-instance-{$instance->id}\n".rtrim($renderer->render($repository->forNode($workload), '10.44.0.30'))."\n",
             )
             ->and($routerFile->sites[0]->listener)->toBe(CaddyListenerRule::Wildcard);
     });
@@ -236,17 +236,47 @@ describe('site sources', function (): void {
 });
 
 describe('listener selection', function (): void {
+    it('binds first-row sites to the WireGuard and LAN addresses on a Node without ingress', function (): void {
+        $caddyfile = caddy_build_compose(
+            [caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev')],
+            lan: '192.168.1.9',
+        );
+
+        expect($caddyfile->content)->toContain("shop.test {\n    bind 10.44.0.9 192.168.1.9\n")
+            ->and($caddyfile->content)->not->toContain('0.0.0.0');
+    });
+
+    it('binds first-row sites to every address on an Ingress Node', function (): void {
+        $caddyfile = caddy_build_compose(
+            [caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev')],
+            lan: '192.168.1.9',
+            ingress: true,
+        );
+
+        expect($caddyfile->content)->toContain("shop.test {\n    bind 0.0.0.0\n");
+    });
+
     it('binds a shared site to the WireGuard address when no wildcard site shares its port', function (): void {
         $site = caddy_build_rendered_site(CaddyListenerRule::Shared);
 
         expect(caddy_build_compose([$site])->content)->toContain('bind 10.44.0.9');
     });
 
-    it('binds a shared site to every address when a wildcard site shares its port', function (): void {
+    it('keeps a shared site on WireGuard beside first-row sites on a Node without ingress', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
             caddy_build_rendered_site(CaddyListenerRule::Shared),
         ]);
+
+        expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 10.44.0.9\n")
+            ->and($caddyfile->buildable())->toBeTrue();
+    });
+
+    it('binds a shared site to every address beside first-row sites on an Ingress Node', function (): void {
+        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
+            caddy_build_rendered_site(CaddyListenerRule::Shared),
+        ], ingress: true);
 
         expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 0.0.0.0")
             ->and($caddyfile->buildable())->toBeTrue();
@@ -256,7 +286,7 @@ describe('listener selection', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
             caddy_build_rendered_site(CaddyListenerRule::Shared),
-        ]);
+        ], ingress: true);
 
         expect($caddyfile->content)->toContain("reverb.orbit {\n    bind 10.44.0.9");
     });
@@ -265,30 +295,48 @@ describe('listener selection', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
             caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'gateway.orbit', source: 'gateway'),
-        ]);
+        ], ingress: true);
 
         expect($caddyfile->buildable())->toBeTrue();
     });
 
-    it('refuses a WireGuard-only site on the port of a wildcard site and names both', function (): void {
+    it('builds a Gateway that is also the Router, with the Router sites on its WireGuard and LAN addresses', function (): void {
+        $gateway = caddy_build_node('gateway', '10.44.0.1');
+        $gateway->update(['lan_ip' => '192.168.1.1']);
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        [, $route] = caddy_build_private_route($gateway, 'shop.test');
+
+        $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
+
+        expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->content)
+            ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n")
+            ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.1 192.168.1.1\n")
+            ->toContain("reverb.orbit {\n    bind 10.44.0.1\n")
+            ->not->toContain('0.0.0.0');
+    });
+
+    it('refuses a WireGuard-only site beside a first-row site on an Ingress Node and names both', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
         $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
         [, $route] = caddy_build_private_route($gateway, 'shop.test');
+        $gateway->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $route->cluster_id]);
 
         $caddyfile = caddy_build_renderer()->render($gateway);
 
         expect($caddyfile->buildable())->toBeFalse()
             ->and($caddyfile->problems)->toBe([
                 'The gateway site gateway.orbit binds the WireGuard address on port 443, which the '
-                ."app-dev site route-{$route->id}-router serves on 0.0.0.0. The app-dev site would be unreachable over WireGuard.",
+                ."app-dev site route-{$route->id}-router serves on 0.0.0.0 on this Ingress Node. The app-dev site would be unreachable over WireGuard.",
             ]);
     });
 
-    it('allows a WireGuard-only site beside a wildcard site on another port', function (): void {
+    it('allows a WireGuard-only site beside a first-row site on another port of an Ingress Node', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
             caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: '10.44.0.9', source: 'service-metrics', port: 9103),
-        ]);
+        ], ingress: true);
 
         expect($caddyfile->buildable())->toBeTrue();
     });
@@ -315,7 +363,7 @@ describe('duplicate addresses', function (): void {
             caddy_build_site('shop.example.com', 'route-1-router'),
         ]));
 
-        expect(caddy_build_compose($sites)->problems)->toBe([
+        expect(caddy_build_compose($sites, ingress: true)->problems)->toBe([
             'The ingress site route-1-ingress and the app-dev site route-1-router both serve shop.example.com:443 on 0.0.0.0.',
         ]);
     });
@@ -324,7 +372,7 @@ describe('duplicate addresses', function (): void {
         $caddyfile = caddy_build_compose([
             caddy_build_rendered_site(CaddyListenerRule::WireGuard, host: 'app.test', source: 'gateway', port: 8443),
             caddy_build_rendered_site(CaddyListenerRule::Public, host: 'app.test', source: 'ingress', port: 8443),
-        ]);
+        ], ingress: true);
 
         expect($caddyfile->buildable())->toBeTrue();
     });
@@ -357,7 +405,7 @@ function caddy_build_renderer(): NodeCaddyfileRenderer
 }
 
 /** @param list<CaddySite> $sites */
-function caddy_build_compose(array $sites): NodeCaddyfile
+function caddy_build_compose(array $sites, ?string $lan = null, bool $ingress = false): NodeCaddyfile
 {
     $source = new readonly class($sites) implements NodeCaddySiteSource
     {
@@ -369,8 +417,16 @@ function caddy_build_compose(array $sites): NodeCaddyfile
             return $this->sites;
         }
     };
+    $node = caddy_build_node('composed', '10.44.0.9');
+    $node->update(['lan_ip' => $lan]);
 
-    return new NodeCaddyfileRenderer([$source])->render(new Node(['name' => 'composed', 'wireguard_ip' => '10.44.0.9']));
+    if ($ingress) {
+        $cluster = Cluster::query()->create(['name' => 'composed', 'state' => ClusterState::Active]);
+        $node->update(['cluster_id' => $cluster->id]);
+        $node->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+    }
+
+    return new NodeCaddyfileRenderer([$source])->render($node);
 }
 
 function caddy_build_rendered_site(
