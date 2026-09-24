@@ -156,7 +156,7 @@ The first form stores the loopback URL. The second form stores the Node-owned Pr
 
 A Cluster TLD suffix still answers names that have no exact record. An exact custom proxy record wins for its domain, including a name under that TLD.
 
-The Executor example is a Node-owned Docker Process on Beast with a loopback publish such as `127.0.0.1:4788:4788`. Creating `executor.orbit` against that Node and Process is the supported replacement for an unmanaged `executor.test` Caddy site. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) owns that cutover. The first [Node Caddy build](/reference/caddy-configuration#replaced-configuration) on that Node backs up an unmanaged site and stops serving it, so move it before that build.
+The Executor example is a Node-owned Docker Process on Beast with a loopback publish such as `127.0.0.1:4788:4788`. Creating `executor.orbit` against that Node and Process is the supported replacement for an unmanaged `executor.test` Caddy fragment. [Migrate an unmanaged Executor hostname](/solutions/migrate-unmanaged-executor-hostname) owns that cutover. Orbit does not delete live unmanaged fragments from automation. Under the proposed [Node Caddy build](/reference/caddy-configuration#node-caddy-build) ([ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway)), the first build on that Node backs up an unmanaged site and stops serving it, so migrate it before that build.
 
 Doctor inspects each custom proxy Route on its serving Node.
 
@@ -442,7 +442,7 @@ A Node or Cluster TLD change fully reconciles those generated private Routes. A 
 
 ### Remove an untargeted private Route
 
-`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then removes Route-owned DNS records, marks the Route's sites as withdrawn and builds the workload and Router Caddyfiles while their certificates remain, removes those certificates, removes firewall entries, and deletes the Route record last. MCP `route-destroy` sends the Route id as a tool argument; the server places it on the path. A DELETE body may repeat that path id, and the Gateway treats it as path identity rather than an unsupported field.
+`route:destroy` removes an already untargeted private Route. The Gateway refuses a targeted Route before it changes projections. It then removes Route-owned DNS records, withdraws workload and Router Caddy fragments while their certificates remain, removes those certificates, removes firewall entries, and deletes the Route record last. MCP `route-destroy` sends the Route id as a tool argument; the server places it on the path. A DELETE body may repeat that path id, and the Gateway treats it as path identity rather than an unsupported field.
 
 A failure at a projection step or at final record deletion keeps the Route inspectable with bounded `failed_step` and `error_code`. Retry uses the same destroy request, revalidates completed work, and resumes at the earliest unverified step. It does not restore removed projections, delete unrelated Routes or workloads, or accept a conflicting target mutation.
 

@@ -64,7 +64,8 @@ final readonly class TaskScheduler
 
                 continue;
             }
-            $status = $this->pullRequestWatcher->status($group);
+            $health = $this->pullRequestWatcher->health($group);
+            $status = $health?->state;
             if ($status === 'merged') {
                 try {
                     $this->completeGroup->execute($group);
@@ -73,6 +74,8 @@ final readonly class TaskScheduler
                 }
             } elseif ($status === 'closed') {
                 $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
+            } elseif ($health instanceof TaskPullRequestHealth) {
+                $this->reportPullRequestHealth($group, $health);
             }
         }
 
@@ -1021,6 +1024,31 @@ final readonly class TaskScheduler
         }
 
         $reason = 'The settling group has no reviewed pull request URL.';
+        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+        $this->coder->assistance($group, $reason);
+    }
+
+    /**
+     * Asks for assistance once per distinct set of pull request problems, and withdraws only its own
+     * request when the pull request is healthy again. Another cause of assistance is left alone.
+     */
+    private function reportPullRequestHealth(TaskGroup $group, TaskPullRequestHealth $health): void
+    {
+        $ownRequest = TaskPullRequestHealth::isReason($group->assistance_reason);
+
+        if ($health->problems === []) {
+            if ($ownRequest) {
+                $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            }
+
+            return;
+        }
+
+        $reason = $health->reason();
+        if ($group->assistance_requested && (! $ownRequest || $group->assistance_reason === $reason)) {
+            return;
+        }
+
         $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
         $this->coder->assistance($group, $reason);
     }

@@ -12,4 +12,9 @@ final readonly class NullTaskPullRequestWatcher implements TaskPullRequestWatche
     {
         return null;
     }
+
+    public function health(TaskGroup $group): ?TaskPullRequestHealth
+    {
+        return null;
+    }
 }

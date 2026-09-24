@@ -41,6 +41,24 @@ it('publishes private DNS on the VPN node when gateway and vpn are split', funct
         ->not->toContain('orbit-private-dns.service');
 });
 
+it('publishes on the VPN node while the gateway or vpn role converges', function (RoleName $converging): void {
+    dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
+    dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);
+    // `node:role:add --converge` claims the existing assignment as provisioning while it runs.
+    Node::query()->whereHas('roles', static fn ($query) => $query->where('role', $converging))->sole()
+        ->roles()->where('role', $converging)->update(['status' => LifecycleStatus::Provisioning]);
+    $processes = new DnsTargetProcessRunner;
+    $ssh = new DnsTargetSshExecutor;
+
+    dns_target_manager($processes, $ssh)->converge();
+
+    expect($processes->calls)->toBe(0)
+        ->and($ssh->hosts)->toBe(['10.44.0.1']);
+})->with([
+    'gateway role converging' => [RoleName::Gateway],
+    'vpn role converging' => [RoleName::Vpn],
+]);
+
 it('does not rewrite the listener unit when publishing records to a remote vpn node', function (): void {
     dns_target_node('vpn', '10.44.0.1', RoleName::Vpn);
     dns_target_node('gateway', '10.44.0.2', RoleName::Gateway);

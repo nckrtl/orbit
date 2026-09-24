@@ -19,6 +19,34 @@ final readonly class RepositoryPullRequestAccess
     /** @throws GitHubApiException */
     public function token(GitHubRepository $repository): string
     {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
+    }
+
+    /**
+     * The token that reads the pull request's check runs
+     * ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)), or
+     * null when GitHub does not grant it, such as for an installation that has not accepted `checks: read`.
+     */
+    public function checksToken(GitHubRepository $repository): ?string
+    {
+        try {
+            [$credentials, $installation] = $this->installation($repository);
+
+            return $this->github->repositoryChecksToken($credentials, $installation, $repository);
+        } catch (GitHubApiException) {
+            return null;
+        }
+    }
+
+    /**
+     * @return array{GitHubAppCredentials, int}
+     *
+     * @throws GitHubApiException
+     */
+    private function installation(GitHubRepository $repository): array
+    {
         $credentials = $this->store->credentials();
         if (! $credentials instanceof GitHubAppCredentials) {
             throw new GitHubApiException('The Gateway GitHub App is not registered.');
@@ -28,6 +56,6 @@ final readonly class RepositoryPullRequestAccess
             throw new GitHubApiException('The Gateway GitHub App is not installed on '.$repository->owner.'/'.$repository->name.'.');
         }
 
-        return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
+        return [$credentials, $installation];
     }
 }

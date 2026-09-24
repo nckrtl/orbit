@@ -32,7 +32,7 @@ The agent merges changes to the same unit or container that arrive within 250 mi
 
 The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `wss://reverb.orbit`. It never uses system DNS: its configuration contains the Gateway's WireGuard address, and the realtime response contains Reverb's serving address. The agent connects to each address while verifying the certificate for the unchanged hostname against the Orbit root certificate that the Gateway installs with it. The Gateway identifies the agent by the Node's WireGuard address, as it identifies every other caller.
 
-The Gateway writes `gateway_address` to the agent's `config.toml` on every converge. This is the WireGuard address that Orbit's private DNS answers for `gateway.orbit`. The agent sends every Gateway request to `gateway_address` on port 443, with `gateway.orbit` as the TLS server name, and verifies the certificate against `ca.pem` without resolving the hostname.
+The Gateway writes `gateway_address` to the agent's `config.toml` on every converge. This is the WireGuard address that Orbit's private DNS answers for `gateway.orbit`, also while the `gateway` role itself converges. The agent sends every Gateway request to `gateway_address` on port 443, with `gateway.orbit` as the TLS server name, and verifies the certificate against `ca.pem` without resolving the hostname.
 
 1. The agent calls `GET /api/v1/agent/realtime`. The response names the Reverb connection, its serving address, the Node's channel, and the agent's member ID.
 

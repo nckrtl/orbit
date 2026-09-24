@@ -9,6 +9,7 @@ use App\Domain\Herdr\HerdrObserveContract;
 use App\Domain\Herdr\ObservationGrantSigner;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\HerdrSession;
@@ -27,7 +28,7 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
         private string $systemdDirectory = '/etc/systemd/system',
         private string $versionsDirectory = '/etc/caddy/orbit-versions',
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
-        private string $lockPath = '/run/lock/orbit/caddy.lock',
+        private string $lockPath = CaddyPublicationLock::Path,
         private string $temporaryDirectory = '/run',
         private string $rootOwner = 'root',
         private string $rootGroup = 'root',
@@ -118,6 +119,7 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
     ): RemoteCommand {
         $unit = $this->unit($session);
         $version = 'herdr-'.$session->id.'-'.bin2hex(random_bytes(8));
+        $lockScript = CaddyPublicationLock::script();
 
         return new RemoteCommand(
             arguments: [
@@ -170,26 +172,12 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
                 unit=\$systemd_directory/\$unit_name
                 owned_fragment=herdr-\$session.caddy
                 legacy_fragment=\$versions/current/fragments/\$owned_fragment
-                lock_directory=\$(dirname "\$lock")
-                if ! mkdir -- "\$lock_directory" 2>/dev/null; then
-                    test -d "\$lock_directory"
-                    test ! -L "\$lock_directory"
-                fi
                 root_uid=\$(id -u "\$root_owner")
                 root_gid=\$(getent group "\$root_group" | cut -d: -f3)
                 test -n "\$root_gid"
                 caddy_gid=\$(getent group "\$caddy_group" | cut -d: -f3)
                 test -n "\$caddy_gid"
-                test "\$(stat -c %u:%g:%a -- "\$lock_directory")" = "\$root_uid:\$root_gid:700"
-                if [ -e "\$lock" ] || [ -L "\$lock" ]; then
-                    test ! -L "\$lock"
-                    test -f "\$lock"
-                    test "\$(stat -c %u:%g -- "\$lock")" = "\$root_uid:\$root_gid"
-                fi
-                exec 9>>"\$lock"
-                chmod 0600 -- "\$lock"
-                test "\$(stat -c %a -- "\$lock")" = 600
-                flock -w 30 9
+                {$lockScript}
                 if [ -x "\$preferred_caddy" ]; then
                     caddy=\$preferred_caddy
                 elif command -v caddy >/dev/null; then

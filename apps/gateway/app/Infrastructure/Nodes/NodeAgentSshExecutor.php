@@ -38,12 +38,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             throw new ResourceOperationException('agent.architecture_unsupported', 'The Node agent architecture is unsupported.', 422, $exception);
         }
 
-        $gatewayAddress = Node::query()
-            ->where('status', LifecycleStatus::Active)
-            ->whereHas('roles', static fn ($query) => $query
-                ->where('role', RoleName::Gateway)
-                ->where('status', LifecycleStatus::Active))
-            ->value('wireguard_ip');
+        $gatewayAddress = $this->gatewayAddress();
 
         if (! is_string($gatewayAddress) || filter_var($gatewayAddress, FILTER_VALIDATE_IP) === false) {
             throw new ResourceOperationException('agent.install_failed', 'The active Gateway has no managed WireGuard address.', 409);
@@ -130,6 +125,28 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         } catch (Throwable $exception) {
             $failure ??= $exception;
         }
+    }
+
+    /**
+     * The Gateway's WireGuard address. A `gateway` role converge marks its assignment provisioning
+     * while it runs, and it converges the agent too, so a converging holder counts; an active one wins.
+     */
+    private function gatewayAddress(): mixed
+    {
+        foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $status) {
+            $address = Node::query()
+                ->where('status', LifecycleStatus::Active)
+                ->whereHas('roles', static fn ($query) => $query
+                    ->where('role', RoleName::Gateway)
+                    ->where('status', $status))
+                ->value('wireguard_ip');
+
+            if ($address !== null) {
+                return $address;
+            }
+        }
+
+        return null;
     }
 
     private function installBinary(Node $node, string $checksum, string $architecture): bool
