@@ -160,7 +160,7 @@ it('shows fleet status including a null collected_at', function (): void {
 
     expect($exit)->toBe(0)
         ->and(json_decode($output, true)['collected_at'])->toBeNull()
-        ->and(json_decode($output, true)['hostname'])->toBe('collector.proxycli.orbit');
+        ->and(json_decode($output, true)['hostname'])->toBe('collector.cli-proxy-api.orbit');
 });
 
 it('refuses update unless exactly one account state flag is supplied', function (): void {
@@ -216,7 +216,7 @@ function proxycli_cli_status_response(array $payload = []): MockResponse
     return MockResponse::make([
         'data' => [
             'enabled' => true,
-            'hostname' => 'collector.proxycli.orbit',
+            'hostname' => 'collector.cli-proxy-api.orbit',
             'node_id' => 4,
             'cache_connection' => 'valkey',
             'collected_at' => '2026-09-20T12:00:00Z',

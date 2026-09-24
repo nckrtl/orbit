@@ -13,9 +13,9 @@ describe(ReservedPrivateHostname::class, function (): void {
 
     it('reserves the collector hostname and leaves the apex free', function (): void {
         expect(ProxyCliHostname::Value)
-            ->toBe('collector.proxycli.orbit')
+            ->toBe('collector.cli-proxy-api.orbit')
             ->and(ProxyCliHostname::Apex)
-            ->toBe('proxycli.orbit')
+            ->toBe('cli-proxy-api.orbit')
             ->and(ReservedPrivateHostname::NAMES)
             ->toContain(ProxyCliHostname::Value)
             ->not
@@ -49,6 +49,7 @@ describe(ReservedPrivateHostname::class, function (): void {
         'grafana.internal',
         'foo.bar',
         'something.test',
-        'proxycli apex' => [ProxyCliHostname::Apex],
+        'collector apex' => [ProxyCliHostname::Apex],
+        'retired collector name' => ['collector.proxycli.orbit'],
     ]);
 });

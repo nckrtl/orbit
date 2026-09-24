@@ -5773,7 +5773,7 @@
     {
       "name": "proxycli-disable",
       "title": "Disable proxycli",
-      "description": "Stops the collector Process, withdraws collector.proxycli.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
+      "description": "Stops the collector Process, withdraws collector.cli-proxy-api.orbit, and hides provider reads. The Redis connection and Valkey data stay.",
       "method": "DELETE",
       "path": "/api/v1/proxycli",
       "path_inputs": [],
@@ -5788,7 +5788,7 @@
     {
       "name": "proxycli-enable",
       "title": "Enable proxycli",
-      "description": "Deploys one collector Process and publishes https://collector.proxycli.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. The response never includes tokens or the management key.",
+      "description": "Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.",
       "method": "POST",
       "path": "/api/v1/proxycli",
       "path_inputs": [],

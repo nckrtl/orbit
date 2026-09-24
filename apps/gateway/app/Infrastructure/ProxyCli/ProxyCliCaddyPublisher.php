@@ -17,10 +17,22 @@ final readonly class ProxyCliCaddyPublisher
 {
     use OwnsCaddyGlobalOptions;
 
-    public function command(string $configuration, string $port, string $wireguardIp): RemoteCommand
-    {
+    public const string AppDevFragment = 'app-dev.caddy';
+
+    /**
+     * @param  string|null  $appDevConfiguration  Replaces the `app-dev.caddy` fragment in the same reload, so a
+     *                                            takeover withdraws the Route that served the collector hostname.
+     */
+    public function command(
+        string $configuration,
+        string $port,
+        string $wireguardIp,
+        ?string $appDevConfiguration = null,
+    ): RemoteCommand {
         $lockScript = CaddyPublicationLock::script();
         $encoded = base64_encode($configuration);
+        $replacedFragment = $appDevConfiguration === null ? '' : self::AppDevFragment;
+        $replacementEncoded = base64_encode($appDevConfiguration ?? '');
         $version = bin2hex(random_bytes(8));
 
         return new RemoteCommand(
@@ -37,6 +49,7 @@ final readonly class ProxyCliCaddyPublisher
                 CaddyPublicationLock::Path,
                 $wireguardIp,
                 ProxyCliFootprint::CaddyBindPlaceholder,
+                $replacedFragment,
             ],
             input: CaddyGlobalOptions::conflictGuard().<<<BASH
                 version=\$1
@@ -47,6 +60,7 @@ final readonly class ProxyCliCaddyPublisher
                 lock=\$6
                 wireguard_ip=\$7
                 bind_placeholder=\$8
+                replaced_fragment=\$9
                 {$lockScript}
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
@@ -57,13 +71,18 @@ final readonly class ProxyCliCaddyPublisher
                 current_fragments=\$(dirname "\$source_main")/fragments
                 if [ -d "\$current_fragments" ]; then
                     for fragment in "\$current_fragments"/*.caddy; do
-                        if [ ! -e "\$fragment" ] || [ "\$(basename "\$fragment")" = "\$owned_fragment" ]; then
+                        if [ ! -e "\$fragment" ] \\
+                            || [ "\$(basename "\$fragment")" = "\$owned_fragment" ] \\
+                            || [ "\$(basename "\$fragment")" = "\$replaced_fragment" ]; then
                             continue
                         fi
                         cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
                     done
                 elif [ -f "\$source_main" ] && [ "\$source_main" != "\$live_caddyfile" ]; then
                     cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
+                fi
+                if [ -n "\$replaced_fragment" ]; then
+                    printf '%s' '{$replacementEncoded}' | base64 --decode > "\$candidate/fragments/\$replaced_fragment"
                 fi
                 bind_address=\$wireguard_ip
                 if grep -qsE '^[[:space:]]*bind[[:space:]]+0\\.0\\.0\\.0' "\$candidate"/fragments/*.caddy; then
@@ -76,7 +95,8 @@ final readonly class ProxyCliCaddyPublisher
                 chown -R root:caddy "\$candidate"
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
-                if [ -d "\$current_fragments" ] \\
+                if [ -z "\$replaced_fragment" ] \\
+                    && [ -d "\$current_fragments" ] \\
                     && [ -f "\$current_fragments/\$owned_fragment" ] \\
                     && cmp -s -- "\$candidate/fragments/\$owned_fragment" "\$current_fragments/\$owned_fragment" \\
                     && systemctl is-active --quiet "\$caddy_service"; then
