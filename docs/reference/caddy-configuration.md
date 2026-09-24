@@ -171,26 +171,30 @@ The Gateway runs one build at a time for each Node. A second build waits up to 3
 
 ### How a build is pushed
 
-The Gateway sends one script to the Node over SSH. On the Node that runs the Gateway process, it runs the same script through local `sudo`. The script:
+The Gateway sends one script to the Node over SSH. On the Node that runs the Gateway process, it runs the same script through local `sudo`. The Gateway knows that Node from the serving Node that bootstrap records. Before bootstrap records it, the Node whose `gateway` role renders the Gateway site counts as that Node. The script:
 
 1. Takes `/run/lock/orbit/caddy.lock` with the [path checks](#publication-lock) above.
 2. Checks that the packaged `/usr/bin/caddy` is at least the [release floor](/reference/node-provisioning#package-sources), 2.9.0.
-3. Stops without a change when `/etc/caddy/Caddyfile` already points at this version.
-4. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile`. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest.
-5. Runs `caddy validate` as the `caddy` user, so log files that validation creates stay writable by the service.
+3. Checks that every specific address the file binds exists on the Node.
+4. Stops without a change when `/etc/caddy/Caddyfile` already points at an unchanged copy of this version.
+5. Writes `/etc/caddy/orbit-versions/<version>/Caddyfile` and runs `caddy validate` on it as the `caddy` user.
 6. Backs up a live Caddyfile that Orbit did not build, as [replaced configuration](#replaced-configuration) describes.
 7. Points `/etc/caddy/Caddyfile` at the new version, then enables and reloads the `caddy` service.
 8. Keeps the live version and the nine newest others, and removes older versions. It never removes the `staged` directory.
+
+The addresses are the WireGuard and LAN addresses that sites bind, because Caddy cannot start with a missing listen address. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest. Validation runs as the `caddy` user, so log files that it creates stay writable by the service. A version that was edited by hand after its build is backed up and replaced like a foreign configuration.
 
 A version holds only its `Caddyfile`. It has no fragments and imports nothing. Every Node with Caddy sites, the Gateway machine included, installs Caddy from the pinned source before its first build.
 
 ### When a build fails
 
-A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when `caddy validate` rejects the file, or when Caddy fails to reload. After a reload failure the script points `/etc/caddy/Caddyfile` back at the previous version and reloads again. The live configuration keeps serving in every case.
+A build either publishes the whole file or changes nothing. It fails when a site cannot be rendered from stored state, when two sites collide, when Caddy is below the floor, when the Node lacks an address the file binds, when `caddy validate` rejects the file, or when Caddy fails to reload. After a reload failure the script points `/etc/caddy/Caddyfile` back at the previous version and reloads again. The live configuration keeps serving in every case.
 
 The command that requested the build fails with its usual error code, such as `app-dev.caddy_config_failed` or `websocket.caddy_publication_failed`. The error details and the activity record name the Node, the failed stage, and Caddy's message. A missing certificate file fails validation; converge the role or Route that owns the site to publish it again. One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site.
 
-The failed stage is one of `lock`, `release`, `unchanged`, `write`, `validate`, `backup`, `swap`, or `reload`, or `render` and `gateway-lock` on the Gateway before it contacts the Node.
+The failed stage is one of `lock`, `release`, `addresses`, `write`, `validate`, `backup`, `swap`, or `reload` on the Node. On the Gateway it is `render` or `gateway-lock` before the Gateway contacts the Node, `connect` when the Gateway cannot reach the Node or the Node has no WireGuard address, and `read-live` when `--diff` cannot read the live file.
+
+A stored LAN address must stay on its Node. When the address goes away after a build, Caddy fails at its next restart, and the next build fails at `addresses` and names it. Correct the Node's stored address, then build again.
 
 [`orbit doctor`](/cli/doctor) reports `role.caddy_build_drift` when the live Caddyfile differs from a fresh render. The issue lists the site sources on that Node. Repeat any command that publishes one of them, such as `orbit node:role:add NODE app-dev --converge`, to build the Node again.
 
@@ -220,5 +224,6 @@ The build replaces a Caddyfile that does not start with its marker line. It neve
 | Any other regular file | The file |
 | A symlink outside `/etc/caddy/orbit-versions` | The file it points at |
 | A version with a `fragments` directory | The whole version directory |
+| A build's version edited by hand after its build | The whole version directory |
 
 Sites in the replaced file stop serving after that build. Move a hand-placed site into Orbit before the first build, for example as a [custom proxy Route](/reference/routes#custom-proxy-routes). The build never deletes a backup; remove it by hand when you do not need it.

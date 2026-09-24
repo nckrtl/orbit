@@ -58,6 +58,7 @@ final readonly class NodeCaddyPushHarness
             'HARNESS_FAIL_RELOAD' => '0',
             'HARNESS_PACKAGE_MD5' => $this->packageDefault === null ? '' : md5($this->packageDefault),
             'HARNESS_LIVE' => $this->caddyDirectory.'/Caddyfile',
+            'HARNESS_ADDRESSES' => '127.0.0.1 10.44.0.9',
             ...$environment,
         ]);
         $process->setInput($command->input);
@@ -140,6 +141,7 @@ final readonly class NodeCaddyPushHarness
             printf 'validate %s\n' "$3" >> "$HARNESS_ROOT/validate.log"
             test -f "$3"
             printf '{"level":"info","msg":"using config from file"}\n' >&2
+            printf '{"level":"warn","msg":"Caddyfile input is not formatted"}\n' >&2
             if [ "$HARNESS_FAIL_VALIDATE" = 1 ]; then
                 printf 'Error: adapting config using caddyfile: unrecognized directive: broken\n' >&2
                 exit 1
@@ -178,6 +180,15 @@ final readonly class NodeCaddyPushHarness
             exec /usr/bin/install "${args[@]}"
             BASH);
         $this->shim('chown', "#!/usr/bin/env bash\nexit 0\n");
+        $this->shim('ip', <<<'BASH'
+            #!/usr/bin/env bash
+            test "$*" = '-o -4 addr show'
+            index=1
+            for address in $HARNESS_ADDRESSES; do
+                printf '%s: eth%s    inet %s/24 brd 10.44.0.255 scope global eth%s\n' "$index" "$index" "$address" "$index"
+                index=$((index + 1))
+            done
+            BASH);
         $this->shim('journalctl', <<<'BASH'
             #!/usr/bin/env bash
             if [ -e "$HARNESS_ROOT/reload-failed" ]; then

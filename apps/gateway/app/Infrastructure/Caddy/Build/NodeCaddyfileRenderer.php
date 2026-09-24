@@ -51,6 +51,7 @@ final readonly class NodeCaddyfileRenderer
         }
 
         $blocks = [];
+        $listenAddresses = [];
         /** @var array<string, CaddySite> $addresses */
         $addresses = [];
 
@@ -68,6 +69,12 @@ final readonly class NodeCaddyfileRenderer
                 $problems[] = "The {$site->describe()} binds the WireGuard address on port {$site->port}, which the "
                     ."{$wildcard->describe()} serves on ".self::Wildcard.' on this Ingress Node. The '
                     ."{$wildcard->source} site would be unreachable over WireGuard.";
+            }
+
+            foreach ($bind as $listener) {
+                if ($listener !== self::Wildcard) {
+                    $listenAddresses[$listener] = $listener;
+                }
             }
 
             foreach ($this->addresses($site, $bind) as $address) {
@@ -98,6 +105,7 @@ final readonly class NodeCaddyfileRenderer
             version: self::version($content),
             sites: $sites,
             problems: array_values(array_unique($problems)),
+            listenAddresses: array_values($listenAddresses),
         );
     }
 

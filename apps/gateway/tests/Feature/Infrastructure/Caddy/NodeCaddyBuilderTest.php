@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddyfileSiteDiff;
@@ -61,6 +62,39 @@ describe('building a Node', function (): void {
 
         expect($result)->toBe(NodeCaddyBuildResult::Unchanged)
             ->and($this->local->invocations[0]->arguments[0])->toBe('sudo')
+            ->and($this->ssh->commands)->toBe([]);
+    });
+
+    it('builds locally on the recorded serving Node even while its gateway role reconverges', function (): void {
+        $node = node_caddy_builder_node('gateway', '10.44.0.1');
+        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Failed, 'failed_step' => 'gateway-web']);
+        app(GatewayServingHost::class)->remember($node);
+
+        node_caddy_builder($this)->build($node);
+
+        expect($this->local->invocations)->toHaveCount(1)
+            ->and($this->ssh->commands)->toBe([]);
+    });
+
+    it('builds over SSH on a Node with a gateway role that is not the recorded serving Node', function (): void {
+        $serving = node_caddy_builder_node('gateway', '10.44.0.1');
+        $candidate = node_caddy_builder_node('gateway-next', '10.44.0.5');
+        $candidate->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        app(GatewayServingHost::class)->remember($serving);
+
+        node_caddy_builder($this)->build($candidate);
+
+        expect($this->ssh->connections[0]->host)->toBe('10.44.0.5')
+            ->and($this->local->invocations)->toBe([]);
+    });
+
+    it('builds locally during bootstrap, before a serving Node is recorded', function (): void {
+        $node = node_caddy_builder_node('gateway', '10.44.0.1');
+        $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Provisioning]);
+
+        node_caddy_builder($this)->build($node);
+
+        expect($this->local->invocations)->toHaveCount(1)
             ->and($this->ssh->commands)->toBe([]);
     });
 
@@ -295,7 +329,7 @@ function node_caddy_builder_render(Node $node): NodeCaddyfile
 
 function node_caddy_builder_transport(object $test): NodeCaddyTransport
 {
-    return new NodeCaddyTransport($test->local, $test->ssh, new NodeCaddyBuilderKeys, new NodeCaddyBuilderKnownHosts);
+    return new NodeCaddyTransport($test->local, $test->ssh, new NodeCaddyBuilderKeys, new NodeCaddyBuilderKnownHosts, app(GatewayServingHost::class));
 }
 
 function node_caddy_builder(object $test, bool $duplicate = false): NodeCaddyBuilder

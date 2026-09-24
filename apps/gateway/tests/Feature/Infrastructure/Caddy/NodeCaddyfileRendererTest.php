@@ -310,6 +310,7 @@ describe('listener selection', function (): void {
         $caddyfile = caddy_build_renderer()->render($gateway->fresh() ?? $gateway);
 
         expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->listenAddresses)->toBe(['10.44.0.1', '192.168.1.1'])
             ->and($caddyfile->content)
             ->toContain("gateway.orbit, 10.44.0.1 {\n    bind 10.44.0.1\n")
             ->toContain("# orbit: app-dev route-{$route->id}-router\nhttps://shop.test {\n    bind 10.44.0.1 192.168.1.1\n")

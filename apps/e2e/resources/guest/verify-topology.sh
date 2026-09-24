@@ -178,6 +178,11 @@ case "$probe" in
       *) exit 1 ;;
     esac
     live_fragment=$(dirname "$live_main")/fragments/metrics.caddy
+    # A Node Caddy build (ADR 0141) writes one Caddyfile with every site and no fragments.
+    node_caddy_build=0
+    if [[ "$(head -n 1 -- "$live_main")" == '# Managed by Orbit: Node Caddy build' ]]; then
+      node_caddy_build=1
+    fi
     certificate_current=/etc/caddy/orbit-metrics-cert-current
     dns_output=$(dig +time=3 +tries=1 +short metrics.orbit A @"$gateway_address")
     mapfile -t resolved < <(printf '%s' "$dns_output" | awk 'NF')
@@ -185,6 +190,9 @@ case "$probe" in
       [[ "${#resolved[@]}" -eq 0 ]]
       [[ ! -e "$certificate_current" && ! -L "$certificate_current" ]]
       [[ ! -e "$live_fragment" ]]
+      if grep -qx '# orbit: metrics metrics.orbit' "$live_main"; then
+        exit 1
+      fi
       expected='metrics.orbit:absent'
       observed=$expected
     elif [[ "$publication" == present ]]; then
@@ -196,11 +204,16 @@ case "$probe" in
         /etc/caddy/orbit-metrics-cert-versions/*) ;;
         *) exit 1 ;;
       esac
-      [[ -f "$live_fragment" ]]
+      [[ "$node_caddy_build" == 1 || -f "$live_fragment" ]]
       expected_fragment=$(mktemp)
       trap 'rm -f -- "$expected_fragment"' EXIT
       /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_fragment"
-      cmp -s -- "$expected_fragment" "$live_fragment"
+      if [[ "$node_caddy_build" == 1 ]]; then
+        php -r 'exit(str_contains(file_get_contents($argv[1]), "# orbit: metrics metrics.orbit\n".rtrim(file_get_contents($argv[2]))."\n") ? 0 : 1);' -- "$live_main" "$expected_fragment"
+        live_fragment=$expected_fragment
+      else
+        cmp -s -- "$expected_fragment" "$live_fragment"
+      fi
       openssl verify -CAfile /home/orbit/.orbit/ca/root.pem "$certificate_current/metrics.pem" >/dev/null
       openssl x509 -in "$certificate_current/metrics.pem" -noout -checkhost metrics.orbit >/dev/null
       ufw_status=$(ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts -i /home/orbit/.orbit/ssh/id_ed25519 "orbit@$metrics_address" sudo ufw status numbered)

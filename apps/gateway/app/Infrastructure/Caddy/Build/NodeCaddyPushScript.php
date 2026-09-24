@@ -41,6 +41,12 @@ final readonly class NodeCaddyPushScript
             throw new InvalidArgumentException('The Node Caddyfile version does not match its content.');
         }
 
+        foreach ($caddyfile->listenAddresses as $address) {
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+                throw new InvalidArgumentException('A Node Caddyfile listen address must be an IPv4 address.');
+            }
+        }
+
         return new RemoteCommand(
             arguments: [
                 'sudo',
@@ -55,6 +61,7 @@ final readonly class NodeCaddyPushScript
                 $this->minimumRelease,
                 NodeCaddyfileRenderer::Marker,
                 (string) self::Retained,
+                implode(' ', $caddyfile->listenAddresses),
             ],
             input: $this->script(base64_encode($caddyfile->content)),
             timeout: 120.0,
@@ -74,6 +81,7 @@ final readonly class NodeCaddyPushScript
             minimum=\$6
             marker=\$7
             retained=\$8
+            listen_addresses=\$9
             versions="\$caddy_directory/orbit-versions"
             backups="\$caddy_directory/orbit-backups"
             live="\$caddy_directory/Caddyfile"
@@ -81,11 +89,16 @@ final readonly class NodeCaddyPushScript
             candidate="\$versions/.\$version.candidate"
             link="\$caddy_directory/.Caddyfile.orbit-build-\$version"
             previous_file="\$caddy_directory/.Caddyfile.orbit-previous-\$version"
+            replaced="\$versions/.\$version.replaced"
             stage=lock
             report() {
                 status=\$?
                 rm -rf -- "\$candidate"
                 rm -f -- "\$link" "\$previous_file"
+                if [ -e "\$replaced" ] && [ ! -e "\$published" ]; then
+                    mv -T -- "\$replaced" "\$published" || true
+                fi
+                rm -rf -- "\$replaced"
                 if [ "\$status" != 0 ]; then
                     printf 'orbit-caddy-build-stage=%s\\n' "\$stage" >&2
                 fi
@@ -108,7 +121,17 @@ final readonly class NodeCaddyPushScript
                 exit 1
             fi
 
+            stage=addresses
+            present=\$(ip -o -4 addr show 2>/dev/null | awk '{ split(\$4, parts, "/"); print parts[1] }' || true)
+            for address in \$listen_addresses; do
+                if ! printf '%s\\n' "\$present" | grep -Fxq -- "\$address"; then
+                    printf 'The build binds %s, which is not an address on this Node. Correct the stored WireGuard or LAN address of the Node, then build again.\\n' "\$address" >&2
+                    exit 1
+                fi
+            done
+
             stage=unchanged
+            tampered=0
             live_main=
             if [ -e "\$live" ] || [ -L "\$live" ]; then
                 live_main=\$(readlink -f -- "\$live" || true)
@@ -118,8 +141,7 @@ final readonly class NodeCaddyPushScript
                     printf 'orbit-caddy-build-result=unchanged\\n'
                     exit 0
                 }
-                printf 'The live version %s was changed after its build.\\n' "\$version" >&2
-                exit 1
+                tampered=1
             fi
 
             stage=write
@@ -134,14 +156,21 @@ final readonly class NodeCaddyPushScript
 
             stage=validate
             if ! validation=\$(runuser -u caddy -- "\$caddy_bin" validate --config "\$candidate/Caddyfile" --adapter caddyfile 2>&1); then
-                printf '%s\n' "\$validation" | grep -v '"level":"info"' | tail -n 5 >&2
+                errors=\$(printf '%s\\n' "\$validation" | grep -E '^Error:|"level":"(error|fatal)"' || true)
+                if [ -z "\$errors" ]; then
+                    errors=\$(printf '%s\\n' "\$validation" | grep -Ev '"level":"(debug|info|warn)"' || true)
+                fi
+                printf '%s\\n' "\$errors" | tail -n 5 >&2
                 exit 1
             fi
 
             stage=backup
             backup_source=
             backup_kind=
-            if [ -L "\$live" ]; then
+            if [ "\$tampered" = 1 ]; then
+                backup_source=\$published
+                backup_kind=directory
+            elif [ -L "\$live" ]; then
                 if [ -z "\$live_main" ] || [ ! -f "\$live_main" ] || [ "\$(head -n 1 -- "\$live_main")" = "\$marker" ]; then
                     :
                 elif [ "\${live_main#"\$versions"/}" != "\$live_main" ] && [ -d "\$(dirname -- "\$live_main")/fragments" ]; then
@@ -187,7 +216,10 @@ final readonly class NodeCaddyPushScript
                 cp -a -- "\$live" "\$previous_file"
                 had_live=1
             fi
-            rm -rf -- "\$published"
+            rm -rf -- "\$replaced"
+            if [ -e "\$published" ]; then
+                mv -T -- "\$published" "\$replaced"
+            fi
             mv -T -- "\$candidate" "\$published"
             ln -s -- "\$published/Caddyfile" "\$link"
             mv -fT -- "\$link" "\$live"
@@ -195,6 +227,10 @@ final readonly class NodeCaddyPushScript
             stage=reload
             reload_started=\$(date +%s)
             if ! systemctl enable --quiet "\$caddy_service" || ! systemctl reload-or-restart "\$caddy_service"; then
+                rm -rf -- "\$published"
+                if [ -e "\$replaced" ]; then
+                    mv -T -- "\$replaced" "\$published"
+                fi
                 if [ -n "\$previous_target" ]; then
                     ln -s -- "\$previous_target" "\$link"
                     mv -fT -- "\$link" "\$live"
@@ -206,11 +242,12 @@ final readonly class NodeCaddyPushScript
                 if [ "\$had_live" = 1 ]; then
                     systemctl reload-or-restart "\$caddy_service" || systemctl restart "\$caddy_service" || true
                 fi
-                rm -rf -- "\$published"
                 journalctl -u "\$caddy_service" --since "@\$reload_started" --no-pager -o cat 2>/dev/null | grep '^Error:' | head -n 1 >&2 || true
                 printf 'Caddy did not reload the new version; the previous configuration is live again.\\n' >&2
                 exit 1
             fi
+
+            rm -rf -- "\$replaced"
 
             stage=prune
             kept=0

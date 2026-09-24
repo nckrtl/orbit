@@ -99,6 +99,35 @@ describe('a later build', function (): void {
             ->and($this->harness->validations())->toBe([]);
     });
 
+    it('backs up and replaces a live version that was edited by hand after its build', function (): void {
+        $caddyfile = node_caddy_push_file('shop.test');
+        $this->harness->push($caddyfile);
+        $live = $this->harness->path("orbit-versions/{$caddyfile->version}/Caddyfile");
+        file_put_contents($live, $caddyfile->content."hand.example.com {\n    respond hi\n}\n");
+
+        $result = $this->harness->push($caddyfile);
+        [$backup] = $this->harness->directories('orbit-backups');
+
+        expect($result['exit'])->toBe(0, $result['stderr'])
+            ->and($result['stdout'])->toBe("orbit-caddy-build-result=published\n")
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($caddyfile->content)
+            ->and(file_get_contents($this->harness->path("orbit-backups/{$backup}/{$caddyfile->version}/Caddyfile")))->toContain('hand.example.com')
+            ->and($this->harness->directories('orbit-versions'))->toBe([$caddyfile->version]);
+    });
+
+    it('restores a hand-edited live version when Caddy fails to reload its replacement', function (): void {
+        $caddyfile = node_caddy_push_file('shop.test');
+        $this->harness->push($caddyfile);
+        $live = $this->harness->path("orbit-versions/{$caddyfile->version}/Caddyfile");
+        file_put_contents($live, $caddyfile->content."# edited\n");
+
+        $result = $this->harness->push($caddyfile, ['HARNESS_FAIL_RELOAD' => '1']);
+
+        expect($result['exit'])->not->toBe(0)
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe($caddyfile->content."# edited\n")
+            ->and($this->harness->directories('orbit-versions'))->toBe([$caddyfile->version]);
+    });
+
     it('does not back up an earlier build, and keeps every existing backup', function (): void {
         $this->harness->write('orbit-backups/20260101T000000Z/Caddyfile', "kept\n");
         $this->harness->push(node_caddy_push_file('shop.test'));
@@ -139,6 +168,7 @@ describe('a failed build', function (): void {
         expect($result['exit'])->not->toBe(0)
             ->and($result['stderr'])->toContain('unrecognized directive: broken')
             ->and($result['stderr'])->not->toContain('"level":"info"')
+            ->and($result['stderr'])->not->toContain('not formatted')
             ->and($result['stderr'])->toContain('orbit-caddy-build-stage=validate')
             ->and(is_link($this->harness->path('Caddyfile')))->toBeFalse()
             ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe("hand.example.com {\n    respond hi\n}\n")
@@ -173,6 +203,20 @@ describe('a failed build', function (): void {
             ->and($this->harness->directories('orbit-versions'))->toBe([]);
     });
 
+    it('refuses an address the Node does not have before it writes anything', function (): void {
+        $this->harness->write('Caddyfile', "hand.example.com {\n    respond hi\n}\n");
+
+        $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_ADDRESSES' => '127.0.0.1 192.168.1.9']);
+
+        expect($result['exit'])->not->toBe(0)
+            ->and($result['stderr'])->toContain('The build binds 10.44.0.9, which is not an address on this Node.')
+            ->and($result['stderr'])->toContain('orbit-caddy-build-stage=addresses')
+            ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe("hand.example.com {\n    respond hi\n}\n")
+            ->and($this->harness->directories('orbit-versions'))->toBe([])
+            ->and($this->harness->validations())->toBe([])
+            ->and($this->harness->serviceCalls())->toBe([]);
+    });
+
     it('refuses a Caddy below the release floor before it writes anything', function (): void {
         $result = $this->harness->push(node_caddy_push_file('shop.test'), ['HARNESS_CADDY_VERSION' => '2.6.2']);
 
@@ -203,7 +247,7 @@ it('runs as root through the fixed script arguments', function (): void {
     $command = new NodeCaddyPushScript()->command(node_caddy_push_file('shop.test'));
 
     expect(array_slice($command->arguments, 0, 4))->toBe(['sudo', 'bash', '-seu', '--'])
-        ->and(array_slice($command->arguments, 5))->toBe(['/etc/caddy', '/usr/bin/caddy', 'caddy', '/run/lock/orbit/caddy.lock', '2.9.0', NodeCaddyfileRenderer::Marker, '9']);
+        ->and(array_slice($command->arguments, 5))->toBe(['/etc/caddy', '/usr/bin/caddy', 'caddy', '/run/lock/orbit/caddy.lock', '2.9.0', NodeCaddyfileRenderer::Marker, '9', '10.44.0.9']);
 });
 
 function node_caddy_push_file(string $domain): NodeCaddyfile

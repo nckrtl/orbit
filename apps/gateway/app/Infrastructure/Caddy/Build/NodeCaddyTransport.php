@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -17,8 +17,10 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
 /**
- * Runs a Node Caddy build command. The Node that runs the Gateway process, which holds the active
- * `gateway` role, runs it through local `sudo`; every other Node runs it over pinned SSH.
+ * Runs a Node Caddy build command. The Node that runs the Gateway process runs it through local
+ * `sudo`; every other Node runs it over pinned SSH. The Gateway's recorded serving Node names that
+ * Node. Before bootstrap records it, the Node whose `gateway` role serves its site is that Node,
+ * so bootstrap and a failed reconvergence still build locally.
  */
 final readonly class NodeCaddyTransport
 {
@@ -27,14 +29,18 @@ final readonly class NodeCaddyTransport
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private GatewayServingHost $servingHost,
     ) {}
 
     public function runsLocally(Node $node): bool
     {
-        return $node->roles()
-            ->where('role', RoleName::Gateway->value)
-            ->where('status', LifecycleStatus::Active->value)
-            ->exists();
+        $serving = $this->servingHost->nodeId();
+
+        if ($serving !== null) {
+            return $serving === $node->id;
+        }
+
+        return CaddySiteRoles::nodeServes($node->id, RoleName::Gateway);
     }
 
     public function run(Node $node, RemoteCommand $command): CommandResult

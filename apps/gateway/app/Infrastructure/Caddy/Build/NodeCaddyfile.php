@@ -12,6 +12,7 @@ final readonly class NodeCaddyfile
     /**
      * @param  list<CaddySite>  $sites
      * @param  list<string>  $problems
+     * @param  list<string>  $listenAddresses  Every specific IP address a site binds; the push script checks each exists.
      */
     public function __construct(
         public string $nodeName,
@@ -19,6 +20,7 @@ final readonly class NodeCaddyfile
         public string $version,
         public array $sites,
         public array $problems,
+        public array $listenAddresses = [],
     ) {}
 
     public function buildable(): bool
