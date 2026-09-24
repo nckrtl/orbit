@@ -14,7 +14,7 @@ final readonly class TaskRunInstructions
     {
         $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file, test, and command deliverables against your diff and its own run.';
 
-        return 'When the brief is complete and composer check passes, end your turn with .git/orbit/run --outcome=ready_for_review --summary="What you changed".'.$confirm.' '.self::blocked('brief');
+        return self::autonomy().' When the brief is complete and composer check passes, end your turn with .git/orbit/run --outcome=ready_for_review --summary="What you changed".'.$confirm.' '.self::blocked();
     }
 
     /**
@@ -32,7 +32,7 @@ final readonly class TaskRunInstructions
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return 'Do not commit; Orbit commits after you approve. '.$approve.' Otherwise end your turn with .git/orbit/run --outcome=changes_requested --summary="The findings the implementer must address". '.self::blocked('review');
+        return self::autonomy().' Do not commit; Orbit commits after you approve. '.$approve.' Otherwise end your turn with .git/orbit/run --outcome=changes_requested --summary="The findings the implementer must address". '.self::blocked();
     }
 
     /**
@@ -49,12 +49,17 @@ final readonly class TaskRunInstructions
         return "Deliverables. Orbit checks each one before the review:\n".implode("\n", array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->line(), $deliverables));
     }
 
+    private static function autonomy(): string
+    {
+        return 'Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task\'s allocated environment, including Routes and publications, without asking for permission. Verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment\'s lease and cleanup rules. This authority does not extend to live or shared resources or another task\'s fixtures. Resolve routine test prerequisites yourself.';
+    }
+
     /**
      * A blocked turn pauses the whole group until the operator answers, so it must ask one specific question.
      */
-    private static function blocked(string $work): string
+    private static function blocked(): string
     {
-        return 'Only if something outside the '.$work.' stops you and you need the operator to decide, end your turn with .git/orbit/run --outcome=blocked --summary="What stops you" --question="One specific question the operator can answer". A blocked turn pauses the group until the operator answers. If you can decide or find the answer yourself, keep working instead.';
+        return 'Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task\'s authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/run --outcome=blocked --summary="What stops you, what you tried, and the boundary you cannot cross" --question="One specific question the operator can answer". A blocked turn pauses the group until the operator answers. If you can decide or find the answer yourself, keep working instead.';
     }
 
     /** @param list<TaskDeliverable> $deliverables */
