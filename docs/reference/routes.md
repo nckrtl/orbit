@@ -488,7 +488,9 @@ Cleanup issues the live Router certificate for the new placement and publishes p
 
 Private DNS answers carry a 30-second TTL. After a transition moves a name, it waits 31 seconds, the TTL plus one second, before it stops serving the old target. One Cluster change waits once for all the Routes it moves. It does not hold the development projection owner while it waits, so other Route and Instance commands run during the wait. It then reads each Route again before it withdraws the old placement.
 
-The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. When Caddy publishes the withdrawal, it finishes every request already in progress on the old target. It closes idle keep-alive connections, so a client's next request resolves the name again. A client that keeps its own DNS cache longer than the TTL can still reach the old target after the withdrawal and gets a TLS error until its cache expires. Browsers that cache system resolver answers for about a minute and Java runtimes with a long DNS cache are examples. Retry the request or reload the page.
+The grace period covers clients whose resolver honors the TTL, such as systemd-resolved and dnsmasq on Orbit Nodes. When Caddy publishes the withdrawal, it finishes every request already in progress on the old target. It closes idle keep-alive connections, so a client's next request resolves the name again.
+
+A client that keeps its own DNS cache longer than the TTL can still reach the old target after the withdrawal and gets a TLS error until its cache expires. Browsers that cache system resolver answers for about a minute and Java runtimes with a long DNS cache are examples. Retry the request or reload the page.
 
 ### Remove an untargeted private Route
 
