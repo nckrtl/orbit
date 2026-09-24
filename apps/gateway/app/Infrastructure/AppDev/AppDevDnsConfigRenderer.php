@@ -10,6 +10,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliHostname;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\HerdrSession;
 use App\Models\Node;
@@ -20,6 +21,7 @@ final readonly class AppDevDnsConfigRenderer
     public function __construct(
         private AppDevSiteRepository $sites,
         private ClusterRouterDnsSelection $selection = new ClusterRouterDnsSelection,
+        private ClusterRouterTransition $routerTransitions = new ClusterRouterTransition,
     ) {}
 
     /**
@@ -60,6 +62,12 @@ final readonly class AppDevDnsConfigRenderer
 
                 return $records;
             });
+        // A Router selection names the Router Node that answers: a selection being published or
+        // restored, else a stored Router replacement that has published DNS.
+        $selectedRouters = array_values(array_replace(
+            $this->routerTransitions->dnsRouters(),
+            $this->routerOverrides($clusterOverrides),
+        ));
         $records = $nodes
             ->toBase()
             ->merge($this->sites
@@ -67,7 +75,7 @@ final readonly class AppDevDnsConfigRenderer
                 ->groupBy('domain')
                 ->map(fn ($sites): string => $this->hostRecord(
                     $sites->values()->all(),
-                    array_values($this->routerOverrides($clusterOverrides)),
+                    $selectedRouters,
                 )));
         // `node:role:add gateway gateway --converge` marks the singleton assignment provisioning while
         // it republishes DNS, so a converging holder keeps gateway.orbit; an active holder wins.

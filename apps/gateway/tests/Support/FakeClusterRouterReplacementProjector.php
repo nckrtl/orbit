@@ -27,6 +27,9 @@ final class FakeClusterRouterReplacementProjector implements ClusterRouterReplac
 
     public ?Closure $onPrepare = null;
 
+    /** Receives each event name before the event runs. */
+    public ?Closure $observe = null;
+
     /** @var list<array{step: string, route_id: int, router_id: int, domain: string, workload_id: ?int}> */
     public array $placements = [];
 
@@ -97,6 +100,10 @@ final class FakeClusterRouterReplacementProjector implements ClusterRouterReplac
 
     private function event(string $name, Route $route, Node $router, ?AppInstance $workload = null): void
     {
+        if ($this->observe instanceof Closure) {
+            ($this->observe)($name);
+        }
+
         if (in_array($name, ['router-caddy', 'router-caddy:local-next-hop', 'restore', 'cleanup'], true)) {
             $this->recordServing($name, $route);
         }

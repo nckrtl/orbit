@@ -194,16 +194,23 @@ it('renders both Routers during a Router replacement from the stored router rows
     expect(stored_transition_scopes($fleet['candidate']))->toBe($router)
         ->and(stored_transition_scopes($fleet['routerA']))->toBe($router)
         ->and(stored_transition_ingress_upstream($fleet))->toBe($fleet['routerA']->wireguard_ip)
+        ->and(stored_transition_dns())->toContain("host-record=feature.acme.test,{$fleet['routerA']->wireguard_ip}")
+        ->and(stored_transition_dns([$fleet['clusterA']->id => ['router_node_id' => $fleet['candidate']->id]]))
+        ->toContain("host-record=feature.acme.test,{$fleet['candidate']->wireguard_ip}")
         ->and(stored_transition_every_converge_matches($fleet))->toBeTrue();
 
+    // Once `dns-publication` completes, every DNS publication keeps answering with the candidate.
     $checkpoint(ClusterRouterReplacementStep::DnsPublished);
 
-    expect(stored_transition_dns())->toContain("host-record=feature.acme.test,{$fleet['routerA']->wireguard_ip}")
-        ->and(stored_transition_dns([$fleet['clusterA']->id => ['router_node_id' => $fleet['candidate']->id]]))
-        ->toContain("host-record=feature.acme.test,{$fleet['candidate']->wireguard_ip}");
+    expect(stored_transition_dns())->toContain("host-record=feature.acme.test,{$fleet['candidate']->wireguard_ip}");
 
-    // A restore marks the candidate before it builds it, so the build withdraws its sites.
-    $checkpoint('rollback:router-caddy', 'app-dev.caddy_config_failed', LifecycleStatus::Failed);
+    // A restore first moves DNS back while the candidate keeps serving, and then withdraws it.
+    $checkpoint('rollback:dns-publication', 'app-dev.dns_config_failed');
+
+    expect(stored_transition_scopes($fleet['candidate']))->toBe($router)
+        ->and(stored_transition_dns())->toContain("host-record=feature.acme.test,{$fleet['routerA']->wireguard_ip}");
+
+    $checkpoint('rollback:dns-publication', 'app-dev.dns_config_failed', LifecycleStatus::Failed);
 
     expect(stored_transition_scopes($fleet['candidate']))->toBe([]);
 
@@ -211,10 +218,13 @@ it('renders both Routers during a Router replacement from the stored router rows
 
     expect(stored_transition_scopes($fleet['candidate']))->toBe([]);
 
-    // A failure after publication keeps both Routers serving.
+    // A failure after publication keeps both Routers serving and DNS on the candidate, also for an
+    // unrelated DNS publication.
     $checkpoint(ClusterRouterReplacementStep::DatabaseCutover, 'node_role.operation_failed', LifecycleStatus::Failed);
 
-    expect(stored_transition_scopes($fleet['candidate']))->toBe($router);
+    expect(stored_transition_scopes($fleet['candidate']))->toBe($router)
+        ->and(stored_transition_scopes($fleet['routerA']))->toBe($router)
+        ->and(stored_transition_dns())->toContain("host-record=feature.acme.test,{$fleet['candidate']->wireguard_ip}");
 
     // `database` makes the candidate the active Router; the Ingress upstream follows it.
     $old->update(['status' => LifecycleStatus::Removing]);

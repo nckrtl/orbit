@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
@@ -34,6 +35,7 @@ final readonly class ConvergeRouteAction
         private AppInstanceRouteEnvironmentSynchronizer $routeEnvironment,
         private AppInstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
+        private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
     ) {}
 
     public function execute(
@@ -746,10 +748,12 @@ final readonly class ConvergeRouteAction
     }
 
     /**
-     * Cleanup issues the live certificates for the current placement, stores the `cleanup` step
-     * so builds render the live scopes and no second placement, builds, and removes the staging
-     * and old certificates. The transition columns stay until then, so a retry still knows the
-     * old placement.
+     * Cleanup issues the live certificates for the current placement and publishes private DNS,
+     * which now answers with the current placement. It waits until cached answers for the old
+     * placement can have expired, stores the `cleanup` step so builds render the live scopes and no
+     * second placement, builds, and removes the staging and old certificates. A failure before
+     * the `cleanup` step keeps both placements serving. The transition columns stay until the end,
+     * so a retry still knows the old placement.
      *
      * @param  list<AppInstance>  $targets
      */
@@ -761,6 +765,9 @@ final readonly class ConvergeRouteAction
                     $this->projection->prepareCleanup($appInstance, $route);
                 }
 
+                // Private DNS moves to the current placement before the old one stops serving.
+                $this->projection->publishDns($route, $candidate);
+                $this->dnsAnswers->wait();
                 $this->checkpoint($route, RouteReplacementStep::Cleanup);
             }
 
@@ -806,18 +813,25 @@ final readonly class ConvergeRouteAction
 
     /**
      * A restore stops rendering the candidate placement, builds every Node that served it, and
-     * then removes its certificates. After `dns-published` it first publishes private DNS for the
-     * current placement again, while both placements still serve.
+     * then removes its certificates. After `router-caddy` it first publishes private DNS for the
+     * current placement again and waits for cached answers to expire, while both placements still
+     * serve.
      *
      * @param  list<AppInstance>  $targets
      */
     private function failBeforeCutoverPlacement(Route $route, Route $retired, Route $candidate, array $targets): void
     {
-        try {
-            if ($this->forwardRank($route->replacement_step) >= $this->forwardRank(RouteReplacementStep::DnsPublished)) {
+        // From `router-caddy` on, private DNS can have answered Cluster members with the candidate.
+        // Its restore publishes DNS for the current placement first and waits for those answers to
+        // expire. When that publication fails, both placements keep serving until a retry.
+        if ($this->forwardRank($route->replacement_step) >= $this->forwardRank(RouteReplacementStep::RouterCaddy)) {
+            try {
                 $this->projection->rollbackDns($route);
+            } catch (Throwable) {
+                return;
             }
-        } catch (Throwable) {
+
+            $this->dnsAnswers->wait();
         }
 
         // The rollback removes the candidate certificates, so a retry restarts from the first step.

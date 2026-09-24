@@ -42,15 +42,16 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
     public function prepareRuntime(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
-        // The shared PHP-FPM pool comes from the Route's stored sites, so creation stores the
-        // publication record before this first render.
-        $route->publishSites();
         if ($appInstance->production_php_service !== null) {
             $this->productionPhp->converge($appInstance);
 
             return;
         }
 
+        // The shared PHP-FPM pool comes from the Route's stored sites, so creation stores the
+        // publication record before this first render, once the certificate its sites name exists.
+        $this->certificates->convergeAppInstance($appInstance, $route);
+        $route->publishSites();
         $this->sharedPhp->converge($appInstance->node);
     }
 
@@ -92,6 +93,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
     public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
+        // `prepareCertificate` has issued the certificate the site names.
         $route->publishSites();
         $this->caddy->converge($appInstance->node);
     }

@@ -41,7 +41,9 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
-        // Creation stores the publication record before its first build renders the Route.
+        // Creation stores the publication record once the certificate its sites name exists, and
+        // before its first render.
+        $this->certificates->convergeAppInstance($appInstance, $route);
         $route->publishSites();
 
         $this->ssh->execute(
@@ -53,7 +55,6 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
             errorCode: 'app-dev.source_access_failed',
         );
         $this->php->converge($appInstance->node);
-        $this->certificates->convergeAppInstance($appInstance, $route);
         $this->caddy->converge($appInstance->node);
 
         $router = $route->cluster?->routerAssignment?->node;

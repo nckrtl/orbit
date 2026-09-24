@@ -119,37 +119,24 @@ final class Route extends Model
     }
 
     /**
-     * Sets the publication record before the first build that renders the Route's sites. It
-     * writes only that column, so it never races other Route state.
+     * Sets the publication record before the first build that renders the Route's sites, once
+     * the certificates those sites name exist. It writes only that column, so it never races other
+     * Route state. Removal and a failed creation clear the record together with their status.
      */
     public function publishSites(): void
     {
-        $this->storeSitesPublished(true);
-    }
-
-    /**
-     * Clears the publication record before the build that withdraws the Route's sites. An
-     * authoritative Route keeps it, so removal also leaves the authoritative states.
-     */
-    public function withdrawSites(): void
-    {
-        $this->storeSitesPublished(false);
+        self::query()
+            ->whereKey($this->id)
+            ->where('sites_published', false)
+            ->update(['sites_published' => true]);
+        $this->setAttribute('sites_published', true);
+        $this->syncOriginalAttribute('sites_published');
     }
 
     /** A placement change stores its second placement until its cleanup finishes. */
     public function hasPlacementTransition(): bool
     {
         return $this->transition_node_id !== null || $this->transition_cluster_id !== null;
-    }
-
-    private function storeSitesPublished(bool $published): void
-    {
-        self::query()
-            ->whereKey($this->id)
-            ->where('sites_published', ! $published)
-            ->update(['sites_published' => $published]);
-        $this->setAttribute('sites_published', $published);
-        $this->syncOriginalAttribute('sites_published');
     }
 
     /** @return BelongsTo<App, $this> */

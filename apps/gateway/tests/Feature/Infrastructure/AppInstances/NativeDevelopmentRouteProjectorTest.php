@@ -1140,8 +1140,12 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
             });
         expect($processes->invocations)->toHaveCount($boundary === 'dns' ? 1 : 0);
         if ($boundary === 'source-access') {
-            expect($ssh->commands)->toHaveCount(1);
+            // The certificate request and its publication come first.
+            expect($ssh->commands)->toHaveCount(3);
         }
+        // The Route is published only once its certificate exists, so a failed certificate step
+        // leaves every other build on the Node without its site.
+        expect($route->refresh()->sites_published)->toBe($boundary !== 'certificate');
     } finally {
         new Filesystem()->deleteDirectory($home);
     }

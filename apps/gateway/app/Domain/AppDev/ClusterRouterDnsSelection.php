@@ -6,6 +6,7 @@ namespace App\Domain\AppDev;
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
@@ -185,6 +186,14 @@ final readonly class ClusterRouterDnsSelection
             return $router instanceof Node
                 ? $this->applyNodeOverrides($router, $nodeOverrides[$router->id] ?? [])
                 : null;
+        }
+
+        // A Router replacement that published DNS keeps answering with its candidate.
+        $candidateId = new ClusterRouterTransition()->dnsRouters()[$cluster->id] ?? null;
+        $candidate = is_int($candidateId) ? Node::query()->find($candidateId) : null;
+
+        if ($candidate instanceof Node) {
+            return $this->applyNodeOverrides($candidate, $nodeOverrides[$candidate->id] ?? []);
         }
 
         $assignment = NodeRole::query()
