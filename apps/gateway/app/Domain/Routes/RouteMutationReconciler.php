@@ -291,6 +291,9 @@ final readonly class RouteMutationReconciler
     }
 
     /**
+     * A custom proxy Route stays Node-direct under any membership, TLD, or Cluster state, so no
+     * mutation moves it. Its domain still takes part in the uniqueness check.
+     *
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $nodeOverrides
      * @param  array<int, array{tld?: ?string, state?: ClusterState}>  $clusterOverrides
      * @param  array<int, array{tld?: ?string, cluster_id?: ?int}>  $baselineNodeOverrides
@@ -308,6 +311,7 @@ final readonly class RouteMutationReconciler
 
         return Route::query()
             ->with(['app', 'targets.appInstance.node', 'generationBasisNode'])
+            ->where('kind', '!=', RouteKind::CustomProxy->value)
             ->where(function (Builder $query) use ($nodeIds, $clusterIds): void {
                 $query->whereRaw('0 = 1');
 

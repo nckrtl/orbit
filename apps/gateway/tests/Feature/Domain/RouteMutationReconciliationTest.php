@@ -34,6 +34,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -1635,6 +1636,68 @@ it('keeps an explicit Route domain fixed when a Node attaches or detaches', func
         ->toBeNull();
 });
 
+it('keeps a custom proxy Route on its Node when the Node attaches or detaches', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'fixed.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $explicit->update(['status' => RouteStatus::Active]);
+    $proxy = reconciliation_custom_proxy($this->node, 'executor.orbit');
+    $cluster = reconciliation_active_cluster('custom-proxy-membership', 'cluster.test');
+    $events = bind_node_tld_projection();
+    $nodeDirect = [
+        'domain' => 'executor.orbit',
+        'node_id' => $this->node->id,
+        'cluster_id' => null,
+        'status' => RouteStatus::Active,
+        'transition_node_id' => null,
+        'transition_cluster_id' => null,
+    ];
+
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($explicit->refresh()->only(['node_id', 'cluster_id']))
+        ->toBe(['node_id' => null, 'cluster_id' => $cluster->id])
+        ->and($proxy->refresh()->only(array_keys($nodeDirect)))
+        ->toBe($nodeDirect)
+        ->and($events->scopes)
+        ->each->toBe([null, $cluster->id]);
+
+    app(DetachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBeNull()
+        ->and($explicit->refresh()->only(['node_id', 'cluster_id']))
+        ->toBe(['node_id' => $this->node->id, 'cluster_id' => null])
+        ->and($proxy->refresh()->only(array_keys($nodeDirect)))
+        ->toBe($nodeDirect);
+});
+
+it('keeps a custom proxy Route on its member Node when a TLD-less Cluster activates without a Router', function (): void {
+    $cluster = Cluster::query()->create([
+        'name' => 'custom-proxy-activation',
+        'state' => ClusterState::Inactive,
+        'tld' => null,
+    ]);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $proxy = reconciliation_custom_proxy($this->node, 'executor.orbit');
+    bind_node_tld_projection();
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+
+    expect($cluster->refresh()->state)
+        ->toBe(ClusterState::Active)
+        ->and($proxy->refresh()->only(['node_id', 'cluster_id']))
+        ->toBe(['node_id' => $this->node->id, 'cluster_id' => null]);
+});
+
 it('waits once for private DNS answers when an attach moves many Routes, without holding the projection owner', function (): void {
     $routes = [];
 
@@ -2016,6 +2079,28 @@ function reconciliation_route(
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
+}
+
+function reconciliation_custom_proxy(Node $node, string $domain): Route
+{
+    $route = Route::query()->create([
+        'kind' => RouteKind::CustomProxy,
+        'app_id' => null,
+        'node_id' => $node->id,
+        'cluster_id' => null,
+        'generation_basis_node_id' => null,
+        'domain' => $domain,
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->customProxy()->create([
+        'node_id' => $node->id,
+        'upstream' => 'http://127.0.0.1:4788',
+    ]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route;
 }
 
 function reconciliation_update(
