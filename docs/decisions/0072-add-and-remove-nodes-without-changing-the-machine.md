@@ -10,7 +10,7 @@ In the context of Node lifecycle commands, facing a removal that stops Processes
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0069](/decisions/0069-allow-node-process-targets) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). Supersedes [ADR 0069](/decisions/0069-allow-node-process-targets) for Process cleanup during Node decommissioning. Amended by [ADR 0145](/decisions/0145-retire-the-herdr-integration): Orbit has no Herdr sessions, so removal no longer refuses, retracts, or forgets them.
+Accepted on 2026-09-14. Extends [ADR 0069](/decisions/0069-allow-node-process-targets) and [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). Supersedes [ADR 0069](/decisions/0069-allow-node-process-targets) for Process cleanup during Node decommissioning. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration): Orbit has no Herdr sessions, so removal no longer refuses, retracts, or forgets them.
 
 ## Context
 

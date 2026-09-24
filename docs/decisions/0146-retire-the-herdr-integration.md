@@ -1,10 +1,10 @@
 ---
-title: "ADR 0145: Retire the Herdr integration"
-sidebarTitle: "0145 Retire the Herdr integration"
+title: "ADR 0146: Retire the Herdr integration"
+sidebarTitle: "0146 Retire the Herdr integration"
 description: "Proposed. Orbit removes Herdr sessions, observers, observation grants, the JWKS endpoint, the herdr Doctor family, and the herdr CLI extension. A migration drops the Herdr tables. Amends ADR 0072, ADR 0091, and ADR 0141."
 ---
 
-# ADR 0145: Retire the Herdr integration
+# ADR 0146: Retire the Herdr integration
 
 Orbit no longer manages or observes Herdr sessions. The Gateway, CLI, PHP SDK, MCP tools, web API types, and documentation lose every Herdr feature, and a migration drops the Herdr tables. Features that Herdr shared with the rest of Orbit stay.
 

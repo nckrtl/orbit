@@ -10,7 +10,7 @@ description: "Proposed. A Node name is a unique registry identifier. Operators c
 
 ## Status
 
-Proposed. Amended by [ADR 0145](/decisions/0145-retire-the-herdr-integration): Orbit has no Herdr sessions, so a rename no longer refuses with `node.has_herdr_sessions`.
+Proposed. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration): Orbit has no Herdr sessions, so a rename no longer refuses with `node.has_herdr_sessions`.
 
 This extends the Node registry contract used by [ADR 0072](/decisions/0072-add-and-remove-nodes-without-changing-the-machine) and the family-specific action list in [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn).
 

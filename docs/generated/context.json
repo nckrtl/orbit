@@ -2044,7 +2044,7 @@
                 "0069",
                 "0071",
                 "0072",
-                "0145"
+                "0146"
             ]
         },
         {
@@ -2503,7 +2503,7 @@
                 "0072",
                 "0090",
                 "0091",
-                "0145"
+                "0146"
             ]
         },
         {
@@ -3667,7 +3667,7 @@
                 "0138",
                 "0139",
                 "0141",
-                "0145"
+                "0146"
             ]
         },
         {
@@ -3754,8 +3754,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0145-retire-the-herdr-integration.md",
-            "title": "ADR 0145: Retire the Herdr integration",
+            "path": "docs/decisions/0146-retire-the-herdr-integration.md",
+            "title": "ADR 0146: Retire the Herdr integration",
             "kind": "decision",
             "components": [
                 "apps/cli",
@@ -3781,7 +3781,7 @@
                 "0091",
                 "0123",
                 "0141",
-                "0145"
+                "0146"
             ]
         },
         {
@@ -3957,7 +3957,8 @@
                 "0142",
                 "0143",
                 "0144",
-                "0145"
+                "0145",
+                "0146"
             ]
         },
         {
