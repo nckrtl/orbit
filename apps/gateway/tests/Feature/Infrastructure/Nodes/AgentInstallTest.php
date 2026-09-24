@@ -21,6 +21,14 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Illuminate\Support\Facades\Log;
 
+it('pins agent v0.1.1 assets and checksums from its release manifest', function (): void {
+    expect(NodeAgentFootprint::Version)->toBe('0.1.1')
+        ->and(NodeAgentFootprint::X8664Checksum)->toBe('a25ff7385eb63ca959100dbbc09696efaa2b6d959619cc8c68bd06614acb90be')
+        ->and(NodeAgentFootprint::Aarch64Checksum)->toBe('e6edca454ef531f98c40fd8647b2232aac8b101b852733c6cdd6b5c8947cc948')
+        ->and(NodeAgentFootprint::downloadUrl('x86_64'))
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.1.1/orbit-agent-0.1.1-linux-x86_64');
+});
+
 it('keeps the role converge going when the agent install fails', function (): void {
     Log::spy();
     $agent = new class implements NodeAgentRuntime
