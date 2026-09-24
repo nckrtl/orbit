@@ -41,7 +41,7 @@ Caddy 2.9.0 added `tls force_automate`. The Caddyfile adapter adds a site with t
 ## Consequences
 
 - Public hostnames get and renew Let's Encrypt certificates again. Private hostnames never reach a public CA.
-- A public Ingress site that Orbit published before this change has no `tls force_automate`. If a later publication writes `disable_certs` before the site gets the option, the site loses its certificate on reload. The renderer writes both in the same publication, so a Node that converges on this release gets both at once.
+- A public Ingress site that Orbit published before this release has no `tls force_automate`. Every Caddy publisher on the Ingress Node copies that site's fragment unchanged and writes `disable_certs` above it, so the site loses its certificate on reload until the App development publisher renders it again. After the Gateway deploys this release, the operator converges the public edge on each Ingress Node before another Caddy publication runs there. Doctor reports a site that still lacks the option as `instance.public_tls_mismatch`.
 - Nodes need Caddy 2.9.0 or newer. The pinned Caddy source already installs 2.11.
 - The Doctor check reads the Caddyfile and does not perform a TLS handshake. A public hostname whose DNS or port 80 does not reach Ingress still fails ACME. Caddy retries and logs the failure.
 
