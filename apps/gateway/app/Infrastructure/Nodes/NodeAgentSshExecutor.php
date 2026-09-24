@@ -110,9 +110,23 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         ]), $failure);
         $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'rm', '-rf', '--', '/etc/orbit/agent']), $failure);
         $this->attemptRemovalCommand($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), $failure);
+        $this->resetFailedUnit($node);
 
         if ($failure instanceof Throwable) {
             throw new ResourceOperationException('agent.remove_failed', 'The Node agent could not be removed.', 502, $failure);
+        }
+    }
+
+    /**
+     * Clears the failed-unit record that systemd keeps after a crashed agent's unit file is removed.
+     * The command fails for a unit that is not failed or no longer loaded, so its outcome is ignored.
+     */
+    private function resetFailedUnit(Node $node): void
+    {
+        try {
+            $this->raw($node, new RemoteCommand(['sudo', 'systemctl', 'reset-failed', NodeAgentFootprint::Service]));
+        } catch (Throwable) {
+            return;
         }
     }
 

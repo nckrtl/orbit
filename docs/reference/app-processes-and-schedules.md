@@ -170,6 +170,8 @@ Process responses identify the owning Instance or Node. Activity records identif
 
 Systemd units use `orbit-process-{id}-{name}.service` and Docker containers use `orbit-process-{id}-{name}`. Collision checks require the exact Orbit process ID marker before replacement or deletion.
 
+Removing an owned systemd Process disables and stops the unit, deletes the unit file, reloads systemd, and then resets the unit's failed state. A unit that crashed therefore leaves no `failed` record in `systemctl list-units`. The reset is best effort: a unit that is not failed or not loaded does not fail the removal.
+
 ## Inspect and remove owned state
 
 Doctor reads each recorded Instance Process and Node Process on the selected Node and compares its desired state with the bounded systemd or Docker status. It reports an absent runtime, state mismatch, failed inspection, or unreachable Node without changing the Process, Instance, Node, or machine. The [hibernation page](/reference/app-dev-runtime-hibernation) states when a sleeping non-keep-alive Process is not a state mismatch.

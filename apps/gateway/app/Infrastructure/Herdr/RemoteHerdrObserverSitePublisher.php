@@ -414,6 +414,7 @@ final readonly class RemoteHerdrObserverSitePublisher implements HerdrObserverSi
                     fi
                     rm -f -- "\$unit"
                     systemctl daemon-reload
+                    systemctl reset-failed "\$unit_name" >/dev/null 2>&1 || true
                     rm -rf -- "\$directory"
                 fi
                 rm -f -- "\$legacy_fragment"

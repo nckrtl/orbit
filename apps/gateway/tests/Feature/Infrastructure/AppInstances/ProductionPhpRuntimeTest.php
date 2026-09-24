@@ -213,6 +213,7 @@ it('publishes and removes only the recorded service while preserving local tunin
             'systemctl disable --now "$service"',
             'rm -rf -- "$generated_directory"',
             'rm -f -- "$unit_path"',
+            "systemctl daemon-reload\nsystemctl reset-failed \"\$service\" >/dev/null 2>&1 || true\n",
             'test -f "$local_tuning"',
         )
         ->not->toContain('rm -f -- "$local_tuning"', 'rm -rf -- "$runtime_directory"');

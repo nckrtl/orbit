@@ -193,6 +193,17 @@ it('retains standalone intent when direct service inspection finds an active com
         ->toContain("case \"\$service_state\" in ''|inactive|failed|unknown) ;; *) exit 75 ;; esac");
 });
 
+it('resets failed Schedule unit records after it removes the unit files', function (): void {
+    expect($this->manager->remove($this->schedule, true))->toBeTrue();
+
+    $program = (string) stream_get_contents($this->ssh->commands[0]->protectedInput?->stream());
+    expect($program)->toContain(
+        "systemctl daemon-reload\n"
+        ."systemctl reset-failed \"\$service\" >/dev/null 2>&1 || true\n"
+        ."systemctl reset-failed \"\$timer\" >/dev/null 2>&1 || true\n",
+    );
+});
+
 it('maps root certificate rendering failures to the bounded install error', function (): void {
     $manager = new RemoteScheduleRuntimeManager(
         new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),

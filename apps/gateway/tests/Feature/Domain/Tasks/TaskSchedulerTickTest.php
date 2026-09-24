@@ -310,6 +310,54 @@ it('leaves another cause of assistance on a settling group alone while its pull 
     expect($notifier->reasons)->toBe([]);
 });
 
+it('withdraws its pull request assistance request when the pull request merges', function (): void {
+    $group = tick_settling_group();
+    $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new AppInstanceRemoval);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
+});
+
+it('keeps another cause of assistance when the pull request merges', function (): void {
+    $group = tick_settling_group();
+    $group->update(['assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new AppInstanceRemoval);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
+});
+
+it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
+    $group = tick_settling_group();
+    $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
+    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+});
+
 it('changes nothing on a settling group when GitHub cannot report the pull request', function (): void {
     $group = tick_settling_group();
     $reason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.';
