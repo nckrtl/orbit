@@ -466,14 +466,16 @@ PHP
     php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["node_id"] ?? null) !== (int)$argv[1] || ($v["node_name"] ?? null) !== $argv[3] || ($v["role"] ?? null) !== "metrics" || ($v["assignment"]["id"] ?? null) !== (int)$argv[2] || ($v["assignment"]["role"] ?? null) !== "metrics" || ($v["assignment"]["status"] ?? null) !== "active") exit(1);' "$node_id" "$assignment_id" "$2" <<<"$mutation"
     ;;
   internal-tls)
-    # Internal TLS for the sample production site lives inside the product's
-    # own Caddy layout: the `local_certs` global block becomes an unmanaged
-    # fragment of the managed version behind /etc/caddy/Caddyfile, and the
-    # product publisher carries unmanaged fragments forward on every publish.
-    # Runs before re-projection so the publisher validates a managed layout.
+    # The sample production site serves Orbit's own certificates, and every
+    # Orbit Caddy publisher writes the one global options block Caddy allows
+    # (`auto_https disable_certs`). An older snapshot carries a second global
+    # block, `local_certs`, as an unmanaged fragment of the managed version;
+    # the publisher copies it forward, so every changed publish on app-prod
+    # fails validation. This step removes that fragment and restores the
+    # product symlink. Runs before re-projection so the publisher validates a
+    # managed layout.
     [[ $# -eq 1 ]] || exit 64
     [[ "$(id -u)" -eq 0 ]] || exit 77
-    source=/etc/caddy/orbit-e2e-global.caddy
     live=/etc/caddy/Caddyfile
     legacy_wrapper=/etc/caddy/Caddyfile.orbit-e2e
     target=$(readlink -f "$live")
@@ -486,12 +488,11 @@ PHP
       /etc/caddy/orbit-versions/*/Caddyfile) ;;
       *) printf 'internal-tls: unexpected Caddyfile target: %s\n' "$target" >&2; exit 65 ;;
     esac
-    [[ -f "$target" && -s "$source" ]]
+    [[ -f "$target" ]]
     fragment=$(dirname "$target")/fragments/00-orbit-e2e-global.caddy
     changed=0
-    if ! cmp -s -- "$source" "$fragment"; then
-      install -m 0640 -- "$source" "$fragment"
-      chown --reference="$target" -- "$fragment"
+    if [[ -e "$fragment" ]]; then
+      rm -f -- "$fragment"
       changed=1
     fi
     if [[ "$(readlink -f "$live")" != "$target" ]]; then

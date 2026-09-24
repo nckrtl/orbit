@@ -1826,7 +1826,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('keeps the product-managed Caddyfile and places internal TLS as an unmanaged fragment', function (): void {
+    it('keeps the product-managed Caddyfile and retires the internal TLS global fragment', function (): void {
         $guest = dirname(__DIR__, 3).'/resources/guest';
         $production = file_get_contents("{$guest}/converge-app-prod-internal-tls.sh");
         $sample = file_get_contents("{$guest}/converge-sample-app.sh");
@@ -4412,18 +4412,20 @@ describe('convergence guest scripts', function () {
             ->toBe(64);
     });
 
-    it('installs the local_certs fragment inside the managed Caddy version and keeps the product symlink', function () {
+    it('removes the retired local_certs global fragment from the managed Caddy version and keeps the product symlink', function () {
         $root = temporaryPath('orbit-task7-internal-tls-', 6);
         $fixture = internal_tls_fixture($root);
         $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
         symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
+        // An older snapshot carries a second global options block next to the publisher's own.
+        $fragment = "{$version}/fragments/00-orbit-e2e-global.caddy";
+        file_put_contents($fragment, "{\n    local_certs\n}\n");
 
         new Process(['bash', "{$root}/converge.sh", 'internal-tls'], env: $fixture['environment'])->mustRun();
-        $fragment = "{$version}/fragments/00-orbit-e2e-global.caddy";
-        expect(file_get_contents($fragment))
-            ->toBe("{\n    local_certs\n}\n")
-            ->and(fileperms($fragment) & 0o777)
-            ->toBe(0o640)
+        expect(file_exists($fragment))
+            ->toBeFalse()
+            ->and(file_get_contents("{$version}/fragments/app-prod.caddy"))
+            ->toBe("laravel.internal {\n}\n")
             ->and(readlink("{$root}/etc/caddy/Caddyfile"))
             ->toBe("{$version}/Caddyfile")
             ->and(file("{$root}/validations", FILE_IGNORE_NEW_LINES))
@@ -4472,8 +4474,8 @@ describe('convergence guest scripts', function () {
         new Process(['bash', "{$root}/converge.sh", 'internal-tls'], env: $fixture['environment'])->mustRun();
         expect(readlink("{$root}/etc/caddy/Caddyfile"))
             ->toBe("{$version}/Caddyfile")
-            ->and(file_get_contents("{$version}/fragments/00-orbit-e2e-global.caddy"))
-            ->toBe("{\n    local_certs\n}\n")
+            ->and(file_exists("{$version}/fragments/00-orbit-e2e-global.caddy"))
+            ->toBeFalse()
             ->and(file_exists("{$root}/etc/caddy/Caddyfile.orbit-e2e"))
             ->toBeFalse()
             ->and(file_exists("{$root}/state/caddy-rendered-path"))
