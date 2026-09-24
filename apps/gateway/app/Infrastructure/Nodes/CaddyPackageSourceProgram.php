@@ -12,6 +12,9 @@ use App\Domain\Nodes\CaddyRelease;
  * pinned by digest and fingerprint, the candidate must come from the pinned origin, and the
  * installed release must reach the floor. ADR 0100 records the decision.
  *
+ * The program also sets `net.ipv4.tcp_migrate_req`, so a Caddy reload hands the connections that
+ * wait on the old listening socket to the new one instead of resetting them. ADR 0144 records it.
+ *
  * The program runs as root before the role installs the rest of its packages. It is idempotent: it
  * republishes nothing that already matches and upgrades an archive Caddy in place, keeping the
  * Orbit-owned Caddyfile through `--force-confold`.
@@ -34,6 +37,10 @@ final class CaddyPackageSourceProgram
 
     public const string KEY_FINGERPRINT = '65760C51EDEA2017CEA2CA15155B6D79CA56EA34';
 
+    public const string KERNEL_SETTING_PATH = '/etc/sysctl.d/60-orbit-caddy.conf';
+
+    public const string KERNEL_SETTING = 'net.ipv4.tcp_migrate_req = 1';
+
     /**
      * The positional arguments the program consumes, in order.
      *
@@ -51,6 +58,8 @@ final class CaddyPackageSourceProgram
             self::KEY_SHA256,
             self::KEY_FINGERPRINT,
             CaddyRelease::MINIMUM,
+            self::KERNEL_SETTING_PATH,
+            self::KERNEL_SETTING,
         ];
     }
 
@@ -66,8 +75,10 @@ final class CaddyPackageSourceProgram
             key_sha256=$7
             key_fingerprint=$8
             minimum_version=$9
+            kernel_setting_path=${10}
+            kernel_setting=${11}
 
-            for managed_path in "$keyring_path" "$source_path"; do
+            for managed_path in "$keyring_path" "$source_path" "$kernel_setting_path"; do
                 if [ ! -e "$managed_path" ] && [ ! -L "$managed_path" ]; then
                     continue
                 fi
@@ -77,7 +88,7 @@ final class CaddyPackageSourceProgram
                     || [ "$(stat -c '%U:%G' -- "$managed_path")" != root:root ] \
                     || [ "$(stat -c '%a' -- "$managed_path")" != 644 ]
                 then
-                    printf '%s\n' 'An Orbit Caddy package source file has unsafe ownership or mode.' >&2
+                    printf '%s\n' 'An Orbit Caddy file has unsafe ownership or mode.' >&2
                     exit 1
                 fi
             done
@@ -127,6 +138,13 @@ final class CaddyPackageSourceProgram
                 exit "$status"
             }
             trap restore_caddy_source EXIT
+
+            kernel_setting_body="$work_directory/60-orbit-caddy.conf"
+            printf '%s\n' "$kernel_setting" > "$kernel_setting_body"
+            sysctl --quiet --load="$kernel_setting_body"
+            if [ ! -f "$kernel_setting_path" ] || ! cmp -s -- "$kernel_setting_body" "$kernel_setting_path"; then
+                install -m 0644 -o root -g root -- "$kernel_setting_body" "$kernel_setting_path"
+            fi
 
             curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
                 --output "$downloaded_key" \

@@ -75,6 +75,18 @@ Orbit installs Caddy this way because the Ubuntu archive ships Caddy 2.6.2, whic
 
 Converging a role on a Node that still carries the archive package upgrades it in place. Orbit owns `/etc/caddy/Caddyfile` as a symlink into its own versions directory, and the install keeps the existing file, so the live configuration survives the upgrade.
 
+The same step sets one kernel setting for Caddy reloads. It writes `/etc/sysctl.d/60-orbit-caddy.conf`, owned by `root:root` with mode `0644`:
+
+```text
+net.ipv4.tcp_migrate_req = 1
+```
+
+On each reload, Caddy opens a new listening socket and closes the old one. With this setting, the kernel moves the connections that wait on the old socket to the new one. Without it, the kernel resets them, and a client can see `curl: (35) Recv failure: Connection reset by peer`. In a reproduction, resets fell from 28 in 268 reloads to 2 in 228. [ADR 0144](/decisions/0144-migrate-waiting-connections-when-caddy-reloads) records the measurements.
+
+The step applies a candidate file with `sysctl --load` before it installs the file, so a kernel that refuses the setting fails the `caddy-package-source` step and leaves no file behind. When the file already matches, the step leaves it untouched but applies it again, so a changed live value returns to `1`. The step refuses a live file that is a symlink, not a regular file, or not `root:root` mode `0644`. Doctor does not check the setting; converge the role to repair it.
+
+The setting does not help HTTP/1.1 clients. When the old Caddy configuration has already accepted a new HTTP/1.1 connection, a request it reads after the reload starts gets an empty reply. Orbit's own CLI and PHP SDK use HTTP/1.1, so a command can fail this way while the Gateway's Caddy reloads; run it again. HTTP/2 clients, such as browsers and curl, do not see this.
+
 [`orbit doctor`](/cli/doctor) reports a Node whose Caddy is below the floor as `role.caddy_version_unsupported`, with the constraint as the expected value and the installed release as the observed one. Doctor never repairs; `orbit node:role:add <node> <role> --converge` does.
 
 The Gateway machine installs Caddy the same way. The `gateway` role lists the `caddy` package. Gateway bootstrap and Gateway web convergence (`php artisan orbit:gateway-web`) run the Caddy source step on the Gateway machine through local `sudo`, and then order the Caddy service after `wg-quick@orbit`. Both steps run after a read-only check of the checkout path and before any step that changes the checkout, the certificates, or Caddy's configuration. A failure stops at the `gateway-caddy-install` step with `gateway.caddy_install_failed` and leaves the live Caddy configuration unchanged.

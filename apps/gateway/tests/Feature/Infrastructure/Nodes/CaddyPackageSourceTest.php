@@ -8,6 +8,7 @@ use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
+use Tests\Support\CaddyKernelSettingHarness;
 
 describe('Caddy release floor', function (): void {
     it('reads the release from either build of `caddy version`', function (string $output, ?string $release): void {
@@ -54,7 +55,7 @@ describe('Caddy package source', function (): void {
         'ingress' => [RoleName::Ingress, false],
     ]);
 
-    it('passes the pinned source, key digest, fingerprint, and version floor as fixed argv', function (): void {
+    it('passes the pinned source, key digest, fingerprint, version floor, and kernel setting as fixed argv', function (): void {
         $command = new NodeRolePrerequisiteCommandFactory()->caddySource(new Node, RoleName::AppDev);
 
         expect($command?->arguments)->toBe([
@@ -71,6 +72,8 @@ describe('Caddy package source', function (): void {
             '783dfee04b19e851a928cd87b34710213ebbe7628f98d9f34595ab83be578c00',
             '65760C51EDEA2017CEA2CA15155B6D79CA56EA34',
             '2.9.0',
+            '/etc/sysctl.d/60-orbit-caddy.conf',
+            'net.ipv4.tcp_migrate_req = 1',
         ]);
     });
 
@@ -116,5 +119,63 @@ describe('Caddy package source', function (): void {
                 'install -m 0644 -o root -g root -- "$key_backup" "$keyring_path"',
                 'install -m 0644 -o root -g root -- "$source_backup" "$source_path"',
             );
+    });
+});
+
+describe('Caddy reload kernel setting', function (): void {
+    beforeEach(function (): void {
+        $this->harness = new CaddyKernelSettingHarness;
+    });
+
+    afterEach(function (): void {
+        $this->harness->cleanup();
+    });
+
+    it('applies the setting from a candidate and then installs it, before any source work', function (): void {
+        [, , $calls] = $this->harness->run();
+
+        expect($calls)->toBe([
+            'sysctl --quiet --load net.ipv4.tcp_migrate_req = 1',
+            'install 60-orbit-caddy.conf',
+            'curl',
+        ])->and($this->harness->installedSetting())->toBe("net.ipv4.tcp_migrate_req = 1\n");
+    });
+
+    it('applies the setting again but leaves a matching file untouched', function (): void {
+        $this->harness->run();
+
+        [, , $calls] = $this->harness->run();
+
+        expect($calls)->toBe([
+            'sysctl --quiet --load net.ipv4.tcp_migrate_req = 1',
+            'curl',
+        ])->and($this->harness->installedSetting())->toBe("net.ipv4.tcp_migrate_req = 1\n");
+    });
+
+    it('rewrites a file that no longer matches', function (): void {
+        file_put_contents($this->harness->settingPath(), "net.ipv4.tcp_migrate_req = 0\n");
+
+        [, , $calls] = $this->harness->run();
+
+        expect($calls)->toContain('install 60-orbit-caddy.conf')
+            ->and($this->harness->installedSetting())->toBe("net.ipv4.tcp_migrate_req = 1\n");
+    });
+
+    it('fails without installing the file when the kernel refuses the setting', function (): void {
+        [$exitCode, , $calls] = $this->harness->run(kernelAccepts: false);
+
+        expect($exitCode)->not->toBe(0)
+            ->and($calls)->toBe(['sysctl --quiet --load net.ipv4.tcp_migrate_req = 1'])
+            ->and($this->harness->installedSetting())->toBeNull();
+    });
+
+    it('refuses a live file with an unsafe mode before it changes anything', function (): void {
+        file_put_contents($this->harness->settingPath(), "net.ipv4.tcp_migrate_req = 1\n");
+
+        [$exitCode, $errors, $calls] = $this->harness->run(liveFileSafe: false);
+
+        expect($exitCode)->toBe(1)
+            ->and($errors)->toContain('An Orbit Caddy file has unsafe ownership or mode.')
+            ->and($calls)->toBe([]);
     });
 });

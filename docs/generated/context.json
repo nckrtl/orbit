@@ -3728,6 +3728,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0144-migrate-waiting-connections-when-caddy-reloads.md",
+            "title": "ADR 0144: Migrate waiting connections when Caddy reloads",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0100",
+                "0144"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3898,7 +3917,8 @@
                 "0140",
                 "0141",
                 "0142",
-                "0143"
+                "0143",
+                "0144"
             ]
         },
         {
@@ -4848,7 +4868,8 @@
                 "0094",
                 "0100",
                 "0138",
-                "0141"
+                "0141",
+                "0144"
             ]
         },
         {
