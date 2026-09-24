@@ -52,6 +52,19 @@ interface GitHubApi
     ): string;
 
     /**
+     * A token that only reads the check runs of this one repository, and expires after one hour.
+     * It is separate from the pull request token because GitHub refuses a whole token request that
+     * names a permission the installation has not accepted.
+     *
+     * @throws GitHubApiException
+     */
+    public function repositoryChecksToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string;
+
+    /**
      * Opens the pull request, or returns the open one that already has this head.
      *
      * @return string the pull request's web URL
@@ -61,5 +74,14 @@ interface GitHubApi
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string;
 
     /** @throws GitHubApiException */
-    public function pullRequestState(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequestState;
+    public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;
+
+    /**
+     * The latest check run of each check on the commit, up to 100 runs.
+     *
+     * @return list<GitHubCheckRun>
+     *
+     * @throws GitHubApiException
+     */
+    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
 }

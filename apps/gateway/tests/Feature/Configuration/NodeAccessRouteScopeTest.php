@@ -10,6 +10,7 @@ use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
 it('declares node access scope on every active-peer API route', function (): void {
+    $agentRoutes = ['agent:realtime', 'agent:realtime:auth'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->filter(
@@ -17,7 +18,7 @@ it('declares node access scope on every active-peer API route', function (): voi
                 RequireActiveWireGuardPeer::class,
                 $route->gatherMiddleware(),
                 strict: true,
-            ),
+            ) && ! in_array($route->getName(), $agentRoutes, strict: true),
         )
         ->values();
 
@@ -331,6 +332,14 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
         if (in_array($route->getName(), ['gateway:status', 'gateway:trust'], strict: true)) {
             expect($middleware)
                 ->not->toContain(RequireActiveWireGuardPeer::class)
+                ->not->toContain(RequireNodeAccess::class);
+
+            continue;
+        }
+
+        if (in_array($route->getName(), ['agent:realtime', 'agent:realtime:auth'], strict: true)) {
+            expect($middleware)
+                ->toContain(RequireActiveWireGuardPeer::class)
                 ->not->toContain(RequireNodeAccess::class);
 
             continue;

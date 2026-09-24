@@ -88,7 +88,7 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             'binary' => $fpm,
         ]]);
         $this->publishCaddy($target->node, $target->caddy
-            ? $this->renderer->caddy((string) $target->node->wireguard_ip, (string) $metricsNode->wireguard_ip, $this->perHost($target->node))
+            ? $this->renderer->caddy((string) $target->node->wireguard_ip, (string) $metricsNode->wireguard_ip)
             : null);
     }
 
@@ -130,16 +130,6 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
         $version = bin2hex(random_bytes(8));
         $command = $configuration === null ? $publisher->removeCommand($version) : $publisher->command($configuration, $version);
         $this->ssh->execute($node, $command, 'service-metrics-caddy', 'metrics.caddy_publication_failed');
-    }
-
-    private function perHost(Node $node): bool
-    {
-        $result = $this->ssh->execute($node, new RemoteCommand(['caddy', 'version']), 'service-metrics-caddy-version', 'metrics.caddy_version_failed');
-        if (! preg_match('/\Av?(\d+\.\d+\.\d+)(?:\s|$)/', trim($result->stdout), $matches)) {
-            throw new ResourceOperationException('metrics.caddy_version_failed', 'Caddy returned an unsupported version string.', 502);
-        }
-
-        return version_compare($matches[1], '2.9.0', '>=');
     }
 
     /**

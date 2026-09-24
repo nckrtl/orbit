@@ -37,7 +37,7 @@ The Gateway console command `orbit:node-provision` applies the same defaults for
 
 ## Machine architecture
 
-After verifying managed SSH access, the Gateway runs `uname -m` to read the architecture, such as `x86_64` or `aarch64`. A new Node stores that value. An existing Node keeps its recorded architecture regardless of request input.
+After verifying managed SSH access, the Gateway runs `uname -m` to read the architecture, such as `x86_64` or `aarch64`. A Node without a recorded architecture stores that value, and keeps it even when a later provisioning step fails and the Gateway restores the Node's other state. An existing Node keeps its recorded architecture regardless of request input.
 
 An explicit architecture for a new Node must match the observed value. A mismatch returns HTTP 409 before package-manager or role setup. Architecture failures mark the Node as failed at `machine-architecture`.
 
@@ -85,6 +85,10 @@ The Gateway machine itself is not a managed Node for packages. Its own Caddy com
 
 A Node that was never `active` still becomes `failed` at the step that stopped. A private DNS failure uses step `private-dns`.
 
+## Node agent
+
+After the Metrics exporters, provisioning installs or upgrades the [Node agent](/reference/node-agent) on a managed Node, at step `agent`. A failure returns `node.agent_install_failed` and follows the converge rules above: a new Node becomes `failed`, and an existing active Node stays `active`.
+
 ## Public SSH after provisioning
 
 Bootstrap adds the `orbit:public-ssh-recovery` UFW rule and enables UFW over the public address. Once SSH answers over the WireGuard tunnel, the Gateway adds the `orbit:wireguard-members` rule over that tunnel and keeps public SSH open. The first role convergence removes the public SSH rule, so a Node provisioned with roles ends with public SSH closed, and a Node provisioned without roles stays reachable over its public SSH target until a role converges. [Node retarget](/reference/node-retarget#two-boundaries) describes the same two boundaries.
@@ -103,6 +107,7 @@ The online removal runs these steps in order and reports success only after the 
 | --- | --- |
 | Grafana access | The Gateway revokes the Node's Grafana access. |
 | Metrics exporter | The Gateway retires the Node's Metrics exporter state and converges the remaining fleet. |
+| Node agent | The Gateway stops and disables `orbit-agent.service`, then deletes the unit, `/usr/local/bin/orbit-agent`, and `/etc/orbit/agent` on the machine. A failure does not stop the removal; the Gateway logs a warning. |
 | Public SSH recovery | The Gateway restores the exact `orbit:public-ssh-recovery` UFW rule on the machine over WireGuard without enabling UFW. |
 | WireGuard peer | The Gateway removes the Node's WireGuard peer. |
 | DNS | The Gateway converges its private DNS records. |
@@ -112,9 +117,9 @@ The Gateway skips the public SSH step for a Node without a WireGuard peer, becau
 
 Use `--offline` only for an unreachable Node. The Gateway probes it first and keeps all normal guards if it answers. The flag skips public SSH recovery even for a reachable Node, so omit it for online removal.
 
-For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, and Orbit UFW rules and the Metrics exporter stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
+For an unreachable Node, `--offline --force` sheds every remaining role on the Gateway side, deletes Node-owned Herdr session and Process records without remote runtime cleanup, removes the WireGuard peer, and deletes the record. It changes nothing on the machine: the roles' Caddy sites, checkouts, containers, Process units or containers, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
 
-A failed step rolls the Gateway back and keeps the Node record active. Each failure names the step that stopped and the state the Gateway leaves behind.
+A failed step rolls the Gateway back and returns the Node record to the status it had before removal, so a `failed` Node stays `failed`. Each failure names the step that stopped and the state the Gateway leaves behind.
 
 | Code | Step | Result |
 | --- | --- | --- |
@@ -122,13 +127,13 @@ A failed step rolls the Gateway back and keeps the Node record active. Each fail
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | guard | The Gateway changes nothing. |
 | `node.confirmation_required` | guard | The Gateway changes nothing; `--offline` needs `--force`. |
 | `node.provisioning_busy` | lifecycle owner | The Gateway changes nothing; another lifecycle operation holds the Node name. |
-| `node.grafana_access_revocation_failed` | `grafana-access-revocation` | The Node record is active again. |
-| `node.metrics_reconcile_failed` | `metrics-exporters` | The Node record is active again and the Metrics selection is restored. |
-| `node.firewall_recovery_failed` | `firewall-recovery` | The Node record is active again, the WireGuard peer is kept, and the Metrics selection is restored. Use `--offline --force` when the machine is unreachable. |
-| `node.wireguard_projection_failed` | `wireguard-projection` | The Node record is active again and the Metrics selection is restored. |
-| `node.dns_projection_failed` | `dns-projection` | The Node record is active again, and the WireGuard peer and Metrics selection are restored. |
-| `node.persistence_failed` | `persistence` | The Node record is active again, and the WireGuard peer, DNS records, and Metrics selection are restored. |
-| `node.removal_rollback_failed` | `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback` | The Node record is active again, but the named rollback did not complete. |
+| `node.grafana_access_revocation_failed` | `grafana-access-revocation` | The Node record has its previous status again. |
+| `node.metrics_reconcile_failed` | `metrics-exporters` | The Node record has its previous status again and the Metrics selection is restored. |
+| `node.firewall_recovery_failed` | `firewall-recovery` | The Node record has its previous status again, the WireGuard peer is kept, and the Metrics selection is restored. Use `--offline --force` when the machine is unreachable. |
+| `node.wireguard_projection_failed` | `wireguard-projection` | The Node record has its previous status again and the Metrics selection is restored. |
+| `node.dns_projection_failed` | `dns-projection` | The Node record has its previous status again, and the WireGuard peer and Metrics selection are restored. |
+| `node.persistence_failed` | `persistence` | The Node record has its previous status again, and the WireGuard peer, DNS records, and Metrics selection are restored. |
+| `node.removal_rollback_failed` | `wireguard-rollback`, `persistence-rollback`, or `metrics-exporters-rollback` | The Node record has its previous status again, but the named rollback did not complete. |
 
 Removing a Node's last role also restores the public SSH recovery rule; [Node retarget](/reference/node-retarget#two-boundaries) describes that boundary.
 

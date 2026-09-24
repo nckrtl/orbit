@@ -27,6 +27,18 @@ A web path without a file returns the release's `index.html`, and the app's rout
 
 The web app connects to Reverb at the URL that `GET /api/v1/realtime` returns. It needs no Gateway path for realtime.
 
+## Live Node and Process state
+
+The web app subscribes to `presence-node.{id}` for every active Node, next to the `orbit` channel. [Realtime events](/reference/events#node-agent-channels) defines those channels, and the [Node agent](/reference/node-agent) publishes on them.
+
+| Agent state for a Node | Node shows | Process `runtime_status` for the Node's Processes |
+| --- | --- | --- |
+| Online: `agent.{id}` is a member and sent an event in the last 15 seconds | online | The agent's latest state. A polled value does not replace it. |
+| Lost: the agent left, or sent nothing for 15 seconds | offline | The polled value from the Gateway. |
+| Not seen since the page subscribed | Prometheus `up`, as before | The polled value from the Gateway. |
+
+A Node without an agent, such as an operator client, always uses the last row. When realtime is not configured, the web app polls as before and shows every Node from Prometheus. CPU and memory still come from polling.
+
 ## Web directory
 
 The web directory is `/home/orbit/web` unless `ORBIT_GATEWAY_WEB` sets another path under `/home/orbit/`. It belongs to the `orbit` user and the `caddy` group.

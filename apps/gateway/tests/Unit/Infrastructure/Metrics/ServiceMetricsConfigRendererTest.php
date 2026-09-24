@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsDashboardRenderer;
 
@@ -34,7 +35,12 @@ it('uses rate histograms and does not replace missing cache data with zero', fun
     expect($fpm['panels'][7]['targets'][0]['expr'])->toContain('phpfpm_opcache_enabled', '== 1')->not->toContain('or vector(0)');
 });
 
-it('supports Caddy before global per-host metrics were introduced', function (): void {
-    $config = new ServiceMetricsConfigRenderer()->caddy('10.44.0.3', '10.44.0.2', false);
-    expect($config)->toContain('servers 0.0.0.0:443 {', 'metrics /metrics')->not->toContain('per_host');
+it('leaves per-host collection to the Orbit global options block', function (): void {
+    $fragment = new ServiceMetricsConfigRenderer()->caddy('10.44.0.3', '10.44.0.2');
+    $adapted = caddy_adapt(CaddyGlobalOptions::render().$fragment);
+
+    expect($fragment)->toStartWith(ServiceMetricsConfigRenderer::Marker."\nhttp://10.44.0.3:9103 {")
+        ->not->toContain('per_host')
+        ->and($adapted->succeeded())->toBeTrue()
+        ->and($adapted->stdout)->toContain('"metrics":{"per_host":true}');
 });

@@ -11,7 +11,7 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 9;
+    public const int VERSION = 10;
 
     /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
     private const array OBSERVABLE_PHP_DIRECTORIES = [
@@ -22,6 +22,7 @@ final readonly class StaticProofInputPolicy
 
     /** Runtime directories whose complete tracked contents execute in the topology. */
     private const array RUNTIME_DIRECTORIES = [
+        'apps/agent/',
         'apps/cli/app/',
         'apps/cli/bootstrap/',
         'apps/cli/config/',

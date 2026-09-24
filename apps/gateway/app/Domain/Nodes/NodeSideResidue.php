@@ -22,6 +22,8 @@ final readonly class NodeSideResidue
 {
     private const string EXPORTER = 'Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100';
 
+    private const string AGENT = 'Node agent, its systemd unit, binary, and /etc/orbit/agent configuration';
+
     /** The node is gone from Orbit, so nothing on it is managed any more. */
     public const string FOLLOW_UP_NODE_REMOVED = 'Discard this node, or clear only the leftovers listed above by hand once it is reachable.';
 
@@ -37,7 +39,7 @@ final readonly class NodeSideResidue
     {
         // The exporter belongs to the fleet, not to any one role. It is only
         // stranded when the node stops being part of the fleet.
-        $lines = $nodeLeavesFleet ? [self::EXPORTER] : [];
+        $lines = $nodeLeavesFleet ? [self::EXPORTER, self::AGENT] : [];
 
         foreach ($roles as $role) {
             foreach ($this->forRole($role) as $line) {

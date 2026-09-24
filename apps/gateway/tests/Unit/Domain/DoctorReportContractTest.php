@@ -200,6 +200,9 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.platform_mismatch',
             'node.architecture_mismatch',
             'node.wireguard_ip_mismatch',
+            'node.agent_missing',
+            'node.agent_inactive',
+            'node.agent_outdated',
             'node.inspection_failed',
         ],
         'role' => [

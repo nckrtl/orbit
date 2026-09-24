@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -43,7 +44,7 @@ it('maps a bounded successful SSH observation', function (): void {
                 ->and($command->input)
                 ->not->toContain('10.44.0.7');
 
-            return new CommandResult(0, "Linux\nx86_64\n1\n", 'secret stderr', 1, false);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n", 'secret stderr', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider
@@ -67,7 +68,7 @@ it('maps a bounded successful SSH observation', function (): void {
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
-    $node = new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7']);
+    $node = new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7', 'architecture' => 'x86_64']);
 
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect($node);
 
@@ -78,6 +79,14 @@ it('maps a bounded successful SSH observation', function (): void {
         ->and($result->architecture)
         ->toBe('x86_64')
         ->and($result->wireGuardAddressMatches)
+        ->toBeTrue()
+        ->and($result->agentBinaryExists)
+        ->toBeTrue()
+        ->and($result->agentUnitExists)
+        ->toBeTrue()
+        ->and($result->agentActive)
+        ->toBeTrue()
+        ->and($result->agentChecksumMatches)
         ->toBeTrue();
 });
 
@@ -126,7 +135,7 @@ it('rejects truncated successful output', function (): void {
             SshConnection $connection,
             RemoteCommand $command,
         ): CommandResult {
-            return new CommandResult(0, "Linux\nx86_64\n1\n", '', 1, true);
+            return new CommandResult(0, "Linux\nx86_64\n1\n1\n1\n1\n".NodeAgentFootprint::X8664Checksum."\n", '', 1, true);
         }
     };
     expect(fn (): mixed => new SshNodeStateInspector(
@@ -164,7 +173,7 @@ it('returns reachable with a missing interface and maps arm aliases', function (
             SshConnection $connection,
             RemoteCommand $command,
         ): CommandResult {
-            return new CommandResult(0, "Linux\narm64\n0\n", '', 1, false);
+            return new CommandResult(0, "Linux\narm64\n0\n0\n0\n0\n\n", '', 1, false);
         }
     };
     $keys = new class implements SshKeyProvider

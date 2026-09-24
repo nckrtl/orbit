@@ -14,6 +14,7 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -43,7 +44,9 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Schedule;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeHerdrObserverPublisher;
+use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeRouterLanIngressReconciler;
 
@@ -59,12 +62,14 @@ beforeEach(function (): void {
     $this->firewall = new FakeNodeRoleFirewallManager;
     $this->processRuntime = new RemoveNodeFakeProcessRuntimeManager;
     $this->herdrObservers = new FakeHerdrObserverPublisher;
+    $this->agent = new FakeNodeAgentRuntime;
     app()->instance(NodeRoleFirewallManager::class, $this->firewall);
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
     app()->instance(MetricsAccessRevoker::class, $this->metricsAccess);
     app()->instance(ProcessRuntimeManager::class, $this->processRuntime);
     app()->instance(HerdrObserverPublisher::class, $this->herdrObservers);
+    app()->instance(NodeAgentRuntime::class, $this->agent);
 });
 
 it('rejects removal contention before remote effects or state writes', function (): void {
@@ -163,6 +168,18 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
         ->toBeEmpty()
         ->and($this->dns->convergences)
         ->toBe(0);
+});
+
+it('returns a failed node to failed when its removal rolls back', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'half-added', wireguardIp: '10.44.0.3');
+    $target->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'wireguard', 'error_code' => 'node.wireguard_unreachable']);
+    $this->metricsAccess->failure = new RuntimeException('Grafana unavailable');
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.grafana_access_revocation_failed');
+
+    expect($target->refresh()->status)->toBe(LifecycleStatus::Failed);
 });
 
 it('releases the lifecycle guard after a verification failure', function (): void {
@@ -349,6 +366,67 @@ it('retires Metrics exporter state before removing network projections', functio
         ->assertOk();
 
     expect($this->peers->removed)->toBe([$target->id]);
+});
+
+it('removes the agent during online removal', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk();
+
+    expect($this->agent->removedNodeIds)->toBe([$target->id]);
+});
+
+it('keeps removing the node when the agent removal fails', function (): void {
+    Log::spy();
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $this->agent->failure = static function (): void {
+        throw new RuntimeException('agent removal failed');
+    };
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertOk();
+
+    expect($target->fresh())->toBeNull();
+    Log::shouldHaveReceived('warning')->once();
+});
+
+it('removes the agent when offline removal is requested for a reachable node', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_reachable_probe();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true])
+        ->assertOk();
+
+    expect($this->agent->removedNodeIds)->toBe([$target->id]);
+});
+
+it('lists the agent in retained_on_node', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true])
+        ->assertOk();
+
+    expect($response->json('data.retained_on_node'))
+        ->toContain('Node agent, its systemd unit, binary, and /etc/orbit/agent configuration')
+        ->and($this->agent->removedNodeIds)->toBeEmpty();
 });
 
 it('refuses Node removal before mutation while the Node owns a Herdr session', function (): void {

@@ -109,6 +109,7 @@
               "reference/tools",
               "reference/github-app",
               "reference/database-role",
+              "reference/node-agent",
               "reference/metrics",
               "reference/service-metrics",
               "reference/analytics",
@@ -700,6 +701,9 @@
               "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
               "decisions/0126-limit-browser-api-calls-to-orbit-origins",
               "decisions/0127-share-one-ssh-connection-per-node",
+              "decisions/0128-run-a-visibility-only-agent-on-managed-nodes",
+              "decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
+              "decisions/0130-publish-agent-binaries-as-github-releases",
               "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
               "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
               "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
@@ -707,7 +711,9 @@
               "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
               "decisions/0136-run-long-lived-topology-processes-as-transient-units",
               "decisions/0137-refuse-carried-caddy-global-options",
-              "decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation"
+              "decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation",
+              "decisions/0139-collect-caddy-http-metrics-on-every-node",
+              "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks"
             ]
           }
         ]

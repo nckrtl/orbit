@@ -11,5 +11,9 @@ final readonly class NodeInspectionData
         public ?string $platform,
         public ?string $architecture,
         public ?bool $wireGuardAddressMatches,
+        public ?bool $agentBinaryExists = null,
+        public ?bool $agentUnitExists = null,
+        public ?bool $agentActive = null,
+        public ?bool $agentChecksumMatches = null,
     ) {}
 }

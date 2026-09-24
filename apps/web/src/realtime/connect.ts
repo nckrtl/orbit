@@ -4,6 +4,14 @@ import Pusher from "pusher-js";
 import { get } from "../api/client";
 import { applyEvent, type RealtimeEvent } from "./apply";
 import { setLiveness } from "./liveness";
+import {
+    acceptAgentEvent,
+    agentMemberAdded,
+    agentMemberRemoved,
+    agentSubscriptionSucceeded,
+    clearAgentPresence,
+} from "./agent-presence";
+import { applyAgentProcessEvent, clearAgentProcesses } from "./agent-processes";
 
 const RETRY_SECONDS = 30;
 
@@ -78,6 +86,53 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
 
         let wasLive = false;
         const channel = pusher.subscribe(`private-${config.channel}`);
+        const agentChannels = new Map<number, ReturnType<typeof pusher.subscribe>>();
+        const syncAgentChannels = () => {
+            const nodes =
+                client.getQueryData<Array<{ id: number; status?: string }>>(["nodes"]) ?? [];
+            const activeIds = new Set(
+                nodes.filter((node) => node.status === "active").map((node) => node.id),
+            );
+            for (const [id, agentChannel] of agentChannels) {
+                if (!activeIds.has(id)) {
+                    agentChannel.unbind_all();
+                    pusher.unsubscribe(`presence-node.${id}`);
+                    agentChannels.delete(id);
+                    clearAgentPresence(id);
+                    clearAgentProcesses(id);
+                }
+            }
+            for (const id of activeIds) {
+                if (agentChannels.has(id)) continue;
+                const agentChannel = pusher.subscribe(`presence-node.${id}`);
+                agentChannel.bind("pusher:subscription_succeeded", (data: unknown) => {
+                    clearAgentProcesses(id);
+                    agentSubscriptionSucceeded(id, data);
+                });
+                agentChannel.bind("pusher:member_added", (data: { id?: unknown }) => {
+                    if (data?.id === `agent.${id}`) clearAgentProcesses(id);
+                    agentMemberAdded(id, data?.id);
+                });
+                agentChannel.bind("pusher:member_removed", (data: { id?: unknown }) => {
+                    if (data?.id === `agent.${id}`) clearAgentProcesses(id);
+                    agentMemberRemoved(id, data?.id);
+                });
+                const onAgentEvent =
+                    (name: string) => (data: unknown, metadata: { user_id?: unknown }) => {
+                        if (acceptAgentEvent(id, metadata?.user_id, data)) {
+                            applyAgentProcessEvent(id, name, data);
+                        }
+                    };
+                agentChannel.bind("client-heartbeat", onAgentEvent("client-heartbeat"));
+                agentChannel.bind("client-snapshot", onAgentEvent("client-snapshot"));
+                agentChannel.bind("client-process", onAgentEvent("client-process"));
+                agentChannels.set(id, agentChannel);
+            }
+        };
+        syncAgentChannels();
+        const unsubscribeCache = client.getQueryCache().subscribe((event) => {
+            if (event.query.queryKey[0] === "nodes") syncAgentChannels();
+        });
 
         channel.bind("pusher:subscription_succeeded", () => {
             if (signal.aborted) {
@@ -130,7 +185,13 @@ export async function connectRealtime(client: QueryClient, signal: AbortSignal):
         pusher.connection.bind("state_change", onStateChange);
 
         disconnect = () => {
+            unsubscribeCache();
             channel.unbind_all();
+            for (const [id, agentChannel] of agentChannels) {
+                agentChannel.unbind_all();
+                clearAgentPresence(id);
+            }
+            agentChannels.clear();
             pusher.connection.unbind("state_change", onStateChange);
             pusher.disconnect();
         };
