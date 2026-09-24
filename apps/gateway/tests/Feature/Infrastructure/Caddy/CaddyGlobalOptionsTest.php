@@ -14,16 +14,19 @@ use App\Infrastructure\ProxyCli\ProxyCliCaddyPublisher;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\WebSocket\WebSocketCaddyPublisher;
 use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 describe('carried global options guard', function (): void {
     it('refuses a carried fragment that opens its own global options block', function (string $fragment, string $options): void {
-        $result = caddy_global_options_guard(['00-unmanaged.caddy' => $fragment, 'app-dev.caddy' => "app.test {\n}\n"]);
+        foreach (caddy_global_options_awks() as $awk) {
+            $result = caddy_global_options_guard(['00-unmanaged.caddy' => $fragment, 'app-dev.caddy' => "app.test {\n}\n"], awk: $awk);
 
-        expect($result['exit'])
-            ->toBe(1)
-            ->and($result['stderr'])
-            ->toBe("Caddy fragment 00-unmanaged.caddy opens its own global options block ({$options}). Orbit writes the only global options block. Remove that block from {$result['source_main']}, then publish again.\n");
+            expect($result['exit'])
+                ->toBe(1, $awk)
+                ->and($result['stderr'])
+                ->toBe("Caddy fragment 00-unmanaged.caddy opens its own global options block ({$options}). Orbit writes the only global options block. Remove that block from {$result['source_main']}, then publish again.\n", $awk);
+        }
     })->with([
         'one option' => ["{\n    local_certs\n}\n", 'local_certs'],
         'comments, blank lines, and nested blocks' => [
@@ -31,18 +34,26 @@ describe('carried global options guard', function (): void {
             'email, servers, auto_https',
         ],
         'an empty block' => ["{\n}\n", 'empty'],
+        'CRLF line endings after a blank line' => ["\r\n{\r\n    local_certs\r\n}\r\n", 'local_certs'],
+        'a byte order mark' => ["\u{FEFF}{\n    local_certs\n}\n", 'local_certs'],
+        'trailing comments' => ["{ # operator\n    servers { # tuning\n        protocols h1\n    }\n    email ops@example.test # contact\n}\n", 'servers, email'],
+        'a one-line block' => ["{ local_certs }\n", 'local_certs'],
     ]);
 
     it('accepts carried fragments that do not open a global options block', function (string $fragment): void {
-        $result = caddy_global_options_guard(['00-unmanaged.caddy' => $fragment]);
+        foreach (caddy_global_options_awks() as $awk) {
+            $result = caddy_global_options_guard(['00-unmanaged.caddy' => $fragment], awk: $awk);
 
-        expect($result['exit'])->toBe(0)->and($result['stderr'])->toBe('');
+            expect($result['exit'])->toBe(0, $awk)->and($result['stderr'])->toBe('', $awk);
+        }
     })->with([
         'a site block' => "example.test {\n    respond ok\n}\n",
         'a snippet' => "(common) {\n    encode gzip\n}\n",
         'an environment placeholder address' => "{\$SITE_ADDRESS} {\n    respond ok\n}\n",
         'comments only' => "# nothing here\n",
         'an empty file' => '',
+        'a CRLF site block' => "example.test {\r\n    respond ok\r\n}\r\n",
+        'a site block after a trailing-comment line' => "example.test { # site\n    respond \"a # b\"\n}\n",
     ]);
 
     it('names the fragment in the published version when Orbit already carries it', function (): void {
@@ -78,43 +89,41 @@ it('refuses carried global options right before every Caddy publisher validates 
     'websocket removal' => fn (): string => new WebSocketCaddyPublisher()->removeCommand()->input,
     'analytics publish' => fn (): string => new AnalyticsCaddyPublisher()->command("stats.test {\n}\n", '8000', '10.6.0.2')->input,
     'analytics removal' => fn (): string => new AnalyticsCaddyPublisher()->removeCommand()->input,
-    'proxycli publish' => fn (): string => new ProxyCliCaddyPublisher()->command("collector.proxycli.orbit {\n}\n", '8787', '10.6.0.2')->input,
+    'proxycli publish' => fn (): string => new ProxyCliCaddyPublisher()->command("proxy.test {\n}\n", '8317', '10.6.0.2')->input,
     'proxycli removal' => fn (): string => new ProxyCliCaddyPublisher()->removeCommand()->input,
     'metrics publish' => fn (): string => caddy_global_options_metrics_script(fn (MetricsCaddyPublisher $publisher) => $publisher->publish("metrics.orbit {\n}\n")),
     'metrics withdrawal' => fn (): string => caddy_global_options_metrics_script(fn (MetricsCaddyPublisher $publisher) => $publisher->withdrawForCutover()),
 ]);
 
-it('passes Orbit global options to a nowdoc removal script as an argument', function (Closure $command): void {
+it('passes Orbit global options to a removal script as an argument', function (Closure $command): void {
     $command = $command();
 
     expect(base64_decode((string) collect($command->arguments)->last(), true))
         ->toBe(CaddyGlobalOptions::render())
         ->and($command->input)
         ->toContain('global_options=$7')
-        ->and(substr_count((string) $command->input, "printf '%s\\n' \"\$global_options\" | base64 --decode > \"\$candidate/Caddyfile\""))
-        ->toBe(2);
+        ->toContain('printf \'%s\\n\' "$global_options" | base64 --decode > "$candidate/Caddyfile"');
 })->with([
-    'analytics removal' => fn (): RemoteCommand => new AnalyticsCaddyPublisher()->removeCommand(),
-    'proxycli removal' => fn (): RemoteCommand => new ProxyCliCaddyPublisher()->removeCommand(),
+    'analytics' => fn (): RemoteCommand => new AnalyticsCaddyPublisher()->removeCommand(),
+    'proxycli' => fn (): RemoteCommand => new ProxyCliCaddyPublisher()->removeCommand(),
 ]);
 
-it('writes Orbit global options into every proxycli Caddyfile it validates or publishes', function (): void {
-    $program = (string) new ProxyCliCaddyPublisher()->command("collector.proxycli.orbit {\n}\n", '8787', '10.6.0.2')->input;
-    $globalOptions = "printf '%s\n' '".base64_encode(CaddyGlobalOptions::render())."' | base64 --decode > \"\$candidate/Caddyfile\"";
+it('writes Orbit global options into the ProxyCli candidate before its import', function (): void {
+    $input = new ProxyCliCaddyPublisher()->command("proxy.test {\n}\n", '8317', '10.6.0.2')->input;
 
-    expect(substr_count($program, $globalOptions))
+    expect(substr_count($input, "'".base64_encode(CaddyGlobalOptions::render())."' | base64 --decode > \"\$candidate/Caddyfile\""))
         ->toBe(2)
-        ->and($program)
-        ->toContain('cp --preserve=mode,ownership -- "$source_main" "$candidate/fragments/00-unmanaged.caddy"')
-        ->not->toContain('"$candidate/fragments/unmanaged.caddy"');
+        ->and(substr_count($input, '>> "$candidate/Caddyfile"'))
+        ->toBe(2);
 });
 
 /**
  * @param  array<string, string>  $fragments
  * @param  array<string, string>|null  $publishedFragments
+ * @param  string  $awk  The awk that `awk` resolves to while the guard runs
  * @return array{exit: int, stderr: string, source_main: string}
  */
-function caddy_global_options_guard(array $fragments, ?array $publishedFragments = null): array
+function caddy_global_options_guard(array $fragments, ?array $publishedFragments = null, string $awk = 'awk'): array
 {
     $files = new Filesystem;
     $root = sys_get_temp_dir().'/orbit-caddy-global-options-'.bin2hex(random_bytes(8));
@@ -137,6 +146,9 @@ function caddy_global_options_guard(array $fragments, ?array $publishedFragments
         $files->put($sourceMain, $fragments['00-unmanaged.caddy'] ?? '');
     }
 
+    $files->ensureDirectoryExists("{$root}/bin");
+    symlink((string) (new ExecutableFinder)->find($awk), "{$root}/bin/awk");
+
     try {
         $process = new Process([
             'bash',
@@ -146,7 +158,7 @@ function caddy_global_options_guard(array $fragments, ?array $publishedFragments
             'guard',
             "{$root}/candidate",
             $sourceMain,
-        ]);
+        ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
         $process->run();
 
         return ['exit' => (int) $process->getExitCode(), 'stderr' => $process->getErrorOutput(), 'source_main' => $sourceMain];
@@ -173,4 +185,20 @@ function caddy_global_options_metrics_script(Closure $operation): string
     $operation(new MetricsCaddyPublisher($processes));
 
     return (string) $processes->invocation?->input;
+}
+
+/**
+ * Every distinct awk on this host, so the guard runs under mawk, which Ubuntu Nodes use.
+ *
+ * @return list<string>
+ */
+function caddy_global_options_awks(): array
+{
+    $finder = new ExecutableFinder;
+
+    return collect(['awk', 'mawk', 'gawk'])
+        ->filter(fn (string $name): bool => $finder->find($name) !== null)
+        ->unique(fn (string $name): string => (string) realpath((string) $finder->find($name)))
+        ->values()
+        ->all();
 }

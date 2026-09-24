@@ -3366,6 +3366,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Doctor",
                 "Gateway",
                 "Node",
                 "Process",
@@ -3514,6 +3515,29 @@
             ],
             "governing_adrs": [
                 "0137"
+            ]
+        },
+        {
+            "path": "docs/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation.md",
+            "title": "ADR 0138: Opt public Ingress sites into Caddy certificate automation",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Instance",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0100",
+                "0101",
+                "0137",
+                "0138"
             ]
         },
         {
@@ -3678,7 +3702,8 @@
                 "0134",
                 "0135",
                 "0136",
-                "0137"
+                "0137",
+                "0138"
             ]
         },
         {
@@ -4039,13 +4064,19 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Cluster",
+                "Doctor",
                 "Gateway",
                 "Ingress",
+                "Instance",
                 "Node",
+                "Route",
+                "Router",
                 "proxycli"
             ],
             "governing_adrs": [
-                "0137"
+                "0137",
+                "0138"
             ]
         },
         {
@@ -4574,6 +4605,7 @@
                 "Doctor",
                 "Gateway",
                 "Herdr session",
+                "Ingress",
                 "Instance",
                 "Node",
                 "Process",
@@ -4584,7 +4616,8 @@
             "governing_adrs": [
                 "0072",
                 "0094",
-                "0100"
+                "0100",
+                "0138"
             ]
         },
         {
@@ -4763,7 +4796,8 @@
                 "0067",
                 "0080",
                 "0082",
-                "0101"
+                "0101",
+                "0138"
             ]
         },
         {

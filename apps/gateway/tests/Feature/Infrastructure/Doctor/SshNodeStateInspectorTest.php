@@ -32,7 +32,10 @@ it('maps a bounded successful SSH observation', function (): void {
                 ->and($connection->knownHostsFile)
                 ->toBe('/known')
                 ->and($connection->commandTimeout)
-                ->toBe(30.0);
+                ->toBe(30.0)
+                // A shared connection outlives a stopped sshd, so reachability needs a new one.
+                ->and($connection->shareConnection)
+                ->toBeFalse();
             expect($command->arguments)
                 ->toBe(['bash', '-seu', '--', '10.44.0.7'])
                 ->and($command->input)

@@ -104,7 +104,7 @@ These codes appear on enable, disable, reads, and the CLI family. Placement fail
 | `proxycli.node_invalid` | The collector Node is missing, inactive, or has no WireGuard address. |
 | `proxycli.source_publication_failed` | Enable could not install the collector script on the Node. |
 | `proxycli.certificate_publication_failed` | Enable could not publish the Orbit CA leaf on the Node. |
-| `proxycli.caddy_publication_failed` | Enable could not install the `collector.proxycli.orbit` Caddy site. A carried Caddy global options block also causes it; see [Caddy configuration](/reference/caddy-configuration#carried-global-options). |
+| `proxycli.caddy_publication_failed` | Enable could not install the `collector.proxycli.orbit` Caddy site. |
 | `extension.disabled` | A `proxycli:*` CLI command runs before `extension:enable proxycli`. |
 | `extension.unknown` | The slug is not a known extension. |
 

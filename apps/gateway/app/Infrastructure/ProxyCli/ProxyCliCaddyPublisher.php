@@ -58,10 +58,16 @@ final readonly class ProxyCliCaddyPublisher
                 case "\$source_main" in
                     "\$versions"/*/Caddyfile)
                         for fragment in "\$current_fragments"/*.caddy; do
-                            if [ ! -e "\$fragment" ] || [ "\$(basename "\$fragment")" = "\$owned_fragment" ]; then
+                            fragment_name=\$(basename "\$fragment")
+                            if [ ! -e "\$fragment" ] || [ "\$fragment_name" = "\$owned_fragment" ]; then
                                 continue
                             fi
-                            cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
+                            destination="\$candidate/fragments/\$fragment_name"
+                            if [ "\$fragment_name" = unmanaged.caddy ]; then
+                                destination="\$candidate/fragments/00-unmanaged.caddy"
+                                test ! -e "\$destination"
+                            fi
+                            cp --preserve=mode,ownership -- "\$fragment" "\$destination"
                         done
                         ;;
                     *)
@@ -167,10 +173,16 @@ final readonly class ProxyCliCaddyPublisher
                 trap 'rm -rf -- "$candidate"; rm -f -- "$candidate_link"' EXIT
                 install -d -o root -g caddy -m 0750 -- "$versions" "$candidate/fragments"
                 for fragment in "$current_fragments"/*.caddy; do
-                    if [ ! -e "$fragment" ] || [ "$(basename "$fragment")" = "$owned_fragment" ]; then
+                    fragment_name=$(basename "$fragment")
+                    if [ ! -e "$fragment" ] || [ "$fragment_name" = "$owned_fragment" ]; then
                         continue
                     fi
-                    cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
+                    destination="$candidate/fragments/$fragment_name"
+                    if [ "$fragment_name" = unmanaged.caddy ]; then
+                        destination="$candidate/fragments/00-unmanaged.caddy"
+                        test ! -e "$destination"
+                    fi
+                    cp --preserve=mode,ownership -- "$fragment" "$destination"
                 done
                 printf '%s\n' "$global_options" | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/fragments/*.caddy\n' "$candidate" >> "$candidate/Caddyfile"

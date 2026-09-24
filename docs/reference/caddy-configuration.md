@@ -18,13 +18,35 @@ Each publication writes a new version under `/etc/caddy/orbit-versions/<version>
 import /etc/caddy/orbit-versions/<version>/fragments/*.caddy
 ```
 
-The global options block is Orbit's. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own; each site serves the certificate Orbit publishes for it.
+The global options block is Orbit's. `auto_https disable_certs` keeps Caddy's HTTP-to-HTTPS redirects but stops Caddy from obtaining certificates on its own. A private site serves the Orbit CA certificate Orbit publishes for it. A public Ingress site opts back in, as [public Ingress certificates](#public-ingress-certificates) describes.
 
 Every role keeps its sites in its own fragment, such as `app-dev.caddy` or `metrics.caddy`. A publisher replaces only its own fragment and copies every other fragment into the new version. It runs `caddy validate` on the candidate before it switches the symlink, and it restores the previous file or symlink when Caddy fails to reload.
 
+## Public Ingress certificates
+
+A public Ingress site gets its certificate from Let's Encrypt, not from Orbit. Its site block carries `tls force_automate`:
+
+```caddy
+shop.example.com {
+    bind 0.0.0.0
+    tls force_automate
+    reverse_proxy https://10.0.0.20 {
+        # Router forwarding settings
+    }
+}
+```
+
+`force_automate` makes Caddy manage the certificate for that hostname even though the global block disables certificate management. Caddy uses its default issuers, Let's Encrypt first, and renews the certificate on its own. Let's Encrypt validates the hostname on port 80 or 443. The hostname's public DNS must point at the Ingress Node. Orbit opens both ports on the Ingress firewall while the Cluster has a live public Route.
+
+Private sites never carry `force_automate`, so Caddy never asks a public CA for a private hostname, even when a pinned certificate does not match its site. `force_automate` needs Caddy 2.9.0 or newer, which is the [release floor](/reference/node-provisioning#package-sources). [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) records this rule.
+
+[`orbit doctor`](/cli/doctor) reports `instance.public_tls_mismatch` when the live public site pins an Orbit CA leaf, or when its block lacks `tls force_automate` while the live Caddyfile disables certificate management. Converge the public Route to publish the site again.
+
 ## Adopted Caddyfile
 
-On the first publication, a Node's `/etc/caddy/Caddyfile` can be a regular file or a symlink to a file outside `/etc/caddy/orbit-versions`. When it is a regular file that matches the unmodified package default, Orbit replaces it. Otherwise the publisher keeps it as `fragments/00-unmanaged.caddy` and carries it into every later version. The `app-dev`, `app-prod`, Herdr observer, and Metrics publishers rename a legacy `fragments/unmanaged.caddy` to `00-unmanaged.caddy` on their next publication.
+On the first publication, a Node's `/etc/caddy/Caddyfile` can be a regular file or a symlink to a file outside `/etc/caddy/orbit-versions`. When it is a regular file that matches the unmodified package default, Orbit replaces it. Otherwise Orbit keeps it as `fragments/00-unmanaged.caddy` and carries it into every later version. When Caddy fails to reload the first version, the publisher restores the original file.
+
+A legacy `fragments/unmanaged.caddy` becomes `00-unmanaged.caddy` on the next publication. When the live version has both names, the publisher fails and changes nothing. Merge the two files into `00-unmanaged.caddy` in the live version, delete `unmanaged.caddy`, and publish again.
 
 ## Carried global options
 
@@ -36,18 +58,20 @@ Caddy accepts one global options block, and only as the first block. Orbit write
 | `app-prod` sites | `app-prod.caddy_config_failed` |
 | `websocket` site | `websocket.caddy_publication_failed` |
 | `analytics` site | `analytics.caddy_publication_failed` |
+| ProxyCli collector site | `proxycli.caddy_publication_failed` |
 | Herdr observer site | `herdr.observer_failed` |
-| `proxycli` site | `proxycli.caddy_publication_failed` |
 | Metrics site on the Gateway | `metrics.caddy_publication_failed` |
 
-For every publisher except Metrics and `proxycli`, the activity record keeps the command output. It names the fragment, the options in the block, and the file to edit:
+Role convergence, such as `orbit node:role:add NODE app-dev --converge`, fails with `node_role.convergence_failed`; `orbit node:role:list` shows the publisher's code as the underlying error.
+
+The refusal message names the fragment, the options in the block, and the file to edit:
 
 ```text
 Caddy fragment 00-unmanaged.caddy opens its own global options block (local_certs, email). Orbit writes the only global options block. Remove that block from /etc/caddy/Caddyfile, then publish again.
 ```
 
-On first adoption the file is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, the file is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
+The activity record keeps that message when a Route or Instance command fails on an `app-dev` or `app-prod` site publication. Role convergence and the other publishers record only the error code, because they do not keep command output. After one of those codes, check the start of the adopted `/etc/caddy/Caddyfile` and of every fragment that Orbit did not write in the live version.
 
-`orbit proxycli:disable` does not check its Caddy removal. When the removal is refused, the command still succeeds and the `proxycli` site stays in the live version until a later removal succeeds.
+On first adoption the file to edit is the Node's own `/etc/caddy/Caddyfile`. When Orbit already carries the fragment, it is that fragment in the live version, under `/etc/caddy/orbit-versions/<version>/fragments/`. Remove the whole block, keep the site blocks, and repeat the command that failed. Orbit does not support operator global options; it never merges, strips, or rewrites them.
 
 A site block, a snippet such as `(common) {`, and an address that starts with an environment placeholder such as `{$SITE} {` are not global blocks.

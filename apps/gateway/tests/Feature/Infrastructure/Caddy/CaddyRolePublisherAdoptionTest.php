@@ -16,10 +16,16 @@ dataset('role caddy publishers', [
     'websocket' => [fn (string $site): RemoteCommand => new WebSocketCaddyPublisher()->command($site, '8080', '10.6.0.2')],
 ]);
 
+dataset('role caddy removals', [
+    'proxycli' => [fn (): RemoteCommand => new ProxyCliCaddyPublisher()->removeCommand()],
+    'analytics' => [fn (): RemoteCommand => new AnalyticsCaddyPublisher()->removeCommand()],
+    'websocket' => [fn (): RemoteCommand => new WebSocketCaddyPublisher()->removeCommand()],
+]);
+
 const ROLE_CADDY_SITE = "role.orbit {\n}\n";
 
 it('adopts a modified regular-file Caddyfile as 00-unmanaged.caddy', function (Closure $command): void {
-    $result = role_caddy_publish($command(ROLE_CADDY_SITE), live: 'file', liveContents: "operator.test {\n}\n", packageDefault: "package default\n");
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'file', liveContents: "operator.test {\n}\n", packageDefault: "package default\n");
 
     expect($result['exit'])
         ->toBe(0)
@@ -32,7 +38,7 @@ it('adopts a modified regular-file Caddyfile as 00-unmanaged.caddy', function (C
 })->with('role caddy publishers');
 
 it('replaces the unmodified package-default Caddyfile', function (Closure $command): void {
-    $result = role_caddy_publish($command(ROLE_CADDY_SITE), live: 'file', liveContents: "package default\n", packageDefault: "package default\n");
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'file', liveContents: "package default\n", packageDefault: "package default\n");
 
     expect($result['exit'])
         ->toBe(0)
@@ -43,7 +49,7 @@ it('replaces the unmodified package-default Caddyfile', function (Closure $comma
 })->with('role caddy publishers');
 
 it('adopts a Caddyfile symlinked outside Orbit versions as 00-unmanaged.caddy', function (Closure $command): void {
-    $result = role_caddy_publish($command(ROLE_CADDY_SITE), live: 'link', liveContents: "operator.test {\n}\n");
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'link', liveContents: "operator.test {\n}\n");
 
     expect($result['exit'])
         ->toBe(0)
@@ -52,7 +58,7 @@ it('adopts a Caddyfile symlinked outside Orbit versions as 00-unmanaged.caddy', 
 })->with('role caddy publishers');
 
 it('carries the other fragments of the live Orbit version', function (Closure $command): void {
-    $result = role_caddy_publish($command(ROLE_CADDY_SITE), live: 'versioned', liveContents: '', fragments: ['00-unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n"]);
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'versioned', liveContents: '', fragments: ['00-unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n"]);
 
     expect($result['exit'])
         ->toBe(0)
@@ -60,8 +66,40 @@ it('carries the other fragments of the live Orbit version', function (Closure $c
         ->toEqual(['00-unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n", $result['owned'] => ROLE_CADDY_SITE]);
 })->with('role caddy publishers');
 
+it('renames a carried legacy unmanaged.caddy on publish', function (Closure $command): void {
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'versioned', liveContents: '', fragments: ['unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n"]);
+
+    expect($result['exit'])
+        ->toBe(0)
+        ->and($result['fragments'])
+        ->toEqual(['00-unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n", $result['owned'] => ROLE_CADDY_SITE]);
+})->with('role caddy publishers');
+
+it('renames a carried legacy unmanaged.caddy on removal', function (Closure $command): void {
+    $owned = $command()->arguments[5];
+    $result = role_caddy_run($command(), live: 'versioned', liveContents: '', fragments: ['unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n", $owned => ROLE_CADDY_SITE]);
+
+    expect($result['exit'])
+        ->toBe(0)
+        ->and($result['fragments'])
+        ->toEqual(['00-unmanaged.caddy' => "operator.test {\n}\n", 'app-dev.caddy' => "app.test {\n}\n"]);
+})->with('role caddy removals');
+
+it('fails closed when both unmanaged fragment names are carried', function (Closure $command): void {
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'versioned', liveContents: '', fragments: ['00-unmanaged.caddy' => "current.test {\n}\n", 'unmanaged.caddy' => "legacy.test {\n}\n"]);
+
+    expect($result['exit'])
+        ->not->toBe(0)
+        ->and($result['link'])
+        ->toBe("{$result['versions']}/current/Caddyfile")
+        ->and($result['published'])
+        ->toBeFalse()
+        ->and($result['services'])
+        ->toBe([]);
+})->with('role caddy publishers');
+
 it('restores the adopted regular-file Caddyfile when Caddy rejects the new version', function (Closure $command): void {
-    $result = role_caddy_publish($command(ROLE_CADDY_SITE), live: 'file', liveContents: "operator.test {\n}\n", packageDefault: "package default\n", failReload: true);
+    $result = role_caddy_run($command(ROLE_CADDY_SITE), live: 'file', liveContents: "operator.test {\n}\n", packageDefault: "package default\n", failReload: true);
 
     expect($result['exit'])
         ->toBe(1)
@@ -78,14 +116,14 @@ it('restores the adopted regular-file Caddyfile when Caddy rejects the new versi
 })->with('role caddy publishers');
 
 /**
- * Runs a role publisher's script against a temporary /etc/caddy. Every path the script
+ * Runs a role publisher's publish or removal script against a temporary /etc/caddy. Every path the script
  * touches is an argument, so only root-only commands, Caddy, and systemd are shimmed.
  *
  * @param  'file'|'link'|'versioned'  $live
  * @param  array<string, string>  $fragments
  * @return array{exit: int, stderr: string, version: string, owned: string, versions: string, link: string|null, main: string, fragments: array<string, string>, published: bool, leftovers: list<string>, services: list<string>}
  */
-function role_caddy_publish(
+function role_caddy_run(
     RemoteCommand $command,
     string $live,
     string $liveContents,

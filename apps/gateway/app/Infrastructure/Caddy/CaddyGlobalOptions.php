@@ -28,8 +28,17 @@ final readonly class CaddyGlobalOptions
                 for fragment in "$candidate"/fragments/*.caddy; do
                     [ -e "$fragment" ] || continue
                     if ! carried_options=$(awk '
-                        /^[ \t]*(#|$)/ { next }
-                        !started { if ($1 != "{") exit 1; started = 1; depth = 1; next }
+                        { sub(/\r$/, "") }
+                        NR == 1 { sub(/^\357\273\277/, "") }
+                        { sub(/^[ \t]*#.*$/, ""); sub(/[ \t]+#.*$/, "") }
+                        NF == 0 { next }
+                        !started {
+                            if ($1 != "{") exit 1
+                            started = 1; depth = 1
+                            if (NF > 1 && $2 != "}") names = $2
+                            if (NF > 1 && $NF == "}") exit 0
+                            next
+                        }
                         $1 == "}" && depth == 1 { exit 0 }
                         depth == 1 { names = names (names == "" ? "" : ", ") $1 }
                         $NF == "{" { depth++ }

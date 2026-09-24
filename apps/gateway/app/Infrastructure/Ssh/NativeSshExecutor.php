@@ -70,7 +70,11 @@ final readonly class NativeSshExecutor implements SshExecutor
     {
         $directory = dirname($connection->identityFile).'/mux';
 
-        if (strlen($directory) > self::MaxSocketDirectoryLength || ! $this->socketDirectory($directory)) {
+        if (
+            ! $connection->shareConnection
+            || strlen($directory) > self::MaxSocketDirectoryLength
+            || ! $this->socketDirectory($directory)
+        ) {
             return [];
         }
 
