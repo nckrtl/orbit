@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
@@ -11,6 +12,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -286,10 +288,15 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->and($workloadSites->map->certificateDirectory()->all())
         ->toBe([
             "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
-            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}-hostname-change/current",
         ])
         ->and($routerSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($routerSites->map->certificateDirectory()->all())
+        ->toBe([
+            "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
+            "/etc/caddy/orbit-certificates/route-{$replacement->id}-router-hostname-change/current",
+        ])
         ->and($dns)
         ->toContain(
             "host-record=feature.acme.test,{$router->wireguard_ip}",
@@ -358,6 +365,208 @@ it('serves every hostname-change site from a certificate the flow wrote for that
             ->and($served[$router->wireguard_ip])->toBe(['next.acme.test' => "route-{$replacement->id}-router"])
             ->and($disk[$workload->wireguard_ip])->toBe(["app-instance-{$appInstance->id}" => 'next.acme.test'])
             ->and($disk[$router->wireguard_ip])->toBe(["route-{$replacement->id}-router" => 'next.acme.test']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('renders a pending replacement only after the step that writes each certificate and never once it failed', function (): void {
+    [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    $replacement = orb_pending_domain_change($route, $appInstance, RouteReplacementStep::Reserved);
+    $sites = new AppDevSiteRepository;
+    $domains = static fn (Node $node): array => $sites->forNode($node)->pluck('domain')->all();
+
+    expect($domains($workload))->toBe(['feature.acme.test'])
+        ->and($domains($router))->toBe(['feature.acme.test']);
+
+    $replacement->update(['replacement_step' => RouteReplacementStep::WorkloadCaddy]);
+
+    expect($domains($workload))->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($domains($router))->toBe(['feature.acme.test']);
+
+    $replacement->update(['replacement_step' => RouteReplacementStep::RouterCertificate]);
+
+    expect($domains($router))->toBe(['feature.acme.test', 'next.acme.test']);
+
+    $replacement->update([
+        'status' => RouteStatus::Failed,
+        'failed_step' => 'dns-publication',
+        'error_code' => 'app-dev.dns_failed',
+    ]);
+
+    expect($domains($workload))->toBe(['feature.acme.test'])
+        ->and($domains($router))->toBe(['feature.acme.test'])
+        ->and(new AppDevDnsConfigRenderer($sites)->render())->not->toContain('next.acme.test');
+});
+
+it('withdraws a failed domain change before removing its certificates and retries it from the start', function (): void {
+    [$appInstance, $route, $workload, $router] = orb127_route_projection_models(phpVersion: '8.5');
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    app()->instance(RouteDomainProjector::class, $projector);
+    $disk = [
+        $workload->wireguard_ip => ["app-instance-{$appInstance->id}" => 'feature.acme.test'],
+        $router->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
+    ];
+    // Private DNS publication runs after the Router Caddy step, so the rollback has to withdraw
+    // candidate sites on both Nodes.
+    $processes->failNext = 1;
+
+    try {
+        expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.acme.test'))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        [$mismatches, $afterRollback, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+
+        expect($mismatches)->toBe([])
+            ->and($route->refresh()->status)->toBe(RouteStatus::Active)
+            ->and($route->replaced_by_route_id)->toBeNull()
+            ->and(Route::query()->where('domain', 'next.acme.test')->exists())->toBeFalse()
+            ->and($served[$workload->wireguard_ip])->toBe(['feature.acme.test' => "app-instance-{$appInstance->id}"])
+            ->and($served[$router->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"])
+            ->and($afterRollback)->toBe($disk);
+
+        $updated = app(ConvergeRouteAction::class)->execute($route->refresh(), 'next.acme.test');
+        [$mismatches, $afterRetry, $served] = orb_hostname_change_certificate_replay($ssh, $disk);
+
+        expect($mismatches)->toBe([])
+            ->and($updated->domain)->toBe('next.acme.test')
+            ->and($updated->status)->toBe(RouteStatus::Active)
+            ->and($served[$router->wireguard_ip])->toBe(['next.acme.test' => "route-{$updated->id}-router"])
+            ->and($afterRetry[$router->wireguard_ip])->toBe(["route-{$updated->id}-router" => 'next.acme.test']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('serves a composed Router pool from the staging Router certificate during a domain change', function (): void {
+    [$remote, $route, $workload, $router] = orb127_route_projection_models();
+    // A multi-target Route is a production pool on app-prod Nodes of its Cluster.
+    $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $router->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $production = static fn (string $name): array => [
+        'environment' => 'production',
+        'production_home' => "/srv/acme/{$name}",
+        'production_user' => 'orbit-acme',
+        'source_is_laravel' => false,
+    ];
+    $remote->update($production('feature'));
+    $local = AppInstance::query()->create([
+        'app_id' => $route->app_id,
+        'node_id' => $router->id,
+        'name' => 'local',
+        'checkout_path' => '/srv/acme/local',
+        'root' => 'public',
+        'branch' => 'feature',
+        'starting_commit' => str_repeat('b', 40),
+        ...$production('local'),
+    ]);
+    // The target on the Router comes first, so its cleanup publishes the composed pool first.
+    $route->targets()->delete();
+    $route->targets()->create(['app_instance_id' => $local->id, 'position' => 0]);
+    $route->targets()->create(['app_instance_id' => $remote->id, 'position' => 1]);
+    $route->update(['status' => RouteStatus::Active]);
+    $remote->update(['status' => AppInstanceState::Active]);
+    $local->update(['status' => AppInstanceState::Active]);
+    $replacement = orb_pending_domain_change($route, $local, RouteReplacementStep::Reserved);
+    $replacement->targets()->create(['app_instance_id' => $remote->id, 'position' => 1]);
+    $targets = [$local->refresh(), $remote->refresh()];
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    $step = static function (RouteReplacementStep $step, Closure $operation) use ($targets, $replacement): void {
+        foreach ($targets as $target) {
+            $operation($target);
+        }
+
+        $replacement->update(['replacement_step' => $step]);
+    };
+
+    try {
+        $current = $route->refresh();
+        $candidate = $replacement->refresh();
+        $step(RouteReplacementStep::WorkloadCertificate, fn (AppInstance $target) => $projector->prepareWorkloadCertificate($target, $current, $candidate));
+        $step(RouteReplacementStep::WorkloadCaddy, fn (AppInstance $target) => $projector->prepareWorkloadCaddy($target, $current, $candidate));
+        $step(RouteReplacementStep::RouterCertificate, fn (AppInstance $target) => $projector->prepareRouterCertificate($target, $current, $candidate));
+        $step(RouteReplacementStep::RouterCaddy, fn (AppInstance $target) => $projector->prepareRouterCaddy($target, $current, $candidate));
+        $routerDuringChange = new AppDevSiteRepository()->forNode($router)->firstWhere('domain', 'next.acme.test');
+        $route->update(['status' => RouteStatus::Retiring]);
+        $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
+
+        foreach ($targets as $target) {
+            $projector->cleanup($target, $replacement->refresh());
+        }
+
+        [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
+            $ssh,
+            [
+                $workload->wireguard_ip => ["app-instance-{$remote->id}" => 'feature.acme.test'],
+                $router->wireguard_ip => [
+                    "app-instance-{$local->id}" => 'feature.acme.test',
+                    "route-{$route->id}-router" => 'feature.acme.test',
+                ],
+            ],
+        );
+
+        expect($routerDuringChange?->certificateDirectory())
+            ->toBe("/etc/caddy/orbit-certificates/route-{$replacement->id}-router-hostname-change/current")
+            ->and($mismatches)->toBe([])
+            ->and($served[$router->wireguard_ip])->toBe(['next.acme.test' => "route-{$replacement->id}-router"])
+            ->and($disk[$router->wireguard_ip])->toBe([
+                "app-instance-{$local->id}" => 'next.acme.test',
+                "route-{$replacement->id}-router" => 'next.acme.test',
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('removes the retiring Router certificate from the Router that served it when the change moves Cluster', function (): void {
+    [$appInstance, $route, $workload, $oldRouter] = orb127_route_projection_models();
+    $route->update(['status' => RouteStatus::Active]);
+    $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
+    $cluster = Cluster::query()->create(['name' => 'moved-'.Str::lower(Str::random(8)), 'state' => ClusterState::Active]);
+    $newRouter = Node::query()->create([
+        'cluster_id' => $cluster->id,
+        'name' => 'router-'.Str::lower(Str::random(8)),
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.30',
+        'wireguard_ip' => '10.44.0.30',
+        'user' => 'orbit',
+    ]);
+    $newRouter->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
+    $replacement = orb_pending_domain_change($route, $appInstance, RouteReplacementStep::Reserved);
+    $replacement->update(['cluster_id' => $cluster->id]);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+
+    try {
+        $current = $route->refresh();
+        $candidate = $replacement->refresh();
+        $projector->prepareWorkloadCertificate($appInstance, $current, $candidate);
+        $replacement->update(['replacement_step' => RouteReplacementStep::WorkloadCertificate]);
+        $projector->prepareWorkloadCaddy($appInstance, $current, $candidate);
+        $projector->prepareRouterCertificate($appInstance, $current, $candidate);
+        $replacement->update(['replacement_step' => RouteReplacementStep::RouterCertificate]);
+        $projector->prepareRouterCaddy($appInstance, $current, $candidate);
+        $route->update(['status' => RouteStatus::Retiring]);
+        $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
+        $projector->cleanup($appInstance->refresh(), $replacement->refresh());
+
+        [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
+            $ssh,
+            [
+                $workload->wireguard_ip => ["app-instance-{$appInstance->id}" => 'feature.acme.test'],
+                $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
+            ],
+        );
+
+        expect($mismatches)->toBe([])
+            ->and($served[$oldRouter->wireguard_ip] ?? null)->toBe([])
+            ->and($disk[$oldRouter->wireguard_ip])->toBe([])
+            ->and($served[$newRouter->wireguard_ip])->toBe(['next.acme.test' => "route-{$replacement->id}-router"])
+            ->and($disk[$newRouter->wireguard_ip])->toBe(["route-{$replacement->id}-router" => 'next.acme.test']);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -945,6 +1154,24 @@ function orb_hostname_change_certificate_replay(Orb127RouteSshExecutor $ssh, arr
     return [$mismatches, $disk, $served];
 }
 
+function orb_pending_domain_change(Route $route, AppInstance $appInstance, RouteReplacementStep $step): Route
+{
+    $replacement = Route::query()->create([
+        'app_id' => $route->app_id,
+        'cluster_id' => $route->cluster_id,
+        'domain' => 'next.acme.test',
+        'provenance' => $route->provenance,
+        'publication' => $route->publication,
+        'status' => RouteStatus::Pending,
+        'replaces_route_id' => $route->id,
+        'replacement_step' => $step,
+    ]);
+    $replacement->targets()->create(['app_instance_id' => $appInstance->id, 'position' => 0]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
+
+    return $replacement;
+}
+
 /** @return array{NativeDevelopmentRouteProjector, Orb127RouteSshExecutor, Orb127RouteProcessRunner, string} */
 function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false): array
 {
@@ -1080,6 +1307,8 @@ final class Orb127RouteProcessRunner implements ProcessRunner
     /** @var list<ProcessInvocation> */
     public array $invocations = [];
 
+    public int $failNext = 0;
+
     public function __construct(
         private readonly bool $fail,
     ) {}
@@ -1087,6 +1316,12 @@ final class Orb127RouteProcessRunner implements ProcessRunner
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $this->invocations[] = $invocation;
+
+        if ($this->failNext > 0) {
+            $this->failNext--;
+
+            return new CommandResult(1, '', 'injected failure', 1, false);
+        }
 
         return $this->fail
             ? new CommandResult(1, '', 'injected failure', 1, false)

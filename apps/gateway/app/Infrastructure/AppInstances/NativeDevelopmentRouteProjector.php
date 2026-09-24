@@ -24,6 +24,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\RouteTarget;
 
 final readonly class NativeDevelopmentRouteProjector implements AppInstanceTransferRouteProjector, DevelopmentRouteProjector, RouteDomainProjector
 {
@@ -236,7 +237,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
         $this->certificates->convergeAppInstance($appInstance, $route);
-        $router = $this->router($appInstance, $route);
+        $router = $this->routeRouter($route);
 
         if ($router instanceof Node) {
             $this->certificates->convergeRouteRouter($route, $router);
@@ -244,34 +245,61 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
 
         $this->caddy->converge($appInstance->node);
 
-        if ($router instanceof Node) {
+        if ($router instanceof Node && ! $router->is($appInstance->node)) {
             $this->caddy->converge($router);
         }
 
         $this->certificates->removeHostnameChange($appInstance, $route);
-        $this->removeRetiringRouterCertificate($route, $router);
+        $this->removeRetiringRouterCertificate($route, [$appInstance->node, $router]);
         $this->dns->converge();
     }
 
     /**
-     * The retiring Route stops being served at cutover, so its Router leaf has no site left once
-     * the Router Caddy above is republished.
+     * The Router that serves a Router or composed pool site for the Route. A composed pool on a
+     * Router that also holds a target uses the Route's Router certificate, whichever target the
+     * cleanup handles first.
      */
-    private function removeRetiringRouterCertificate(Route $route, ?Node $router): void
+    private function routeRouter(Route $route): ?Node
     {
-        if (! $router instanceof Node || $route->replaces_route_id === null) {
+        $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance']);
+        $router = $route->cluster?->routerAssignment?->node;
+
+        if (! $router instanceof Node) {
+            return null;
+        }
+
+        return $route->targets->contains(
+            static fn (RouteTarget $target): bool => $target->appInstance->node_id !== $router->id,
+        ) ? $router : null;
+    }
+
+    /**
+     * The retiring Route stops being served at cutover. Its Router leaf lives on the Router that
+     * served it, which is not the new Router when the change also moved the Route to another
+     * Cluster. That Router is republished without the retiring site before its leaf is removed.
+     *
+     * @param  list<?Node>  $published
+     */
+    private function removeRetiringRouterCertificate(Route $route, array $published): void
+    {
+        if ($route->replaces_route_id === null) {
             return;
         }
 
-        $scope = "route-{$route->replaces_route_id}-router";
+        $retiring = Route::query()->with('cluster.routerAssignment.node')->find($route->replaces_route_id);
+        $router = $retiring?->cluster?->routerAssignment?->node;
 
-        if ($this->usesCertificate($router, $scope)) {
+        if (! $retiring instanceof Route || ! $router instanceof Node) {
             return;
         }
 
-        $retiring = new Route;
-        $retiring->id = $route->replaces_route_id;
-        $this->certificates->removeRouteRouter($retiring, $router);
+        if (! collect($published)->contains(static fn (?Node $node): bool => $node?->is($router) === true)) {
+            $this->caddy->converge($router);
+        }
+
+        if (! $this->usesCertificate($router, "route-{$retiring->id}-router")) {
+            $this->certificates->removeRouteRouter($retiring, $router);
+        }
     }
 
     public function rollbackDns(Route $route): void

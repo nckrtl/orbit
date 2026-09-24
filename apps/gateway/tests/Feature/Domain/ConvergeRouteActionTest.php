@@ -497,7 +497,9 @@ it('converges a same-domain Cluster scope change on one Route and restores after
         ->and($retried->failed_step)
         ->toBeNull()
         ->and($retried->replacement_step)
-        ->toBeNull();
+        ->toBeNull()
+        ->and($this->events->values)
+        ->toContain('workload-certificate', 'router-certificate');
 });
 
 it('applies proposed Cluster placement on a generated domain replacement', function (): void {
@@ -764,6 +766,53 @@ it('leaves the old Route authoritative and removes the replacement after a pre-c
     'Router Caddy' => ['router-caddy', 'router-caddy'],
     'DNS publication' => ['dns-publication', 'dns-publication'],
 ]);
+
+it('marks the replacement failed and withdraws its Caddy sites before removing its certificates', function (): void {
+    $route = route_domain_change_route(laravel: false);
+    $this->projector->failures['dns-publication'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected dns-publication failure.');
+
+    $rollback = array_values(array_filter(
+        $this->events->values,
+        static fn (string $event): bool => str_starts_with($event, 'rollback-'),
+    ));
+
+    expect($rollback)->toBe(['rollback-caddy', 'rollback-certificates', 'rollback-dns'])
+        ->and($this->events->rollbackCaddyStatuses)->toBe([RouteStatus::Failed])
+        ->and(Route::query()->where('domain', 'next.example.test')->exists())->toBeFalse();
+});
+
+it('restarts a failed replacement from its first step because rollback removed its certificates', function (): void {
+    $route = route_domain_change_route(laravel: false);
+    $this->projector->failures = [
+        'dns-publication' => 1,
+        'rollback-certificates' => 1,
+    ];
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected dns-publication failure.');
+
+    expect(Route::query()->where('domain', 'next.example.test')->sole()->status)->toBe(RouteStatus::Failed);
+
+    $this->events->values = [];
+    $updated = app(ConvergeRouteAction::class)->execute($route->refresh(), 'next.example.test');
+
+    expect($updated->status)->toBe(RouteStatus::Active)
+        ->and($this->events->values)->toBe([
+            'owner',
+            'workload-certificate',
+            'workload-caddy',
+            'router-certificate',
+            'firewall-policy',
+            'workload-verify',
+            'router-caddy',
+            'dns-publication',
+            'cleanup',
+            'workload-verify',
+        ]);
+});
 
 it('records Laravel URL failure, restores the old URL, and removes the replacement', function (): void {
     $route = route_domain_change_route(laravel: true);
@@ -1670,6 +1719,9 @@ final class RouteDomainChangeEvents
 
     /** @var list<string> Domains the projector was given after cutover, in call order. */
     public array $cleanupDomains = [];
+
+    /** @var list<?RouteStatus> The replacement's stored status each time rollback republishes Caddy. */
+    public array $rollbackCaddyStatuses = [];
 }
 
 final class RouteDomainChangeProjectorFake implements RouteDomainProjector
@@ -1759,6 +1811,7 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
 
     public function rollbackCaddy(AppInstance $appInstance, Route $route): void
     {
+        $this->events->rollbackCaddyStatuses[] = Route::query()->find($route->id)?->status;
         $this->event('rollback-caddy');
     }
 

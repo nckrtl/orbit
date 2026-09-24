@@ -9,6 +9,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\AppInstance;
@@ -83,11 +84,10 @@ final readonly class AppDevSiteRepository
                     RouteStatus::Activating->value,
                     RouteStatus::Retiring->value,
                 ])->orWhere(static function (Builder $query): void {
+                    // A failed replacement serves nothing. Its rollback marks it failed before it
+                    // withdraws the candidate sites and then removes their certificates.
                     $query
-                        ->whereIn('status', [
-                            RouteStatus::Pending->value,
-                            RouteStatus::Failed->value,
-                        ])
+                        ->where('status', RouteStatus::Pending->value)
                         ->whereNotNull('replaces_route_id');
                 });
 
@@ -194,13 +194,19 @@ final readonly class AppDevSiteRepository
                     ),
                 )
                 ->values();
-            // The replacement a domain change is staging answers from the staging certificates the
-            // change issued, because the Instance's live leaf still names the current domain and the
-            // replacement's live Router leaf does not exist until cleanup.
-            $stagesDomainChange = $additionalRoute instanceof Route
-                && $route->is($additionalRoute)
-                && $route->replaces_route_id !== null;
-            $router = $this->routerFor($route, $routerOverrides);
+            // A pending replacement answers from the staging certificates its domain change issues,
+            // because the Instance's live leaf still names the current domain and the replacement's
+            // live Router leaf does not exist until cleanup. Each site appears only once the step that
+            // writes its certificate has completed.
+            $stagesDomainChange = $route->status === RouteStatus::Pending && $route->replaces_route_id !== null;
+
+            if ($stagesDomainChange && ! $this->domainChangeReached($route, RouteReplacementStep::WorkloadCertificate)) {
+                continue;
+            }
+
+            $router = ! $stagesDomainChange || $this->domainChangeReached($route, RouteReplacementStep::RouterCertificate)
+                ? $this->routerFor($route, $routerOverrides)
+                : null;
             $ingress = $route->cluster !== null
                 ? $this->eligibility->activeIngress($route->cluster)
                 : null;
@@ -244,6 +250,7 @@ final readonly class AppDevSiteRepository
                     array_values($remoteTargets->all()),
                     $route,
                     $router,
+                    domainChange: $stagesDomainChange,
                 ));
             }
 
@@ -341,6 +348,11 @@ final readonly class AppDevSiteRepository
         }
     }
 
+    private function domainChangeReached(Route $route, RouteReplacementStep $step): bool
+    {
+        return $route->replacement_step?->hasReached($step) === true;
+    }
+
     /**
      * @param  array<int, int>  $routerOverrides
      */
@@ -420,8 +432,13 @@ final readonly class AppDevSiteRepository
      * @param  list<AppInstance>  $local
      * @param  list<AppInstance>  $remote
      */
-    private function composedPoolSite(array $local, array $remote, Route $route, Node $router): AppDevSite
-    {
+    private function composedPoolSite(
+        array $local,
+        array $remote,
+        Route $route,
+        Node $router,
+        bool $domainChange = false,
+    ): AppDevSite {
         $addresses = collect($remote)
             ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
@@ -449,6 +466,7 @@ final readonly class AppDevSiteRepository
             productionUser: $localInstance->production_user,
             productionHome: $localInstance->production_home,
             appSlug: $localInstance->app->slug,
+            certificateScope: $domainChange ? "route-{$route->id}-router-hostname-change" : null,
             productionPhpSocket: $localInstance->production_php_socket,
             localUnixUpstream: 'unix//run/orbit/route-'.$route->id.'-local.sock',
         );

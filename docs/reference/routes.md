@@ -416,7 +416,7 @@ For production, the Gateway checks the saved environment location and renders st
 
 Cutover is one database transition. The Gateway publishes the replacement domain in private DNS only after it verifies every required projection, then marks the replacement `activating` and the old Route `retiring`. Instance output derives only the replacement domain. Route inspection exposes both records and their relationship. Cleanup then removes old projections, deletes the retiring Route, and marks the replacement `active`.
 
-Until cleanup, the replacement domain is served from staging certificates that the change issues for it. The workload uses `app-instance-<id>-hostname-change`, and a separate Router uses `route-<replacement id>-router-hostname-change`. The Instance's live `app-instance-<id>` certificate still names the current domain until cleanup.
+Until cleanup, the replacement domain is served from staging certificates that the change issues for it. The workload uses `app-instance-<id>-hostname-change`, and a separate Router uses `route-<replacement id>-router-hostname-change`, also for a composed pool on a Router that holds one of the targets. The Instance's live `app-instance-<id>` certificate still names the current domain until cleanup. The Gateway chooses these scopes from the stored replacement. A `pending` replacement renders a site only after the step that issues its certificate completes, and a `failed` replacement renders no site.
 
 | Certificate scope | Node | Issued at | Removed at |
 | --- | --- | --- | --- |
@@ -424,9 +424,9 @@ Until cleanup, the replacement domain is served from staging certificates that t
 | `route-<replacement id>-router-hostname-change` | Router | Router certificate step | Cleanup or rollback |
 | `app-instance-<id>` | Workload | Reissued for the replacement domain at cleanup | Instance removal |
 | `route-<replacement id>-router` | Router | Cleanup | Route removal |
-| `route-<retiring id>-router` | Router | Before the change | Cleanup, after Router Caddy drops its site |
+| `route-<retiring id>-router` | The retiring Route's Router | Before the change | Cleanup, after that Router's Caddy drops its site |
 
-A retiring Route stops being served at cutover. Both domains share the Instance's live certificate scope, and cleanup issues that certificate for the Route the Node now serves. It then republishes workload and Router Caddy with the live scopes and removes the staging scopes and the retiring Route's Router certificate.
+A retiring Route stops being served at cutover. Both domains share the Instance's live certificate scope, and cleanup issues that certificate for the Route the Node now serves. It then republishes workload and Router Caddy with the live scopes and removes the staging scopes. When the change also moves the Route to another Cluster, cleanup republishes the retiring Route's Router too. It then removes the retiring Route's Router certificate from that Router.
 
 A Node that kept answering under the previous domain would present a certificate naming the replacement, and Caddy would then treat that host as unmanaged and try to obtain a public certificate for a private Orbit domain. Until cutover, both domains stay served, so an interrupted change never leaves the Route unreachable.
 
@@ -434,7 +434,7 @@ A Node that kept answering under the previous domain would present a certificate
 
 During a change, Route inspection reports both records, `replacement_step`, `failed_step`, and `error_code`. Retry with the same domain to verify completed work and resume the first incomplete step. A different domain returns `route.domain_change_conflict` and changes neither record.
 
-A failure before cutover leaves the old Route authoritative. Successful cleanup of replacement projections deletes the replacement. Incomplete cleanup retains an inspectable `failed` replacement. Only the identical request recovers that replacement.
+A failure before cutover leaves the old Route authoritative. The Gateway marks the replacement `failed` and republishes workload and Router Caddy without its sites. It then removes the staging certificates, restores the Laravel URL or production environment, and republishes private DNS. Successful cleanup deletes the replacement, and a retry starts a new change. Incomplete cleanup retains an inspectable `failed` replacement that serves no site. Only the identical request recovers that replacement, and it starts again from the first step, because the cleanup can have removed the certificates of completed steps.
 
 A failure after cutover keeps the replacement authoritative. Retry continues forward until the replacement is `active`, every old projection is removed, the retiring Route is deleted, and its domain becomes available.
 
