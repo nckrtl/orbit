@@ -3708,6 +3708,26 @@
             ]
         },
         {
+            "path": "docs/decisions/0143-record-topology-evidence-and-sync-without-verification.md",
+            "title": "ADR 0143: Record topology evidence and sync without verification",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0136",
+                "0143"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3877,7 +3897,8 @@
                 "0139",
                 "0140",
                 "0141",
-                "0142"
+                "0142",
+                "0143"
             ]
         },
         {
@@ -4611,7 +4632,8 @@
                 "0056",
                 "0114",
                 "0135",
-                "0136"
+                "0136",
+                "0143"
             ]
         },
         {

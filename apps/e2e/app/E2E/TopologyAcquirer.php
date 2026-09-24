@@ -82,7 +82,15 @@ final readonly class TopologyAcquirer
         }
     }
 
-    public function sync(TopologyRequest $request): FeatureTopology
+    /**
+     * Refresh discovery after a source change and publish the verified source binding.
+     *
+     * A quick sync proves the mount, installs the current guest helper scripts, and
+     * applies pending Gateway migrations, then stops. It skips the extension converge
+     * and the readiness probes, and leaves `topology.json` and the guest source marker
+     * at the last successful full sync, so standalone `verify` still refuses a changed mount.
+     */
+    public function sync(TopologyRequest $request, bool $quick = false): FeatureTopology
     {
         $this->assertRequestOwnership($request);
         $state = IssueState::forWorktree($request->issue, $request->worktree);
@@ -95,6 +103,12 @@ final readonly class TopologyAcquirer
             );
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
+            if ($quick) {
+                $this->synchronizer->installWorkingTreeGuestScripts($topology->target, $request->worktree);
+                $this->guests->prepareGatewaySchema($topology->target);
+
+                return $topology;
+            }
             $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
             $this->guests->prepareGatewaySchema($topology->target);
             if ($topology->construction->extension !== null) {

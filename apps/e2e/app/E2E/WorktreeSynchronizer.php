@@ -65,9 +65,7 @@ final readonly class WorktreeSynchronizer
      */
     public function syncWorkingTree(TopologyTarget $target, string $worktree): SourceState
     {
-        $repository = new GitRepository($worktree);
-        $this->validateWorktree($repository, $target);
-        $this->syncWorkingTreeGuestScripts($target, $repository);
+        $repository = $this->installWorkingTreeGuestScriptsFrom($target, $worktree);
         ['source' => $source, 'effectiveTreeHash' => $treeHash] = $this->mountedSourceState($repository, $worktree);
         $marker = json_encode([
             'sha' => $source->hostSha,
@@ -94,6 +92,15 @@ final readonly class WorktreeSynchronizer
         $this->assertBatchSuccessful($this->incus->execAll($commands), 'Guest source marker write failed.');
 
         return $source;
+    }
+
+    /**
+     * Install the mounted worktree's current guest scripts without writing the
+     * guest source marker; `sync --quick` records no source identity.
+     */
+    public function installWorkingTreeGuestScripts(TopologyTarget $target, string $worktree): void
+    {
+        $this->installWorkingTreeGuestScriptsFrom($target, $worktree);
     }
 
     /** Refuse standalone readiness when the mount differs from the last successful source record. */
@@ -149,6 +156,15 @@ final readonly class WorktreeSynchronizer
             ),
             'effectiveTreeHash' => $effectiveTreeHash,
         ];
+    }
+
+    private function installWorkingTreeGuestScriptsFrom(TopologyTarget $target, string $worktree): GitRepository
+    {
+        $repository = new GitRepository($worktree);
+        $this->validateWorktree($repository, $target);
+        $this->syncWorkingTreeGuestScripts($target, $repository);
+
+        return $repository;
     }
 
     /** Install the mounted worktree's current guest scripts on every physical Node. */

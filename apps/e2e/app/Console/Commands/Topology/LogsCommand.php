@@ -12,12 +12,15 @@ use Throwable;
 
 final class LogsCommand extends E2ECommand
 {
+    use RecordsEvidence;
+
     #[\Override]
     protected $signature =
         'topology:logs {issue} {role} {name} '
         .self::WORKTREE_OPTION
         .' {--since= : A journalctl time, such as "-5min" or "2026-09-24 06:40:00"}'
         .' {--lines= : Only the last N lines}'
+        .self::RECORD_OPTION
         .' {--json}';
 
     #[\Override]
@@ -27,6 +30,7 @@ final class LogsCommand extends E2ECommand
     {
         try {
             $process = new GuestProcess((string) $this->argument('name'));
+            $label = $this->evidenceLabel();
             $since = $this->option('since');
             $lines = $this->option('lines');
             if (is_string($lines) && preg_match('/\A[0-9]{1,6}\z/', $lines) !== 1) {
@@ -38,7 +42,9 @@ final class LogsCommand extends E2ECommand
             );
             $request = $this->request();
             $role = (string) $this->argument('role');
+            $startedAt = $this->evidenceClock();
             $result = $acquirer->execute($request, $role, $argv);
+            $this->recordEvidence($label, $request, $role, $argv, $result, $startedAt, $this->evidenceClock());
             if (! $result->successful()) {
                 throw new InvalidArgumentException("The journal could not be read: {$result->stderr}");
             }

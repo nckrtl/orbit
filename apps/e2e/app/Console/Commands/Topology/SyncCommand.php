@@ -10,8 +10,15 @@ use Throwable;
 
 final class SyncCommand extends E2ECommand
 {
+    /** The note a quick sync prints, because it proves less than a full sync. */
+    public const string QUICK_NOTE =
+        'Readiness was not verified, and the recorded source binding is unchanged. Run sync without --quick for verified readiness.';
+
     #[\Override]
-    protected $signature = 'topology:sync {issue} '.self::WORKTREE_OPTION.' {--json}';
+    protected $signature = 'topology:sync {issue} '
+        .self::WORKTREE_OPTION
+        .' {--quick : Prove the mount, install guest helpers, and migrate the Gateway without verifying readiness}'
+        .' {--json}';
 
     #[\Override]
     protected $description = 'Apply Gateway migrations and verify mounted discovery readiness';
@@ -20,7 +27,20 @@ final class SyncCommand extends E2ECommand
     {
         try {
             $request = $this->request();
-            $topology = $acquirer->sync($request);
+            $quick = (bool) $this->option('quick');
+            $topology = $acquirer->sync($request, $quick);
+            if ($quick) {
+                $this->log($request, 'attempt='.$topology->attempt->value.' quick ok, readiness not verified');
+                $this->outputJson([
+                    'state' => 'synced',
+                    'verified' => false,
+                    'issue' => $request->issue,
+                    'attempt_id' => $topology->attempt->value,
+                    'note' => self::QUICK_NOTE,
+                ], 'synced '.$topology->attempt->value." without readiness verification\n".self::QUICK_NOTE);
+
+                return self::SUCCESS;
+            }
             $this->log($request, 'attempt='.$topology->attempt->value.' ok');
             $this->outputJson([
                 'state' => 'ready',

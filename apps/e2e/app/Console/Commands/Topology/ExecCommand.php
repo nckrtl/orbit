@@ -15,6 +15,7 @@ use Throwable;
 final class ExecCommand extends E2ECommand
 {
     use ReadsGuestArgv;
+    use RecordsEvidence;
 
     #[\Override]
     protected $signature =
@@ -24,6 +25,7 @@ final class ExecCommand extends E2ECommand
         .' {--review-action= : Record this action against captured successful proof}'
         .' {--required : Mark the recorded review action as required}'
         .' {--timeout=60 : Seconds the guest command may run, from 1 to 3600}'
+        .self::RECORD_OPTION
         .' {--json}';
 
     #[\Override]
@@ -37,6 +39,10 @@ final class ExecCommand extends E2ECommand
         try {
             [$argv, $stdin] = $this->commandInput();
             $timeout = $this->timeoutOption();
+            $label = $this->evidenceLabel();
+            if ($label !== null && $this->stringOption('review-action') !== null) {
+                throw new InvalidArgumentException('--record does not apply to a review action; the review record keeps it.');
+            }
             $request = $this->request();
             $role = (string) $this->argument('role');
             $purpose = $this->option('proof') ? AttemptPurpose::Proof : AttemptPurpose::Discovery;
@@ -50,9 +56,11 @@ final class ExecCommand extends E2ECommand
             if ($action !== null && $timeout !== 60) {
                 throw new InvalidArgumentException('--timeout does not apply to a recorded review action.');
             }
+            $startedAt = $this->evidenceClock();
             $result = $action === null
                 ? $acquirer->execute($request, $role, $argv, $stdin, $purpose, $timeout)
                 : $review->execute($request, $action, $role, $argv, (bool) $this->option('required'), $stdin);
+            $this->recordEvidence($label, $request, $role, $argv, $result, $startedAt, $this->evidenceClock());
             $redactedArgv = json_encode($redactor->redactArgv($argv), JSON_THROW_ON_ERROR);
             $reviewIdentity = $action === null ? '' : " action={$action}";
             $this->log($request, "role={$role}{$reviewIdentity} exit={$result->exitCode} argv={$redactedArgv}");

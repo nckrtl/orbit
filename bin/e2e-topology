@@ -11,14 +11,18 @@ usage: bin/e2e-topology <action> ISSUE [...]
   shell   ISSUE NODE [--proof --review-action=ID --required]
                                   shell on a recorded physical Node key (including app-prod-2 when declared);
                                   successful proof starts a review action
-  exec    ISSUE NODE --argv=JSON [--timeout=SECONDS] [--proof --review-action=ID --required]
-                                  run on a recorded physical Node key; successful proof records a review action
+  exec    ISSUE NODE --argv=JSON [--timeout=SECONDS] [--record=LABEL]
+                [--proof --review-action=ID --required]
+                                  run on a recorded physical Node key; successful proof records a review action;
+                                  --record appends the command and output to <worktree>/.e2e/evidence.log
   spawn   ISSUE NODE NAME --argv=JSON
                                   start a long-lived process on a discovery Node and return at once
-  logs    ISSUE NODE NAME [--since=TIME] [--lines=N]
-                                  print the timestamped output of a spawned process
+  logs    ISSUE NODE NAME [--since=TIME] [--lines=N] [--record=LABEL]
+                                  print the timestamped output of a spawned process;
+                                  --record appends it to <worktree>/.e2e/evidence.log
   kill    ISSUE NODE NAME         stop a spawned process; its logs stay readable
-  sync    ISSUE                   re-verify the mounted source identity
+  sync    ISSUE [--quick]         migrate the Gateway and re-verify the mounted source identity;
+                                  --quick skips readiness verification and keeps the recorded binding
   verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default .loop/proof/ISSUE.json)
   capture ISSUE [--plan=PATH]     capture successful-proof evidence before interactive review
