@@ -81,6 +81,8 @@ The Gateway machine installs Caddy the same way. The `gateway` role lists the `c
 
 Converging the `gateway` role runs the same two steps over SSH before its firewall step. A failed source step stops at `caddy-package-source` with `gateway.caddy_install_failed`. So `orbit node:role:add <node> gateway --converge` repairs a Gateway that Doctor reports. A Gateway that still runs the archive package upgrades on its next bootstrap, web convergence, or `gateway` role convergence.
 
+The package upgrade restarts Caddy, which also serves the Gateway API. The CLI can then report `Could not reach the gateway.` while the Gateway finishes the operation. Wait a minute and run the command again: the second run finds Caddy current and reports the result. On the Gateway machine, `php artisan orbit:gateway-web` makes the same repair without going through Caddy.
+
 Proposed in [ADR 0141](/decisions/0141-build-each-node-caddyfile-on-the-gateway), not live yet: every Node with Caddy sites installs Caddy through this step before its first [Node Caddy build](/reference/caddy-configuration#node-caddy-build). The `ingress` role gains the `caddy` package. ProxyCli and Herdr observer publication run the step on their Node, and the build uses only the packaged `/usr/bin/caddy`, never a Linuxbrew Caddy. The step orders the Caddy service after `wg-quick@orbit` on every Node. Each build checks the floor again.
 
 ## Converge an existing Node
