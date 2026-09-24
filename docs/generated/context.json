@@ -78,6 +78,7 @@
                 "Ingress",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Route",
@@ -3776,6 +3777,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0148-keep-a-gateway-view-of-node-agent-state.md",
+            "title": "ADR 0148: Keep a Gateway view of Node agent state",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Runtime hibernation",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0084",
+                "0087",
+                "0127",
+                "0128",
+                "0129",
+                "0148"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3799,6 +3827,7 @@
                 "Ingress",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Project type",
@@ -3948,7 +3977,8 @@
                 "0142",
                 "0143",
                 "0144",
-                "0145"
+                "0145",
+                "0148"
             ]
         },
         {
@@ -4125,6 +4155,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Runtime hibernation"
@@ -4530,7 +4561,8 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0129"
+                "0129",
+                "0148"
             ]
         },
         {
@@ -4861,6 +4893,7 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Process",
@@ -4869,7 +4902,8 @@
             "governing_adrs": [
                 "0128",
                 "0129",
-                "0130"
+                "0130",
+                "0148"
             ]
         },
         {

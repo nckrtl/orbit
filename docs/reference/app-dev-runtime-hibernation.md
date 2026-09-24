@@ -56,7 +56,7 @@ The Gateway reads last HTTP activity from the more recent of the Instance Caddy 
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` |
 
-A sweep that finds no recent HTTP activity stops each desired-running Instance Process that is not keep-alive without changing `desired_state`, then removes the awake marker. Keep-alive Processes stay running. When every desired-running Process is keep-alive, the Gateway does not mark the Instance asleep. Schedules on that Instance keep their timer state.
+A sweep that finds no recent HTTP activity stops each desired-running Instance Process that is not keep-alive without changing `desired_state`, then removes the awake marker. When the Gateway's [view of the Node agent](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips that Process's stop and its SSH commands. Keep-alive Processes stay running. When every desired-running Process is keep-alive, the Gateway does not mark the Instance asleep. Schedules on that Instance keep their timer state.
 
 A later pass in that sweep deletes reconstructable `vendor` and `node_modules` directories when every condition below is true.
 
@@ -103,6 +103,8 @@ When the durable cold marker is set, the Gateway restores missing reconstructabl
 For a `vp-dev` preset Process, the Gateway prepares the assigned Vite port and waits for its owned service to answer the Vite client request. An unrelated listener cannot satisfy readiness. Legacy instances without an assignment retain their previous port `5173` check.
 
 For an `agentation-mcp` preset Process, the Gateway waits for `/health` on the assigned Agentation loopback port. The `antigravity-watch` preset has no keep-alive, so idle halt stops it and wake starts it with the rest of the desired-running group.
+
+The Gateway checks every 0.5 seconds whether each started Process runs. When its [view of the Node agent](/reference/node-agent#gateway-view) is fresh, the view answers without SSH. It confirms a `failed` answer, or a wake timeout, once over SSH before the wake fails. Without a fresh view, each check runs over SSH.
 
 After restore, when needed, and after every desired-running Process is running, the Gateway clears the cold marker and then writes the awake marker. A keep-alive Process that is already running is already ready. The next browser refresh finds the marker and Caddy proxies that request, so the first application request already has Vite and its peers.
 
