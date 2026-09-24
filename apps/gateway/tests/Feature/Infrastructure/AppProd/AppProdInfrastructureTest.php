@@ -396,7 +396,7 @@ it('normalizes the unmanaged production fragment before app production configura
         $result = $harness->run(
             publisher: $publisher,
             scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
-                'unmanaged.caddy' => "{\n    local_certs\n}\n",
+                'unmanaged.caddy' => "legacy.test {\n}\n",
                 'app-prod.caddy' => "stale production\n",
             ]),
         );

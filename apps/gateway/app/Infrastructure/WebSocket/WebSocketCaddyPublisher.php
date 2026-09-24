@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
+use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Ssh\RemoteCommand;
 
@@ -38,7 +39,7 @@ final readonly class WebSocketCaddyPublisher
                 $wireguardIp,
                 WebSocketFootprint::CaddyBindPlaceholder,
             ],
-            input: <<<BASH
+            input: CaddyGlobalOptions::conflictGuard().<<<BASH
                 version=\$1
                 owned_fragment=\$2
                 versions=\$3
@@ -89,6 +90,7 @@ final readonly class WebSocketCaddyPublisher
                     rm -rf -- "\$candidate"
                     exit 0
                 fi
+                refuse_carried_global_options "\$candidate" "\$source_main"
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' '{$this->encodedGlobalOptions()}' | base64 --decode > "\$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "\$versions" "\$version" >> "\$candidate/Caddyfile"
@@ -129,7 +131,7 @@ final readonly class WebSocketCaddyPublisher
                 WebSocketFootprint::CaddyServiceName,
                 WebSocketFootprint::CaddyLockPath,
             ],
-            input: <<<'BASH'
+            input: CaddyGlobalOptions::conflictGuard().<<<'BASH'
                 version=$1
                 owned_fragment=$2
                 versions=$3
@@ -159,6 +161,7 @@ final readonly class WebSocketCaddyPublisher
                 chown -R root:caddy "$candidate"
                 find "$candidate" -type d -exec chmod 0750 {} +
                 find "$candidate" -type f -exec chmod 0640 {} +
+                refuse_carried_global_options "$candidate" "$source_main"
                 caddy validate --config "$candidate/Caddyfile" --adapter caddyfile
                 printf '%s\n' 'ewogICAgYXV0b19odHRwcyBkaXNhYmxlX2NlcnRzCn0K' | base64 --decode > "$candidate/Caddyfile"
                 printf 'import %s/%s/fragments/*.caddy\n' "$versions" "$version" >> "$candidate/Caddyfile"

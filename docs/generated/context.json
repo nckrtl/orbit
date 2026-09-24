@@ -3501,6 +3501,21 @@
             ]
         },
         {
+            "path": "docs/decisions/0137-refuse-carried-caddy-global-options.md",
+            "title": "ADR 0137: Refuse carried Caddy global options",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0137"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3661,7 +3676,8 @@
                 "0133",
                 "0134",
                 "0135",
-                "0136"
+                "0136",
+                "0137"
             ]
         },
         {
@@ -4014,6 +4030,20 @@
             ],
             "governing_adrs": [
                 "0126"
+            ]
+        },
+        {
+            "path": "docs/reference/caddy-configuration.md",
+            "title": "Caddy configuration",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Ingress",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0137"
             ]
         },
         {
