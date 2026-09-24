@@ -8,10 +8,13 @@ use App\Console\Commands\Topology\CaptureCommand;
 use App\Console\Commands\Topology\CloseoutCommand;
 use App\Console\Commands\Topology\EquivalenceCommand;
 use App\Console\Commands\Topology\ExecCommand;
+use App\Console\Commands\Topology\KillCommand;
+use App\Console\Commands\Topology\LogsCommand;
 use App\Console\Commands\Topology\ProveCommand;
 use App\Console\Commands\Topology\ReleaseCommand;
 use App\Console\Commands\Topology\ReviewCommand;
 use App\Console\Commands\Topology\ShellCommand;
+use App\Console\Commands\Topology\SpawnCommand;
 use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
@@ -85,6 +88,9 @@ describe('topology commands', function () {
             new AcquireCommand()->getName(),
             new ShellCommand()->getName(),
             new ExecCommand()->getName(),
+            new SpawnCommand()->getName(),
+            new LogsCommand()->getName(),
+            new KillCommand()->getName(),
             new SyncCommand()->getName(),
             new VerifyCommand()->getName(),
             new ProveCommand()->getName(),
@@ -99,6 +105,9 @@ describe('topology commands', function () {
             'topology:acquire',
             'topology:shell',
             'topology:exec',
+            'topology:spawn',
+            'topology:logs',
+            'topology:kill',
             'topology:sync',
             'topology:verify',
             'topology:prove',
@@ -123,6 +132,12 @@ describe('topology commands', function () {
             ->toBe(['issue', 'role'])
             ->and($arguments(new ExecCommand))
             ->toBe(['issue', 'role'])
+            ->and($arguments(new SpawnCommand))
+            ->toBe(['issue', 'role', 'name'])
+            ->and($arguments(new LogsCommand))
+            ->toBe(['issue', 'role', 'name'])
+            ->and($arguments(new KillCommand))
+            ->toBe(['issue', 'role', 'name'])
             ->and($arguments(new SyncCommand))
             ->toBe(['issue'])
             ->and($arguments(new VerifyCommand))
@@ -300,6 +315,18 @@ describe('topology commands', function () {
         $this
             ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway'])
             ->expectsOutputToContain('argv JSON file')
+            ->assertFailed();
+        $this
+            ->artisan('topology:exec', ['issue' => 'TST-12', 'role' => 'gateway', '--argv' => '["true"]', '--timeout' => '3601'])
+            ->expectsOutputToContain('--timeout must be a whole number of seconds from 1 to 3600')
+            ->assertFailed();
+        $this
+            ->artisan('topology:spawn', ['issue' => 'TST-12', 'role' => 'app-dev', 'name' => 'Viewer_1', '--argv' => '["sleep","60"]'])
+            ->expectsOutputToContain('The process name must be')
+            ->assertFailed();
+        $this
+            ->artisan('topology:logs', ['issue' => 'TST-12', 'role' => 'app-dev', 'name' => 'viewer', '--lines' => 'all'])
+            ->expectsOutputToContain('--lines must be')
             ->assertFailed();
         $this
             ->artisan('topology:status', ['issue' => 'not-an-issue'])
