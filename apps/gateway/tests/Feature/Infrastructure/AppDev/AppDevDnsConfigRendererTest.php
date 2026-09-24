@@ -219,6 +219,54 @@ it('omits analytics.orbit when no analytics role is active', function (): void {
     expect($configuration)->not->toContain('analytics.orbit');
 });
 
+it('keeps role records while each role itself converges', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.1',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.2',
+    ]);
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $services = Node::query()->create([
+        'name' => 'services',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.4',
+        'ssh_user' => 'orbit',
+        'wireguard_ip' => '10.44.0.4',
+    ]);
+    // `node:role:add services ROLE --converge` marks each assignment provisioning while it runs.
+    foreach ([RoleName::Metrics, RoleName::WebSocket, RoleName::Analytics] as $role) {
+        $services->roles()->create(['role' => $role, 'status' => LifecycleStatus::Provisioning]);
+    }
+
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)->toContain('host-record=metrics.orbit,10.44.0.2')
+        ->toContain('host-record=reverb.orbit,10.44.0.4')
+        ->toContain('host-record=analytics.orbit,10.44.0.4');
+});
+
+it('prefers an active role holder over a converging one', function (): void {
+    foreach (['old' => ['10.44.0.4', LifecycleStatus::Provisioning], 'new' => ['10.44.0.5', LifecycleStatus::Active]] as $name => [$address, $status]) {
+        Node::query()->create([
+            'name' => $name,
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.'.substr($address, -1),
+            'ssh_user' => 'orbit',
+            'wireguard_ip' => $address,
+        ])->roles()->create(['role' => RoleName::WebSocket, 'status' => $status]);
+    }
+
+    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+
+    expect($configuration)->toContain('host-record=reverb.orbit,10.44.0.5')
+        ->not->toContain('host-record=reverb.orbit,10.44.0.4');
+});
+
 it('omits reverb.orbit when no websocket role is active', function (): void {
     $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
 
