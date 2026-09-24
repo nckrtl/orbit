@@ -13,16 +13,16 @@ use Symfony\Component\Process\Process;
  * Runs the Node Caddy build push script against a temporary /etc/caddy with shims for Caddy,
  * systemd, runuser, and ownership changes. `HARNESS_*` variables steer the shims.
  */
-final class NodeCaddyPushHarness
+final readonly class NodeCaddyPushHarness
 {
-    public readonly string $root;
+    public string $root;
 
-    public readonly string $caddyDirectory;
+    public string $caddyDirectory;
 
     private Filesystem $files;
 
     public function __construct(
-        private readonly ?string $packageDefault = null,
+        private ?string $packageDefault = null,
     ) {
         $this->root = sys_get_temp_dir().'/orbit-node-caddy-push-'.bin2hex(random_bytes(8));
         $this->caddyDirectory = $this->root.'/etc/caddy';
@@ -139,6 +139,7 @@ final class NodeCaddyPushHarness
             test "$1" = validate
             printf 'validate %s\n' "$3" >> "$HARNESS_ROOT/validate.log"
             test -f "$3"
+            printf '{"level":"info","msg":"using config from file"}\n' >&2
             if [ "$HARNESS_FAIL_VALIDATE" = 1 ]; then
                 printf 'Error: adapting config using caddyfile: unrecognized directive: broken\n' >&2
                 exit 1
@@ -158,7 +159,7 @@ final class NodeCaddyPushHarness
             printf '%s\n' "$*" >> "$HARNESS_ROOT/systemctl.log"
             if [ "$HARNESS_FAIL_RELOAD" = 1 ] && [ "$1" = reload-or-restart ] && [ ! -e "$HARNESS_ROOT/reload-failed" ]; then
                 touch "$HARNESS_ROOT/reload-failed"
-                printf 'Job for caddy.service failed: listen tcp 10.44.0.9:9103: bind: address already in use\n' >&2
+                printf 'Job for caddy.service failed.\n' >&2
                 exit 1
             fi
             BASH);
@@ -177,6 +178,12 @@ final class NodeCaddyPushHarness
             exec /usr/bin/install "${args[@]}"
             BASH);
         $this->shim('chown', "#!/usr/bin/env bash\nexit 0\n");
+        $this->shim('journalctl', <<<'BASH'
+            #!/usr/bin/env bash
+            if [ -e "$HARNESS_ROOT/reload-failed" ]; then
+                printf 'Error: sending configuration to instance: listen tcp 10.44.0.9:9103: bind: address already in use\n'
+            fi
+            BASH);
         $this->shim('dpkg-query', <<<'BASH'
             #!/usr/bin/env bash
             if [ -n "$HARNESS_PACKAGE_MD5" ]; then

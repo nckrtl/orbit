@@ -133,7 +133,10 @@ final readonly class NodeCaddyPushScript
             test "\$written" = "\$version"
 
             stage=validate
-            runuser -u caddy -- "\$caddy_bin" validate --config "\$candidate/Caddyfile" --adapter caddyfile
+            if ! validation=\$(runuser -u caddy -- "\$caddy_bin" validate --config "\$candidate/Caddyfile" --adapter caddyfile 2>&1); then
+                printf '%s\n' "\$validation" | grep -v '"level":"info"' | tail -n 5 >&2
+                exit 1
+            fi
 
             stage=backup
             backup_source=
@@ -203,6 +206,7 @@ final readonly class NodeCaddyPushScript
                     systemctl reload-or-restart "\$caddy_service" || systemctl restart "\$caddy_service" || true
                 fi
                 rm -rf -- "\$published"
+                journalctl -u "\$caddy_service" -n 20 --no-pager -o cat 2>/dev/null | grep '^Error:' | tail -n 1 >&2 || true
                 printf 'Caddy did not reload the new version; the previous configuration is live again.\\n' >&2
                 exit 1
             fi

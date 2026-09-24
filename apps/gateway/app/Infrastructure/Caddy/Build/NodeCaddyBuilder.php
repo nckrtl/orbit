@@ -55,7 +55,7 @@ final readonly class NodeCaddyBuilder
     private static function stage(string $stderr): string
     {
         return preg_match_all('/^orbit-caddy-build-stage=([a-z-]+)$/m', $stderr, $matches) > 0
-            ? $matches[1][array_key_last($matches[1])]
+            ? array_last($matches[1])
             : 'connect';
     }
 

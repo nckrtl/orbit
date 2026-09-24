@@ -138,6 +138,7 @@ describe('a failed build', function (): void {
 
         expect($result['exit'])->not->toBe(0)
             ->and($result['stderr'])->toContain('unrecognized directive: broken')
+            ->and($result['stderr'])->not->toContain('"level":"info"')
             ->and($result['stderr'])->toContain('orbit-caddy-build-stage=validate')
             ->and(is_link($this->harness->path('Caddyfile')))->toBeFalse()
             ->and(file_get_contents($this->harness->path('Caddyfile')))->toBe("hand.example.com {\n    respond hi\n}\n")
