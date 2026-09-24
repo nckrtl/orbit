@@ -252,6 +252,22 @@ it('makes preparation idempotent and uses only fixed source-control commands', f
     }
 });
 
+it('inspects prepared source by its configured origin despite an insteadOf rule', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    orb76_insteadof_rule($instance->checkout_path, $this->sandbox);
+
+    $this->source->inspectPrepared($instance);
+    $this->source->prepare($instance, true);
+
+    expect($this->source->resolve($instance)->branch)->toBe('dev');
+
+    orb76_run(['git', '-C', $instance->checkout_path, 'remote', 'set-url', 'origin', $this->sandbox.'/other.git']);
+
+    expect(fn () => $this->source->inspectPrepared($instance))
+        ->toThrow(RuntimeConvergenceException::class);
+});
+
 it('refuses matching pre-existing source for a fresh reservation and resumes it only after an interruption', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->files->makeDirectory(dirname($instance->checkout_path), 0o755, true);
@@ -575,6 +591,48 @@ it('refuses a replacement or changed canonical origin between inspection and del
     'forced replacement' => ['replacement', true, 'instance.removal_conflict'],
     'normal origin change' => ['origin', false, 'instance.source_origin_mismatch'],
     'forced origin change' => ['origin', true, 'instance.source_origin_mismatch'],
+]);
+
+it('removes a checkout whose origin an insteadOf rule rewrites', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    orb76_insteadof_rule($instance->checkout_path, $this->sandbox);
+
+    orb178_remove_source($this->removal, $instance, $force);
+
+    expect(file_exists($instance->checkout_path))->toBeFalse();
+})->with([
+    'normal' => false,
+    'forced' => true,
+]);
+
+it('still refuses a different origin under an insteadOf rule', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    orb76_insteadof_rule($instance->checkout_path, $this->sandbox);
+    orb76_run(['git', '-C', $instance->checkout_path, 'remote', 'set-url', 'origin', 'ssh://git@example.test/other/site.git']);
+
+    expect(fn () => orb178_remove_source($this->removal, $instance, $force))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.source_origin_mismatch');
+        })
+        ->and(is_dir($instance->checkout_path))
+        ->toBeTrue();
+})->with([
+    'normal' => false,
+    'forced' => true,
 ]);
 
 it('accepts an equivalent supported origin at the destructive boundary', function (): void {
@@ -2139,6 +2197,16 @@ function orb180_share_git_directory(AppInstance $instance, string $sandbox): voi
     file_put_contents($instance->checkout_path.'/.git/commondir', "{$shared}\n");
 }
 
+/**
+ * Adds checkout-local insteadOf rules that change the URL `git remote get-url` reports while the
+ * configured origin and the repository it reaches stay the same.
+ */
+function orb76_insteadof_rule(string $checkout, string $sandbox): void
+{
+    orb76_run(['git', '-C', $checkout, 'config', "url.{$sandbox}/./.insteadOf", "{$sandbox}/"]);
+    orb76_run(['git', '-C', $checkout, 'config', 'url.https://rewritten.example.test/.insteadOf', 'ssh://git@example.test/']);
+}
+
 function orb178_remove_source(
     RemoteDevelopmentAppInstanceSourceRemoval $removal,
     AppInstance $instance,
@@ -2257,9 +2325,9 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
                     'git',
                     '-C',
                     $checkout,
-                    'remote',
-                    'get-url',
-                    'origin',
+                    'config',
+                    '--get',
+                    'remote.origin.url',
                 ])->stdout);
 
                 if ($configuredOrigin === $this->localOrigin) {

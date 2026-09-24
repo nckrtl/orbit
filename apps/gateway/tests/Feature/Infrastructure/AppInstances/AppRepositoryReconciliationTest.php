@@ -11,9 +11,14 @@ use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\AppInstance;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\Orb101AppUpdateFixture;
 
 beforeEach(function (): void {
@@ -106,6 +111,44 @@ describe('App repository reconciliation', function (): void {
             ->toBe('git@github.com:acme/site.git')
             ->and($this->fixture->sources->originMutations)
             ->toBe([]);
+    });
+
+    it('preflights the configured origin despite an insteadOf rule and still refuses a different origin', function (): void {
+        $sandbox = sys_get_temp_dir().'/orbit-app-update-origin-'.Str::uuid();
+        $checkout = "{$sandbox}/checkout";
+        $git = static function (array $arguments): void {
+            $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', ...$arguments]));
+            expect($result->succeeded())->toBeTrue($result->stderr);
+        };
+        $git(['init', '--bare', '--initial-branch=main', "{$sandbox}/current.git"]);
+        $git(['init', '--bare', '--initial-branch=main', "{$sandbox}/proposed.git"]);
+        $git(['init', '--initial-branch=main', $checkout]);
+        $git(['-C', $checkout, '-c', 'user.name=Orbit Test', '-c', 'user.email=orbit@example.test', 'commit', '--allow-empty', '-m', 'Initial']);
+        $git(['-C', $checkout, 'remote', 'add', 'origin', "{$sandbox}/current.git"]);
+        $git(['-C', $checkout, 'config', "url.{$sandbox}/./.insteadOf", "{$sandbox}/"]);
+        $this->fixture->defaultInstance->update(['checkout_path' => $checkout]);
+        $this->app->instance(SshExecutor::class, new LocalShellSshExecutor);
+        $mutator = $this->app->make(RemoteAppUpdateSourceMutator::class);
+
+        try {
+            $mutator->preflightRepository(
+                [$this->fixture->defaultInstance->refresh()],
+                "{$sandbox}/current.git",
+                "{$sandbox}/proposed.git",
+            );
+
+            $git(['-C', $checkout, 'remote', 'set-url', 'origin', "{$sandbox}/other.git"]);
+
+            expect(fn () => $mutator->preflightRepository(
+                [$this->fixture->defaultInstance->refresh()],
+                "{$sandbox}/current.git",
+                "{$sandbox}/proposed.git",
+            ))->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('app.repository_preflight_failed');
+            });
+        } finally {
+            new Filesystem()->deleteDirectory($sandbox);
+        }
     });
 
     it('runs remote origin updates only against checkout paths', function (): void {

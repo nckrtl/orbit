@@ -54,7 +54,7 @@ Removal accepts an `active` Instance. It also accepts a `source_resolved` Instan
 
 Preflight compares the recorded checkout with its source layout, Project repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
 
-The Gateway answers a refused development source preflight with the code that names the failed check, in normal and forced mode alike.
+The Gateway answers a refused development source preflight with the code that names the failed check, in normal and forced mode alike. Every origin check reads the `remote.origin.url` value stored in the checkout. It ignores `insteadOf` rewrites from the Node's Git configuration, so a Node that rewrites HTTPS URLs to SSH still passes.
 
 | Code | Refused check |
 | --- | --- |

@@ -582,7 +582,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
             top = git(requested, 'rev-parse', '--show-toplevel')
             if not os.path.isabs(top) or os.path.realpath(top) != top or not os.path.isdir(top): raise SystemExit(42)
-            origin = git(top, 'remote', 'get-url', 'origin')
+            origin = git(top, 'config', '--get', 'remote.origin.url')
             common = os.path.realpath(git(top, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
             listing = git(top, 'worktree', 'list', '--porcelain').splitlines()
             worktrees = [line[9:] for line in listing if line.startswith('worktree ')]

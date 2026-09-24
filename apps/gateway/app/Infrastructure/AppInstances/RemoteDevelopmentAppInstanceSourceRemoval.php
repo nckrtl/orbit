@@ -1589,7 +1589,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
             test "$current_branch" = "$branch"
             test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
-            origin_with_marker=$(git -C "$physical" remote get-url origin && printf x)
+            origin_with_marker=$(git -C "$physical" config --get remote.origin.url && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
                 *$'\n') origin=${origin%$'\n'} ;;
@@ -1749,7 +1749,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             esac
             commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
             failure=13
-            origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)
+            origin_with_marker=$(git -C "$checkout" config --get remote.origin.url && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
                 *$'\n') origin=${origin%$'\n'} ;;
@@ -1855,7 +1855,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             failure=21
             test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
             failure=13
-            origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)
+            origin_with_marker=$(git -C "$checkout" config --get remote.origin.url && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
                 *$'\n') origin=${origin%$'\n'} ;;
