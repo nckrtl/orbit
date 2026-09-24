@@ -215,7 +215,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:remove',
         'tool:show',
         'tool:update',
-        'top',
     ]);
 });
 
@@ -276,23 +275,50 @@ describe('command vocabulary', function (): void {
     });
 
     it('documents every vocabulary verb family-specific action and noun-ending command', function (): void {
-        $page = file_get_contents(base_path('../../docs/reference/cli-command-vocabulary.md'));
-
-        expect($page)->toBeString();
+        $page = cli_command_vocabulary_page();
 
         foreach (CommandVocabulary::VERBS as $verb) {
             expect($page)->toContain('`'.$verb.'`');
         }
 
-        foreach (CommandVocabulary::FAMILY_ACTIONS as $actions) {
+        $documentedActions = cli_command_vocabulary_rows($page, '## Family-specific actions');
+        $vocabularyActions = array_map(static function (array $actions): array {
+            sort($actions);
+
+            return $actions;
+        }, CommandVocabulary::FAMILY_ACTIONS);
+
+        ksort($documentedActions);
+        ksort($vocabularyActions);
+
+        expect($documentedActions)->toBe($vocabularyActions)
+            ->and(array_keys(cli_command_vocabulary_rows($page, '## Noun-ending commands')))
+            ->toEqualCanonicalizing(CommandVocabulary::NOUN_ENDING_COMMANDS);
+    });
+
+    it('documents only commands the CLI registers', function (): void {
+        $page = cli_command_vocabulary_page();
+        $commands = orbitProductCommandNames();
+
+        foreach (cli_command_vocabulary_rows($page, '## Family-specific actions') as $family => $actions) {
             foreach ($actions as $action) {
-                expect($page)->toContain('`'.$action.'`');
+                expect(collect($commands)->contains(static fn (string $name): bool => CommandVocabulary::family($name) === $family
+                    && CommandVocabulary::lastSegment($name) === $action))
+                    ->toBeTrue("The vocabulary page documents {$family} {$action}, but no command has it.");
             }
         }
 
-        foreach (CommandVocabulary::NOUN_ENDING_COMMANDS as $command) {
-            expect($page)->toContain('`'.$command.'`');
+        foreach (array_keys(cli_command_vocabulary_rows($page, '## Noun-ending commands')) as $command) {
+            expect($commands)->toContain($command);
         }
+
+        expect(preg_match('/^(.+) are one-segment commands\./m', $page, $matches))->toBe(1);
+        preg_match_all('/`([^`]+)`/', $matches[1], $oneSegment);
+
+        expect($oneSegment[1])->toEqualCanonicalizing(array_values(array_filter(
+            $commands,
+            static fn (string $name): bool => ! str_contains($name, ':'),
+        )));
     });
 });
 
@@ -335,7 +361,7 @@ it('only hides Orbit commands that belong to disabled extensions', function (): 
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(163);
+    expect($orbitCommands)->toHaveCount(162);
     expect($orbitCommands
         ->filter(static fn (Command $command): bool => $command->isHidden())
         ->keys()
@@ -1285,11 +1311,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:remove' => [['tool' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
-        'top' => [
-            [],
-            'code' => 'input.invalid',
-            'message' => 'orbit top does not support --json; it is an interactive screen with no final result.',
-        ],
     ];
     $visibleCommandNames = collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden())
@@ -1331,6 +1352,47 @@ it('renders one exact json failure envelope for every Orbit product command', fu
 /**
  * @return list<string>
  */
+function cli_command_vocabulary_page(): string
+{
+    $page = file_get_contents(base_path('../../docs/reference/cli-command-vocabulary.md'));
+
+    expect($page)->toBeString();
+
+    return (string) $page;
+}
+
+/**
+ * The first column of each table row under a heading, mapped to the backticked values in its second column.
+ *
+ * @return array<string, list<string>>
+ */
+function cli_command_vocabulary_rows(string $page, string $heading): array
+{
+    $start = strpos($page, $heading."\n");
+
+    expect($start)->not->toBeFalse();
+
+    $section = substr($page, (int) $start + strlen($heading));
+    $next = strpos($section, "\n## ");
+    $section = $next === false ? $section : substr($section, 0, $next);
+    $rows = [];
+
+    foreach (explode("\n", $section) as $line) {
+        if (preg_match('/^\| `([^`]+)` \|([^|]*)\|/', $line, $cells) !== 1) {
+            continue;
+        }
+
+        preg_match_all('/`([^`]+)`/', $cells[2], $values);
+        $actions = $values[1];
+        sort($actions);
+        $rows[$cells[1]] = $actions;
+    }
+
+    expect($rows)->not->toBeEmpty();
+
+    return $rows;
+}
+
 function orbitProductCommandNames(): array
 {
     return collect(app(Kernel::class)->all())

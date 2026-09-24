@@ -49,7 +49,6 @@ final readonly class CommandVocabulary
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
         'tasks' => ['cancel', 'complete', 'status'],
-        'top' => ['top'],
     ];
 
     /** @var list<string> */

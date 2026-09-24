@@ -13,7 +13,7 @@ import type { Column } from "../ui/Pane";
 const cpuSort = (process: Process): number => process.cpu ?? -1;
 const memorySort = (process: Process): number => process.memory_bytes ?? -1;
 
-// The column sets more than one page draws. Widths are the shares `orbit top` gives them.
+// The column sets more than one page draws. Widths are shares of the pane.
 
 export const processColumns: Column<Process>[] = [
     { header: "Name", width: 46, value: (p) => p.name },
