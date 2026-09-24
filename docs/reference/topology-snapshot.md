@@ -87,7 +87,7 @@ Every convergence runs, in order, `converge-sample-app.sh reproject` on `app-dev
 
 On the typed `instances` envelope, sample convergence uses the Orbit CLI to keep `e2e-dev` associated with one explicit private Route named `e2e-dev.orbit`. It creates the Route when the association is absent, reuses only the exact sample Project, target, scope, domain, provenance, and publication, and refuses conflicting or multiple associations without editing the Gateway database directly. The topology verifier applies the active-Instance Route association rule from [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) to every active Instance.
 
-The rendered pools, Caddy fragments, firewall rules, and DNS records then match the checkout. When `create-resources` returns no typed checkout path, `internal-tls` on `app-prod` runs before reproject and places the `local_certs` global block as `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version behind `/etc/caddy/Caddyfile`; the product publisher carries unmanaged fragments forward, so Doctor reports no Caddy drift.
+The rendered pools, Node Caddyfiles, firewall rules, and DNS records then match the checkout. The sample production site serves Orbit's own certificates. The harness runs no Caddy step of its own: the first Node Caddy build on `app-prod` backs up an older snapshot's fragment layout, including its `local_certs` fragment, and replaces it, so Doctor reports no Caddy drift.
 
 ### Sample compatibility
 

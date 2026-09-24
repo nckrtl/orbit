@@ -26,7 +26,7 @@ The **Orbit Caddy Traffic** dashboard shows request rate, 5xx responses, request
 
 The dashboard selects Caddy's outer `subroute` handler, as observed with Orbit's site configuration on Caddy 2.6.2 and 2.11.4. It includes direct and proxied responses without adding the nested handler observations. These are requests seen by the selected Caddy site, not deduplicated requests across the entire fleet. Private traffic to a shared site can also be included.
 
-Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#published-layout) turn them on. The service metrics fragment adds only the WireGuard scrape site on a selected Ingress Node. Prometheus retains published public host labels and metrics without a host label. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
+Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#what-a-build-contains) turn them on. The service metrics site source adds only the WireGuard scrape site on a selected Ingress Node. Prometheus retains published public host labels and metrics without a host label. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
 
 Ingress normally proxies to the Router. Its upstream-health metrics do not establish the health of each Instance. Traffic that never reaches Caddy requires an external probe.
 
@@ -64,7 +64,9 @@ Changing the Metrics node replaces its scrape access. When a node is unreachable
 
 ### Recovery and inspection
 
-FPM updates validate a candidate and recover the prior pool file on reload failure. Caddy uses the shared publisher's lock, validation, and rollback. Exporter and firewall updates retain a recovery journal; retry recovers an interrupted update. A failed fleet convergence restores touched service snapshots in reverse order, including when Prometheus publication fails. Ownership conflicts stop mutation, and recovery failures remain explicit errors.
+FPM updates validate a candidate and recover the prior pool file on reload failure. Caddy changes go through the [Node Caddy build](/reference/caddy-configuration), which validates the whole file and restores the previous version when Caddy fails to reload. Service metrics does not read or restore Caddy files on the Node; after a failed update it restores its stored state and requests another build.
+
+Exporter and firewall updates retain a recovery journal; retry recovers an interrupted update. A failed fleet convergence restores touched service snapshots in reverse order, including when Prometheus publication fails. Ownership conflicts stop mutation, and recovery failures remain explicit errors.
 
 Doctor's firewall expectations include the service allow and deny rules. Production runtime inspection expects the generated status directives when monitoring is selected. These checks do not replace scrape-health checks.
 

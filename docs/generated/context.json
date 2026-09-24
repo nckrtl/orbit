@@ -3584,7 +3584,8 @@
                 "proxycli"
             ],
             "governing_adrs": [
-                "0137"
+                "0137",
+                "0140"
             ]
         },
         {
@@ -3630,6 +3631,41 @@
                 "0137",
                 "0138",
                 "0139"
+            ]
+        },
+        {
+            "path": "docs/decisions/0140-build-each-node-caddyfile-on-the-gateway.md",
+            "title": "ADR 0140: Build each Node's Caddyfile on the Gateway",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Database",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Instance",
+                "Node",
+                "Process",
+                "Route",
+                "Router",
+                "proxycli"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0080",
+                "0099",
+                "0100",
+                "0128",
+                "0137",
+                "0138",
+                "0139",
+                "0140"
             ]
         },
         {
@@ -3799,7 +3835,8 @@
                 "0136",
                 "0137",
                 "0138",
-                "0139"
+                "0139",
+                "0140"
             ]
         },
         {
@@ -4161,19 +4198,21 @@
             "components": [],
             "concepts": [
                 "Cluster",
+                "Database",
                 "Doctor",
                 "Gateway",
                 "Ingress",
                 "Instance",
                 "Node",
+                "Process",
                 "Route",
                 "Router",
                 "proxycli"
             ],
             "governing_adrs": [
-                "0137",
                 "0138",
-                "0139"
+                "0139",
+                "0140"
             ]
         },
         {

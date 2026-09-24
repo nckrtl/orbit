@@ -74,7 +74,7 @@ The Gateway leaves lockfiles in the checkout. A keep-alive desired-running Proce
 
 ## Host directories
 
-App-dev Caddy publish and each awake-marker write create the hibernation directories on the Instance Node before Caddy reloads or reads a marker. The `caddy` user must traverse every ancestor, write the access log, and read the awake marker.
+App-dev role convergence and each awake-marker write create the hibernation directories on the Instance Node before the Gateway builds its Caddyfile or Caddy reads a marker. The `caddy` user must traverse every ancestor, write the access log, and read the awake marker.
 
 | Path | Owner | Mode | Use |
 | --- | --- | --- | --- |
@@ -122,4 +122,4 @@ Doctor compares desired Process state with the observed systemd or Docker status
 
 `orbit process:list --instance=ID` shows the same desired and observed states, including `keep_alive`.
 
-Development Caddy publication validates its candidate as the Caddy service user. Validation can create access logs; running it as root leaves new log files unwritable by the service.
+The Node Caddy build validates its candidate as the Caddy service user. Validation can create access logs; running it as root leaves new log files unwritable by the service.

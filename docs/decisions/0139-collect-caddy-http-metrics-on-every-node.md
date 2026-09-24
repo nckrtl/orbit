@@ -45,5 +45,5 @@ Collected metrics also help debugging on Nodes that Prometheus does not scrape. 
 
 - Components: apps/gateway, apps/docs
 - ADRs: amends [ADR 0099](/decisions/0099-collect-role-specific-service-metrics) for where Caddy collects metrics; extends [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options) with the metrics option in Orbit's global block
-- Detail: [Caddy configuration](/reference/caddy-configuration#published-layout), [Service metrics](/reference/service-metrics#caddy-traffic)
+- Detail: [Caddy configuration](/reference/caddy-configuration#what-a-build-contains), [Service metrics](/reference/service-metrics#caddy-traffic)
 - Verify: `apps/gateway` Pest tests for `CaddyGlobalOptions`, the carried global options guard with the service metrics fragment, and `ServiceMetricsConfigRenderer` with a real `caddy adapt`
