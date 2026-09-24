@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Analytics\AnalyticsClickhouseConfigurationManager;
 use App\Domain\Analytics\AnalyticsPublicationManager;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
@@ -9,6 +10,7 @@ use App\Domain\Analytics\AnalyticsSecretManager;
 use App\Domain\Analytics\AnalyticsStorageConnection;
 use App\Domain\Analytics\PlausibleRuntimeLifecycle;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -53,6 +55,22 @@ final readonly class RecordingPlausibleRuntime implements PlausibleRuntimeLifecy
     }
 }
 
+final class RecordingClickhouseConfiguration implements AnalyticsClickhouseConfigurationManager
+{
+    public ?NodeRoleOperationException $failure = null;
+
+    public function __construct(private readonly AnalyticsRoleEvents $log) {}
+
+    public function converge(Process $clickhouse): void
+    {
+        $this->log->events[] = "clickhouse:converge:{$clickhouse->name}";
+
+        if ($this->failure instanceof NodeRoleOperationException) {
+            throw $this->failure;
+        }
+    }
+}
+
 final readonly class RecordingAnalyticsPublication implements AnalyticsPublicationManager
 {
     public function __construct(private AnalyticsRoleEvents $log) {}
@@ -93,12 +111,14 @@ beforeEach(function (): void {
     $this->collaborators = new AnalyticsRoleEvents;
     $this->app->instance(PlausibleRuntimeLifecycle::class, new RecordingPlausibleRuntime($this->collaborators));
     $this->app->instance(AnalyticsPublicationManager::class, new RecordingAnalyticsPublication($this->collaborators));
+    $this->clickhouse = new RecordingClickhouseConfiguration($this->collaborators);
+    $this->app->instance(AnalyticsClickhouseConfigurationManager::class, $this->clickhouse);
     $this->firewall = new FakeNodeRoleFirewallManager;
     $this->app->instance(NodeRoleFirewallManager::class, $this->firewall);
 });
 
 describe(AnalyticsRoleBaseline::class, function (): void {
-    it('runs Plausible with the URLs the storage Processes declare, then publishes the dashboard', function (): void {
+    it('applies Plausible\'s ClickHouse configuration, runs Plausible with the URLs the storage Processes declare, then publishes the dashboard', function (): void {
         [$node, $assignment] = analytics_baseline_assignment();
         $storage = analytics_storage_processes();
         app(AnalyticsRoleSettingsRepository::class)->store(
@@ -108,7 +128,7 @@ describe(AnalyticsRoleBaseline::class, function (): void {
 
         app(AnalyticsRoleBaseline::class)->converge($node, $assignment);
 
-        expect($this->collaborators->events)->toBe(['runtime:converge:3.2.1', 'publication:converge'])
+        expect($this->collaborators->events)->toBe(['clickhouse:converge:plausible-clickhouse', 'runtime:converge:3.2.1', 'publication:converge'])
             ->and($this->firewall->commands)->toBe(['converge:analytics'])
             ->and($this->collaborators->storage?->databaseUrl)
             ->toBe('postgres://postgres:postgres-secret@10.44.0.200:5432/plausible_db')
@@ -127,7 +147,7 @@ describe(AnalyticsRoleBaseline::class, function (): void {
 
         app(AnalyticsRoleBaseline::class)->converge($node, $assignment);
 
-        expect($this->collaborators->events[0])->toBe('runtime:converge:3.3.0');
+        expect($this->collaborators->events[1])->toBe('runtime:converge:3.3.0');
     });
 
     it('refuses to converge, and starts nothing, when no storage Processes are recorded', function (): void {
@@ -158,6 +178,26 @@ describe(AnalyticsRoleBaseline::class, function (): void {
                     ->toBe('analytics.clickhouse_process_missing'),
             );
         expect($this->collaborators->events)->toBe([]);
+    });
+
+    it('stops before Plausible when the ClickHouse configuration fails', function (): void {
+        [$node, $assignment] = analytics_baseline_assignment();
+        $storage = analytics_storage_processes();
+        app(AnalyticsRoleSettingsRepository::class)->store(
+            $node,
+            new AnalyticsRoleSettings($storage['postgres']->id, $storage['clickhouse']->id),
+        );
+        $this->clickhouse->failure = new NodeRoleOperationException(
+            'clickhouse-config',
+            'node_role.convergence_failed',
+            'analytics.clickhouse_config_failed',
+            'ClickHouse configuration failed.',
+        );
+
+        expect(fn () => app(AnalyticsRoleBaseline::class)->converge($node, $assignment))
+            ->toThrow(fn (NodeRoleOperationException $exception) => expect($exception->step)->toBe('clickhouse-config'));
+        expect($this->collaborators->events)->toBe(['clickhouse:converge:plausible-clickhouse'])
+            ->and($this->firewall->commands)->toBe([]);
     });
 
     it('removes the dashboard before Plausible, then forgets the secret and the settings', function (): void {
