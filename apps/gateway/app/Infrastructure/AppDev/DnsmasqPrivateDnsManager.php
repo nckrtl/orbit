@@ -226,8 +226,8 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             return null;
         }
 
-        $listener = $this->activeRoleHolder(RoleName::Vpn);
-        $gateway = $this->activeRoleHolder(RoleName::Gateway);
+        $listener = $this->roleHolder(RoleName::Vpn);
+        $gateway = $this->roleHolder(RoleName::Gateway);
 
         if (! $listener instanceof Node || ! $gateway instanceof Node || $listener->is($gateway)) {
             return null;
@@ -494,7 +494,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
             return DnsAddress::normalize($configured) ?? $configured;
         }
 
-        $listener = $this->activeRoleHolder(RoleName::Vpn) ?? $this->activeRoleHolder(RoleName::Gateway);
+        $listener = $this->roleHolder(RoleName::Vpn) ?? $this->roleHolder(RoleName::Gateway);
 
         if ($listener instanceof Node && is_string($listener->wireguard_ip) && $listener->wireguard_ip !== '') {
             return DnsAddress::normalize($listener->wireguard_ip) ?? $listener->wireguard_ip;
@@ -503,7 +503,11 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         return null;
     }
 
-    private function activeRoleHolder(RoleName $role): ?Node
+    /**
+     * The Node that holds a singleton role. `node:role:add --converge` marks the assignment
+     * provisioning while it runs, so a converging holder counts; an active holder wins when both exist.
+     */
+    private function roleHolder(RoleName $role): ?Node
     {
         return Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -514,7 +518,17 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                     ->where('role', $role)
                     ->where('status', LifecycleStatus::Active),
             )
-            ->first();
+            ->first()
+            ?? Node::query()
+                ->where('status', LifecycleStatus::Active)
+                ->whereNotNull('wireguard_ip')
+                ->whereHas(
+                    'roles',
+                    static fn ($query) => $query
+                        ->where('role', $role)
+                        ->where('status', LifecycleStatus::Provisioning),
+                )
+                ->first();
     }
 
     private function checkout(): string
