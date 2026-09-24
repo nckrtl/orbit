@@ -105,7 +105,7 @@ it('restores certificate pointers and Caddy fragments through locked component o
     expect($processes->invocations[1]->input)
         ->toContain(base64_encode($previousConfiguration))
         ->toContain('for fragment in "$current_fragments"/*.caddy')
-        ->toContain('cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"');
+        ->toContain('cp --preserve=mode,ownership -- "$fragment" "$destination"');
 });
 
 it('removes a newly created component publication during restoration', function (): void {
@@ -201,6 +201,40 @@ it('withdraws an existing Metrics route with valid global options and preserves 
     }
 });
 
+it('adopts a modified regular-file Caddyfile as 00-unmanaged.caddy', function (): void {
+    $result = metrics_local_caddy_run(
+        fn (MetricsCaddyPublisher $publisher) => $publisher->publish("metrics.orbit {\n}\n"),
+        fn (string $root) => file_put_contents("{$root}/Caddyfile", "operator.test {\n}\n"),
+    );
+
+    expect($result['exit'])->toBe(0, $result['stderr'])
+        ->and($result['fragments'])
+        ->toEqual(['00-unmanaged.caddy' => "operator.test {\n}\n", 'metrics.caddy' => "metrics.orbit {\n}\n"]);
+});
+
+it('renames a carried legacy unmanaged.caddy to 00-unmanaged.caddy', function (Closure $operation, array $expected): void {
+    $result = metrics_local_caddy_run($operation, function (string $root): void {
+        mkdir("{$root}/versions/previous/fragments", 0o755, true);
+        file_put_contents("{$root}/versions/previous/fragments/unmanaged.caddy", "operator.test {\n}\n");
+        file_put_contents("{$root}/versions/previous/fragments/metrics.caddy", "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n}\n");
+        file_put_contents("{$root}/versions/previous/Caddyfile", "import {$root}/versions/previous/fragments/*.caddy\n");
+        symlink("{$root}/versions/previous/Caddyfile", "{$root}/Caddyfile");
+    });
+
+    expect($result['exit'])->toBe(0, $result['stderr'])
+        ->and($result['fragments'])
+        ->toEqual($expected);
+})->with([
+    'publish' => [
+        fn (MetricsCaddyPublisher $publisher) => $publisher->publish("metrics.orbit {\n    respond new\n}\n"),
+        ['00-unmanaged.caddy' => "operator.test {\n}\n", 'metrics.caddy' => "metrics.orbit {\n    respond new\n}\n"],
+    ],
+    'withdrawal' => [
+        fn (MetricsCaddyPublisher $publisher) => $publisher->withdrawForCutover(),
+        ['00-unmanaged.caddy' => "operator.test {\n}\n"],
+    ],
+]);
+
 it('returns a stable error when local Caddy activation fails', function (): void {
     $processes = new MetricsLocalPublicationProcessRunner([
         new CommandResult(1, '', 'secret remote detail', 1, false),
@@ -244,4 +278,49 @@ function metrics_local_publication_receipt(string $previous): CommandResult
         1,
         false,
     );
+}
+
+/**
+ * Runs a Metrics Caddy script against a temporary /etc/caddy, with root-only commands,
+ * Caddy, systemd, and dpkg replaced by shell functions.
+ *
+ * @param  Closure(MetricsCaddyPublisher): mixed  $operation
+ * @param  Closure(string): mixed  $prepare
+ * @return array{exit: int, stderr: string, fragments: array<string, string>}
+ */
+function metrics_local_caddy_run(Closure $operation, Closure $prepare): array
+{
+    $processes = new MetricsLocalPublicationProcessRunner;
+    $operation(new MetricsCaddyPublisher($processes));
+    $invocation = $processes->invocations[0];
+    $root = sys_get_temp_dir().'/orbit-metrics-caddy-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory($root, 0o755, true);
+    $prepare($root);
+    $arguments = $invocation->arguments;
+    $arguments[6] = "{$root}/versions";
+    $arguments[7] = "{$root}/Caddyfile";
+    $arguments[9] = "{$root}/caddy.lock";
+    $boundaries = <<<'BASH'
+        install() { command install -d -m 0750 -- "$versions" "$candidate/fragments"; }
+        chown() { :; }
+        caddy() { :; }
+        systemctl() { :; }
+        dpkg-query() { :; }
+        BASH;
+
+    try {
+        $process = new Process(array_slice($arguments, 1));
+        $process->setInput($boundaries."\n".$invocation->input);
+        $process->run();
+        $fragments = is_link("{$root}/Caddyfile")
+            ? collect($filesystem->files(dirname((string) readlink("{$root}/Caddyfile")).'/fragments'))
+                ->mapWithKeys(fn (SplFileInfo $file): array => [$file->getFilename() => (string) file_get_contents($file->getPathname())])
+                ->all()
+            : [];
+
+        return ['exit' => (int) $process->getExitCode(), 'stderr' => $process->getErrorOutput(), 'fragments' => $fragments];
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
 }
