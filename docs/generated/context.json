@@ -5214,7 +5214,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Route"
             ],
             "governing_adrs": [
                 "0022"
