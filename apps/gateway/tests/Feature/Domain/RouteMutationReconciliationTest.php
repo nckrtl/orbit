@@ -38,6 +38,7 @@ use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -1629,6 +1630,53 @@ it('keeps an explicit Route domain fixed when a Node attaches or detaches', func
         ->toBeNull();
 });
 
+it('resumes a cut over placement cleanup when the same attach is retried', function (): void {
+    $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
+    $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
+        appId: $this->orbitApp->id,
+        domain: 'resumed.example.test',
+        publication: RoutePublication::Private,
+        appInstanceId: $this->target->id,
+        nodeId: null,
+        clusterId: null,
+    ))['route'];
+    $explicit->update(['status' => RouteStatus::Active]);
+    $cluster = reconciliation_active_cluster('resumed-membership', 'cluster.test');
+    $events = bind_node_tld_projection();
+    $projector = app(RouteDomainProjector::class);
+    assert($projector instanceof NodeTldRouteProjector);
+    $projector->failAt = 'cleanup';
+
+    expect(fn () => app(AttachClusterNodeAction::class)->execute($cluster, $this->node))
+        ->toThrow(ResourceOperationException::class, 'Injected cleanup failure.');
+
+    // Cutover made the Cluster the Route's placement; the old one stays stored until cleanup.
+    expect($explicit->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id']))
+        ->toBe([
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+            'transition_node_id' => $this->node->id,
+            'transition_cluster_id' => null,
+        ])
+        ->and($explicit->replacement_step)->toBe(RouteReplacementStep::Cleanup)
+        ->and($this->node->refresh()->cluster_id)->toBeNull();
+
+    $projector->failAt = null;
+    $events->values = [];
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node->refresh());
+
+    expect($explicit->refresh()->only(['node_id', 'cluster_id', 'transition_node_id', 'transition_cluster_id']))
+        ->toBe([
+            'node_id' => null,
+            'cluster_id' => $cluster->id,
+            'transition_node_id' => null,
+            'transition_cluster_id' => null,
+        ])
+        ->and($explicit->replacement_step)->toBeNull()
+        ->and($this->node->refresh()->cluster_id)->toBe($cluster->id)
+        ->and($events->values)->toBe(['cleanup', 'workload-verify']);
+});
+
 it('follows the retained Node TLD when attaching to a TLD-less active Cluster', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
@@ -2010,12 +2058,12 @@ final class NodeTldRouteProjector implements RouteDomainProjector
 
     public function prepareCleanup(AppInstance $appInstance, Route $route): void
     {
-        $this->events->values[] = 'prepare-cleanup';
+        $this->event('prepare-cleanup');
     }
 
     public function cleanup(AppInstance $appInstance, Route $route): void
     {
-        $this->events->values[] = 'cleanup';
+        $this->event('cleanup');
     }
 
     public function rollbackDns(Route $route): void
