@@ -341,16 +341,18 @@ final readonly class RemoteAppDevCertificateManager
 
     /**
      * Caddy loads every certificate its Caddyfile names, so a certificate is removed only after the
-     * build that withdraws its last site. While the Node's stored sites still name the scope, the
-     * removal fails and keeps the certificate, so the caller can build and retry.
+     * build that withdraws its last site. While a site in the Gateway's stored state still renders
+     * the scope on the Node, the removal fails and keeps the certificate, so the caller can retry.
      */
     private function remove(Node $node, string $scope): void
     {
-        if ($this->sites->forNode($node)->contains(static fn (AppDevSite $site): bool => $site->loadsCertificate($scope))) {
+        $site = $this->sites->forNode($node)->first(static fn (AppDevSite $site): bool => $site->loadsCertificate($scope));
+
+        if ($site instanceof AppDevSite) {
             throw new RuntimeConvergenceException(
                 step: 'certificate-remove',
                 errorCode: 'app-dev.certificate_in_use',
-                message: "Certificate [{$scope}] is still named by a Caddy site on node [{$node->name}].",
+                message: "Certificate [{$scope}] is still named by the stored Caddy site [{$site->domain}] on node [{$node->name}].",
             );
         }
 

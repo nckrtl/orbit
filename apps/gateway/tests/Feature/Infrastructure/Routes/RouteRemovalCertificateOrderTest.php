@@ -39,6 +39,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /*
@@ -182,6 +183,51 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
     });
 
+    it('refuses a route:destroy whose build still renders the site and succeeds on retry', function (): void {
+        $routeId = $this
+            ->postJson('/api/v1/routes', [
+                'domain' => 'collector.lab.orbit',
+                'node_id' => $this->beast->id,
+                'upstream' => 'http://127.0.0.1:4788',
+            ])
+            ->assertCreated()
+            ->json('data.id');
+        // The incident state: removal clears the publication record, but the stored sites keep
+        // rendering the Route, so its build leaves the site in place.
+        DB::unprepared(<<<'SQL'
+            CREATE TRIGGER certificate_order_stale_site AFTER UPDATE OF sites_published ON routes
+            WHEN NEW.sites_published = 0
+            BEGIN
+                UPDATE routes SET sites_published = 1 WHERE id = NEW.id;
+            END
+            SQL);
+
+        $this->deleteJson("/api/v1/routes/{$routeId}")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'app-dev.certificate_in_use')
+            ->assertJsonPath(
+                'error.message',
+                "Certificate [route-{$routeId}] is still named by the stored Caddy site [collector.lab.orbit] on node [beast].",
+            );
+
+        $route = Route::query()->findOrFail($routeId);
+        expect($route->status)->toBe(RouteStatus::Failed)
+            ->and($route->failed_step)->toBe('certificates')
+            ->and($route->error_code)->toBe('app-dev.certificate_in_use')
+            ->and($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeTrue()
+            ->and($this->nodes->hasCertificate('10.44.0.7', "route-{$routeId}"))->toBeTrue()
+            ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
+
+        DB::unprepared('DROP TRIGGER certificate_order_stale_site');
+        $this->deleteJson("/api/v1/routes/{$routeId}")->assertOk();
+
+        expect(Route::query()->whereKey($routeId)->exists())->toBeFalse()
+            ->and($this->nodes->names('10.44.0.7', "route-{$routeId}"))->toBeFalse()
+            ->and($this->nodes->hasCertificate('10.44.0.7', "route-{$routeId}"))->toBeFalse()
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
+    });
+
     it('refuses to remove a certificate that a stored site still names', function (): void {
         $routeId = $this
             ->postJson('/api/v1/routes', [
@@ -196,7 +242,8 @@ describe('Route removal certificate order', function (): void {
         expect(fn () => certificate_order_certificates()->removeCustomProxy($route, $this->beast))
             ->toThrow(function (RuntimeConvergenceException $exception): void {
                 expect($exception->step)->toBe('certificate-remove')
-                    ->and($exception->errorCode)->toBe('app-dev.certificate_in_use');
+                    ->and($exception->errorCode)->toBe('app-dev.certificate_in_use')
+                    ->and($exception->getMessage())->toContain('[collector.lab.orbit]');
             });
 
         expect($this->nodes->hasCertificate('10.44.0.7', "route-{$routeId}"))->toBeTrue()
