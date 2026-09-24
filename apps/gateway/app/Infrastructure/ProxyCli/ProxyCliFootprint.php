@@ -21,8 +21,6 @@ final readonly class ProxyCliFootprint
 
     public const string CertificateCurrentDirectory = '/etc/caddy/orbit-proxycli-cert-current';
 
-    public const string CaddyLockPath = '/run/lock/orbit-caddy.lock';
-
     public const string CaddyVersionsDirectory = '/etc/caddy/orbit-versions';
 
     public const string CaddyfilePath = '/etc/caddy/Caddyfile';

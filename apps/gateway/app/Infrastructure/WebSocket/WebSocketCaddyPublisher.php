@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WebSocket;
 
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Ssh\RemoteCommand;
 
@@ -20,6 +21,7 @@ final readonly class WebSocketCaddyPublisher
 
     public function command(string $configuration, string $port, string $wireguardIp): RemoteCommand
     {
+        $lockScript = CaddyPublicationLock::script();
         $encoded = base64_encode($configuration);
         $version = bin2hex(random_bytes(8));
 
@@ -34,7 +36,7 @@ final readonly class WebSocketCaddyPublisher
                 WebSocketFootprint::CaddyVersionsDirectory,
                 WebSocketFootprint::CaddyfilePath,
                 WebSocketFootprint::CaddyServiceName,
-                WebSocketFootprint::CaddyLockPath,
+                CaddyPublicationLock::Path,
                 $wireguardIp,
                 WebSocketFootprint::CaddyBindPlaceholder,
             ],
@@ -47,8 +49,7 @@ final readonly class WebSocketCaddyPublisher
                 lock=\$6
                 wireguard_ip=\$7
                 bind_placeholder=\$8
-                exec 9>"\$lock"
-                flock -w 30 9
+                {$lockScript}
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
                 candidate_link="\$(dirname "\$live_caddyfile")/.Caddyfile.orbit-\$version"
@@ -127,7 +128,7 @@ final readonly class WebSocketCaddyPublisher
                 WebSocketFootprint::CaddyVersionsDirectory,
                 WebSocketFootprint::CaddyfilePath,
                 WebSocketFootprint::CaddyServiceName,
-                WebSocketFootprint::CaddyLockPath,
+                CaddyPublicationLock::Path,
             ],
             input: <<<'BASH'
                 version=$1
@@ -136,8 +137,7 @@ final readonly class WebSocketCaddyPublisher
                 live_caddyfile=$4
                 caddy_service=$5
                 lock=$6
-                exec 9>"$lock"
-                flock -w 30 9
+                BASH.PHP_EOL.CaddyPublicationLock::script().PHP_EOL.<<<'BASH'
                 source_main=$(readlink -f "$live_caddyfile")
                 current_fragments=$(dirname "$source_main")/fragments
                 if [ ! -d "$current_fragments" ] || [ ! -f "$current_fragments/$owned_fragment" ]; then

@@ -4018,6 +4018,22 @@
             ]
         },
         {
+            "path": "docs/reference/caddy-configuration.md",
+            "title": "Caddy configuration",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Gateway",
+                "Herdr session",
+                "Ingress",
+                "Node",
+                "Process",
+                "Route",
+                "proxycli"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/cli-binaries.md",
             "title": "CLI binaries",
             "kind": "reference",

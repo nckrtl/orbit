@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppProd;
 
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -16,7 +17,7 @@ final readonly class AppProdCaddyPublisher
         private string $versionsDirectory = '/etc/caddy/orbit-versions',
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
         private string $caddyServiceName = 'caddy',
-        private string $lockPath = '/run/lock/orbit/caddy.lock',
+        private string $lockPath = CaddyPublicationLock::Path,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private string $ownedFragment = 'app-prod.caddy',
         private string $ownershipMarker = '',
@@ -36,6 +37,7 @@ final readonly class AppProdCaddyPublisher
             throw new \InvalidArgumentException('Invalid Caddy fragment name.');
         }
         $encoded = base64_encode($configuration);
+        $lockScript = CaddyPublicationLock::script();
 
         return new RemoteCommand(
             arguments: [
@@ -56,27 +58,7 @@ final readonly class AppProdCaddyPublisher
                 caddy_service=\$4
                 lock=\$5
                 umask 0077
-                lock_directory=\$(dirname "\$lock")
-                if ! mkdir -- "\$lock_directory" 2>/dev/null; then
-                    test -d "\$lock_directory"
-                    test ! -L "\$lock_directory"
-                fi
-                if [ "\$lock" = /run/lock/orbit/caddy.lock ]; then
-                    test "\$(stat -c %u:%g:%a -- "\$lock_directory")" = 0:0:700
-                fi
-                if [ -e "\$lock" ] || [ -L "\$lock" ]; then
-                    test ! -L "\$lock"
-                    test -f "\$lock"
-                    if [ "\$lock" = /run/lock/orbit/caddy.lock ]; then
-                        test "\$(stat -c %u:%g -- "\$lock")" = 0:0
-                    fi
-                fi
-                exec 9>>"\$lock"
-                if [ "\$lock" = /run/lock/orbit/caddy.lock ]; then
-                    chmod 0600 -- "\$lock"
-                    test "\$(stat -c %a -- "\$lock")" = 600
-                fi
-                flock -w 30 9
+                {$lockScript}
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
                 candidate_link="\$(dirname "\$live_caddyfile")/.Caddyfile.orbit-\$version"
@@ -186,27 +168,7 @@ final readonly class AppProdCaddyPublisher
                 lock=$5
                 owned_fragment=$6
                 umask 0077
-                lock_directory=$(dirname "$lock")
-                if ! mkdir -- "$lock_directory" 2>/dev/null; then
-                    test -d "$lock_directory"
-                    test ! -L "$lock_directory"
-                fi
-                if [ "$lock" = /run/lock/orbit/caddy.lock ]; then
-                    test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700
-                fi
-                if [ -e "$lock" ] || [ -L "$lock" ]; then
-                    test ! -L "$lock"
-                    test -f "$lock"
-                    if [ "$lock" = /run/lock/orbit/caddy.lock ]; then
-                        test "$(stat -c %u:%g -- "$lock")" = 0:0
-                    fi
-                fi
-                exec 9>>"$lock"
-                if [ "$lock" = /run/lock/orbit/caddy.lock ]; then
-                    chmod 0600 -- "$lock"
-                    test "$(stat -c %a -- "$lock")" = 600
-                fi
-                flock -w 30 9
+                BASH.PHP_EOL.CaddyPublicationLock::script().PHP_EOL.<<<'BASH'
                 source_main=$(readlink -f "$live_caddyfile")
                 test -f "$source_main" || exit 0
                 current_fragments=$(dirname "$source_main")/fragments

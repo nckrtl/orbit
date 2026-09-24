@@ -101,6 +101,7 @@
               "reference/browser-access",
               "reference/gateway-recovery",
               "reference/node-provisioning",
+              "reference/caddy-configuration",
               "reference/node-settings",
               "reference/node-retarget",
               "reference/wireguard-endpoints",

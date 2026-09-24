@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Caddy\OwnsCaddyGlobalOptions;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -25,6 +26,7 @@ final readonly class MetricsCaddyPublisher
     {
         $version = bin2hex(random_bytes(8));
         $encoded = base64_encode($configuration);
+        $lockScript = CaddyPublicationLock::script();
         $result = $this->run(new ProcessInvocation(
             arguments: [
                 'sudo',
@@ -36,7 +38,7 @@ final readonly class MetricsCaddyPublisher
                 '/etc/caddy/orbit-versions',
                 '/etc/caddy/Caddyfile',
                 'caddy',
-                '/run/lock/orbit-caddy.lock',
+                CaddyPublicationLock::Path,
             ],
             timeout: 60.0,
             input: <<<BASH
@@ -46,8 +48,7 @@ final readonly class MetricsCaddyPublisher
                 live_caddyfile=\$4
                 caddy_service=\$5
                 lock=\$6
-                exec 9>"\$lock"
-                flock -w 30 9
+                {$lockScript}
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
                 candidate_link="\$(dirname "\$live_caddyfile")/.Caddyfile.orbit-\$version"
@@ -180,7 +181,7 @@ final readonly class MetricsCaddyPublisher
                 '/etc/caddy/orbit-versions',
                 '/etc/caddy/Caddyfile',
                 'caddy',
-                '/run/lock/orbit-caddy.lock',
+                CaddyPublicationLock::Path,
                 $this->encodedGlobalOptions(),
             ],
             timeout: 60.0,
@@ -192,8 +193,7 @@ final readonly class MetricsCaddyPublisher
                 caddy_service=$5
                 lock=$6
                 global_options=$7
-                exec 9>"$lock"
-                flock -w 30 9
+                BASH.PHP_EOL.CaddyPublicationLock::script().PHP_EOL.<<<'BASH'
                 source_main=$(readlink -f "$live_caddyfile")
                 test -f "$source_main"
                 current_fragments=$(dirname "$source_main")/fragments
