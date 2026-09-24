@@ -83,14 +83,19 @@ final readonly class AppDevDnsConfigRenderer
 
                     return "host-record={$site->domain},{$site->nodeAddress}";
                 }));
-        $gateway = Node::query()
-            ->where('status', LifecycleStatus::Active->value)
-            ->whereNotNull('wireguard_ip')
-            ->whereHas('roles', static fn (Builder $q): Builder => $q->where('role', RoleName::Gateway->value)->where(
-                'status',
-                LifecycleStatus::Active->value,
-            ))
-            ->first();
+        // `node:role:add gateway gateway --converge` marks the singleton assignment provisioning while
+        // it republishes DNS, so a converging holder keeps gateway.orbit; an active holder wins.
+        $gateway = null;
+        foreach ([LifecycleStatus::Active, LifecycleStatus::Provisioning] as $gatewayStatus) {
+            $gateway ??= Node::query()
+                ->where('status', LifecycleStatus::Active->value)
+                ->whereNotNull('wireguard_ip')
+                ->whereHas('roles', static fn (Builder $q): Builder => $q->where('role', RoleName::Gateway->value)->where(
+                    'status',
+                    $gatewayStatus->value,
+                ))
+                ->first();
+        }
         HerdrSession::query()
             ->with('node')
             ->where('observer_status', 'published')
