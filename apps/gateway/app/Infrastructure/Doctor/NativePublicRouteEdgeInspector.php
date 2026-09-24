@@ -17,6 +17,9 @@ use App\Models\Node;
 use App\Models\Route;
 use Throwable;
 
+/**
+ * Reads the live Caddy version as root, because published versions under /etc/caddy/orbit-versions are root:caddy 0750.
+ */
 final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeInspector
 {
     public function __construct(
@@ -35,6 +38,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                 $node,
                 new RemoteCommand(
                     arguments: [
+                        'sudo',
                         'bash',
                         '-seu',
                         '--',

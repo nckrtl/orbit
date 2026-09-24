@@ -49,6 +49,8 @@ Doctor selects only Nodes that the caller may address through Node access. A `--
 
 The Gateway observes each Node once over its fixed SSH boundary before it runs the selected family probes. That observation contains only reachability, platform, architecture, and whether the managed WireGuard address is present. When a Node is unreachable, database-only checks still run, and every live-state family with managed resources on that Node reports one `*.node_unreachable` issue instead of inspecting resources.
 
+Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddy version is one of them, because Orbit publishes each version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
+
 Families run in canonical order whatever filter you pass: `node`, `role`, `app`, `instance`, `workspace`, `schedule`, `tool`, `process`, `firewall`, `herdr`, `database_connection`, `route`. Nodes sort by name and then ID, and resources sort by ID, so two runs against the same state produce the same report.
 
 Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues, `drift` with drift only, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. The report never contains raw output, commands, paths, URLs, branch names, credentials, environment values, configuration contents, or exception text.
