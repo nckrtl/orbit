@@ -734,6 +734,54 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe('node.ssh_host_key_mismatch');
     });
 
+    it('keeps the observed architecture when reprovisioning an active node fails after bootstrap', function (): void {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager
+        {
+            public function converge(Node $node): void {}
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void {}
+        });
+        app()->instance(NodeConverger::class, new class implements NodeConverger
+        {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): NodeObservation {
+                return new NodeObservation('x86_64');
+            }
+        });
+        app()->instance(MetricsFleetReconciler::class, new class implements MetricsFleetReconciler
+        {
+            public function reconcile(): void {}
+
+            public function retire(Node $node): void {}
+        });
+        app(NodeAgentRuntime::class)->failure = static function (): never {
+            throw new RuntimeException('agent unavailable');
+        };
+        $operator = Node::query()->where('name', 'operator')->sole();
+        $operator->update([
+            'platform' => 'linux',
+            'architecture' => null,
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $this->postJson('/api/v1/nodes', [
+            'name' => 'operator',
+            'public_ssh_host' => '192.0.2.2',
+        ])->assertStatus(502);
+
+        expect($operator->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($operator->architecture)
+            ->toBe('x86_64');
+    });
+
     it('keeps an active reprovisioning caller authorized after convergence failure', function (): void {
         app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager
         {

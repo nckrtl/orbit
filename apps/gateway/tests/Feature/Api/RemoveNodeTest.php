@@ -170,6 +170,18 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
         ->toBe(0);
 });
 
+it('returns a failed node to failed when its removal rolls back', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'half-added', wireguardIp: '10.44.0.3');
+    $target->update(['status' => LifecycleStatus::Failed, 'failed_step' => 'wireguard', 'error_code' => 'node.wireguard_unreachable']);
+    $this->metricsAccess->failure = new RuntimeException('Grafana unavailable');
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
+        ->toThrow(fn (NodeRemovalException $exception): bool => $exception->errorCode === 'node.grafana_access_revocation_failed');
+
+    expect($target->refresh()->status)->toBe(LifecycleStatus::Failed);
+});
+
 it('releases the lifecycle guard after a verification failure', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
